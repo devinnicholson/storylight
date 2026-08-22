@@ -19,7 +19,7 @@ class Settings(BaseSettings):
     model_api_key: str = ""
     model_timeout_seconds: float = 180.0
     model_keep_alive: str = "10m"
-    asr_backend: Literal["mlx_whisper", "disabled"] = "mlx_whisper"
+    asr_backend: Literal["mlx_whisper", "disabled", "test"] = "mlx_whisper"
     asr_model: str = ".models/whisper-base.en"
     asr_max_audio_mb: int = 20
     allowed_origins: list[str] = ["http://localhost:4173", "http://127.0.0.1:4173"]

@@ -11,6 +11,7 @@
     <main id="projectionStage" aria-label="Bookforge projection stage">
       <div class="paper-grain"></div>
       <section class="scene" id="scene" aria-live="polite">
+        <div class="fixture-scene" id="fixtureScene">
         <div class="visual-layer sky" data-layer-id="layer-sky">
           <div class="moon"><span></span></div>
           <i class="star star-a"></i><i class="star star-b"></i><i class="star star-c"></i>
@@ -36,6 +37,8 @@
           <div class="moth-glow"></div>
           <i class="wing wing-left"></i><i class="wing wing-right"></i><b></b>
         </div>
+        </div>
+        <div class="generated-scene" id="generatedScene"></div>
       </section>
       <div class="calibration-grid" id="calibrationGrid">
         <div class="page-bounds"><span>book / active surface</span></div>
@@ -57,6 +60,22 @@
         <span id="eventType">page.loading</span>
         <strong id="eventDetail">Moon Gate fixture</strong>
       </div>
+      <div class="reader-connection" id="readerConnection" data-state="connecting">
+        <span></span>
+        <div><small>Live reader</small><strong id="readerConnectionText">Connecting…</strong></div>
+      </div>
+      <form class="transcript-simulator" id="transcriptSimulator">
+        <label for="transcriptInput">Typed transcript simulator</label>
+        <div>
+          <input
+            id="transcriptInput"
+            autocomplete="off"
+            placeholder="The small moth…"
+            value=""
+          />
+          <button type="submit">Send</button>
+        </div>
+      </form>
       <div class="controls">
         <button id="previousButton" title="Previous word (←)">← Word</button>
         <button id="nextButton" class="primary" title="Next word (Space / →)">Next word →</button>
@@ -70,7 +89,7 @@
         <button id="saveCalibrationButton">Save Yaber profile</button>
         <button id="resetCalibrationButton">Reset corners</button>
       </div>
-      <p class="shortcut">Space advances · ← rewinds · H hides controls</p>
+      <p class="shortcut">Space advances · ← rewinds · H hides controls · live session <span id="sessionLabel"></span></p>
     </aside>
 
     <div class="corner-handles" id="cornerHandles" aria-label="Projection calibration handles">

@@ -1,8 +1,10 @@
 import asyncio
 import tempfile
+from importlib.util import find_spec
 from pathlib import Path
 from time import perf_counter
 
+from bookforge.asr_backend import AsrBackend, DisabledAsrBackend, TestAsrBackend
 from bookforge.config import Settings
 from bookforge.domain import TranscriptionResponse
 
@@ -14,6 +16,18 @@ class TranscriptionError(RuntimeError):
 class LocalTranscriber:
     def __init__(self, settings: Settings):
         self.settings = settings
+
+    @property
+    def name(self) -> str:
+        return "mlx_whisper"
+
+    @property
+    def available(self) -> bool:
+        return (
+            self.settings.asr_backend == "mlx_whisper"
+            and find_spec("mlx_whisper") is not None
+            and Path(self.settings.asr_model).exists()
+        )
 
     async def transcribe(self, audio: bytes, content_type: str) -> TranscriptionResponse:
         if self.settings.asr_backend == "disabled":
@@ -71,6 +85,16 @@ class LocalTranscriber:
                 raise TranscriptionError(f"Local transcription failed: {error}") from error
 
         return str(result.get("text", "")).strip(), str(result.get("language", "en"))
+
+
+def build_asr_backend(settings: Settings) -> AsrBackend:
+    """Build the configured local ASR implementation behind one portable contract."""
+
+    if settings.asr_backend == "mlx_whisper":
+        return LocalTranscriber(settings)
+    if settings.asr_backend == "test":
+        return TestAsrBackend()
+    return DisabledAsrBackend()
 
 
 def _audio_suffix(content_type: str) -> str:

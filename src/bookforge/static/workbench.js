@@ -32,6 +32,11 @@ let analyser = null;
 let stream = null;
 let mediaRecorder = null;
 let audioChunks = [];
+let partialTimer = null;
+let partialBusy = false;
+let partialBytes = 0;
+let recordingEpoch = 0;
+const readerSessionId = "moon-gate-demo";
 
 function setStatus(state, text) {
   elements.status.dataset.state = state;
@@ -85,8 +90,10 @@ async function startSpeaking() {
   }
   try {
     await startAudioMeter();
-    elements.story.value = "";
     audioChunks = [];
+    partialBytes = 0;
+    recordingEpoch += 1;
+    const epoch = recordingEpoch;
     const preferredType = MediaRecorder.isTypeSupported("audio/webm;codecs=opus")
       ? "audio/webm;codecs=opus"
       : "";
@@ -97,12 +104,13 @@ async function startSpeaking() {
       if (event.data.size > 0) audioChunks.push(event.data);
     });
     mediaRecorder.addEventListener("stop", transcribeRecording, {once: true});
-    mediaRecorder.start(250);
+    mediaRecorder.start(500);
     listening = true;
     elements.micButton.classList.add("listening");
     elements.micButtonText.textContent = "Stop speaking";
     elements.compileButton.disabled = true;
-    elements.interim.textContent = "Recording locally… Speak naturally, then press stop.";
+    elements.interim.textContent = "Listening locally… Partial words will drive the live projector.";
+    partialTimer = window.setInterval(() => transcribePartialRecording(epoch), 2000);
   } catch (error) {
     elements.interim.textContent = `Microphone unavailable: ${error.message}`;
     releaseMicrophone();
@@ -115,6 +123,8 @@ function stopSpeaking() {
   elements.micButton.disabled = true;
   elements.micButtonText.textContent = "Transcribing…";
   elements.interim.textContent = "Whisper is transcribing locally…";
+  window.clearInterval(partialTimer);
+  partialTimer = null;
   if (mediaRecorder?.state === "recording") mediaRecorder.stop();
   else resetMicControls();
 }
@@ -124,27 +134,80 @@ function resetMicControls() {
   elements.micButton.disabled = false;
   elements.micButtonText.textContent = "Start speaking";
   elements.compileButton.disabled = false;
+  window.clearInterval(partialTimer);
+  partialTimer = null;
   releaseMicrophone();
+}
+
+async function transcribeBlob(recording, mimeType) {
+  const response = await fetch("/v1/audio:transcribe", {
+      method: "POST",
+      headers: {"Content-Type": mimeType},
+      body: recording,
+  });
+  const payload = await response.json();
+  if (!response.ok) throw new Error(payload.detail || `Transcription failed (${response.status})`);
+  return payload;
+}
+
+async function publishReaderTranscript(text, isFinal) {
+  const pageText = elements.story.value.trim();
+  if (!pageText) throw new Error("Enter the trusted page text before starting the reader.");
+  const configureResponse = await fetch(`/v1/reader-sessions/${readerSessionId}`, {
+    method: "PUT",
+    headers: {"Content-Type": "application/json"},
+    body: JSON.stringify({page_id: "page-01", page_text: pageText}),
+  });
+  if (!configureResponse.ok) {
+    const payload = await configureResponse.json().catch(() => ({}));
+    throw new Error(payload.detail || `Reader setup failed (${configureResponse.status})`);
+  }
+  const response = await fetch(`/v1/reader-sessions/${readerSessionId}/transcripts:simulate`, {
+    method: "POST",
+    headers: {"Content-Type": "application/json"},
+    body: JSON.stringify({
+      source: "asr",
+      text,
+      page_id: "page-01",
+      language: "en",
+      is_final: isFinal,
+    }),
+  });
+  if (!response.ok) {
+    const payload = await response.json().catch(() => ({}));
+    throw new Error(payload.detail || `Reader event failed (${response.status})`);
+  }
+}
+
+async function transcribePartialRecording(epoch) {
+  if (partialBusy || !listening || epoch !== recordingEpoch || audioChunks.length === 0) return;
+  const mimeType = mediaRecorder?.mimeType || "audio/webm";
+  const recording = new Blob(audioChunks, {type: mimeType});
+  if (recording.size < 1000 || recording.size === partialBytes) return;
+  partialBusy = true;
+  partialBytes = recording.size;
+  try {
+    const payload = await transcribeBlob(recording, mimeType);
+    if (!listening || epoch !== recordingEpoch) return;
+    elements.interim.textContent = `Live transcript · ${payload.text}`;
+    await publishReaderTranscript(payload.text, false);
+  } catch (error) {
+    if (listening && epoch === recordingEpoch) {
+      elements.interim.textContent = `Live transcript retrying: ${error.message}`;
+    }
+  } finally {
+    partialBusy = false;
+  }
 }
 
 async function transcribeRecording() {
   const mimeType = mediaRecorder?.mimeType || "audio/webm";
   const recording = new Blob(audioChunks, {type: mimeType});
   try {
-    if (recording.size < 1000) {
-      throw new Error("Recording was too short. Try speaking for a little longer.");
-    }
-    const response = await fetch("/v1/audio:transcribe", {
-      method: "POST",
-      headers: {"Content-Type": mimeType},
-      body: recording,
-    });
-    const payload = await response.json();
-    if (!response.ok) {
-      throw new Error(payload.detail || `Transcription failed (${response.status})`);
-    }
-    elements.story.value = payload.text;
-    elements.interim.textContent = `Transcript ready in ${(payload.total_ms / 1000).toFixed(1)} s. Review it, then compile.`;
+    if (recording.size < 1000) throw new Error("Recording was too short. Try speaking for a little longer.");
+    const payload = await transcribeBlob(recording, mimeType);
+    await publishReaderTranscript(payload.text, true);
+    elements.interim.textContent = `Final transcript ready in ${(payload.total_ms / 1000).toFixed(1)} s. Review it, then compile.`;
   } catch (error) {
     elements.interim.textContent = error.message;
   } finally {

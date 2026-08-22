@@ -6,6 +6,7 @@ os.environ["BOOKFORGE_MODEL_NAME"] = "fake"
 from fastapi.testclient import TestClient  # noqa: E402
 
 from bookforge.api import app  # noqa: E402
+from bookforge.asr_backend import DisabledAsrBackend  # noqa: E402
 from bookforge.domain import TranscriptionResponse  # noqa: E402
 
 
@@ -74,3 +75,16 @@ def test_local_audio_transcription_contract() -> None:
     assert response.status_code == 200
     assert response.json()["text"] == "The moon gate opened."
     assert response.json()["model"] == "fake-whisper"
+
+
+def test_disabled_audio_backend_fails_with_service_unavailable() -> None:
+    with TestClient(app) as client:
+        app.state.transcriber = DisabledAsrBackend(reason="ASR is disabled for device bring-up")
+        response = client.post(
+            "/v1/audio:transcribe",
+            content=b"recorded-audio",
+            headers={"Content-Type": "audio/webm"},
+        )
+
+    assert response.status_code == 503
+    assert response.json() == {"detail": "ASR is disabled for device bring-up"}

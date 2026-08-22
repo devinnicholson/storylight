@@ -68,12 +68,12 @@
               <span class="mic-dot"></span><span id="micButtonText">Start speaking</span>
             </button>
             <button class="button" id="compileButton">Compile with Gemma</button>
-            <a class="button projector-link" href="/projector" target="_blank">Open projector ↗</a>
+            <a class="button projector-link" href="/projector?pack=latest&amp;session=moon-gate-demo" target="_blank">Open this Story Pack ↗</a>
           </div>
 
           <p class="browser-note" id="browserNote">
-            Audio is recorded only while the button is red, sent only to this laptop, transcribed
-            with local MLX Whisper, and then discarded.
+            Audio is recorded only while the button is red, sent only to this laptop in rolling
+            partial clips, transcribed with local MLX Whisper, and then discarded.
           </p>
         </article>
 
@@ -140,8 +140,9 @@
       </section>
 
       <footer>
-        The projector stage now runs from a validated deterministic Story Pack. Generative image
-        and video providers will plug into the same immutable asset contract.
+        Compile first, then open the projector to play this Story Pack from local storage. Ready
+        image and video assets use the same manifest; missing assets render as clearly labeled
+        development layers until the cloud generator is connected.
       </footer>
     </main>
     <script src="/workbench-assets/workbench.js"></script>

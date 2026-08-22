@@ -2,14 +2,24 @@ const LOGICAL_WIDTH = 1920;
 const LOGICAL_HEIGHT = 1080;
 const PROFILE_KEY = "bookforge.projectionProfile.yaber-t1-pro";
 const FIRED_CLASSES = ["action-reveal", "action-move", "action-transform", "action-open", "action-glow", "action-fade"];
+const query = new URLSearchParams(window.location.search);
+const SESSION_ID = query.get("session") || "moon-gate-demo";
+const PACK_SOURCE = query.get("pack") || "fixture";
 
 const elements = {
   stage: document.querySelector("#projectionStage"),
   scene: document.querySelector("#scene"),
+  fixtureScene: document.querySelector("#fixtureScene"),
+  generatedScene: document.querySelector("#generatedScene"),
   readerLine: document.querySelector("#readerLine"),
   packLabel: document.querySelector("#packLabel"),
   eventType: document.querySelector("#eventType"),
   eventDetail: document.querySelector("#eventDetail"),
+  readerConnection: document.querySelector("#readerConnection"),
+  readerConnectionText: document.querySelector("#readerConnectionText"),
+  transcriptSimulator: document.querySelector("#transcriptSimulator"),
+  transcriptInput: document.querySelector("#transcriptInput"),
+  sessionLabel: document.querySelector("#sessionLabel"),
   triggerDelay: document.querySelector("#triggerDelay"),
   averageDelay: document.querySelector("#averageDelay"),
   frameRate: document.querySelector("#frameRate"),
@@ -37,6 +47,9 @@ const state = {
   droppedFrames: 0,
   frameSamples: [],
   corners: [],
+  socket: null,
+  reconnectTimer: null,
+  reconnectAttempt: 0,
 };
 
 function publish(type, detail = {}) {
@@ -46,6 +59,11 @@ function publish(type, detail = {}) {
 function setEvent(type, detail) {
   elements.eventType.textContent = type;
   elements.eventDetail.textContent = detail;
+}
+
+function setReaderConnection(status, text) {
+  elements.readerConnection.dataset.state = status;
+  elements.readerConnectionText.textContent = text;
 }
 
 function normalizeWord(word) {
@@ -76,6 +94,79 @@ function indexTriggers(page) {
     }
   }
   return indices;
+}
+
+function assertStoryPack(pack) {
+  if (!pack || pack.schema_version !== "1.1" || !Array.isArray(pack.pages) || !pack.pages.length) {
+    throw new Error("Story Pack must use schema 1.1 and contain at least one page");
+  }
+  const page = pack.pages[0];
+  if (!page.page_id || !page.source_text?.trim() || !Array.isArray(page.layers) || !Array.isArray(page.triggers)) {
+    throw new Error("Story Pack page is missing source text, layers, or triggers");
+  }
+  const layerIds = new Set(page.layers.map((layer) => layer.layer_id));
+  for (const trigger of page.triggers) {
+    if (!layerIds.has(trigger.target_layer_id)) {
+      throw new Error(`Trigger ${trigger.trigger_id} targets a missing layer`);
+    }
+  }
+  return pack;
+}
+
+function layerPalette(index) {
+  const palettes = [
+    ["#111940", "#163438", "#82e6bd88"],
+    ["#2b1231", "#421d26", "#ed654f88"],
+    ["#102f31", "#1f4b46", "#fff1c988"],
+    ["#20183d", "#102b3c", "#7cbff688"],
+  ];
+  return palettes[index % palettes.length];
+}
+
+function renderPackLayers(pack, page) {
+  const fixture = pack.story_id === "moon-gate-projector-fixture";
+  elements.fixtureScene.hidden = !fixture;
+  elements.generatedScene.innerHTML = "";
+  if (fixture) return;
+
+  const assets = new Map(
+    (pack.assets || [])
+      .filter((asset) => asset.page_id === page.page_id && asset.state === "ready")
+      .map((asset) => [asset.layer_id, asset]),
+  );
+  [...page.layers].sort((left, right) => left.z_index - right.z_index).forEach((layer, index) => {
+    const node = document.createElement("div");
+    const [start, end, accent] = layerPalette(index);
+    node.className = `visual-layer generic-layer layer-kind-${layer.kind}`;
+    node.dataset.layerId = layer.layer_id;
+    node.style.zIndex = String(layer.z_index);
+    node.style.setProperty("--layer-start", start);
+    node.style.setProperty("--layer-end", end);
+    node.style.setProperty("--layer-accent", accent);
+    node.style.setProperty("--layer-x", `${25 + ((index * 23) % 55)}%`);
+    node.style.setProperty("--layer-y", `${25 + ((index * 17) % 50)}%`);
+    node.style.setProperty("--layer-angle", `${120 + index * 19}deg`);
+    const asset = assets.get(layer.layer_id);
+    const uri = asset?.local_uri || asset?.storage_uri || "";
+    if (asset && uri && !uri.startsWith("procedural://")) {
+      const media = document.createElement(asset.kind === "video_loop" ? "video" : "img");
+      media.src = uri;
+      if (media instanceof HTMLVideoElement) {
+        media.muted = true;
+        media.loop = true;
+        media.autoplay = true;
+        media.playsInline = true;
+      }
+      media.alt = layer.prompt;
+      node.append(media);
+    } else {
+      const label = document.createElement("span");
+      label.className = "layer-development-label";
+      label.textContent = `${layer.kind} · ${layer.prompt}`;
+      node.append(label);
+    }
+    elements.generatedScene.append(node);
+  });
 }
 
 function renderTimeline() {
@@ -155,6 +246,82 @@ function goToWord(nextCursor) {
   }
   const triggers = state.triggerIndices.get(clamped) || [];
   for (const trigger of triggers) applyTrigger(trigger, emittedAt);
+}
+
+function handleReaderEvent(message) {
+  if (!message || typeof message.type !== "string") return;
+  const payload = message.payload && typeof message.payload === "object" ? message.payload : message;
+  if (message.type === "word.reached" && Number.isInteger(payload.index)) {
+    goToWord(payload.index);
+    return;
+  }
+  if (message.type === "session.reset") {
+    goToWord(-1);
+    return;
+  }
+  if (message.type === "transcript.partial") {
+    const transcript = payload.transcript || payload.text || "";
+    setEvent("transcript.partial", transcript || "Listening…");
+  }
+}
+
+function connectReaderSession() {
+  if (state.socket?.readyState === WebSocket.OPEN || state.socket?.readyState === WebSocket.CONNECTING) return;
+  const protocol = window.location.protocol === "https:" ? "wss:" : "ws:";
+  setReaderConnection("connecting", `Connecting to ${SESSION_ID}`);
+  const socket = new WebSocket(`${protocol}//${window.location.host}/v1/reader-sessions/${encodeURIComponent(SESSION_ID)}/events`);
+  state.socket = socket;
+  socket.addEventListener("open", () => {
+    state.reconnectAttempt = 0;
+    setReaderConnection("connected", "Connected · waiting for transcript");
+  });
+  socket.addEventListener("message", (event) => {
+    try {
+      handleReaderEvent(JSON.parse(event.data));
+    } catch (_) {
+      setEvent("reader.error", "Ignored an invalid live event");
+    }
+  });
+  socket.addEventListener("close", () => {
+    if (state.socket !== socket) return;
+    state.socket = null;
+    state.reconnectAttempt += 1;
+    const delay = Math.min(10_000, 500 * 2 ** Math.min(state.reconnectAttempt, 5));
+    setReaderConnection("disconnected", `Disconnected · retrying in ${(delay / 1000).toFixed(1)}s`);
+    clearTimeout(state.reconnectTimer);
+    state.reconnectTimer = setTimeout(connectReaderSession, delay);
+  });
+  socket.addEventListener("error", () => socket.close());
+}
+
+async function simulateTranscript(text) {
+  const response = await fetch(`/v1/reader-sessions/${encodeURIComponent(SESSION_ID)}/transcripts:simulate`, {
+    method: "POST",
+    headers: {"Content-Type": "application/json"},
+    body: JSON.stringify({
+      source: "typed",
+      text,
+      page_id: state.page?.page_id || "page-01",
+      language: "en",
+      is_final: false,
+    }),
+  });
+  if (!response.ok) {
+    const payload = await response.json().catch(() => ({}));
+    throw new Error(payload.detail || `Transcript simulation failed (${response.status})`);
+  }
+}
+
+async function configureReaderSession() {
+  const response = await fetch(`/v1/reader-sessions/${encodeURIComponent(SESSION_ID)}`, {
+    method: "PUT",
+    headers: {"Content-Type": "application/json"},
+    body: JSON.stringify({page_id: state.page.page_id, page_text: state.page.source_text}),
+  });
+  if (!response.ok) {
+    const payload = await response.json().catch(() => ({}));
+    throw new Error(payload.detail || `Reader session setup failed (${response.status})`);
+  }
 }
 
 function defaultCorners() {
@@ -289,14 +456,22 @@ function monitorFrames(timestamp) {
 
 async function loadStoryPack() {
   try {
-    const response = await fetch("/workbench-assets/moon-gate.story-pack.json", {cache: "no-store"});
-    if (!response.ok) throw new Error(`Story Pack failed to load (${response.status})`);
-    state.pack = await response.json();
+    if (PACK_SOURCE === "latest") {
+      const saved = localStorage.getItem("bookforge.latestStoryPack");
+      if (!saved) throw new Error("No compiled Story Pack is stored yet. Compile one in the workbench first.");
+      state.pack = assertStoryPack(JSON.parse(saved));
+    } else {
+      const response = await fetch("/workbench-assets/moon-gate.story-pack.json", {cache: "no-store"});
+      if (!response.ok) throw new Error(`Story Pack failed to load (${response.status})`);
+      state.pack = assertStoryPack(await response.json());
+    }
     state.page = state.pack.pages[0];
+    renderPackLayers(state.pack, state.page);
     state.tokens = tokenize(state.page.source_text);
     state.triggerIndices = indexTriggers(state.page);
     elements.packLabel.textContent = `${state.pack.title} · ${state.pack.schema_version}`;
     renderTimeline();
+    await configureReaderSession();
     publish("page.loaded", {pageId: state.page.page_id, assetCount: state.pack.assets.length});
     setEvent("page.loaded", `${state.tokens.length} words · ${state.pack.assets.length} cached layers`);
   } catch (error) {
@@ -338,8 +513,24 @@ document.addEventListener("keydown", (event) => {
 });
 
 window.addEventListener("resize", updateProjection);
+window.addEventListener("beforeunload", () => {
+  clearTimeout(state.reconnectTimer);
+  state.socket?.close();
+});
+elements.transcriptSimulator.addEventListener("submit", async (event) => {
+  event.preventDefault();
+  const text = elements.transcriptInput.value.trim();
+  if (!text) return;
+  try {
+    await simulateTranscript(text);
+  } catch (error) {
+    setEvent("reader.error", error.message);
+  }
+});
+elements.sessionLabel.textContent = SESSION_ID;
 loadCalibration();
 bindCalibrationHandles();
 updateProjection();
 loadStoryPack();
+connectReaderSession();
 requestAnimationFrame(monitorFrames);
