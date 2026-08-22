@@ -18,6 +18,10 @@ This repository now contains working model-facing services rather than only a vi
   fullscreen, and live latency telemetry;
 - direct playback of the latest workbench-compiled Story Pack, including ready image/video assets
   and visibly labeled development layers when generation is still pending;
+- private atomic Story Pack persistence that survives browser and API restarts;
+- verified offline book-package installation and loopback-only cached media serving;
+- runtime readiness, edge preflight, WhisperTRT adapter, process privacy audit, and machine-readable
+  Jetson hardware acceptance evidence;
 - strict validation that rejects invented pages, missing visual layers, and trigger words not in
   the source text;
 - a Docker image and guarded GKE/NVIDIA L4 deployment path;
@@ -80,13 +84,18 @@ frame-streaming Jetson ASR engine—and the typed/manual paths remain the determ
 | Endpoint | Live model required | Purpose |
 | --- | --- | --- |
 | `GET /healthz` | No | Process health |
+| `GET /readyz` | No | Device storage and playback readiness |
+| `GET /v1/runtime:status` | Probe only | Local model, ASR, storage, and path readiness |
 | `GET /projector` | No | Fullscreen deterministic projection stage |
 | `GET /v1/models:probe` | No generation | Runtime and model readiness |
 | `POST /v1/audio:transcribe` | No | Transcribe recorded audio with local Whisper |
 | `POST /v1/interventions:select` | Only after the fast path | Select constrained support |
 | `POST /v1/story-packs:compile` | Yes | Compile book pages into a Story Pack |
+| `GET /v1/story-packs/latest` | No | Recover the latest private device-stored Story Pack |
 | `PUT /v1/reader-sessions/{id}` | No | Configure trusted page text for local alignment |
-| `POST /v1/reader-sessions/{id}/transcripts:simulate` | No | Align a typed or ASR transcript and publish word events |
+| `GET /v1/reader-sessions/{id}` | No | Recover the current generation and aligned position after reconnect |
+| `POST /v1/reader-sessions/{id}:reset` | No | Rewind the aligner and every connected projector for another reading |
+| `POST /v1/reader-sessions/{id}/transcripts:simulate` | No | Align a generation-bound typed or ASR transcript and publish word events |
 | `WS /v1/reader-sessions/{id}/events` | No | Stream ordered local transcript and word events |
 
 ## Run without model weights
@@ -122,12 +131,14 @@ installation option is supplied. System and graphical-user service templates pro
 and Chromium projector kiosk, respectively.
 
 See [`deploy/jetson/README.md`](deploy/jetson/README.md) for the guarded setup, interactive smoke
-test, systemd installation, kiosk configuration, and current ASR limitation. Jetson speech
-recognition remains disabled by default until a device-native implementation is integrated with the
-portable backend contract and benchmarked.
+test, systemd installation, kiosk configuration, WhisperTRT activation, privacy audit, and hardware
+acceptance commands. Jetson speech recognition remains disabled for first boot; the adapter is
+implemented, but it does not become accepted until the exact board passes the real I/O and latency
+run on JetPack 7.2.1.
 
 ## Design documents
 
 - [`docs/architecture.md`](docs/architecture.md): data boundary and cloud/edge responsibilities
 - [`infra/gcp/README.md`](infra/gcp/README.md): guarded GKE and Gemma serving workflow
 - [`benchmarks/macbook-m4-smoke-2026-08-20.json`](benchmarks/macbook-m4-smoke-2026-08-20.json): first real-model latency measurements
+- [`benchmarks/live-reader-laptop-2026-08-21.json`](benchmarks/live-reader-laptop-2026-08-21.json): clean-wheel, browser, persistence, and live event latency evidence

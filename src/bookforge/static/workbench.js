@@ -34,8 +34,12 @@ let mediaRecorder = null;
 let audioChunks = [];
 let partialTimer = null;
 let partialBusy = false;
+let partialInFlight = Promise.resolve();
 let partialBytes = 0;
 let recordingEpoch = 0;
+let readerGeneration = null;
+let activePageText = null;
+let starting = false;
 const readerSessionId = "moon-gate-demo";
 
 function setStatus(state, text) {
@@ -84,14 +88,25 @@ function releaseMicrophone() {
 }
 
 async function startSpeaking() {
+  if (starting || listening) return;
   if (!window.MediaRecorder || !navigator.mediaDevices?.getUserMedia) {
     elements.interim.textContent = "Audio recording is unavailable in this browser.";
     return;
   }
+  starting = true;
+  elements.micButton.disabled = true;
+  elements.micButtonText.textContent = "Starting…";
+  elements.compileButton.disabled = true;
   try {
+    const pageText = elements.story.value.trim();
+    if (!pageText) throw new Error("Enter the trusted page text before starting the reader.");
+    activePageText = pageText;
+    await configureReaderSession(pageText);
+    readerGeneration = (await resetReaderSession()).generation;
     await startAudioMeter();
     audioChunks = [];
     partialBytes = 0;
+    partialInFlight = Promise.resolve();
     recordingEpoch += 1;
     const epoch = recordingEpoch;
     const preferredType = MediaRecorder.isTypeSupported("audio/webm;codecs=opus")
@@ -106,14 +121,26 @@ async function startSpeaking() {
     mediaRecorder.addEventListener("stop", transcribeRecording, {once: true});
     mediaRecorder.start(500);
     listening = true;
+    elements.micButton.disabled = false;
     elements.micButton.classList.add("listening");
     elements.micButtonText.textContent = "Stop speaking";
     elements.compileButton.disabled = true;
     elements.interim.textContent = "Listening locally… Partial words will drive the live projector.";
-    partialTimer = window.setInterval(() => transcribePartialRecording(epoch), 2000);
+    partialTimer = window.setInterval(() => {
+      if (!partialBusy) partialInFlight = transcribePartialRecording(epoch);
+    }, 2000);
   } catch (error) {
     elements.interim.textContent = `Microphone unavailable: ${error.message}`;
-    releaseMicrophone();
+    if (mediaRecorder?.state === "recording") {
+      mediaRecorder.removeEventListener("stop", transcribeRecording);
+      mediaRecorder.stop();
+    }
+    mediaRecorder = null;
+    audioChunks = [];
+    recordingEpoch += 1;
+  } finally {
+    starting = false;
+    if (!listening) resetMicControls();
   }
 }
 
@@ -136,6 +163,8 @@ function resetMicControls() {
   elements.compileButton.disabled = false;
   window.clearInterval(partialTimer);
   partialTimer = null;
+  activePageText = null;
+  readerGeneration = null;
   releaseMicrophone();
 }
 
@@ -150,17 +179,9 @@ async function transcribeBlob(recording, mimeType) {
   return payload;
 }
 
-async function publishReaderTranscript(text, isFinal) {
-  const pageText = elements.story.value.trim();
-  if (!pageText) throw new Error("Enter the trusted page text before starting the reader.");
-  const configureResponse = await fetch(`/v1/reader-sessions/${readerSessionId}`, {
-    method: "PUT",
-    headers: {"Content-Type": "application/json"},
-    body: JSON.stringify({page_id: "page-01", page_text: pageText}),
-  });
-  if (!configureResponse.ok) {
-    const payload = await configureResponse.json().catch(() => ({}));
-    throw new Error(payload.detail || `Reader setup failed (${configureResponse.status})`);
+async function publishReaderTranscript(text, isFinal, generation = readerGeneration) {
+  if (!activePageText || generation === null) {
+    throw new Error("The reader session changed; stop and start this reading again.");
   }
   const response = await fetch(`/v1/reader-sessions/${readerSessionId}/transcripts:simulate`, {
     method: "POST",
@@ -171,6 +192,7 @@ async function publishReaderTranscript(text, isFinal) {
       page_id: "page-01",
       language: "en",
       is_final: isFinal,
+      generation,
     }),
   });
   if (!response.ok) {
@@ -179,8 +201,33 @@ async function publishReaderTranscript(text, isFinal) {
   }
 }
 
+async function configureReaderSession(pageText) {
+  const configureResponse = await fetch(`/v1/reader-sessions/${readerSessionId}`, {
+    method: "PUT",
+    headers: {"Content-Type": "application/json"},
+    body: JSON.stringify({page_id: "page-01", page_text: pageText}),
+  });
+  if (!configureResponse.ok) {
+    const payload = await configureResponse.json().catch(() => ({}));
+    throw new Error(payload.detail || `Reader setup failed (${configureResponse.status})`);
+  }
+  return configureResponse.json();
+}
+
+async function resetReaderSession() {
+  const response = await fetch(`/v1/reader-sessions/${readerSessionId}:reset`, {
+    method: "POST",
+  });
+  if (!response.ok) {
+    const payload = await response.json().catch(() => ({}));
+    throw new Error(payload.detail || `Reader reset failed (${response.status})`);
+  }
+  return response.json();
+}
+
 async function transcribePartialRecording(epoch) {
   if (partialBusy || !listening || epoch !== recordingEpoch || audioChunks.length === 0) return;
+  const generation = readerGeneration;
   const mimeType = mediaRecorder?.mimeType || "audio/webm";
   const recording = new Blob(audioChunks, {type: mimeType});
   if (recording.size < 1000 || recording.size === partialBytes) return;
@@ -190,7 +237,7 @@ async function transcribePartialRecording(epoch) {
     const payload = await transcribeBlob(recording, mimeType);
     if (!listening || epoch !== recordingEpoch) return;
     elements.interim.textContent = `Live transcript · ${payload.text}`;
-    await publishReaderTranscript(payload.text, false);
+    await publishReaderTranscript(payload.text, false, generation);
   } catch (error) {
     if (listening && epoch === recordingEpoch) {
       elements.interim.textContent = `Live transcript retrying: ${error.message}`;
@@ -203,16 +250,19 @@ async function transcribePartialRecording(epoch) {
 async function transcribeRecording() {
   const mimeType = mediaRecorder?.mimeType || "audio/webm";
   const recording = new Blob(audioChunks, {type: mimeType});
+  const generation = readerGeneration;
   try {
+    await partialInFlight;
     if (recording.size < 1000) throw new Error("Recording was too short. Try speaking for a little longer.");
     const payload = await transcribeBlob(recording, mimeType);
-    await publishReaderTranscript(payload.text, true);
+    await publishReaderTranscript(payload.text, true, generation);
     elements.interim.textContent = `Final transcript ready in ${(payload.total_ms / 1000).toFixed(1)} s. Review it, then compile.`;
   } catch (error) {
     elements.interim.textContent = error.message;
   } finally {
     mediaRecorder = null;
     audioChunks = [];
+    partialInFlight = Promise.resolve();
     resetMicControls();
   }
 }
@@ -290,6 +340,7 @@ async function compileStory() {
 }
 
 elements.micButton.addEventListener("click", () => {
+  if (starting) return;
   if (listening) stopSpeaking();
   else startSpeaking();
 });

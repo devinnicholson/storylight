@@ -21,6 +21,7 @@ const elements = {
   transcriptInput: document.querySelector("#transcriptInput"),
   sessionLabel: document.querySelector("#sessionLabel"),
   triggerDelay: document.querySelector("#triggerDelay"),
+  livePathDelay: document.querySelector("#livePathDelay"),
   averageDelay: document.querySelector("#averageDelay"),
   frameRate: document.querySelector("#frameRate"),
   droppedFrames: document.querySelector("#droppedFrames"),
@@ -50,6 +51,11 @@ const state = {
   socket: null,
   reconnectTimer: null,
   reconnectAttempt: 0,
+  generation: null,
+  lastReaderSequence: null,
+  readerSync: null,
+  resyncAfterCurrent: false,
+  pendingReaderEvents: [],
 };
 
 function publish(type, detail = {}) {
@@ -147,8 +153,8 @@ function renderPackLayers(pack, page) {
     node.style.setProperty("--layer-y", `${25 + ((index * 17) % 50)}%`);
     node.style.setProperty("--layer-angle", `${120 + index * 19}deg`);
     const asset = assets.get(layer.layer_id);
-    const uri = asset?.local_uri || asset?.storage_uri || "";
-    if (asset && uri && !uri.startsWith("procedural://")) {
+    const uri = asset?.local_uri || "";
+    if (asset && uri.startsWith("/v1/assets/")) {
       const media = document.createElement(asset.kind === "video_loop" ? "video" : "img");
       media.src = uri;
       if (media instanceof HTMLVideoElement) {
@@ -198,7 +204,7 @@ function clearLayerState() {
   }
 }
 
-function applyTrigger(trigger, emittedAt, measure = true) {
+function applyTrigger(trigger, emittedAt, measure = true, publishedAt = null) {
   const target = elements.scene.querySelector(`[data-layer-id="${CSS.escape(trigger.target_layer_id)}"]`);
   if (!target) return;
   target.style.setProperty("--trigger-duration", `${trigger.duration_ms}ms`);
@@ -211,6 +217,9 @@ function applyTrigger(trigger, emittedAt, measure = true) {
     const average = state.delays.reduce((sum, value) => sum + value, 0) / state.delays.length;
     elements.triggerDelay.textContent = `${delay.toFixed(1)} ms`;
     elements.averageDelay.textContent = `${average.toFixed(1)} ms`;
+    if (Number.isFinite(publishedAt)) {
+      elements.livePathDelay.textContent = `${Math.max(0, Date.now() - publishedAt).toFixed(1)} ms`;
+    }
     setEvent("trigger.fired", `${trigger.word} → ${trigger.action} ${trigger.target_layer_id}`);
   });
 }
@@ -225,7 +234,7 @@ function rebuildScene() {
   requestAnimationFrame(() => elements.scene.classList.remove("no-motion"));
 }
 
-function goToWord(nextCursor) {
+function goToWord(nextCursor, publishedAt = null) {
   if (!state.page) return;
   const clamped = Math.max(-1, Math.min(state.tokens.length - 1, nextCursor));
   const movingForwardOne = clamped === state.cursor + 1;
@@ -233,6 +242,10 @@ function goToWord(nextCursor) {
   updateTimeline();
   if (clamped < 0) {
     clearLayerState();
+    state.delays = [];
+    elements.triggerDelay.textContent = "—";
+    elements.livePathDelay.textContent = "—";
+    elements.averageDelay.textContent = "—";
     setEvent("session.reset", "Ready for the first word");
     return;
   }
@@ -245,24 +258,117 @@ function goToWord(nextCursor) {
     return;
   }
   const triggers = state.triggerIndices.get(clamped) || [];
-  for (const trigger of triggers) applyTrigger(trigger, emittedAt);
+  for (const trigger of triggers) applyTrigger(trigger, emittedAt, true, publishedAt);
 }
 
 function handleReaderEvent(message) {
   if (!message || typeof message.type !== "string") return;
   const payload = message.payload && typeof message.payload === "object" ? message.payload : message;
   if (message.type === "word.reached" && Number.isInteger(payload.index)) {
-    goToWord(payload.index);
+    const token = state.tokens[payload.index];
+    if (
+      payload.page_id !== state.page?.page_id
+      || payload.generation !== state.generation
+      || !token
+      || normalizeWord(payload.word || "") !== token.normalized
+    ) return;
+    const publishedAt = Date.parse(message.published_at || "");
+    if (payload.index > state.cursor) goToWord(payload.index, publishedAt);
     return;
   }
   if (message.type === "session.reset") {
+    if (payload.page_id !== state.page?.page_id || payload.page_text !== state.page?.source_text) {
+      setEvent("reader.mismatch", "The live reader is using a different Story Pack");
+      return;
+    }
+    if (!Number.isInteger(payload.generation)) return;
+    if (state.generation !== null && payload.generation <= state.generation) return;
+    state.generation = payload.generation;
     goToWord(-1);
     return;
   }
   if (message.type === "transcript.partial") {
+    if (payload.page_id !== state.page?.page_id || payload.generation !== state.generation) {
+      setEvent("reader.mismatch", "Ignored transcript from a different reading");
+      return;
+    }
     const transcript = payload.transcript || payload.text || "";
     setEvent("transcript.partial", transcript || "Listening…");
   }
+}
+
+function applyReaderStatus(status) {
+  if (status.page_id !== state.page?.page_id || status.page_text !== state.page?.source_text) {
+    setEvent("reader.mismatch", "The live reader is using a different Story Pack");
+    return false;
+  }
+  const nextCursor = status.last_reached_index ?? -1;
+  if (state.generation !== null && status.generation < state.generation) return true;
+  if (status.generation === state.generation && nextCursor <= state.cursor) return true;
+  state.generation = status.generation;
+  goToWord(nextCursor);
+  return true;
+}
+
+async function synchronizeReaderSession() {
+  if (!state.page) return;
+  const response = await fetch(`/v1/reader-sessions/${encodeURIComponent(SESSION_ID)}`, {
+    cache: "no-store",
+  });
+  if (response.status === 404) return false;
+  if (!response.ok) throw new Error(`Reader synchronization failed (${response.status})`);
+  const status = await response.json();
+  return applyReaderStatus(status);
+}
+
+function requestReaderSynchronization(forceAfterCurrent = false) {
+  if (state.readerSync) {
+    if (forceAfterCurrent) state.resyncAfterCurrent = true;
+    return state.readerSync;
+  }
+  const synchronization = (async () => {
+    try {
+      await synchronizeReaderSession();
+      if (!state.resyncAfterCurrent) {
+        const pending = state.pendingReaderEvents.splice(0);
+        pending.forEach(handleReaderEvent);
+      }
+    } catch (error) {
+      state.pendingReaderEvents = [];
+      state.resyncAfterCurrent = false;
+      setEvent("reader.error", error.message);
+      state.socket?.close();
+    } finally {
+      if (state.readerSync === synchronization) {
+        state.readerSync = null;
+        if (state.resyncAfterCurrent) {
+          state.resyncAfterCurrent = false;
+          requestReaderSynchronization();
+        }
+      }
+    }
+  })();
+  state.readerSync = synchronization;
+  return synchronization;
+}
+
+function receiveReaderEvent(message) {
+  if (!message || !Number.isInteger(message.sequence)) return;
+  if (state.lastReaderSequence !== null && message.sequence <= state.lastReaderSequence) return;
+  const sequenceGap = (
+    message.dropped_before_sequence !== null
+    && message.dropped_before_sequence !== undefined
+  ) || (
+    state.lastReaderSequence !== null
+    && message.sequence > state.lastReaderSequence + 1
+  );
+  state.lastReaderSequence = message.sequence;
+  if (state.readerSync || sequenceGap) {
+    state.pendingReaderEvents.push(message);
+    if (sequenceGap) requestReaderSynchronization(true);
+    return;
+  }
+  handleReaderEvent(message);
 }
 
 function connectReaderSession() {
@@ -274,10 +380,11 @@ function connectReaderSession() {
   socket.addEventListener("open", () => {
     state.reconnectAttempt = 0;
     setReaderConnection("connected", "Connected · waiting for transcript");
+    requestReaderSynchronization(true);
   });
   socket.addEventListener("message", (event) => {
     try {
-      handleReaderEvent(JSON.parse(event.data));
+      receiveReaderEvent(JSON.parse(event.data));
     } catch (_) {
       setEvent("reader.error", "Ignored an invalid live event");
     }
@@ -285,6 +392,8 @@ function connectReaderSession() {
   socket.addEventListener("close", () => {
     if (state.socket !== socket) return;
     state.socket = null;
+    state.lastReaderSequence = null;
+    state.pendingReaderEvents = [];
     state.reconnectAttempt += 1;
     const delay = Math.min(10_000, 500 * 2 ** Math.min(state.reconnectAttempt, 5));
     setReaderConnection("disconnected", `Disconnected · retrying in ${(delay / 1000).toFixed(1)}s`);
@@ -302,6 +411,7 @@ async function simulateTranscript(text) {
       source: "typed",
       text,
       page_id: state.page?.page_id || "page-01",
+      generation: state.generation,
       language: "en",
       is_final: false,
     }),
@@ -322,6 +432,23 @@ async function configureReaderSession() {
     const payload = await response.json().catch(() => ({}));
     throw new Error(payload.detail || `Reader session setup failed (${response.status})`);
   }
+  const status = await response.json();
+  state.generation = status.generation;
+  return status;
+}
+
+async function resetReaderSession() {
+  const response = await fetch(`/v1/reader-sessions/${encodeURIComponent(SESSION_ID)}:reset`, {
+    method: "POST",
+  });
+  if (!response.ok) {
+    const payload = await response.json().catch(() => ({}));
+    throw new Error(payload.detail || `Reader session reset failed (${response.status})`);
+  }
+  const status = await response.json();
+  state.generation = status.generation;
+  goToWord(-1);
+  return status;
 }
 
 function defaultCorners() {
@@ -457,9 +584,19 @@ function monitorFrames(timestamp) {
 async function loadStoryPack() {
   try {
     if (PACK_SOURCE === "latest") {
-      const saved = localStorage.getItem("bookforge.latestStoryPack");
-      if (!saved) throw new Error("No compiled Story Pack is stored yet. Compile one in the workbench first.");
-      state.pack = assertStoryPack(JSON.parse(saved));
+      const response = await fetch("/v1/story-packs/latest", {cache: "no-store"});
+      if (response.ok) {
+        state.pack = assertStoryPack(await response.json());
+      } else {
+        const saved = localStorage.getItem("bookforge.latestStoryPack");
+        if (saved) {
+          state.pack = assertStoryPack(JSON.parse(saved));
+        } else {
+          const fixture = await fetch("/workbench-assets/moon-gate.story-pack.json", {cache: "no-store"});
+          if (!fixture.ok) throw new Error(`Fallback Story Pack failed to load (${fixture.status})`);
+          state.pack = assertStoryPack(await fixture.json());
+        }
+      }
     } else {
       const response = await fetch("/workbench-assets/moon-gate.story-pack.json", {cache: "no-store"});
       if (!response.ok) throw new Error(`Story Pack failed to load (${response.status})`);
@@ -471,7 +608,8 @@ async function loadStoryPack() {
     state.triggerIndices = indexTriggers(state.page);
     elements.packLabel.textContent = `${state.pack.title} · ${state.pack.schema_version}`;
     renderTimeline();
-    await configureReaderSession();
+    const session = await configureReaderSession();
+    goToWord(session.last_reached_index ?? -1);
     publish("page.loaded", {pageId: state.page.page_id, assetCount: state.pack.assets.length});
     setEvent("page.loaded", `${state.tokens.length} words · ${state.pack.assets.length} cached layers`);
   } catch (error) {
@@ -482,7 +620,13 @@ async function loadStoryPack() {
 
 elements.previous.addEventListener("click", () => goToWord(state.cursor - 1));
 elements.next.addEventListener("click", () => goToWord(state.cursor + 1));
-elements.reset.addEventListener("click", () => goToWord(-1));
+elements.reset.addEventListener("click", async () => {
+  try {
+    await resetReaderSession();
+  } catch (error) {
+    setEvent("reader.error", error.message);
+  }
+});
 elements.calibrate.addEventListener("click", toggleCalibration);
 elements.blackout.addEventListener("click", () => document.body.classList.toggle("blackout"));
 elements.fullscreen.addEventListener("click", async () => {
@@ -498,6 +642,8 @@ elements.resetCalibration.addEventListener("click", () => {
 
 document.addEventListener("keydown", (event) => {
   if (event.repeat) return;
+  const target = event.target;
+  if (target instanceof HTMLInputElement || target instanceof HTMLTextAreaElement || target?.isContentEditable) return;
   const key = event.key.toLowerCase();
   if (event.key === " " || event.key === "ArrowRight") {
     event.preventDefault();
@@ -505,7 +651,7 @@ document.addEventListener("keydown", (event) => {
   } else if (event.key === "ArrowLeft") {
     event.preventDefault();
     goToWord(state.cursor - 1);
-  } else if (key === "r") goToWord(-1);
+  } else if (key === "r") elements.reset.click();
   else if (key === "f") elements.fullscreen.click();
   else if (key === "c") toggleCalibration();
   else if (key === "b") document.body.classList.toggle("blackout");
@@ -531,6 +677,7 @@ elements.sessionLabel.textContent = SESSION_ID;
 loadCalibration();
 bindCalibrationHandles();
 updateProjection();
-loadStoryPack();
-connectReaderSession();
+loadStoryPack().then(() => {
+  if (state.page) connectReaderSession();
+});
 requestAnimationFrame(monitorFrames);

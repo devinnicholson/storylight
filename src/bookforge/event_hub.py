@@ -20,6 +20,7 @@ SessionId = Annotated[
 PageId = Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=128)]
 Word = Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=128)]
 Transcript = Annotated[str, StringConstraints(max_length=8_000)]
+ReaderEventType = Literal["transcript.partial", "word.reached", "session.reset"]
 
 
 class StrictEventModel(BaseModel):
@@ -34,30 +35,40 @@ class ReaderEventPublishRequest(StrictEventModel):
     index: Annotated[int, Field(ge=0, le=100_000)] | None = None
     word: Word | None = None
     transcript: Transcript | None = None
+    generation: Annotated[int, Field(ge=1)] | None = None
 
     @model_validator(mode="after")
     def validate_payload_for_type(self) -> ReaderEventPublishRequest:
         if self.type == "transcript.partial":
-            if self.transcript is None:
-                raise ValueError("transcript.partial requires transcript")
+            if self.transcript is None or self.page_id is None or self.generation is None:
+                raise ValueError(
+                    "transcript.partial requires transcript, page_id, and generation"
+                )
             if self.index is not None or self.word is not None:
                 raise ValueError("transcript.partial does not accept index or word")
-        elif self.page_id is None or self.index is None or self.word is None:
-            raise ValueError("word.reached requires page_id, index, and word")
+        elif (
+            self.page_id is None
+            or self.index is None
+            or self.word is None
+            or self.generation is None
+        ):
+            raise ValueError("word.reached requires page_id, index, word, and generation")
         elif self.transcript is not None:
             raise ValueError("word.reached does not accept transcript")
         return self
 
     def event_payload(self) -> dict[str, str | int]:
         if self.type == "transcript.partial":
-            payload: dict[str, str | int] = {"transcript": self.transcript or ""}
-            if self.page_id is not None:
-                payload["page_id"] = self.page_id
-            return payload
+            return {
+                "transcript": self.transcript or "",
+                "page_id": self.page_id or "",
+                "generation": self.generation or 0,
+            }
         return {
             "page_id": self.page_id or "",
             "index": self.index if self.index is not None else 0,
             "word": self.word or "",
+            "generation": self.generation or 0,
         }
 
 
@@ -65,8 +76,9 @@ class ReaderEvent(StrictEventModel):
     session_id: SessionId
     sequence: Annotated[int, Field(ge=1)]
     published_at: datetime
-    type: Literal["transcript.partial", "word.reached"]
+    type: ReaderEventType
     payload: dict[str, Any]
+    dropped_before_sequence: Annotated[int, Field(ge=1)] | None = None
 
 
 class PublishResult(StrictEventModel):
@@ -142,7 +154,7 @@ class ReaderEventHub:
     async def publish(
         self,
         session_id: SessionId,
-        event_type: Literal["transcript.partial", "word.reached"],
+        event_type: ReaderEventType,
         payload: Mapping[str, Any],
     ) -> PublishResult:
         async with self._lock:
@@ -163,9 +175,18 @@ class ReaderEventHub:
                 self._sequences[session_id] = sequence
             for subscription in subscribers:
                 queue = subscription._queue
+                queued_event = event
                 if queue.full():
-                    queue.get_nowait()
-                queue.put_nowait(event)
+                    dropped = queue.get_nowait()
+                    assert isinstance(dropped, ReaderEvent)
+                    queued_event = event.model_copy(
+                        update={
+                            "dropped_before_sequence": (
+                                dropped.dropped_before_sequence or dropped.sequence
+                            )
+                        }
+                    )
+                queue.put_nowait(queued_event)
 
         return PublishResult(event=event, subscriber_count=len(subscribers))
 
@@ -183,12 +204,14 @@ class ReaderEventHub:
         page_id: PageId,
         index: int,
         word: Word,
+        generation: int,
     ) -> PublishResult:
         request = ReaderEventPublishRequest(
             type="word.reached",
             page_id=page_id,
             index=index,
             word=word,
+            generation=generation,
         )
         return await self.publish_request(session_id, request)
 

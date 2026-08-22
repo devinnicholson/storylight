@@ -24,7 +24,9 @@ def test_configured_session_ingests_cumulative_transcripts() -> None:
         )
         first = await registry.ingest(
             "moon-gate",
-            TranscriptUpdateRequest(source="typed", text="The small moth"),
+            TranscriptUpdateRequest(
+                source="typed", text="The small moth", generation=configured.generation
+            ),
         )
         final = await registry.ingest(
             "moon-gate",
@@ -32,6 +34,7 @@ def test_configured_session_ingests_cumulative_transcripts() -> None:
                 source="asr",
                 text="The small moth went through the red gate",
                 is_final=True,
+                generation=configured.generation,
             ),
         )
 
@@ -49,10 +52,10 @@ def test_session_requires_configuration_and_matching_page() -> None:
         with pytest.raises(ReaderSessionNotConfiguredError):
             await registry.ingest(
                 "missing",
-                TranscriptUpdateRequest(source="typed", text="hello"),
+                TranscriptUpdateRequest(source="typed", text="hello", generation=1),
             )
 
-        await registry.configure(
+        configured = await registry.configure(
             "configured",
             ReaderSessionConfigureRequest(page_id="page-01", page_text="Moon gate"),
         )
@@ -63,6 +66,7 @@ def test_session_requires_configuration_and_matching_page() -> None:
                     source="typed",
                     text="Moon",
                     page_id="page-02",
+                    generation=configured.generation,
                 ),
             )
 
@@ -73,10 +77,12 @@ def test_reconfiguring_identical_page_preserves_progress_but_new_text_resets() -
     async def exercise() -> None:
         registry = ReaderSessionRegistry()
         request = ReaderSessionConfigureRequest(page_id="page-01", page_text="Moon gate")
-        await registry.configure("session", request)
+        configured = await registry.configure("session", request)
         await registry.ingest(
             "session",
-            TranscriptUpdateRequest(source="typed", text="Moon"),
+            TranscriptUpdateRequest(
+                source="typed", text="Moon", generation=configured.generation
+            ),
         )
 
         preserved = await registry.configure("session", request)

@@ -26,7 +26,7 @@ the Jetson controls the live experience without sending raw audio or video to th
 | Projector runtime | Live laptop POC complete | Fullscreen stage consumes aligned WebSocket word events and compiled packs |
 | Target projector | Selected | Yaber T1 Pro; 1920x1080 input, 40-inch minimum image, 1.18:1 throw |
 | Target Jetson OS | Selected with gate | JetPack 7.2.1 / L4T r39.2.1 after confirming UEFI 36.x+ |
-| Jetson runtime | Packaging complete; hardware pending | Guarded diagnostics, bootstrap, services, kiosk, and ASR contract are checked in |
+| Jetson runtime | Software hardware-ready; device proof pending | Wheel install, preflight, persistence, WhisperTRT adapter, services, privacy and evidence tooling pass without Jetson-only imports |
 
 ## Delivery plan
 
@@ -145,7 +145,7 @@ prerequisite for completing this milestone.
 
 ### M5 — Jetson private edge runtime
 
-Status: pending
+Status: software migration complete; physical device proof pending
 
 #### M5A — Device provisioning and hardware proof
 
@@ -168,18 +168,19 @@ GPU/TensorRT, camera, microphone, projector, network, disk, temperature, and pow
 
 #### M5B — Bookforge edge migration
 
-- Move speech recognition, word alignment, pause detection, and intervention selection to the
-  Jetson Orin Nano.
-- Replace the Mac-only MLX Whisper backend with an `AsrBackend` interface. Evaluate NVIDIA-AI-IOT
-  WhisperTRT first, but retain a second local backend until JetPack 7 compatibility and streaming
-  accuracy are measured on this exact device.
-- Keep Gemma compilation and Cosmos generation out of the live loop. The Jetson loads prepared
-  Story Packs and assets from NVMe, then emits deterministic `word.reached` events locally.
+- [x] Package speech recognition, word alignment, reader events, and intervention selection behind
+  a loopback-only supervised Jetson runtime.
+- [x] Implement a lazy NVIDIA-AI-IOT WhisperTRT `AsrBackend` with persistent engine path and
+  serialized GPU access; keep it disabled until JetPack 7 compatibility is measured on this board.
+- [x] Keep Gemma compilation and Cosmos generation out of the live loop. The Jetson loads validated
+  Story Packs from private persistent storage and emits deterministic `word.reached` events locally.
 - Add webcam page/hand tracking and projection-safe occlusion masks.
 - Send only Story Pack requests, explicit user-authored additions, and aggregate telemetry to GCP.
-- Implement offline mode and a visible privacy indicator.
-- Install Bookforge as a supervised boot service with a local health page, bounded logs, crash
-  restart, and a one-command demo-mode launcher.
+- [x] Start and play cached books without network-online ordering; retain visible local connection
+  state and deterministic typed/manual recovery.
+- [x] Install Bookforge as a hardened supervised boot service with liveness, readiness, preflight,
+  persistent state/cache, crash restart, and health-gated Chromium kiosk.
+- [x] Add a process socket privacy audit and one-command JSON hardware evidence collector.
 
 Exit criterion: raw microphone and webcam data never leave the device, verified by an outbound
 traffic test.
@@ -219,7 +220,7 @@ core from the repository.
 | Cached word-trigger response | Under 50 ms | 7.5 ms average in the live WebSocket browser proof |
 | Cached page transition | Under 100 ms | Not implemented |
 | Cosmos generation | Offline/background job | Not measured |
-| Network-loss reading mode | No interruption | Not implemented |
+| Network-loss reading mode | No interruption | Clean wheel recovered a stored Story Pack after API restart; physical unplugged rehearsal pending |
 
 Targets are engineering budgets, not reported achievements. Only the evidence column records
 observed results.
@@ -234,8 +235,8 @@ observed results.
    text alignment, and a local ordered event stream.
 6. Provision the Jetson from the current JetPack USB ISO onto the 9100 Pro and capture the device
    manifest plus camera, microphone, projector, and thermal diagnostics.
-7. [x] Add and connect a cross-platform `AsrBackend`; benchmark and implement WhisperTRT on the
-   Jetson against the laptop alignment fixture before making it the primary backend.
+7. [x] Add and connect a cross-platform `AsrBackend` plus WhisperTRT adapter; benchmark it on the
+   Jetson against the laptop alignment fixture before enabling it in the service environment.
 8. Add the asynchronous cloud asset job endpoints behind the same asset contract.
 9. Create one fixed hero-page keyframe and acceptance rubric for the Cosmos spike.
 10. Confirm GCP project, region, GPU quota, and budget before creating billable resources.
@@ -293,9 +294,22 @@ Gemma, Cosmos, Google Cloud, and the edge device naturally central roles.
   word-trigger latency path.
 - 2026-08-21: Treat typed transcript simulation as a first-class recovery control. The verified
   browser path uses the same API, event hub, aligner, and projector renderer as local ASR.
-- 2026-08-21: Allow the projector to load `pack=latest` from workbench-local storage. Ready media
-  renders from the asset manifest; missing generation remains visibly labeled rather than being
-  presented as a finished visual asset.
+- 2026-08-21: Allow the projector to recover `pack=latest` from device storage, then browser storage,
+  then the bundled fixture. During playback, only checksum-verified loopback-cache media renders;
+  cloud storage URIs and missing generation remain visibly unavailable.
+- 2026-08-21: Move `pack=latest` authority to an atomic, private device store with browser storage
+  as fallback. A clean installed wheel recovered the same pack after a full process restart.
+- 2026-08-21: Implement WhisperTRT against its published Python API but keep activation gated. The
+  upstream project does not state JetPack 7.2 compatibility, so only exact-device evidence can
+  promote it from candidate to primary ASR.
+- 2026-08-21: Define hardware readiness as a machine-readable acceptance artifact plus a live
+  process socket audit. Configuration claims alone are not privacy or performance evidence.
+- 2026-08-21: Bind every transcript and word event to a monotonically increasing reading generation.
+  Reset invalidates delayed ASR, and reconnect restores the authoritative position before rendering.
+- 2026-08-21: Fail privacy evidence closed on missing `/proc` visibility and require a separate
+  network-disabled or packet-captured rehearsal for whole-device offline claims.
+- 2026-08-21: Warm WhisperTRT and its upstream checkpoint under the persistent service cache before
+  timing acceptance; the first engine build is not a live-demo latency measurement.
 
 ## Plan maintenance rule
 

@@ -70,9 +70,14 @@ fi
 if ((CREATE_VENV == 1)); then
   if [[ -x "${VENV_PATH}/bin/python" ]]; then
     printf 'Reusing virtual environment: %s\n' "$VENV_PATH"
+    if ! grep -q '^include-system-site-packages = true$' "${VENV_PATH}/pyvenv.cfg"; then
+      printf 'Existing virtual environment cannot see JetPack Python packages.\n' >&2
+      printf 'Move it aside and rerun --create-venv; this script will not delete it.\n' >&2
+      exit 1
+    fi
   else
     printf 'Creating virtual environment: %s\n' "$VENV_PATH"
-    python3 -m venv "$VENV_PATH"
+    python3 -m venv --system-site-packages "$VENV_PATH"
   fi
 fi
 
@@ -83,7 +88,7 @@ if ((INSTALL_APP == 1)); then
     exit 1
   fi
   "${VENV_PATH}/bin/python" -m pip install --upgrade pip
-  "${VENV_PATH}/bin/python" -m pip install -e "$REPO_ROOT"
+  "${VENV_PATH}/bin/python" -m pip install --upgrade "$REPO_ROOT"
 fi
 
 printf '\nSetup actions completed. Re-run %s to inspect readiness.\n' "${SCRIPT_DIR}/check-device.sh"

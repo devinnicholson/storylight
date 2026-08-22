@@ -1,5 +1,6 @@
 import asyncio
 import tempfile
+from contextlib import suppress
 from importlib.util import find_spec
 from pathlib import Path
 from time import perf_counter
@@ -16,6 +17,7 @@ class TranscriptionError(RuntimeError):
 class LocalTranscriber:
     def __init__(self, settings: Settings):
         self.settings = settings
+        self._transcribe_lock = asyncio.Lock()
 
     @property
     def name(self) -> str:
@@ -43,7 +45,14 @@ class LocalTranscriber:
 
         suffix = _audio_suffix(content_type)
         started = perf_counter()
-        text, language = await asyncio.to_thread(self._transcribe_sync, audio, suffix)
+        async with self._transcribe_lock:
+            worker = asyncio.create_task(asyncio.to_thread(self._transcribe_sync, audio, suffix))
+            try:
+                text, language = await asyncio.shield(worker)
+            except asyncio.CancelledError:
+                with suppress(Exception):
+                    await worker
+                raise
         elapsed_ms = (perf_counter() - started) * 1000
         if not text:
             raise TranscriptionError("No speech was detected in the recording")
@@ -92,6 +101,14 @@ def build_asr_backend(settings: Settings) -> AsrBackend:
 
     if settings.asr_backend == "mlx_whisper":
         return LocalTranscriber(settings)
+    if settings.asr_backend == "whisper_trt":
+        from bookforge.asr_jetson import WhisperTrtBackend
+
+        return WhisperTrtBackend(
+            model_name=settings.asr_model,
+            engine_path=settings.asr_engine_path,
+            maximum_audio_mb=settings.asr_max_audio_mb,
+        )
     if settings.asr_backend == "test":
         return TestAsrBackend()
     return DisabledAsrBackend()

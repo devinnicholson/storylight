@@ -5,10 +5,17 @@ from __future__ import annotations
 import asyncio
 from typing import Annotated, Literal
 
-from pydantic import BaseModel, ConfigDict, Field, StringConstraints
+from pydantic import (
+    BaseModel,
+    ConfigDict,
+    Field,
+    StringConstraints,
+    field_validator,
+    model_validator,
+)
 
 from bookforge.event_hub import PageId, SessionId
-from bookforge.reader import ReaderAligner, ReaderState, TranscriptMode, WordReachedEvent
+from bookforge.reader import ReaderAligner, ReaderState, TranscriptMode, WordReachedEvent, tokenize
 
 PageText = Annotated[
     str,
@@ -28,10 +35,19 @@ class ReaderSessionConfigureRequest(StrictReaderModel):
     page_id: PageId
     page_text: PageText
 
+    @field_validator("page_text")
+    @classmethod
+    def require_words(cls, value: str) -> str:
+        if not tokenize(value):
+            raise ValueError("page_text must contain at least one word")
+        return value
+
 
 class ReaderSessionStatus(StrictReaderModel):
     session_id: SessionId
     page_id: PageId
+    page_text: PageText
+    generation: Annotated[int, Field(ge=1)]
     state: ReaderState
     word_count: Annotated[int, Field(ge=1)]
     last_reached_index: int | None
@@ -47,9 +63,20 @@ class TranscriptUpdateRequest(StrictReaderModel):
         StringConstraints(strip_whitespace=True, min_length=2, max_length=35),
     ] = "en"
     is_final: bool = False
+    generation: Annotated[int, Field(ge=1)]
     mode: TranscriptMode = TranscriptMode.CUMULATIVE
     started_at_ms: Annotated[int, Field(ge=0)] | None = None
     ended_at_ms: Annotated[int, Field(ge=0)] | None = None
+
+    @model_validator(mode="after")
+    def validate_timestamps(self) -> TranscriptUpdateRequest:
+        if (
+            self.started_at_ms is not None
+            and self.ended_at_ms is not None
+            and self.ended_at_ms < self.started_at_ms
+        ):
+            raise ValueError("ended_at_ms must be greater than or equal to started_at_ms")
+        return self
 
 
 class TranscriptUpdateResult(StrictReaderModel):
@@ -68,11 +95,16 @@ class ReaderSessionPageMismatchError(ValueError):
     pass
 
 
+class ReaderSessionGenerationMismatchError(ValueError):
+    pass
+
+
 class ReaderSessionRegistry:
     """Process-local aligner registry with serialized updates per application."""
 
     def __init__(self) -> None:
         self._aligners: dict[str, ReaderAligner] = {}
+        self._generations: dict[str, int] = {}
         self._lock = asyncio.Lock()
 
     async def configure(
@@ -93,7 +125,8 @@ class ReaderSessionRegistry:
                     page_text=request.page_text,
                 )
                 self._aligners[session_id] = aligner
-            return self._status(aligner)
+                self._generations[session_id] = self._generations.get(session_id, 0) + 1
+            return self._status(aligner, self._generations[session_id])
 
     async def ingest(
         self,
@@ -111,6 +144,11 @@ class ReaderSessionRegistry:
                     f"Reader session is configured for page {aligner.page_id!r}, "
                     f"not {request.page_id!r}"
                 )
+            generation = self._generations[session_id]
+            if request.generation != generation:
+                raise ReaderSessionGenerationMismatchError(
+                    f"Reader session generation is {generation}, not {request.generation}"
+                )
             events = list(
                 aligner.ingest(
                     request.text,
@@ -120,7 +158,7 @@ class ReaderSessionRegistry:
                 )
             )
             return TranscriptUpdateResult(
-                status=self._status(aligner),
+                status=self._status(aligner, generation),
                 source=request.source,
                 language=request.language,
                 is_final=request.is_final,
@@ -135,13 +173,25 @@ class ReaderSessionRegistry:
                     f"Reader session {session_id!r} is not configured"
                 )
             aligner.reset()
-            return self._status(aligner)
+            self._generations[session_id] += 1
+            return self._status(aligner, self._generations[session_id])
+
+    async def status(self, session_id: str) -> ReaderSessionStatus:
+        async with self._lock:
+            aligner = self._aligners.get(session_id)
+            if aligner is None:
+                raise ReaderSessionNotConfiguredError(
+                    f"Reader session {session_id!r} is not configured"
+                )
+            return self._status(aligner, self._generations[session_id])
 
     @staticmethod
-    def _status(aligner: ReaderAligner) -> ReaderSessionStatus:
+    def _status(aligner: ReaderAligner, generation: int) -> ReaderSessionStatus:
         return ReaderSessionStatus(
             session_id=aligner.session_id,
             page_id=aligner.page_id,
+            page_text=aligner.page_text,
+            generation=generation,
             state=aligner.state,
             word_count=len(aligner.words),
             last_reached_index=aligner.last_reached_index,

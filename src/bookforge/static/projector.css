@@ -329,7 +329,7 @@ body.blackout #projectionStage { opacity: 0; }
   z-index: 100;
   left: 18px;
   top: 18px;
-  width: min(354px, calc(100vw - 36px));
+  width: min(420px, calc(100vw - 36px));
   padding: 16px;
   border: 1px solid rgba(255,255,255,.13);
   border-radius: 16px;
@@ -346,7 +346,7 @@ body.hud-hidden .hud, body.hud-hidden .reader-line { opacity: 0; pointer-events:
 .hud-brand small { max-width: 170px; overflow: hidden; color: #82978d; font-size: 9px; font-weight: 650; text-align: right; text-overflow: ellipsis; white-space: nowrap; }
 .live-dot { display: inline-block; width: 7px; height: 7px; margin-right: 6px; border-radius: 50%; background: var(--green); box-shadow: 0 0 12px var(--green); }
 
-.telemetry { display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px; margin: 14px 0 8px; }
+.telemetry { display: grid; grid-template-columns: repeat(5, 1fr); gap: 6px; margin: 14px 0 8px; }
 .telemetry div { padding: 8px; border: 1px solid rgba(255,255,255,.08); border-radius: 9px; background: rgba(255,255,255,.035); }
 .telemetry span { display: block; color: #71877d; font-size: 8px; font-weight: 800; letter-spacing: .1em; text-transform: uppercase; }
 .telemetry strong { display: block; margin-top: 4px; font-size: 12px; }

@@ -1,8 +1,9 @@
 from functools import lru_cache
-from typing import Literal
+from pathlib import Path
+from typing import Annotated, Literal
 
 from pydantic import field_validator
-from pydantic_settings import BaseSettings, SettingsConfigDict
+from pydantic_settings import BaseSettings, NoDecode, SettingsConfigDict
 
 
 class Settings(BaseSettings):
@@ -19,10 +20,16 @@ class Settings(BaseSettings):
     model_api_key: str = ""
     model_timeout_seconds: float = 180.0
     model_keep_alive: str = "10m"
-    asr_backend: Literal["mlx_whisper", "disabled", "test"] = "mlx_whisper"
+    asr_backend: Literal["mlx_whisper", "whisper_trt", "disabled", "test"] = "mlx_whisper"
     asr_model: str = ".models/whisper-base.en"
+    asr_engine_path: str = ""
     asr_max_audio_mb: int = 20
-    allowed_origins: list[str] = ["http://localhost:4173", "http://127.0.0.1:4173"]
+    data_dir: Path = Path(".bookforge/data")
+    cache_dir: Path = Path(".bookforge/cache")
+    allowed_origins: Annotated[list[str], NoDecode] = [
+        "http://localhost:4173",
+        "http://127.0.0.1:4173",
+    ]
 
     @field_validator("allowed_origins", mode="before")
     @classmethod

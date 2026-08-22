@@ -70,12 +70,12 @@ if have nvcc; then
   if [[ "$NVCC_LINE" == *"release ${EXPECTED_CUDA_PREFIX}"* ]]; then
     pass "CUDA release matches the JetPack 7.2.1 family"
   else
-    warn "Expected CUDA ${EXPECTED_CUDA_PREFIX}.x; inspect the reported version"
+    fail "Expected CUDA ${EXPECTED_CUDA_PREFIX}.x; inspect the reported version"
   fi
 elif [[ -r /usr/local/cuda/version.json ]]; then
   printf 'CUDA version file: /usr/local/cuda/version.json\n'
   grep -m 1 'version' /usr/local/cuda/version.json 2>/dev/null || true
-  warn "nvcc is not on PATH"
+  fail "nvcc is not on PATH"
 else
   fail "CUDA toolkit was not detected"
 fi
@@ -91,7 +91,7 @@ if [[ -n "$TENSORRT_PACKAGES" ]]; then
   if [[ "$TENSORRT_PACKAGES" == *"${EXPECTED_TENSORRT_PREFIX}"* ]]; then
     pass "TensorRT ${EXPECTED_TENSORRT_PREFIX}.x package detected"
   else
-    warn "TensorRT packages found, but not the ${EXPECTED_TENSORRT_PREFIX}.x JetPack 7.2.1 family"
+    fail "TensorRT packages found, but not the ${EXPECTED_TENSORRT_PREFIX}.x JetPack 7.2.1 family"
   fi
 else
   fail "TensorRT libnvinfer packages were not detected"
@@ -108,7 +108,7 @@ if have docker; then
     warn "Docker is installed, but its daemon is stopped or inaccessible to this user"
   fi
 else
-  fail "Docker CLI was not detected"
+  warn "Docker CLI was not detected; Bookforge does not require containers"
 fi
 if have nvidia-ctk; then
   printf 'NVIDIA Container Toolkit: %s\n' "$(nvidia-ctk --version 2>/dev/null || true)"
@@ -132,10 +132,13 @@ fi
 
 section "Power mode"
 if have nvpmodel; then
-  nvpmodel -q 2>/dev/null || warn "nvpmodel exists but its current mode could not be read"
-  pass "nvpmodel is installed; no power mode was changed"
+  if nvpmodel -q 2>/dev/null; then
+    pass "nvpmodel is installed; no power mode was changed"
+  else
+    fail "nvpmodel exists but its current mode could not be read"
+  fi
 else
-  warn "nvpmodel was not detected"
+  fail "nvpmodel was not detected"
 fi
 
 section "NVMe and mounted storage"
@@ -144,12 +147,12 @@ if have lsblk; then
   printf '\nMounted filesystems:\n'
   lsblk -o NAME,FSTYPE,SIZE,FSAVAIL,MOUNTPOINTS 2>/dev/null || true
 else
-  warn "lsblk was not detected"
+  fail "lsblk was not detected; NVMe inventory cannot be verified"
 fi
 if compgen -G '/dev/nvme*n*' >/dev/null; then
   pass "At least one NVMe namespace was detected"
 else
-  warn "No /dev/nvme*n* namespace was detected"
+  fail "No /dev/nvme*n* namespace was detected"
 fi
 
 section "Camera"
@@ -157,24 +160,32 @@ if compgen -G '/dev/video*' >/dev/null; then
   printf 'Video devices: %s\n' "$(printf '%s ' /dev/video*)"
   pass "At least one V4L2 device node exists"
 else
-  warn "No /dev/video* device was detected"
+  fail "No /dev/video* device was detected"
 fi
 if have v4l2-ctl; then
-  v4l2-ctl --list-devices 2>/dev/null || warn "v4l2-ctl could not enumerate devices"
+  if v4l2-ctl --list-devices 2>/dev/null; then
+    pass "v4l2-ctl enumerated camera devices"
+  else
+    fail "v4l2-ctl could not enumerate devices"
+  fi
 else
-  warn "v4l2-ctl is not installed"
+  fail "v4l2-ctl is not installed"
 fi
 
 section "Microphone"
 if [[ -d /dev/snd ]]; then
   pass "/dev/snd exists"
 else
-  warn "/dev/snd is missing"
+  fail "/dev/snd is missing"
 fi
 if have arecord; then
-  arecord -l 2>/dev/null || warn "arecord could not enumerate capture hardware"
+  if arecord -l 2>/dev/null; then
+    pass "arecord enumerated capture hardware"
+  else
+    fail "arecord could not enumerate capture hardware"
+  fi
 else
-  warn "arecord is not installed"
+  fail "arecord is not installed"
 fi
 
 section "Display"
@@ -189,7 +200,7 @@ if [[ -n "$CONNECTED_DISPLAYS" ]]; then
   printf 'Connected DRM outputs: %s\n' "$CONNECTED_DISPLAYS"
   pass "A connected display output was detected"
 else
-  warn "No connected display was found through DRM sysfs"
+  fail "No connected display was found through DRM sysfs"
 fi
 printf 'Session: XDG_SESSION_TYPE=%s DISPLAY=%s WAYLAND_DISPLAY=%s\n' \
   "${XDG_SESSION_TYPE:-unset}" "${DISPLAY:-unset}" "${WAYLAND_DISPLAY:-unset}"
@@ -198,7 +209,7 @@ if have chromium; then
 elif have chromium-browser; then
   printf 'Chromium: %s\n' "$(command -v chromium-browser)"
 else
-  warn "Chromium was not detected; the kiosk launcher will remain unavailable"
+  fail "Chromium was not detected; the kiosk launcher will remain unavailable"
 fi
 
 section "Thermals"
@@ -217,7 +228,7 @@ done
 if ((THERMAL_COUNT > 0)); then
   pass "Read ${THERMAL_COUNT} thermal zones without changing clocks or fan policy"
 else
-  warn "No readable thermal zones were found"
+  fail "No readable thermal zones were found"
 fi
 
 section "Result"

@@ -1,14 +1,14 @@
 [Unit]
 Description=Bookforge Chromium projector kiosk
-After=graphical-session.target network-online.target
-Wants=network-online.target
+After=graphical-session.target
 
 [Service]
 Type=simple
 EnvironmentFile=-%h/.config/bookforge/kiosk.env
 ExecStart=/opt/bookforge/deploy/jetson/launch-kiosk.sh
-Restart=on-failure
+Restart=always
 RestartSec=5
+TimeoutStartSec=120
 
 [Install]
 WantedBy=default.target

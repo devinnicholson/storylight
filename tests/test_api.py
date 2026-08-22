@@ -1,7 +1,10 @@
 import os
+from hashlib import sha256
 
 os.environ["BOOKFORGE_MODEL_BACKEND"] = "fake"
 os.environ["BOOKFORGE_MODEL_NAME"] = "fake"
+os.environ["BOOKFORGE_DATA_DIR"] = "/tmp/bookforge-api-tests/data"
+os.environ["BOOKFORGE_CACHE_DIR"] = "/tmp/bookforge-api-tests/cache"
 
 from fastapi.testclient import TestClient  # noqa: E402
 
@@ -26,12 +29,19 @@ class FakeTranscriber:
 def test_health_and_model_probe() -> None:
     with TestClient(app) as client:
         health = client.get("/healthz")
+        ready = client.get("/readyz")
+        runtime = client.get("/v1/runtime:status")
         probe = client.get("/v1/models:probe")
         workbench = client.get("/workbench")
         projector = client.get("/projector")
 
     assert health.status_code == 200
     assert health.json()["status"] == "ok"
+    assert ready.status_code == 200
+    assert ready.json() == {"ready": True}
+    assert runtime.status_code == 200
+    assert runtime.json()["storage"]["ready"] is True
+    assert runtime.json()["loopback_only"] is True
     assert probe.status_code == 200
     assert probe.json()["ready"] is True
     assert workbench.status_code == 200
@@ -62,6 +72,11 @@ def test_compile_demo_contract() -> None:
     assert body["story_pack"]["story_id"] == "moon-gate-demo"
     assert body["story_pack"]["pages"][0]["page_id"] == "page-01"
 
+    with TestClient(app) as client:
+        latest = client.get("/v1/story-packs/latest")
+    assert latest.status_code == 200
+    assert latest.json()["story_id"] == "moon-gate-demo"
+
 
 def test_local_audio_transcription_contract() -> None:
     with TestClient(app) as client:
@@ -88,3 +103,63 @@ def test_disabled_audio_backend_fails_with_service_unavailable() -> None:
 
     assert response.status_code == 503
     assert response.json() == {"detail": "ASR is disabled for device bring-up"}
+
+
+def test_audio_limit_is_enforced_before_the_backend() -> None:
+    with TestClient(app) as client:
+        original_limit = app.state.settings.asr_max_audio_mb
+        app.state.settings.asr_max_audio_mb = 1
+        response = client.post(
+            "/v1/audio:transcribe",
+            content=b"x" * (1024 * 1024 + 1),
+            headers={"Content-Type": "audio/webm"},
+        )
+        app.state.settings.asr_max_audio_mb = original_limit
+
+    assert response.status_code == 413
+
+
+def test_sensitive_api_routes_reject_remote_clients() -> None:
+    with TestClient(app, client=("203.0.113.4", 50000)) as client:
+        runtime = client.get("/v1/runtime:status")
+        audio = client.post(
+            "/v1/audio:transcribe",
+            content=b"audio",
+            headers={"Content-Type": "audio/webm"},
+        )
+        compile_response = client.post(
+            "/v1/story-packs:compile",
+            json={
+                "story_id": "remote",
+                "title": "Remote",
+                "reading_level": 2,
+                "visual_style": "paper",
+                "pages": [
+                    {
+                        "page_id": "page-01",
+                        "text": "Remote text.",
+                        "art_direction": "None.",
+                    }
+                ],
+            },
+        )
+
+    assert runtime.status_code == 403
+    assert audio.status_code == 403
+    assert compile_response.status_code == 403
+
+
+def test_cached_asset_route_serves_only_validated_cache_paths() -> None:
+    content = b"cached-image"
+    checksum = sha256(content).hexdigest()
+    with TestClient(app) as client:
+        directory = app.state.asset_cache.root / checksum
+        directory.mkdir(parents=True, exist_ok=True)
+        (directory / "sky.png").write_bytes(content)
+
+        response = client.get(f"/v1/assets/{checksum}/sky.png")
+        traversal = client.get(f"/v1/assets/{checksum}/..%2Fsecret")
+
+    assert response.status_code == 200
+    assert response.content == content
+    assert traversal.status_code in {404, 422}

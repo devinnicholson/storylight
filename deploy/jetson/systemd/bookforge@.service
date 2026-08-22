@@ -1,13 +1,14 @@
 [Unit]
 Description=Bookforge edge API for user %i
-Wants=network-online.target
-After=network-online.target
+After=local-fs.target
 
 [Service]
 Type=simple
 User=%i
 WorkingDirectory=/opt/bookforge
-EnvironmentFile=-/etc/bookforge/bookforge.env
+EnvironmentFile=/etc/bookforge/bookforge.env
+Environment=HOME=/var/cache/bookforge/home
+ExecStartPre=/opt/bookforge/.venv/bin/python -m bookforge.edge_preflight
 ExecStart=/opt/bookforge/.venv/bin/python -m uvicorn bookforge.api:app --host 127.0.0.1 --port 8080
 Restart=on-failure
 RestartSec=3
@@ -16,6 +17,19 @@ NoNewPrivileges=true
 PrivateTmp=true
 ProtectSystem=strict
 ProtectHome=read-only
+StateDirectory=bookforge
+StateDirectoryMode=0700
+CacheDirectory=bookforge
+CacheDirectoryMode=0700
+RuntimeDirectory=bookforge
+RuntimeDirectoryMode=0700
+UMask=0077
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+ProtectClock=true
+RestrictSUIDSGID=true
+LockPersonality=true
 
 [Install]
 WantedBy=multi-user.target

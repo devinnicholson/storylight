@@ -11,6 +11,7 @@ from fastapi.staticfiles import StaticFiles
 from bookforge import __version__
 from bookforge.asr import TranscriptionError, build_asr_backend
 from bookforge.asr_backend import AsrBackend, AsrBackendError, AsrBackendUnavailableError
+from bookforge.asset_cache import AssetCache, AssetCacheError
 from bookforge.config import get_settings
 from bookforge.domain import (
     CompileResponse,
@@ -18,6 +19,7 @@ from bookforge.domain import (
     InterventionResponse,
     ModelProbe,
     StoryCompileRequest,
+    StoryPack,
     TranscriptionResponse,
 )
 from bookforge.event_hub import (
@@ -30,6 +32,7 @@ from bookforge.event_hub import (
 from bookforge.model_client import ModelUnavailableError, build_model_client
 from bookforge.reader_runtime import (
     ReaderSessionConfigureRequest,
+    ReaderSessionGenerationMismatchError,
     ReaderSessionNotConfiguredError,
     ReaderSessionPageMismatchError,
     ReaderSessionRegistry,
@@ -37,7 +40,9 @@ from bookforge.reader_runtime import (
     TranscriptUpdateRequest,
     TranscriptUpdateResult,
 )
+from bookforge.runtime_status import RuntimeComponent, RuntimeStatus
 from bookforge.service import BookforgeService
+from bookforge.story_store import StoryPackCorruptError, StoryPackNotFoundError, StoryPackStore
 
 
 @asynccontextmanager
@@ -49,6 +54,13 @@ async def lifespan(app: FastAPI):
     app.state.transcriber = build_asr_backend(settings)
     app.state.reader_events = ReaderEventHub()
     app.state.reader_sessions = ReaderSessionRegistry()
+    app.state.reader_pipeline_lock = asyncio.Lock()
+    app.state.story_store = StoryPackStore(settings.data_dir / "story-packs")
+    await app.state.story_store.initialize()
+    settings.cache_dir.mkdir(parents=True, exist_ok=True, mode=0o700)
+    settings.cache_dir.chmod(0o700)
+    app.state.asset_cache = AssetCache(settings.cache_dir / "assets")
+    await app.state.asset_cache.initialize()
     yield
     await app.state.reader_events.close()
     http_client = getattr(client, "client", None)
@@ -100,6 +112,48 @@ async def healthz() -> dict[str, str]:
     return {"status": "ok", "version": __version__}
 
 
+@app.get("/readyz")
+async def readyz(request: Request) -> JSONResponse:
+    store: StoryPackStore = request.app.state.story_store
+    code = 200 if store.ready else 503
+    return JSONResponse(status_code=code, content={"ready": store.ready})
+
+
+@app.get("/v1/runtime:status", response_model=RuntimeStatus)
+async def runtime_status(request: Request) -> RuntimeStatus:
+    if not _is_local_connection(request):
+        raise HTTPException(status_code=403, detail="Runtime status is local-only")
+    service: BookforgeService = request.app.state.service
+    transcriber: AsrBackend = request.app.state.transcriber
+    store: StoryPackStore = request.app.state.story_store
+    model_ready, model_detail = await service.model_client.probe()
+    return RuntimeStatus(
+        ready=store.ready
+        and model_ready
+        and (transcriber.available or service.settings.asr_backend == "disabled"),
+        environment=service.settings.environment,
+        version=__version__,
+        loopback_only=True,
+        model=RuntimeComponent(
+            ready=model_ready,
+            name=f"{service.settings.model_backend}:{service.settings.model_name}",
+            detail=model_detail,
+        ),
+        asr=RuntimeComponent(
+            ready=transcriber.available,
+            name=transcriber.name,
+            detail="available" if transcriber.available else "disabled or unavailable",
+        ),
+        storage=RuntimeComponent(
+            ready=store.ready,
+            name="story-pack-store",
+            detail=str(store.root),
+        ),
+        data_dir=str(service.settings.data_dir),
+        cache_dir=str(service.settings.cache_dir),
+    )
+
+
 @app.get("/workbench", include_in_schema=False)
 async def workbench() -> FileResponse:
     return FileResponse(static_directory / "workbench.html")
@@ -112,6 +166,8 @@ async def projector() -> FileResponse:
 
 @app.get("/v1/models:probe", response_model=ModelProbe)
 async def probe_model(request: Request) -> ModelProbe:
+    if not _is_local_connection(request):
+        raise HTTPException(status_code=403, detail="Model status is local-only")
     service: BookforgeService = request.app.state.service
     ready, detail = await service.model_client.probe()
     return ModelProbe(
@@ -124,11 +180,29 @@ async def probe_model(request: Request) -> ModelProbe:
 
 @app.post("/v1/audio:transcribe", response_model=TranscriptionResponse)
 async def transcribe_audio(request: Request) -> TranscriptionResponse:
+    if not _is_local_connection(request):
+        raise HTTPException(status_code=403, detail="Audio transcription is local-only")
     transcriber: AsrBackend = request.app.state.transcriber
     content_type = request.headers.get("content-type", "audio/webm")
-    if not content_type.startswith("audio/"):
+    if not content_type.lower().startswith("audio/"):
         raise HTTPException(status_code=415, detail="Expected an audio content type")
-    return await transcriber.transcribe(await request.body(), content_type)
+    maximum_bytes = request.app.state.settings.asr_max_audio_mb * 1024 * 1024
+    content_length = request.headers.get("content-length")
+    if content_length is not None:
+        try:
+            declared_length = int(content_length)
+            if declared_length < 0:
+                raise ValueError
+            if declared_length > maximum_bytes:
+                raise HTTPException(status_code=413, detail="Recording exceeds the audio limit")
+        except ValueError as error:
+            raise HTTPException(status_code=400, detail="Invalid Content-Length header") from error
+    audio = bytearray()
+    async for chunk in request.stream():
+        if len(audio) + len(chunk) > maximum_bytes:
+            raise HTTPException(status_code=413, detail="Recording exceeds the audio limit")
+        audio.extend(chunk)
+    return await transcriber.transcribe(bytes(audio), content_type)
 
 
 @app.post("/v1/interventions:select", response_model=InterventionResponse)
@@ -136,17 +210,48 @@ async def select_intervention(
     payload: InterventionRequest,
     request: Request,
 ) -> InterventionResponse:
+    if not _is_local_connection(request):
+        raise HTTPException(status_code=403, detail="Interventions are local-only")
     service: BookforgeService = request.app.state.service
     return await service.select_intervention(payload)
 
 
 @app.post("/v1/story-packs:compile", response_model=CompileResponse)
 async def compile_story(payload: StoryCompileRequest, request: Request) -> CompileResponse:
+    if not _is_local_connection(request):
+        raise HTTPException(status_code=403, detail="Story compilation is local-only")
     service: BookforgeService = request.app.state.service
+    store: StoryPackStore = request.app.state.story_store
     try:
-        return await service.compile_story(payload)
+        response = await service.compile_story(payload)
+        await store.save(response.story_pack)
+        return response
     except ValueError as error:
         raise HTTPException(status_code=422, detail=str(error)) from error
+
+
+@app.get("/v1/story-packs/latest", response_model=StoryPack)
+async def latest_story_pack(request: Request) -> StoryPack:
+    if not _is_local_connection(request):
+        raise HTTPException(status_code=403, detail="Stored Story Packs are local-only")
+    store: StoryPackStore = request.app.state.story_store
+    try:
+        return await store.latest()
+    except StoryPackNotFoundError as error:
+        raise HTTPException(status_code=404, detail=str(error)) from error
+    except StoryPackCorruptError as error:
+        raise HTTPException(status_code=500, detail=str(error)) from error
+
+
+@app.get("/v1/assets/{checksum}/{filename}", response_class=FileResponse)
+async def cached_asset(checksum: str, filename: str, request: Request) -> FileResponse:
+    if not _is_local_connection(request):
+        raise HTTPException(status_code=403, detail="Cached assets are local-only")
+    cache: AssetCache = request.app.state.asset_cache
+    try:
+        return FileResponse(cache.resolve(checksum, filename))
+    except AssetCacheError as error:
+        raise HTTPException(status_code=404, detail=str(error)) from error
 
 
 def _is_local_connection(request: Request | WebSocket) -> bool:
@@ -175,7 +280,54 @@ async def configure_reader_session(
     if not _is_local_connection(request):
         raise HTTPException(status_code=403, detail="Reader sessions are local-only")
     registry: ReaderSessionRegistry = request.app.state.reader_sessions
-    return await registry.configure(session_id, payload)
+    async with request.app.state.reader_pipeline_lock:
+        return await registry.configure(session_id, payload)
+
+
+@app.get(
+    "/v1/reader-sessions/{session_id}",
+    response_model=ReaderSessionStatus,
+)
+async def reader_session_status(
+    session_id: SessionId,
+    request: Request,
+) -> ReaderSessionStatus:
+    if not _is_local_connection(request):
+        raise HTTPException(status_code=403, detail="Reader sessions are local-only")
+    registry: ReaderSessionRegistry = request.app.state.reader_sessions
+    try:
+        return await registry.status(session_id)
+    except ReaderSessionNotConfiguredError as error:
+        raise HTTPException(status_code=404, detail=str(error)) from error
+
+
+@app.post(
+    "/v1/reader-sessions/{session_id}:reset",
+    response_model=ReaderSessionStatus,
+)
+async def reset_reader_session(
+    session_id: SessionId,
+    request: Request,
+) -> ReaderSessionStatus:
+    if not _is_local_connection(request):
+        raise HTTPException(status_code=403, detail="Reader sessions are local-only")
+    registry: ReaderSessionRegistry = request.app.state.reader_sessions
+    hub: ReaderEventHub = request.app.state.reader_events
+    async with request.app.state.reader_pipeline_lock:
+        try:
+            session = await registry.reset(session_id)
+        except ReaderSessionNotConfiguredError as error:
+            raise HTTPException(status_code=409, detail=str(error)) from error
+        await hub.publish(
+            session_id,
+            "session.reset",
+            {
+                "page_id": session.page_id,
+                "page_text": session.page_text,
+                "generation": session.generation,
+            },
+        )
+    return session
 
 
 @app.post(
@@ -191,31 +343,34 @@ async def ingest_reader_transcript(
         raise HTTPException(status_code=403, detail="Reader sessions are local-only")
     registry: ReaderSessionRegistry = request.app.state.reader_sessions
     hub: ReaderEventHub = request.app.state.reader_events
-    try:
-        result = await registry.ingest(session_id, payload)
-    except ReaderSessionNotConfiguredError as error:
-        raise HTTPException(status_code=409, detail=str(error)) from error
-    except ReaderSessionPageMismatchError as error:
-        raise HTTPException(status_code=409, detail=str(error)) from error
+    async with request.app.state.reader_pipeline_lock:
+        try:
+            result = await registry.ingest(session_id, payload)
+        except ReaderSessionNotConfiguredError as error:
+            raise HTTPException(status_code=409, detail=str(error)) from error
+        except (ReaderSessionPageMismatchError, ReaderSessionGenerationMismatchError) as error:
+            raise HTTPException(status_code=409, detail=str(error)) from error
 
-    await hub.publish(
-        session_id,
-        "transcript.partial",
-        {
-            "transcript": payload.text,
-            "page_id": result.status.page_id,
-            "source": payload.source,
-            "language": payload.language,
-            "is_final": payload.is_final,
-        },
-    )
-    for event in result.word_events:
-        await hub.publish_word_reached(
+        await hub.publish(
             session_id,
-            page_id=event.page_id,
-            index=event.index,
-            word=event.word,
+            "transcript.partial",
+            {
+                "transcript": payload.text,
+                "page_id": result.status.page_id,
+                "generation": result.status.generation,
+                "source": payload.source,
+                "language": payload.language,
+                "is_final": payload.is_final,
+            },
         )
+        for event in result.word_events:
+            await hub.publish_word_reached(
+                session_id,
+                page_id=event.page_id,
+                index=event.index,
+                word=event.word,
+                generation=result.status.generation,
+            )
     return result
 
 
@@ -230,6 +385,8 @@ async def publish_reader_event(
 ) -> PublishResult:
     if not _is_local_connection(request):
         raise HTTPException(status_code=403, detail="Reader session events are local-only")
+    if request.app.state.settings.environment.lower() == "jetson":
+        raise HTTPException(status_code=403, detail="Direct event publishing is disabled on Jetson")
     hub: ReaderEventHub = request.app.state.reader_events
     try:
         return await hub.publish_request(session_id, payload)
