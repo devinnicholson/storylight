@@ -215,7 +215,7 @@ core from the repository.
 | --- | --- | --- |
 | Recording-state feedback | Under 100 ms | Immediate UI state change observed |
 | Local ASR, short page | Under 4 s warm | Synthetic sentence transcribed correctly in about 3 s |
-| Warm one-page Gemma compile | Under 8 s | Current baseline is about 19 s; optimization required |
+| Warm one-page Gemma compile | Under 8 s | 16.0 s warm; 24.1 s cold with 8.1 s load; optimization required |
 | Cached word-trigger response | Under 50 ms | 7.5 ms average in the live WebSocket browser proof |
 | Cached page transition | Under 100 ms | Not implemented |
 | Cosmos generation | Offline/background job | Not measured |
