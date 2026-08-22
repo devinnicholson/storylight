@@ -1,0 +1,161 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="theme-color" content="#07110f" />
+    <title>The Book That Listens Back — Laptop POC</title>
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body>
+    <main class="app-shell">
+      <header class="topbar">
+        <div>
+          <p class="eyebrow">Laptop proof of concept</p>
+          <h1>The Book That Listens Back</h1>
+        </div>
+        <div class="status-pill" id="statusPill" data-state="idle">
+          <span class="status-dot"></span>
+          <span id="statusText">Ready</span>
+        </div>
+      </header>
+
+      <section class="experience-grid">
+        <article class="stage-panel" id="stagePanel">
+          <div class="aurora aurora-one"></div>
+          <div class="aurora aurora-two"></div>
+          <div class="stars" aria-hidden="true"></div>
+
+          <div class="scene" id="storyScene" aria-label="Animated moth and moon gate story scene">
+            <div class="moon"></div>
+            <div class="hill hill-back"></div>
+            <div class="hill hill-front"></div>
+            <div class="gate" id="gate">
+              <div class="gate-glow"></div>
+              <div class="gate-pillar gate-pillar-left"></div>
+              <div class="gate-pillar gate-pillar-right"></div>
+              <div class="gate-door gate-door-left"></div>
+              <div class="gate-door gate-door-right"></div>
+            </div>
+            <div class="flight-path"></div>
+            <div class="moth" id="moth" aria-hidden="true">
+              <span class="wing wing-left"></span>
+              <span class="wing wing-right"></span>
+              <span class="moth-body"></span>
+            </div>
+            <div class="fireflies" aria-hidden="true">
+              <i></i><i></i><i></i><i></i><i></i><i></i>
+            </div>
+          </div>
+
+          <div class="book" id="book">
+            <div class="book-spine"></div>
+            <div class="page page-left">
+              <p class="page-number">01</p>
+              <p class="chapter-label">The Moon Gate</p>
+              <div class="page-art">
+                <div class="paper-moon"></div>
+                <div class="paper-moth">✦</div>
+              </div>
+              <p class="page-note">Read the sentence aloud and watch the page respond.</p>
+            </div>
+            <div class="page page-right">
+              <p class="page-number">02</p>
+              <div class="sentence" id="sentence" aria-live="polite"></div>
+              <div class="hint-card" id="hintCard" aria-hidden="true">
+                <span class="hint-label">A small clue</span>
+                <strong><span class="target-grapheme">th</span>rough</strong>
+                <span>Let the air flow softly past your tongue.</span>
+              </div>
+              <p class="reader-prompt" id="readerPrompt">Press “Start listening,” then read naturally.</p>
+            </div>
+          </div>
+
+          <div class="calibration-overlay" id="calibrationOverlay" aria-hidden="true">
+            <span class="corner corner-tl">A</span>
+            <span class="corner corner-tr">B</span>
+            <span class="corner corner-bl">C</span>
+            <span class="corner corner-br">D</span>
+            <div class="crosshair"></div>
+          </div>
+        </article>
+
+        <aside class="control-panel">
+          <section class="control-card primary-controls">
+            <div class="card-heading">
+              <div>
+                <p class="card-kicker">Microphone</p>
+                <h2>Reading controls</h2>
+              </div>
+              <div class="mic-level" title="Live microphone level">
+                <span id="micLevelBar"></span>
+              </div>
+            </div>
+
+            <div class="button-row">
+              <button class="button button-primary" id="startButton">Start listening</button>
+              <button class="button" id="stopButton" disabled>Stop</button>
+            </div>
+            <div class="button-row compact">
+              <button class="button button-subtle" id="simulateButton">Run simulation</button>
+              <button class="button button-subtle" id="resetButton">Reset</button>
+            </div>
+
+            <div class="transcript-box">
+              <span class="field-label">Live transcript</span>
+              <p id="transcript">Waiting for speech…</p>
+            </div>
+
+            <p class="support-note" id="supportNote">
+              Chrome is recommended. Browser speech recognition may use an online service; the final Jetson path will use local constrained alignment.
+            </p>
+          </section>
+
+          <section class="control-card">
+            <div class="card-heading">
+              <div>
+                <p class="card-kicker">Performance</p>
+                <h2>Live telemetry</h2>
+              </div>
+              <span class="live-badge">LIVE</span>
+            </div>
+            <div class="metrics-grid">
+              <div class="metric">
+                <span>Render rate</span>
+                <strong id="fpsMetric">—</strong>
+                <small>FPS</small>
+              </div>
+              <div class="metric">
+                <span>Alignment p95</span>
+                <strong id="latencyMetric">—</strong>
+                <small>ms</small>
+              </div>
+              <div class="metric">
+                <span>Words matched</span>
+                <strong id="wordMetric">0/8</strong>
+                <small>current run</small>
+              </div>
+              <div class="metric">
+                <span>App uploads</span>
+                <strong>0</strong>
+                <small>bytes</small>
+              </div>
+            </div>
+            <div class="event-log" id="eventLog" aria-live="polite"></div>
+          </section>
+
+          <section class="control-card display-controls">
+            <p class="card-kicker">Display</p>
+            <div class="button-row compact">
+              <button class="button button-subtle" id="fullscreenButton">Fullscreen stage</button>
+              <button class="button button-subtle" id="calibrationButton">Calibration overlay</button>
+            </div>
+            <p class="keyboard-help">Keyboard: <kbd>Space</kbd> advances one word; <kbd>H</kbd> shows the hint; <kbd>R</kbd> resets.</p>
+          </section>
+        </aside>
+      </section>
+    </main>
+
+    <script src="app.js"></script>
+  </body>
+</html>

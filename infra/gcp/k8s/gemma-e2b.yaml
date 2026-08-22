@@ -1,0 +1,88 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: gemma-vllm
+  namespace: bookforge
+  labels:
+    app.kubernetes.io/name: gemma-vllm
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: gemma-vllm
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: gemma-vllm
+        ai.gke.io/model: gemma-4-e2b-it
+        ai.gke.io/inference-server: vllm
+    spec:
+      containers:
+        - name: vllm
+          image: us-docker.pkg.dev/vertex-ai/vertex-vision-model-garden-dockers/pytorch-vllm-serve:gemma4
+          command: ["python3", "-m", "vllm.entrypoints.api_server"]
+          args:
+            - --model=google/gemma-4-e2b-it
+            - --host=0.0.0.0
+            - --port=8000
+            - --dtype=bfloat16
+            - --max-model-len=8192
+            - --max-num-seqs=8
+            - --enable-prefix-caching
+            - --enable-chunked-prefill
+            - --generation-config=auto
+            - --gpu-memory-utilization=0.90
+            - --trust-remote-code
+          env:
+            - name: HF_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: hf-token
+                  key: HF_TOKEN
+          ports:
+            - name: http
+              containerPort: 8000
+          resources:
+            requests:
+              cpu: "8"
+              memory: 24Gi
+              ephemeral-storage: 40Gi
+              nvidia.com/gpu: "1"
+            limits:
+              cpu: "8"
+              memory: 24Gi
+              ephemeral-storage: 40Gi
+              nvidia.com/gpu: "1"
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: http
+            initialDelaySeconds: 180
+            periodSeconds: 10
+            failureThreshold: 60
+          volumeMounts:
+            - name: dshm
+              mountPath: /dev/shm
+      nodeSelector:
+        cloud.google.com/gke-accelerator: nvidia-l4
+        cloud.google.com/gke-gpu-driver-version: latest
+      volumes:
+        - name: dshm
+          emptyDir:
+            medium: Memory
+            sizeLimit: 8Gi
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: gemma-vllm
+  namespace: bookforge
+spec:
+  selector:
+    app.kubernetes.io/name: gemma-vllm
+  ports:
+    - name: http
+      port: 8000
+      targetPort: http
+  type: ClusterIP
+

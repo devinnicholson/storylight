@@ -1,0 +1,13 @@
+.git
+.gitignore
+.env
+.venv
+.pytest_cache
+.ruff_cache
+__pycache__
+infra
+tests
+index.html
+styles.css
+app.js
+

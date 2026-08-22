@@ -1,0 +1,62 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: bookforge-api
+  namespace: bookforge
+  labels:
+    app.kubernetes.io/name: bookforge-api
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: bookforge-api
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: bookforge-api
+    spec:
+      containers:
+        - name: api
+          image: bookforge-api-placeholder
+          env:
+            - name: BOOKFORGE_ENVIRONMENT
+              value: gcp
+            - name: BOOKFORGE_MODEL_BACKEND
+              value: openai
+            - name: BOOKFORGE_MODEL_NAME
+              value: google/gemma-4-e2b-it
+            - name: BOOKFORGE_MODEL_BASE_URL
+              value: http://gemma-vllm:8000
+            - name: BOOKFORGE_MODEL_TIMEOUT_SECONDS
+              value: "300"
+          ports:
+            - name: http
+              containerPort: 8080
+          resources:
+            requests:
+              cpu: 250m
+              memory: 256Mi
+            limits:
+              cpu: "1"
+              memory: 1Gi
+          readinessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            initialDelaySeconds: 3
+            periodSeconds: 5
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: bookforge-api
+  namespace: bookforge
+spec:
+  selector:
+    app.kubernetes.io/name: bookforge-api
+  ports:
+    - name: http
+      port: 8080
+      targetPort: http
+  type: ClusterIP
+

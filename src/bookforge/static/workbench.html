@@ -1,0 +1,149 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="theme-color" content="#07110f" />
+    <title>Bookforge Voice Workbench</title>
+    <link rel="stylesheet" href="/workbench-assets/workbench.css" />
+  </head>
+  <body>
+    <main class="shell">
+      <header class="hero">
+        <div>
+          <p class="eyebrow">Local Gemma experiment</p>
+          <h1>Speak a story into a world.</h1>
+          <p class="lede">
+            Whisper transcribes your recording locally. Gemma converts the resulting text into a
+            validated projection plan on this laptop.
+          </p>
+        </div>
+        <div class="privacy-chip"><span></span> GCP not required</div>
+      </header>
+
+      <section class="grid">
+        <article class="card input-card">
+          <div class="card-heading">
+            <div>
+              <p class="section-label">01 · Source</p>
+              <h2>Tell the page</h2>
+            </div>
+            <div class="level"><i id="micLevel"></i></div>
+          </div>
+
+          <div class="fields two-up">
+            <label>
+              <span>Story title</span>
+              <input id="titleInput" value="The Moon Gate" />
+            </label>
+            <label>
+              <span>Reading level</span>
+              <select id="levelInput">
+                <option value="1">Level 1</option>
+                <option value="2" selected>Level 2</option>
+                <option value="3">Level 3</option>
+                <option value="4">Level 4</option>
+                <option value="5">Level 5</option>
+              </select>
+            </label>
+          </div>
+
+          <label class="field-block">
+            <span>Visual direction</span>
+            <input
+              id="styleInput"
+              value="luminous cut-paper story theater in indigo, teal, cream, and coral"
+            />
+          </label>
+
+          <label class="field-block">
+            <span>Page text</span>
+            <textarea id="storyInput" rows="7">The small moth went through the red gate.</textarea>
+          </label>
+
+          <p class="interim" id="interimText">Press the microphone and speak naturally.</p>
+
+          <div class="actions">
+            <button class="button primary" id="micButton">
+              <span class="mic-dot"></span><span id="micButtonText">Start speaking</span>
+            </button>
+            <button class="button" id="compileButton">Compile with Gemma</button>
+            <a class="button projector-link" href="/projector" target="_blank">Open projector ↗</a>
+          </div>
+
+          <p class="browser-note" id="browserNote">
+            Audio is recorded only while the button is red, sent only to this laptop, transcribed
+            with local MLX Whisper, and then discarded.
+          </p>
+        </article>
+
+        <article class="card output-card">
+          <div class="card-heading">
+            <div>
+              <p class="section-label">02 · Compiler</p>
+              <h2>Generated Story Pack</h2>
+            </div>
+            <div class="status" id="status" data-state="idle"><span></span> Ready</div>
+          </div>
+
+          <div class="empty-state" id="emptyState">
+            <div class="orb"><span></span></div>
+            <strong>No world compiled yet</strong>
+            <p>Speak or type one page, then compile it with the local Gemma model.</p>
+          </div>
+
+          <div class="results hidden" id="results">
+            <div class="metric-row">
+              <div><span>Model</span><strong id="modelMetric">—</strong></div>
+              <div><span>Total time</span><strong id="timeMetric">—</strong></div>
+              <div><span>Output tokens</span><strong id="tokenMetric">—</strong></div>
+            </div>
+
+            <section class="scene-summary">
+              <p class="section-label">Scene interpretation</p>
+              <h3 id="sceneSummary"></h3>
+            </section>
+
+            <section>
+              <div class="result-heading">
+                <h3>Visual layers</h3><span id="layerCount"></span>
+              </div>
+              <div class="layer-list" id="layerList"></div>
+            </section>
+
+            <section>
+              <div class="result-heading">
+                <h3>Reading timeline</h3><span id="triggerCount"></span>
+              </div>
+              <div class="timeline" id="triggerList"></div>
+            </section>
+
+            <section class="split-results">
+              <div>
+                <h3>Literacy support</h3>
+                <div id="supportList"></div>
+              </div>
+              <div>
+                <h3>Comprehension</h3>
+                <div id="questionList"></div>
+              </div>
+            </section>
+
+            <details>
+              <summary>Raw validated JSON</summary>
+              <pre id="rawOutput"></pre>
+            </details>
+          </div>
+
+          <div class="error hidden" id="errorBox"></div>
+        </article>
+      </section>
+
+      <footer>
+        The projector stage now runs from a validated deterministic Story Pack. Generative image
+        and video providers will plug into the same immutable asset contract.
+      </footer>
+    </main>
+    <script src="/workbench-assets/workbench.js"></script>
+  </body>
+</html>

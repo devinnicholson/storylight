@@ -1,0 +1,14 @@
+{
+  "story_id": "moon-gate-demo",
+  "title": "The Moon Gate",
+  "reading_level": 2,
+  "visual_style": "luminous cut-paper story theater in indigo, teal, cream, and coral",
+  "pages": [
+    {
+      "page_id": "page-01",
+      "text": "The small moth went through the red gate.",
+      "art_direction": "A tiny moth approaches a moonlit gate on a quiet hill."
+    }
+  ]
+}
+

@@ -1,0 +1,87 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="theme-color" content="#02040d" />
+    <title>Bookforge projection stage</title>
+    <link rel="stylesheet" href="/workbench-assets/projector.css" />
+  </head>
+  <body>
+    <main id="projectionStage" aria-label="Bookforge projection stage">
+      <div class="paper-grain"></div>
+      <section class="scene" id="scene" aria-live="polite">
+        <div class="visual-layer sky" data-layer-id="layer-sky">
+          <div class="moon"><span></span></div>
+          <i class="star star-a"></i><i class="star star-b"></i><i class="star star-c"></i>
+          <i class="star star-d"></i><i class="star star-e"></i>
+        </div>
+        <div class="visual-layer hills" data-layer-id="layer-hills">
+          <div class="hill hill-back"></div>
+          <div class="hill hill-front"></div>
+          <div class="grass"></div>
+        </div>
+        <div class="visual-layer motes" data-layer-id="layer-motes">
+          <i></i><i></i><i></i><i></i><i></i><i></i><i></i>
+        </div>
+        <div class="visual-layer gate" data-layer-id="layer-gate">
+          <div class="gate-glow"></div>
+          <div class="gate-roof"></div>
+          <div class="gate-post post-left"></div>
+          <div class="gate-post post-right"></div>
+          <div class="gate-door door-left"></div>
+          <div class="gate-door door-right"></div>
+        </div>
+        <div class="visual-layer moth" data-layer-id="layer-moth">
+          <div class="moth-glow"></div>
+          <i class="wing wing-left"></i><i class="wing wing-right"></i><b></b>
+        </div>
+      </section>
+      <div class="calibration-grid" id="calibrationGrid">
+        <div class="page-bounds"><span>book / active surface</span></div>
+      </div>
+    </main>
+
+    <aside class="hud" id="hud">
+      <div class="hud-brand">
+        <div><span class="live-dot"></span> Bookforge</div>
+        <small id="packLabel">loading story pack…</small>
+      </div>
+      <div class="telemetry">
+        <div><span>Trigger</span><strong id="triggerDelay">—</strong></div>
+        <div><span>Average</span><strong id="averageDelay">—</strong></div>
+        <div><span>Frame</span><strong id="frameRate">—</strong></div>
+        <div><span>Dropped</span><strong id="droppedFrames">0</strong></div>
+      </div>
+      <div class="current-event">
+        <span id="eventType">page.loading</span>
+        <strong id="eventDetail">Moon Gate fixture</strong>
+      </div>
+      <div class="controls">
+        <button id="previousButton" title="Previous word (←)">← Word</button>
+        <button id="nextButton" class="primary" title="Next word (Space / →)">Next word →</button>
+        <button id="resetButton" title="Reset (R)">Reset</button>
+        <button id="fullscreenButton" title="Fullscreen (F)">Fullscreen</button>
+        <button id="calibrateButton" title="Calibration (C)">Calibrate</button>
+        <button id="blackoutButton" title="Blackout (B)">Blackout</button>
+      </div>
+      <div class="calibration-actions" id="calibrationActions">
+        <p>Drag the four corners to fit the projected surface.</p>
+        <button id="saveCalibrationButton">Save Yaber profile</button>
+        <button id="resetCalibrationButton">Reset corners</button>
+      </div>
+      <p class="shortcut">Space advances · ← rewinds · H hides controls</p>
+    </aside>
+
+    <div class="corner-handles" id="cornerHandles" aria-label="Projection calibration handles">
+      <button data-corner="0" aria-label="Top-left corner">1</button>
+      <button data-corner="1" aria-label="Top-right corner">2</button>
+      <button data-corner="2" aria-label="Bottom-right corner">3</button>
+      <button data-corner="3" aria-label="Bottom-left corner">4</button>
+    </div>
+
+    <footer class="reader-line" id="readerLine" aria-label="Manual word alignment timeline"></footer>
+    <div class="startup-error hidden" id="startupError"></div>
+    <script src="/workbench-assets/projector.js"></script>
+  </body>
+</html>

@@ -1,0 +1,74 @@
+{
+  "schema_version": "1.1",
+  "story_id": "moon-gate-demo",
+  "title": "The Moon Gate",
+  "reading_level": 2,
+  "visual_style": "luminous cut-paper story theater in indigo, teal, cream, and coral",
+  "compiler_model": "gemma4:e2b-it-qat",
+  "pages": [
+    {
+      "page_id": "page-01",
+      "source_text": "The small moth went through the red gate.",
+      "scene_summary": "The small moth goes through a red gate.",
+      "layers": [
+        {
+          "layer_id": "layer-01a",
+          "kind": "background",
+          "prompt": "Moonlit hill, deep indigo and teal sky, soft cream highlights. A stylized, glowing red gate sits on the ground.",
+          "z_index": 1,
+          "motion": "Static."
+        },
+        {
+          "layer_id": "layer-01b",
+          "kind": "character",
+          "prompt": "A tiny moth with delicate wings approaching a red gate. Luminous cut-paper style.",
+          "z_index": 2,
+          "motion": "Slow, gentle approach from left to center."
+        },
+        {
+          "layer_id": "layer-01c",
+          "kind": "typography",
+          "prompt": "Text: 'The small moth went through the red gate.' Elegant cream serif font.",
+          "z_index": 3,
+          "motion": "Fade in."
+        }
+      ],
+      "triggers": [
+        {
+          "trigger_id": "t1",
+          "word": "moth",
+          "occurrence": 1,
+          "action": "reveal",
+          "target_layer_id": "layer-01b",
+          "duration_ms": 500
+        },
+        {
+          "trigger_id": "t2",
+          "word": "gate",
+          "occurrence": 1,
+          "action": "reveal",
+          "target_layer_id": "layer-01a",
+          "duration_ms": 700
+        }
+      ],
+      "literacy_support": [
+        {
+          "word": "moth",
+          "grapheme": "moth",
+          "hint_ladder": ["mo", "moth"]
+        }
+      ],
+      "comprehension": [
+        {
+          "question": "What kind of creature is mentioned?",
+          "expected_concepts": ["insect"]
+        },
+        {
+          "question": "What color is the gate?",
+          "expected_concepts": ["red"]
+        }
+      ]
+    }
+  ],
+  "assets": []
+}
