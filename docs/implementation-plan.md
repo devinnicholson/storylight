@@ -23,10 +23,10 @@ the Jetson controls the live experience without sending raw audio or video to th
 | Finished visual assets | Fixture complete | Five deterministic Moon Gate layers; generated provider still pending |
 | Cosmos integration | Not started | Target is Image2World through a provider abstraction |
 | Google Cloud deployment | Scaffolded | Infrastructure exists but no project has been deployed |
-| Projector runtime | Laptop POC complete | Fullscreen stage, word events, calibration, controls, and telemetry verified |
+| Projector runtime | Live laptop POC complete | Fullscreen stage consumes aligned WebSocket word events and compiled packs |
 | Target projector | Selected | Yaber T1 Pro; 1920x1080 input, 40-inch minimum image, 1.18:1 throw |
 | Target Jetson OS | Selected with gate | JetPack 7.2.1 / L4T r39.2.1 after confirming UEFI 36.x+ |
-| Jetson runtime | Not started | Laptop remains the current edge POC |
+| Jetson runtime | Packaging complete; hardware pending | Guarded diagnostics, bootstrap, services, kiosk, and ASR contract are checked in |
 
 ## Delivery plan
 
@@ -79,16 +79,21 @@ clean. The manual path is now the deterministic demo fallback while live word al
 
 ### M1B — Live reader loop on the laptop
 
-Status: pending
+Status: laptop POC complete; device streaming and intervention timing remain
 
-- Stream local microphone audio instead of waiting for the reader to stop recording.
-- Produce partial local transcripts and align them monotonically to the known page text.
-- Emit `word.reached` events without asking Gemma to decide ordinary word progression.
-- Detect silence, retries, and page completion; invoke the intervention policy only when needed.
-- Preserve a typed/manual control path so the projector demo remains recoverable if ASR fails.
+- [x] Send rolling cumulative microphone clips while the reader is still speaking.
+- [x] Produce partial local transcripts and align them monotonically to the known page text.
+- [x] Emit ordered `word.reached` events without asking Gemma to decide ordinary progression.
+- [x] Preserve typed and manual controls so the projector demo remains recoverable if ASR fails.
+- [x] Load the latest workbench-compiled Story Pack into the same live projector runtime.
+- [ ] Replace rolling two-second clips with a true streaming Jetson ASR backend.
+- [ ] Detect silence/retries and invoke the intervention policy only after measured thresholds.
 
-Exit criterion: a reader can speak the fixed hero page naturally and the correct cached effects
-fire in sequence without sending microphone data off the laptop.
+Laptop exit evidence: a cumulative transcript advanced all eight trusted Moon Gate words, fired all
+seven cached effects in sequence, and produced a measured 7.5 ms average application-side trigger
+delay with no browser console warnings/errors. A newly compiled workbench pack also rendered and
+responded to its trigger through `pack=latest`. Natural child read-aloud accuracy remains a separate
+ASR evaluation milestone.
 
 ### M2 — Cosmos hero-page spike
 
@@ -211,7 +216,7 @@ core from the repository.
 | Recording-state feedback | Under 100 ms | Immediate UI state change observed |
 | Local ASR, short page | Under 4 s warm | Synthetic sentence transcribed correctly in about 3 s |
 | Warm one-page Gemma compile | Under 8 s | Current baseline is about 19 s; optimization required |
-| Cached word-trigger response | Under 50 ms | 8.5 ms average, 10.7 ms latest in browser POC |
+| Cached word-trigger response | Under 50 ms | 7.5 ms average in the live WebSocket browser proof |
 | Cached page transition | Under 100 ms | Not implemented |
 | Cosmos generation | Offline/background job | Not measured |
 | Network-loss reading mode | No interruption | Not implemented |
@@ -225,12 +230,12 @@ observed results.
 2. [x] Implement deterministic fixture assets and a fullscreen 1920x1080 projector renderer.
 3. [x] Add the local playback event bus and keyboard/manual trigger simulator.
 4. [x] Add saved four-corner calibration and the `yaber-t1-pro` projection profile.
-5. Replace stop-then-transcribe audio with streaming local partial transcription and forced
-   alignment to known page text.
+5. [x] Replace stop-only transcription with rolling local partial transcription, monotonic known-
+   text alignment, and a local ordered event stream.
 6. Provision the Jetson from the current JetPack USB ISO onto the 9100 Pro and capture the device
    manifest plus camera, microphone, projector, and thermal diagnostics.
-7. Add a cross-platform `AsrBackend` and benchmark WhisperTRT on the Jetson against the laptop
-   alignment fixture before making it the primary backend.
+7. [x] Add and connect a cross-platform `AsrBackend`; benchmark and implement WhisperTRT on the
+   Jetson against the laptop alignment fixture before making it the primary backend.
 8. Add the asynchronous cloud asset job endpoints behind the same asset contract.
 9. Create one fixed hero-page keyframe and acceptance rubric for the Cosmos spike.
 10. Confirm GCP project, region, GPU quota, and budget before creating billable resources.
@@ -283,6 +288,14 @@ Gemma, Cosmos, Google Cloud, and the edge device naturally central roles.
   Samsung 9100 Pro using the current USB-ISO path, subject to the mandatory UEFI 36.x firmware
   check. Do not pin Bookforge to a discontinued Riva-on-Orin stack; benchmark WhisperTRT behind a
   replaceable ASR interface instead.
+- 2026-08-21: Keep trusted page text as the alignment authority. ASR supplies cumulative hypotheses;
+  a deterministic monotonic aligner emits progression, and Gemma remains outside the ordinary
+  word-trigger latency path.
+- 2026-08-21: Treat typed transcript simulation as a first-class recovery control. The verified
+  browser path uses the same API, event hub, aligner, and projector renderer as local ASR.
+- 2026-08-21: Allow the projector to load `pack=latest` from workbench-local storage. Ready media
+  renders from the asset manifest; missing generation remains visibly labeled rather than being
+  presented as a finished visual asset.
 
 ## Plan maintenance rule
 

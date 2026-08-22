@@ -13,7 +13,11 @@ This repository now contains working model-facing services rather than only a vi
 - a Story Compiler that returns versioned scene layers, triggers, scaffolds, and questions;
 - immutable asset manifests with provider, seed, checksum, dimensions, state, and location;
 - a fullscreen 1920×1080 projector runtime with deterministic cached visuals;
-- manual word alignment, four-corner calibration, blackout, fullscreen, and live latency telemetry;
+- monotonic known-text alignment and a local WebSocket event stream for live word progression;
+- rolling local partial transcription, typed recovery controls, four-corner calibration, blackout,
+  fullscreen, and live latency telemetry;
+- direct playback of the latest workbench-compiled Story Pack, including ready image/video assets
+  and visibly labeled development layers when generation is still pending;
 - strict validation that rejects invented pages, missing visual layers, and trigger words not in
   the source text;
 - a Docker image and guarded GKE/NVIDIA L4 deployment path;
@@ -59,10 +63,17 @@ configured Gemma model. Install the Mac ASR extra with `uv sync --extra mac-asr`
 small local model with `make asr-model-pull`. GCP is not required for this flow.
 
 The projection POC is available at `http://127.0.0.1:8080/projector`. It deliberately does not call
-Gemma or GCP during playback: it loads a validated cached Moon Gate fixture and responds instantly
-to manual word events. Use Space or Right Arrow to advance, Left Arrow to rewind, `R` to reset,
-`F` for fullscreen, `C` for calibration, `B` for blackout, and `H` to hide controls. Calibration is
-saved locally as the `yaber-t1-pro` profile.
+Gemma or GCP during playback: it loads a validated cached Moon Gate fixture, connects to a local
+reader-session WebSocket, and responds instantly to aligned word events. Enter a cumulative phrase
+in the typed transcript simulator to exercise the complete recovery path. Compile in the workbench
+and use its **Open this Story Pack** link to load the new pack with `pack=latest`. Use Space or Right
+Arrow to advance, Left Arrow to rewind, `R` to reset, `F` for fullscreen, `C` for calibration, `B`
+for blackout, and `H` to hide controls. Calibration is saved locally as the `yaber-t1-pro` profile.
+
+Microphone capture remains private to the local API. While recording, the workbench sends rolling
+cumulative clips every two seconds, aligns each partial transcript to the trusted page text, and
+emits only reader events to the projector. This laptop POC is rolling-batch partial ASR—not yet a
+frame-streaming Jetson ASR engine—and the typed/manual paths remain the deterministic demo fallback.
 
 ## API surface
 
@@ -74,6 +85,9 @@ saved locally as the `yaber-t1-pro` profile.
 | `POST /v1/audio:transcribe` | No | Transcribe recorded audio with local Whisper |
 | `POST /v1/interventions:select` | Only after the fast path | Select constrained support |
 | `POST /v1/story-packs:compile` | Yes | Compile book pages into a Story Pack |
+| `PUT /v1/reader-sessions/{id}` | No | Configure trusted page text for local alignment |
+| `POST /v1/reader-sessions/{id}/transcripts:simulate` | No | Align a typed or ASR transcript and publish word events |
+| `WS /v1/reader-sessions/{id}/events` | No | Stream ordered local transcript and word events |
 
 ## Run without model weights
 
@@ -92,6 +106,25 @@ environment variable acknowledging billable resources.
 
 No GCP project or account is configured on this machine yet, so cloud resources have not been
 created.
+
+## Jetson Orin Nano
+
+The Jetson deployment track targets JetPack 7.2.1 / Jetson Linux 39.2.1 without performing or
+automating a device flash. Start with its read-only hardware and runtime report:
+
+```bash
+./deploy/jetson/check-device.sh
+```
+
+The diagnostic covers L4T, CUDA, TensorRT, Docker, Python, power mode, NVMe, camera, microphone,
+display, Chromium, and thermal zones. `bootstrap.sh` is also diagnostic-only unless an explicit
+installation option is supplied. System and graphical-user service templates provide a loopback API
+and Chromium projector kiosk, respectively.
+
+See [`deploy/jetson/README.md`](deploy/jetson/README.md) for the guarded setup, interactive smoke
+test, systemd installation, kiosk configuration, and current ASR limitation. Jetson speech
+recognition remains disabled by default until a device-native implementation is integrated with the
+portable backend contract and benchmarked.
 
 ## Design documents
 

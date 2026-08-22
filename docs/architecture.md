@@ -17,6 +17,13 @@ Gemma is not in the ordinary word-to-animation path. Known words trigger cached 
 deterministically. Gemma receives a small structured reading event only when the policy needs a
 judgment, and must answer using a constrained schema and allowlist.
 
+The current laptop vertical slice uses rolling two-second cumulative ASR clips and a deterministic
+monotonic aligner. The projector subscribes to
+`/v1/reader-sessions/{session_id}/events`; each ordered envelope contains a sequence number, event
+type, timestamp, and strict payload. The same projector also accepts typed cumulative transcripts,
+so an ASR or microphone failure does not end a live demonstration. On Jetson, a true streaming
+backend can replace the clip transcriber without changing alignment or projector contracts.
+
 ## Cloud authoring plane
 
 The cloud sees publisher-supplied book content, not a child's live session. The Story Compiler
@@ -43,3 +50,6 @@ The API uses the same structured model client locally and in GCP:
 | Mistakes, pauses, and reader profile | Visual style and curriculum constraints |
 | Live decisions | Optional anonymous aggregate measurements |
 
+Reader-session endpoints reject non-loopback connections and forwarded client headers. Their
+in-memory transcripts and word state disappear with the process; the browser never sends raw audio
+to the projector or cloud compiler.
