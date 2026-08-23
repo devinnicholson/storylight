@@ -41,6 +41,9 @@ const elements = {
   droppedFrames: document.querySelector("#droppedFrames"),
   previous: document.querySelector("#previousButton"),
   next: document.querySelector("#nextButton"),
+  previousPage: document.querySelector("#previousPageButton"),
+  nextPage: document.querySelector("#nextPageButton"),
+  pageLabel: document.querySelector("#pageLabel"),
   reset: document.querySelector("#resetButton"),
   fullscreen: document.querySelector("#fullscreenButton"),
   calibrate: document.querySelector("#calibrateButton"),
@@ -55,6 +58,8 @@ const bus = new EventTarget();
 const state = {
   pack: null,
   page: null,
+  pageIndex: 0,
+  pageTransition: null,
   tokens: [],
   cursor: -1,
   triggerIndices: new Map(),
@@ -122,14 +127,18 @@ function assertStoryPack(pack) {
   if (!supportedSchema || !Array.isArray(pack.pages) || !pack.pages.length) {
     throw new Error("Story Pack must use schema 1.1 or 2.0 and contain at least one page");
   }
-  const page = pack.pages[0];
-  if (!page.page_id || !page.source_text?.trim() || !Array.isArray(page.layers) || !Array.isArray(page.triggers)) {
-    throw new Error("Story Pack page is missing source text, layers, or triggers");
-  }
-  const layerIds = new Set(page.layers.map((layer) => layer.layer_id));
-  for (const trigger of page.triggers) {
-    if (!layerIds.has(trigger.target_layer_id)) {
-      throw new Error(`Trigger ${trigger.trigger_id} targets a missing layer`);
+  const pageIds = new Set();
+  for (const page of pack.pages) {
+    if (!page.page_id || !page.source_text?.trim() || !Array.isArray(page.layers) || !Array.isArray(page.triggers)) {
+      throw new Error("Story Pack page is missing source text, layers, or triggers");
+    }
+    if (pageIds.has(page.page_id)) throw new Error(`Story Pack repeats page ${page.page_id}`);
+    pageIds.add(page.page_id);
+    const layerIds = new Set(page.layers.map((layer) => layer.layer_id));
+    for (const trigger of page.triggers) {
+      if (!layerIds.has(trigger.target_layer_id)) {
+        throw new Error(`Trigger ${trigger.trigger_id} targets a missing layer`);
+      }
     }
   }
   return pack;
@@ -770,6 +779,53 @@ async function resetReaderSession() {
   return status;
 }
 
+function updatePageControls() {
+  const total = state.pack?.pages.length || 0;
+  elements.pageLabel.textContent = `Page ${state.pageIndex + 1} of ${total}`;
+  elements.previousPage.disabled = state.pageIndex <= 0;
+  elements.nextPage.disabled = state.pageIndex >= total - 1;
+}
+
+async function activatePage(nextIndex) {
+  if (!state.pack || nextIndex < 0 || nextIndex >= state.pack.pages.length) return;
+  state.pageIndex = nextIndex;
+  state.page = state.pack.pages[nextIndex];
+  state.pendingReaderEvents = [];
+  state.tokens = tokenize(state.page.source_text);
+  state.triggerIndices = indexTriggers(state.page);
+  state.cursor = -1;
+  clearLayerState();
+  renderTimeline();
+  updatePageControls();
+  await renderPackLayers(state.pack, state.page);
+  const session = await configureReaderSession();
+  goToWord(session.last_reached_index ?? -1);
+  const currentUrl = new URL(window.location.href);
+  currentUrl.searchParams.set("page", String(nextIndex + 1));
+  window.history.replaceState({}, "", currentUrl);
+  publish("page.loaded", {
+    pageId: state.page.page_id,
+    pageIndex: nextIndex,
+    pageCount: state.pack.pages.length,
+    assetCount: state.pack.assets.length,
+  });
+  setEvent(
+    "page.loaded",
+    `${nextIndex + 1}/${state.pack.pages.length} · ${state.tokens.length} words`,
+  );
+}
+
+function requestPage(nextIndex) {
+  if (state.pageTransition) return state.pageTransition;
+  const transition = activatePage(nextIndex)
+    .catch((error) => setEvent("page.error", error.message))
+    .finally(() => {
+      if (state.pageTransition === transition) state.pageTransition = null;
+    });
+  state.pageTransition = transition;
+  return transition;
+}
+
 function defaultCorners() {
   const viewportAspect = window.innerWidth / window.innerHeight;
   const stageAspect = LOGICAL_WIDTH / LOGICAL_HEIGHT;
@@ -921,17 +977,13 @@ async function loadStoryPack() {
       if (!response.ok) throw new Error(`Story Pack failed to load (${response.status})`);
       state.pack = assertStoryPack(await response.json());
     }
-    state.page = state.pack.pages[0];
-    await renderPackLayers(state.pack, state.page);
-    state.tokens = tokenize(state.page.source_text);
-    state.triggerIndices = indexTriggers(state.page);
     const replayLabel = OFFLINE_REPLAY ? " · offline cache" : "";
     elements.packLabel.textContent = `${state.pack.title} · ${state.pack.schema_version}${replayLabel}`;
-    renderTimeline();
-    const session = await configureReaderSession();
-    goToWord(session.last_reached_index ?? -1);
-    publish("page.loaded", {pageId: state.page.page_id, assetCount: state.pack.assets.length});
-    setEvent("page.loaded", `${state.tokens.length} words · ${state.pack.assets.length} cached layers`);
+    const requestedPage = Number.parseInt(query.get("page") || "1", 10) - 1;
+    const initialPage = Number.isInteger(requestedPage)
+      ? Math.max(0, Math.min(state.pack.pages.length - 1, requestedPage))
+      : 0;
+    await activatePage(initialPage);
   } catch (error) {
     elements.startupError.textContent = `Bookforge could not start: ${error.message}`;
     elements.startupError.classList.remove("hidden");
@@ -940,6 +992,8 @@ async function loadStoryPack() {
 
 elements.previous.addEventListener("click", () => goToWord(state.cursor - 1));
 elements.next.addEventListener("click", () => goToWord(state.cursor + 1));
+elements.previousPage.addEventListener("click", () => requestPage(state.pageIndex - 1));
+elements.nextPage.addEventListener("click", () => requestPage(state.pageIndex + 1));
 elements.reset.addEventListener("click", async () => {
   try {
     await resetReaderSession();
@@ -971,6 +1025,12 @@ document.addEventListener("keydown", (event) => {
   } else if (event.key === "ArrowLeft") {
     event.preventDefault();
     goToWord(state.cursor - 1);
+  } else if (event.key === "[") {
+    event.preventDefault();
+    requestPage(state.pageIndex - 1);
+  } else if (event.key === "]") {
+    event.preventDefault();
+    requestPage(state.pageIndex + 1);
   } else if (key === "r") elements.reset.click();
   else if (key === "f") elements.fullscreen.click();
   else if (key === "c") toggleCalibration();

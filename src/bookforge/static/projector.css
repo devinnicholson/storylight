@@ -559,7 +559,9 @@ body.hud-hidden .hud, body.hud-hidden .reader-line { opacity: 0; pointer-events:
 }
 .controls button:hover, .calibration-actions button:hover { border-color: rgba(255,255,255,.3); }
 .controls .primary { color: #061510; background: var(--green); }
+.controls button:disabled { cursor: default; opacity: .38; }
 .shortcut { margin: 9px 0 0; color: #62756c; font-size: 9px; text-align: center; }
+.shortcut strong { color: #d7e9df; font-weight: 700; }
 .shortcut span { color: #829b90; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
 
 .calibration-actions { display: none; grid-template-columns: 1fr 1fr; gap: 7px; margin-top: 9px; }

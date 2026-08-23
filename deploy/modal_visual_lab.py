@@ -34,12 +34,16 @@ CACHE_DIR = "/cache"
 MINUTES = 60
 SANA_GPU = "L4"
 MOTION_GPU = "L4"
+SCORE_GPU = "L4"
 SANA_TIMEOUT_SECONDS = 3 * 60
 MOTION_TIMEOUT_SECONDS = 4 * 60
+SCORE_TIMEOUT_SECONDS = 3 * 60
 SANA_MODEL = "Efficient-Large-Model/SANA1.5_1.6B_1024px_diffusers"
 SANA_REVISION = "caa51e5ea874be07d3a9c7c2d0fd800570b18440"
 LTX_MODEL = "Lightricks/LTX-Video"
 LTX_REVISION = "a6d59ee37c13c58261aa79027d3e41cd41960925"
+SIGLIP_MODEL = "google/siglip-so400m-patch14-384"
+SIGLIP_REVISION = "9fdffc58afc957d1a03a25b10dba0329ab15c2a3"
 GPU_USD_PER_SECOND = {"L4": 0.000222}
 DEFAULT_NEGATIVE = (
     "words, letters, captions, logo, watermark, interface, border, split screen, "
@@ -220,6 +224,87 @@ class MotionStudio:
         return outputs
 
 
+@app.cls(
+    image=runtime_image,
+    gpu=SCORE_GPU,
+    timeout=SCORE_TIMEOUT_SECONDS,
+    scaledown_window=30,
+    volumes={CACHE_DIR: model_cache},
+)
+class ScoreStudio:
+    @modal.enter()
+    def load(self) -> None:
+        from transformers import AutoModel, AutoProcessor
+
+        self.processor = AutoProcessor.from_pretrained(
+            SIGLIP_MODEL,
+            revision=SIGLIP_REVISION,
+        )
+        self.model = AutoModel.from_pretrained(
+            SIGLIP_MODEL,
+            revision=SIGLIP_REVISION,
+            torch_dtype=torch.bfloat16,
+        ).to("cuda")
+        self.model.eval()
+
+    def _decode(self, content: bytes):
+        return Image.open(io.BytesIO(content)).convert("RGB")
+
+    def _embedding(self, image):
+        inputs = self.processor(images=[image], return_tensors="pt").to("cuda")
+        with torch.inference_mode():
+            embedding = self.model.get_image_features(pixel_values=inputs["pixel_values"])
+        return torch.nn.functional.normalize(embedding.float(), dim=-1)
+
+    @modal.method()
+    def score_batch(
+        self,
+        jobs: list[dict[str, Any]],
+        reference_image: bytes | None = None,
+    ) -> list[dict[str, Any]]:
+        if not 1 <= len(jobs) <= 24:
+            raise ValueError("a score batch must contain between 1 and 24 jobs")
+        reference = self._embedding(self._decode(reference_image)) if reference_image else None
+        scores: list[dict[str, Any]] = []
+        for job in jobs:
+            image = self._decode(job["content"])
+            texts = [
+                str(job["prompt"]),
+                "a safe, warm, age-appropriate children's picture-book illustration",
+                "a frightening, violent, unsafe, or disturbing image for children",
+                "a clean illustration without readable text, captions, logos, or watermarks",
+                "an image containing readable words, captions, logos, or watermarks",
+            ]
+            inputs = self.processor(
+                text=texts,
+                images=[image],
+                padding="max_length",
+                return_tensors="pt",
+            ).to("cuda")
+            with torch.inference_mode():
+                output = self.model(**inputs)
+                logits = output.logits_per_image[0].float()
+                embedding = torch.nn.functional.normalize(output.image_embeds.float(), dim=-1)
+            safety = torch.softmax(logits[1:3], dim=0)[0]
+            no_text = torch.softmax(logits[3:5], dim=0)[0]
+            consistency = (
+                (torch.nn.functional.cosine_similarity(embedding, reference).item() + 1) / 2
+                if reference is not None
+                else 1.0
+            )
+            scores.append(
+                {
+                    "id": str(job["id"]),
+                    "sha256": str(job["sha256"]),
+                    "story_fidelity": torch.sigmoid(logits[0]).item(),
+                    "character_consistency": consistency,
+                    "child_safety": safety.item(),
+                    "no_text": no_text.item(),
+                }
+            )
+        return scores
+
+
 def _load_jobs(prompt_file: str, *, limit: int) -> list[dict[str, Any]]:
     payload = json.loads(Path(prompt_file).read_text())
     jobs = payload.get("jobs")
@@ -351,6 +436,29 @@ def _reject_recorded_jobs(ledger, *, stage: str, jobs: list[dict[str, Any]]) -> 
         raise ValueError(f"experiment IDs already recorded: {', '.join(duplicates)}")
 
 
+def _load_score_jobs(manifest_path: str) -> list[dict[str, Any]]:
+    manifest = json.loads(Path(manifest_path).read_text())
+    records = manifest.get("records")
+    if not isinstance(records, list) or not 1 <= len(records) <= 24:
+        raise ValueError("candidate manifest requires between 1 and 24 records")
+    jobs: list[dict[str, Any]] = []
+    for record in records:
+        source = Path(record["artifact_path"])
+        content = source.read_bytes()
+        digest = hashlib.sha256(content).hexdigest()
+        if digest != record["sha256"]:
+            raise ValueError(f"candidate checksum mismatch: {record['experiment_id']}")
+        jobs.append(
+            {
+                "id": record["experiment_id"],
+                "prompt": record["prompt"],
+                "sha256": digest,
+                "content": content,
+            }
+        )
+    return jobs
+
+
 @app.local_entrypoint()
 def master_batch_cli(
     prompt_file: str,
@@ -423,3 +531,67 @@ def motion_batch_cli(
     )
     ledger.release(reservation_id)
     _record_budget(ledger, ledger_path, records)
+
+
+@app.local_entrypoint()
+def score_batch_cli(
+    manifest_path: str,
+    output_path: str,
+    reference_image_path: str = "",
+    plan_file: str = "experiments/visual-lab/plan.json",
+    ledger_path: str = "artifacts/visual-lab/ledger.json",
+) -> None:
+    from bookforge.visual_lab import GenerationRecord
+
+    jobs = _load_score_jobs(manifest_path)
+    reference = Path(reference_image_path).read_bytes() if reference_image_path else None
+    ledger = _open_budget(plan_file, ledger_path)
+    score_id = f"score:{hashlib.sha256(Path(manifest_path).read_bytes()).hexdigest()[:16]}"
+    if any(record.experiment_id == score_id for record in ledger.records):
+        raise ValueError(f"score batch already recorded: {score_id}")
+    reservation_id = _reserve_budget(
+        ledger,
+        ledger_path=ledger_path,
+        stage="score",
+        prompt_file=manifest_path,
+        gpu=SCORE_GPU,
+        timeout_seconds=SCORE_TIMEOUT_SECONDS,
+    )
+    started = time.perf_counter()
+    scores = ScoreStudio().score_batch.remote(jobs, reference)
+    remote_seconds = time.perf_counter() - started
+    payload = {
+        "schema_version": "1.0",
+        "model": SIGLIP_MODEL,
+        "model_revision": SIGLIP_REVISION,
+        "gpu": SCORE_GPU,
+        "remote_seconds": remote_seconds,
+        "estimated_gpu_usd": remote_seconds * GPU_USD_PER_SECOND[SCORE_GPU],
+        "reference_image": reference_image_path,
+        "scores": scores,
+    }
+    destination = Path(output_path)
+    destination.parent.mkdir(parents=True, exist_ok=True)
+    serialized = json.dumps(payload, indent=2, sort_keys=True) + "\n"
+    destination.write_text(serialized)
+    ledger.release(reservation_id)
+    ledger.add(
+        GenerationRecord(
+            experiment_id=score_id,
+            stage="score",
+            model=SIGLIP_MODEL,
+            model_revision=SIGLIP_REVISION,
+            gpu=SCORE_GPU,
+            seed=0,
+            prompt="Projection fidelity, child-safety, no-text, and character consistency scoring",
+            artifact_path=str(destination),
+            sha256=hashlib.sha256(serialized.encode()).hexdigest(),
+            generation_seconds=remote_seconds,
+            estimated_gpu_usd=payload["estimated_gpu_usd"],
+            width=384,
+            height=384,
+            frames=len(scores),
+        )
+    )
+    ledger.write(Path(ledger_path))
+    print(serialized, end="")

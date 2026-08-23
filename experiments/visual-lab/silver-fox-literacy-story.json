@@ -9,32 +9,44 @@
     {
       "page_id": "page-01",
       "text": "At dusk, a silver fox carried a golden lantern beneath the enormous cedar trees.",
-      "beat": "The fox enters the blue forest with the lantern as the sole warm focal light."
+      "beat": "The fox enters the blue forest with the lantern as the sole warm focal light.",
+      "trigger_word": "fox",
+      "trigger_action": "reveal"
     },
     {
       "page_id": "page-02",
       "text": "On the path, glowing letters had fallen from a frightened little book.",
-      "beat": "The fox discovers a small open book and a trail of dim paper letters."
+      "beat": "The fox discovers a small open book and a trail of dim paper letters.",
+      "trigger_word": "letters",
+      "trigger_action": "glow"
     },
     {
       "page_id": "page-03",
       "text": "The fox listened while a young reader slowly sounded out each letter.",
-      "beat": "A child reads beside the fox; individual letter-shaped lights begin to wake."
+      "beat": "A child reads beside the fox; individual letter-shaped lights begin to wake.",
+      "trigger_word": "reader",
+      "trigger_action": "reveal"
     },
     {
       "page_id": "page-04",
       "text": "Every spoken word rose like a firefly and returned to the waiting page.",
-      "beat": "Warm word-shaped fireflies arc from the reader toward the open book."
+      "beat": "Warm word-shaped fireflies arc from the reader toward the open book.",
+      "trigger_word": "word",
+      "trigger_action": "move"
     },
     {
       "page_id": "page-05",
       "text": "When the final word was read, the dark library bloomed with color.",
-      "beat": "A hidden forest library transforms from indigo darkness into luminous color."
+      "beat": "A hidden forest library transforms from indigo darkness into luminous color.",
+      "trigger_word": "library",
+      "trigger_action": "transform"
     },
     {
       "page_id": "page-06",
       "text": "The fox placed the bright book where every young reader could reach it.",
-      "beat": "The fox presents the restored book on a low welcoming shelf for many children."
+      "beat": "The fox presents the restored book on a low welcoming shelf for many children.",
+      "trigger_word": "book",
+      "trigger_action": "glow"
     }
   ]
 }

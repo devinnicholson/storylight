@@ -78,6 +78,8 @@
         </div>
       </form>
       <div class="controls">
+        <button id="previousPageButton" title="Previous page ([)">← Page</button>
+        <button id="nextPageButton" title="Next page (])">Next page →</button>
         <button id="previousButton" title="Previous word (←)">← Word</button>
         <button id="nextButton" class="primary" title="Next word (Space / →)">Next word →</button>
         <button id="resetButton" title="Reset (R)">Reset</button>
@@ -90,7 +92,7 @@
         <button id="saveCalibrationButton">Save Yaber profile</button>
         <button id="resetCalibrationButton">Reset corners</button>
       </div>
-      <p class="shortcut">Space advances · ← rewinds · H hides controls · live session <span id="sessionLabel"></span></p>
+      <p class="shortcut"><strong id="pageLabel">Page 1 of 1</strong> · [ ] changes page · Space advances · ← rewinds · H hides controls · live session <span id="sessionLabel"></span></p>
     </aside>
 
     <div class="corner-handles" id="cornerHandles" aria-label="Projection calibration handles">
@@ -102,6 +104,6 @@
 
     <footer class="reader-line" id="readerLine" aria-label="Manual word alignment timeline"></footer>
     <div class="startup-error hidden" id="startupError"></div>
-    <script src="/workbench-assets/projector.js?v=0.1.0-hw7"></script>
+    <script src="/workbench-assets/projector.js?v=0.1.0-hw8"></script>
   </body>
 </html>

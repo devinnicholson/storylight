@@ -126,6 +126,34 @@ The visual lab intentionally stops instead of silently falling back when the sel
 available. Premium GPU access was not enabled on the no-payment Modal workspace, so the planned
 Cosmos comparison remains gated rather than adding a payment method or risking overage.
 
+The six-page literacy pipeline adds two independent quality gates. Local FFmpeg measurements cover
+checksum integrity, projection luminance and contrast, frame rate, temporal change, and loop-end
+SSIM. A pinned SigLIP scorer on the same bounded Modal L4 measures prompt fidelity, character
+continuity, child-safety contrast, and accidental text. The selector refuses mismatched checksums,
+missing pages, unsafe candidates, or text-contaminated candidates before ranking the remaining art.
+
+```bash
+python -m bookforge.visual_evaluation artifacts/visual-lab/lost-words-masters/*.png \
+  --output artifacts/visual-lab/lost-words-technical.json
+modal run deploy/modal_visual_lab.py::score_batch_cli \
+  --manifest-path artifacts/visual-lab/lost-words-masters/manifest.json \
+  --output-path artifacts/visual-lab/lost-words-semantic.json
+python -m bookforge.visual_selection \
+  artifacts/visual-lab/lost-words-technical.json \
+  artifacts/visual-lab/lost-words-semantic.json \
+  --expected-pages 6 \
+  --output artifacts/visual-lab/lost-words-selection.json
+python -m bookforge.literacy_pack \
+  experiments/visual-lab/silver-fox-literacy-story.json \
+  artifacts/visual-lab/lost-words-final-assets.json \
+  --asset-root . \
+  --output artifacts/visual-lab/silver-fox-lost-words.story-pack.json
+```
+
+The projector validates every page in a Story Pack. Its page controls and `[` / `]` shortcuts swap
+the motion scene, trusted reading text, trigger index, URL page number, and local reader generation
+without restarting the service.
+
 Microphone capture remains private to the local API. While recording, the workbench sends rolling
 cumulative clips every two seconds, aligns each partial transcript to the trusted page text, and
 emits only reader events to the projector. This laptop POC is rolling-batch partial ASR—not yet a
@@ -197,3 +225,5 @@ run on JetPack 7.2.1.
 - [`benchmarks/live-reader-laptop-2026-08-21.json`](benchmarks/live-reader-laptop-2026-08-21.json): clean-wheel, browser, persistence, and live event latency evidence
 - [`benchmarks/scene-engine-modal-t4-2026-08-22.json`](benchmarks/scene-engine-modal-t4-2026-08-22.json): real Gemma → Modal master/depth → local ASR → WebGL trigger evidence
 - [`benchmarks/visual-lab-modal-l4-2026-08-22.json`](benchmarks/visual-lab-modal-l4-2026-08-22.json): pinned SANA/LTX generation, loop quality, cost, and projector playback evidence
+- [`benchmarks/visual-technical-existing-2026-08-23.json`](benchmarks/visual-technical-existing-2026-08-23.json): reproducible FFmpeg projection and loop measurements for the two accepted scenes
+- [`benchmarks/literacy-navigation-2026-08-23.json`](benchmarks/literacy-navigation-2026-08-23.json): six-page session, media lifecycle, and final-page live-trigger browser acceptance

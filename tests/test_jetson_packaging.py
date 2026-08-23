@@ -88,6 +88,22 @@ def test_projector_shortcuts_do_not_fire_while_typing() -> None:
     assert "target instanceof HTMLTextAreaElement" in projector
 
 
+def test_projector_validates_and_navigates_every_story_page() -> None:
+    projector = (ROOT / "src/bookforge/static/projector.js").read_text()
+    markup = (ROOT / "src/bookforge/static/projector.html").read_text()
+
+    assert "for (const page of pack.pages)" in projector
+    assert "async function activatePage(nextIndex)" in projector
+    assert "await renderPackLayers(state.pack, state.page);" in projector
+    assert "await configureReaderSession();" in projector
+    assert 'currentUrl.searchParams.set("page", String(nextIndex + 1));' in projector
+    assert 'event.key === "["' in projector
+    assert 'event.key === "]"' in projector
+    assert 'id="previousPageButton"' in markup
+    assert 'id="nextPageButton"' in markup
+    assert 'id="pageLabel"' in markup
+
+
 def test_workbench_starts_each_recording_with_a_fresh_reader_session() -> None:
     workbench = (ROOT / "src/bookforge/static/workbench.js").read_text()
 
