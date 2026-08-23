@@ -28,7 +28,8 @@ def story_compile_prompt(request: StoryCompileRequest) -> str:
 Requirements:
 - Preserve the supplied story. Do not rewrite or extend its plot.
 - Make every visual layer independently renderable and stylistically consistent.
-- Tie triggers to words that literally appear on that page.
+- Every trigger word must be exactly one token that literally appears on that page; never return
+  a phrase such as "red gate". Anchor a phrase-level event to its final spoken word instead.
 - Use concise image-generation prompts with subject, composition, palette, and transparent-layer
   intent where relevant.
 - Motion descriptions must be deterministic and achievable with 2D transforms, opacity, masks,
@@ -41,4 +42,3 @@ Requirements:
 
 Book input:
 """ + json.dumps(request.model_dump(mode="json"), indent=2)
-

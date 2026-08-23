@@ -11,9 +11,11 @@ from bookforge.domain import (
     AssetState,
     BookPageInput,
     GeneratedPagePlan,
+    GeneratedStoryPlan,
     InterventionRequest,
     StoryCompileRequest,
     StoryPack,
+    StoryTrigger,
     SupportAction,
     VisualLayer,
 )
@@ -124,6 +126,54 @@ def test_story_compiler_returns_versioned_validated_pack() -> None:
     )
     assert response.story_pack.pages[0].triggers[0].word == "the"
     assert response.metrics.backend == "fake"
+
+
+def test_story_compiler_anchors_a_valid_trigger_phrase_to_its_final_word() -> None:
+    request = StoryCompileRequest(
+        story_id="moon-gate",
+        title="The Moon Gate",
+        pages=[
+            BookPageInput(
+                page_id="page-01",
+                text="The red gate opened, and the red gate glowed.",
+            )
+        ],
+    )
+    plan = GeneratedStoryPlan(
+        pages=[
+            GeneratedPagePlan(
+                page_id="page-01",
+                scene_summary="A red gate glows.",
+                layers=[
+                    VisualLayer(
+                        layer_id="gate",
+                        kind="prop",
+                        prompt="A glowing red paper gate",
+                        z_index=1,
+                        motion="Reveal with opacity",
+                    )
+                ],
+                triggers=[
+                    StoryTrigger(
+                        trigger_id="glow-second-gate",
+                        word="red gate",
+                        occurrence=2,
+                        action="glow",
+                        target_layer_id="gate",
+                        duration_ms=300,
+                    )
+                ],
+                literacy_support=[],
+                comprehension=[],
+            )
+        ]
+    )
+
+    normalized = BookforgeService._validate_story_plan(request, plan)
+
+    trigger = normalized.pages[0].triggers[0]
+    assert trigger.word == "gate"
+    assert trigger.occurrence == 2
 
 
 def test_empty_action_allowlist_is_rejected() -> None:

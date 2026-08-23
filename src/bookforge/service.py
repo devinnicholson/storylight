@@ -11,6 +11,7 @@ from bookforge.domain import (
 )
 from bookforge.model_client import StructuredModelClient
 from bookforge.prompts import SYSTEM_PROMPT, intervention_prompt, story_compile_prompt
+from bookforge.reader import tokenize
 
 
 class BookforgeService:
@@ -70,7 +71,7 @@ class BookforgeService:
             prompt=story_compile_prompt(request),
             output_type=GeneratedStoryPlan,
         )
-        self._validate_story_plan(request, generated)
+        generated = self._validate_story_plan(request, generated)
         source_text_by_page = {page.page_id: page.text for page in request.pages}
         compiled_pages = [
             page.model_copy(update={"source_text": source_text_by_page[page.page_id]})
@@ -87,7 +88,9 @@ class BookforgeService:
         return CompileResponse(story_pack=pack, metrics=metrics)
 
     @staticmethod
-    def _validate_story_plan(request: StoryCompileRequest, plan: GeneratedStoryPlan) -> None:
+    def _validate_story_plan(
+        request: StoryCompileRequest, plan: GeneratedStoryPlan
+    ) -> GeneratedStoryPlan:
         expected_pages = [page.page_id for page in request.pages]
         actual_pages = [page.page_id for page in plan.pages]
         if actual_pages != expected_pages:
@@ -97,12 +100,12 @@ class BookforgeService:
             )
             raise ValueError(message)
 
-        source_pages = {page.page_id: page.text.lower().split() for page in request.pages}
+        source_pages = {page.page_id: tokenize(page.text) for page in request.pages}
+        normalized_pages = []
         for page in plan.pages:
             layer_ids = {layer.layer_id for layer in page.layers}
-            source_words = {
-                word.strip(".,!?;:\"'()[]{}").lower() for word in source_pages[page.page_id]
-            }
+            source_words = source_pages[page.page_id]
+            normalized_triggers = []
             for trigger in page.triggers:
                 if trigger.target_layer_id not in layer_ids:
                     message = (
@@ -110,7 +113,31 @@ class BookforgeService:
                         f"{trigger.target_layer_id}"
                     )
                     raise ValueError(message)
-                if trigger.word.strip(".,!?;:\"'()[]{}").lower() not in source_words:
+                trigger_words = tokenize(trigger.word)
+                if not trigger_words:
                     raise ValueError(
                         f"Trigger word {trigger.word!r} does not occur on page {page.page_id}"
                     )
+                phrase_starts = [
+                    index
+                    for index in range(len(source_words) - len(trigger_words) + 1)
+                    if source_words[index : index + len(trigger_words)] == trigger_words
+                ]
+                if trigger.occurrence > len(phrase_starts):
+                    raise ValueError(
+                        f"Trigger word {trigger.word!r} occurrence {trigger.occurrence} "
+                        f"does not occur on page {page.page_id}"
+                    )
+                phrase_start = phrase_starts[trigger.occurrence - 1]
+                anchor_index = phrase_start + len(trigger_words) - 1
+                anchor_word = source_words[anchor_index]
+                anchor_occurrence = sum(
+                    word == anchor_word for word in source_words[: anchor_index + 1]
+                )
+                normalized_triggers.append(
+                    trigger.model_copy(
+                        update={"word": anchor_word, "occurrence": anchor_occurrence}
+                    )
+                )
+            normalized_pages.append(page.model_copy(update={"triggers": normalized_triggers}))
+        return plan.model_copy(update={"pages": normalized_pages})
