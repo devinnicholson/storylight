@@ -129,6 +129,23 @@ function layerPalette(index) {
   return palettes[index % palettes.length];
 }
 
+function placeholderLayout(kind, index) {
+  const layouts = {
+    background: {x: 60, y: 18, width: 48, height: 15},
+    character: {x: 50, y: 66, width: 25, height: 36},
+    prop: {x: 76, y: 62, width: 25, height: 34},
+    effect: {x: 76, y: 43, width: 27, height: 29},
+    typography: {x: 58, y: 31, width: 42, height: 15},
+  };
+  const layout = layouts[kind] || layouts.prop;
+  const offset = (index % 3) * 3;
+  return {
+    ...layout,
+    x: Math.min(84, layout.x + offset),
+    y: Math.min(78, layout.y + offset),
+  };
+}
+
 function renderPackLayers(pack, page) {
   const fixture = pack.story_id === "moon-gate-projector-fixture";
   elements.fixtureScene.hidden = !fixture;
@@ -155,6 +172,7 @@ function renderPackLayers(pack, page) {
     const asset = assets.get(layer.layer_id);
     const uri = asset?.local_uri || "";
     if (asset && uri.startsWith("/v1/assets/")) {
+      node.classList.add("has-asset");
       const media = document.createElement(asset.kind === "video_loop" ? "video" : "img");
       media.src = uri;
       if (media instanceof HTMLVideoElement) {
@@ -166,9 +184,19 @@ function renderPackLayers(pack, page) {
       media.alt = layer.prompt;
       node.append(media);
     } else {
+      const layout = placeholderLayout(layer.kind, index);
+      node.classList.add("development-layer");
+      node.style.setProperty("--placeholder-x", `${layout.x}%`);
+      node.style.setProperty("--placeholder-y", `${layout.y}%`);
+      node.style.setProperty("--placeholder-width", `${layout.width}%`);
+      node.style.setProperty("--placeholder-height", `${layout.height}%`);
       const label = document.createElement("span");
       label.className = "layer-development-label";
-      label.textContent = `${layer.kind} · ${layer.prompt}`;
+      const kind = document.createElement("small");
+      kind.textContent = `${layer.kind} · generated plan`;
+      const prompt = document.createElement("strong");
+      prompt.textContent = layer.prompt;
+      label.append(kind, prompt);
       node.append(label);
     }
     elements.generatedScene.append(node);

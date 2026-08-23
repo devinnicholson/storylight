@@ -33,6 +33,16 @@ def test_projector_only_loads_assets_from_the_loopback_cache() -> None:
     assert 'fetch("/workbench-assets/moon-gate.story-pack.json"' in projector
 
 
+def test_generated_pack_placeholders_use_separate_storyboard_positions() -> None:
+    projector = (ROOT / "src/bookforge/static/projector.js").read_text()
+    stylesheet = (ROOT / "src/bookforge/static/projector.css").read_text()
+
+    assert "placeholderLayout(layer.kind, index)" in projector
+    assert 'node.classList.add("development-layer")' in projector
+    assert "--placeholder-x" in stylesheet
+    assert ".generic-layer.development-layer::before" in stylesheet
+
+
 def test_projector_shortcuts_do_not_fire_while_typing() -> None:
     projector = (ROOT / "src/bookforge/static/projector.js").read_text()
 
