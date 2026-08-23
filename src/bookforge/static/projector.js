@@ -5,6 +5,9 @@ const FIRED_CLASSES = ["action-reveal", "action-move", "action-transform", "acti
 const query = new URLSearchParams(window.location.search);
 const SESSION_ID = query.get("session") || "moon-gate-demo";
 const PACK_SOURCE = query.get("pack") || "fixture";
+const PRESENTATION_MODE = query.get("present") === "1";
+
+if (PRESENTATION_MODE) document.body.classList.add("hud-hidden");
 
 const elements = {
   stage: document.querySelector("#projectionStage"),

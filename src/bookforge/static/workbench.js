@@ -7,6 +7,8 @@ const elements = {
   micButtonText: document.querySelector("#micButtonText"),
   compileButton: document.querySelector("#compileButton"),
   projectorLink: document.querySelector("#projectorLink"),
+  projectionPreview: document.querySelector("#projectionPreview"),
+  projectorFrame: document.querySelector("#projectorFrame"),
   interim: document.querySelector("#interimText"),
   status: document.querySelector("#status"),
   empty: document.querySelector("#emptyState"),
@@ -55,9 +57,15 @@ function setSceneReady(ready) {
   elements.projectorLink.setAttribute("aria-disabled", String(!ready));
   elements.projectorLink.tabIndex = ready ? 0 : -1;
   elements.micButton.disabled = !ready || !canRecordAudio;
+  elements.projectionPreview.classList.toggle("hidden", !ready);
   if (ready && !listening && !starting) {
     elements.interim.textContent = "Open the projection view, then press Start reading.";
   }
+}
+
+function reloadProjectionPreview() {
+  const cacheBuster = Date.now();
+  elements.projectorFrame.src = `/projector?pack=latest&session=${readerSessionId}&present=1&preview=${cacheBuster}`;
 }
 
 function safeText(value) {
@@ -320,6 +328,7 @@ function renderPack(payload) {
   elements.error.classList.add("hidden");
   elements.results.classList.remove("hidden");
   setSceneReady(true);
+  reloadProjectionPreview();
 }
 
 async function compileStory() {

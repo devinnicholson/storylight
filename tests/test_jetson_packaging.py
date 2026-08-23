@@ -97,6 +97,20 @@ def test_workbench_explains_the_three_step_reader_flow() -> None:
     assert "Read it aloud" in workbench
     assert "it does not create the page text" in workbench
     assert "Open projection view" in workbench
+    assert "Exact projector output" in workbench
+    assert 'id="projectorFrame"' in workbench
+
+    controller = (ROOT / "src/bookforge/static/workbench.js").read_text()
+    assert "reloadProjectionPreview();" in controller
+    assert (
+        'elements.projectorFrame.src = `/projector?pack=latest&session=${readerSessionId}'
+        in controller
+    )
+    assert "&present=1" in controller
+
+    projector = (ROOT / "src/bookforge/static/projector.js").read_text()
+    assert 'query.get("present") === "1"' in projector
+    assert 'document.body.classList.add("hud-hidden")' in projector
 
 
 def test_hardware_evidence_and_privacy_scripts_are_executable() -> None:

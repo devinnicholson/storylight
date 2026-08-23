@@ -87,10 +87,25 @@
           <div class="card-heading">
             <div>
               <p class="section-label">Step 2</p>
-              <h2>See what Gemma created</h2>
+              <h2>See the actual projection</h2>
             </div>
             <div class="status" id="status" data-state="idle"><span></span> Waiting for a page</div>
           </div>
+
+          <section class="projection-preview hidden" id="projectionPreview">
+            <div class="preview-label">
+              <span><i></i> Exact projector output</span>
+              <small>The same live page that will be sent to the physical projector</small>
+            </div>
+            <div class="preview-screen">
+              <iframe
+                id="projectorFrame"
+                title="Live preview of the Bookforge projector output"
+                loading="eager"
+                allow="fullscreen"
+              ></iframe>
+            </div>
+          </section>
 
           <div class="empty-state" id="emptyState">
             <div class="orb"><span></span></div>
@@ -99,6 +114,9 @@
           </div>
 
           <div class="results hidden" id="results">
+            <details class="scene-details">
+              <summary>See how Gemma designed this projection</summary>
+              <div class="scene-details-body">
             <section class="scene-summary">
               <p class="section-label">The scene</p>
               <h3 id="sceneSummary"></h3>
@@ -139,6 +157,8 @@
               <summary>Developer details</summary>
               <pre id="rawOutput"></pre>
             </details>
+              </div>
+            </details>
           </div>
 
           <div class="error hidden" id="errorBox"></div>
@@ -156,7 +176,7 @@
               <a
                 class="button projector-link disabled"
                 id="projectorLink"
-                href="/projector?pack=latest&amp;session=moon-gate-demo"
+                href="/projector?pack=latest&amp;session=moon-gate-demo&amp;present=1"
                 target="_blank"
                 aria-disabled="true"
               >Open projection view ↗</a>
