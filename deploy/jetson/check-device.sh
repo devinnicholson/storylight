@@ -65,7 +65,11 @@ fi
 
 section "CUDA"
 if have nvcc; then
-  NVCC_LINE="$(nvcc --version 2>/dev/null | tail -n 1)"
+  NVCC_OUTPUT="$(nvcc --version 2>/dev/null || true)"
+  NVCC_LINE="$(printf '%s\n' "$NVCC_OUTPUT" | grep -m 1 -E 'release [0-9]+\.[0-9]+' || true)"
+  if [[ -z "$NVCC_LINE" ]]; then
+    NVCC_LINE="$(printf '%s\n' "$NVCC_OUTPUT" | tail -n 1)"
+  fi
   printf '%s\n' "$NVCC_LINE"
   if [[ "$NVCC_LINE" == *"release ${EXPECTED_CUDA_PREFIX}"* ]]; then
     pass "CUDA release matches the JetPack 7.2.1 family"

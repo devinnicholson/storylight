@@ -173,6 +173,13 @@ def test_hardware_evidence_and_privacy_scripts_are_executable() -> None:
         assert path.stat().st_mode & 0o111
 
 
+def test_device_check_reads_nvcc_release_line_instead_of_build_footer() -> None:
+    checker = (ROOT / "deploy/jetson/check-device.sh").read_text()
+
+    assert 'NVCC_OUTPUT="$(nvcc --version' in checker
+    assert "grep -m 1 -E 'release [0-9]+\\.[0-9]+'" in checker
+
+
 def test_hardware_evidence_wrapper_requires_and_passes_service_pid() -> None:
     wrapper = (ROOT / "deploy/jetson/collect-evidence.sh").read_text()
 
