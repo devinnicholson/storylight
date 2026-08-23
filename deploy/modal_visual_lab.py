@@ -23,6 +23,7 @@ from __future__ import annotations
 import hashlib
 import io
 import json
+import sys
 import time
 from pathlib import Path
 from typing import Any
@@ -36,7 +37,7 @@ SANA_GPU = "L4"
 MOTION_GPU = "L4"
 SCORE_GPU = "L4"
 SANA_TIMEOUT_SECONDS = 3 * 60
-MOTION_TIMEOUT_SECONDS = 4 * 60
+MOTION_TIMEOUT_SECONDS = 10 * 60
 SCORE_TIMEOUT_SECONDS = 3 * 60
 SANA_MODEL = "Efficient-Large-Model/SANA1.5_1.6B_1024px_diffusers"
 SANA_REVISION = "caa51e5ea874be07d3a9c7c2d0fd800570b18440"
@@ -168,6 +169,47 @@ class MotionStudio:
             torch_dtype=torch.bfloat16,
         ).to("cuda")
 
+    def _generate_one(self, source, job: dict[str, Any]) -> dict[str, Any]:
+        width = int(job.get("width", 768))
+        height = int(job.get("height", 512))
+        _validate_dimensions(width, height)
+        seed = int(job["seed"])
+        num_frames = int(job.get("frames", 49))
+        fps = int(job.get("fps", 24))
+        if not 9 <= num_frames <= 97 or (num_frames - 1) % 8:
+            raise ValueError("frames must be 8n+1 and between 9 and 97")
+        if not 12 <= fps <= 30:
+            raise ValueError("fps must be between 12 and 30")
+        started = time.perf_counter()
+        result = self.pipe(
+            image=source,
+            prompt=str(job["prompt"]),
+            negative_prompt=str(job.get("negative_prompt", DEFAULT_MOTION_NEGATIVE)),
+            width=width,
+            height=height,
+            num_frames=num_frames,
+            num_inference_steps=int(job.get("steps", 40)),
+            generator=torch.Generator(device="cuda").manual_seed(seed),
+        ).frames[0]
+        # Forward then backward makes the endpoint identical and prevents the
+        # visible jump that ruins projected ambient loops.
+        loop_frames = result + list(reversed(result[1:-1]))
+        output_path = Path("/tmp") / f"{_safe_slug(str(job['id']))}-{seed}.mp4"
+        diffusers.utils.export_to_video(loop_frames, output_path, fps=fps)
+        content = output_path.read_bytes()
+        output_path.unlink(missing_ok=True)
+        return {
+            "id": str(job["id"]),
+            "seed": seed,
+            "width": width,
+            "height": height,
+            "frames": len(loop_frames),
+            "fps": fps,
+            "generation_seconds": time.perf_counter() - started,
+            "sha256": hashlib.sha256(content).hexdigest(),
+            "content": content,
+        }
+
     @modal.method()
     def generate_batch(
         self,
@@ -177,49 +219,20 @@ class MotionStudio:
         if not 1 <= len(jobs) <= 12:
             raise ValueError("a motion batch must contain between 1 and 12 jobs")
         source = diffusers.utils.load_image(Image.open(io.BytesIO(image_bytes))).convert("RGB")
-        outputs: list[dict[str, Any]] = []
-        for job in jobs:
-            width = int(job.get("width", 768))
-            height = int(job.get("height", 512))
-            _validate_dimensions(width, height)
-            seed = int(job["seed"])
-            num_frames = int(job.get("frames", 49))
-            fps = int(job.get("fps", 24))
-            if not 9 <= num_frames <= 97 or (num_frames - 1) % 8:
-                raise ValueError("frames must be 8n+1 and between 9 and 97")
-            if not 12 <= fps <= 30:
-                raise ValueError("fps must be between 12 and 30")
-            started = time.perf_counter()
-            result = self.pipe(
-                image=source,
-                prompt=str(job["prompt"]),
-                negative_prompt=str(job.get("negative_prompt", DEFAULT_MOTION_NEGATIVE)),
-                width=width,
-                height=height,
-                num_frames=num_frames,
-                num_inference_steps=int(job.get("steps", 40)),
-                generator=torch.Generator(device="cuda").manual_seed(seed),
-            ).frames[0]
-            # Forward then backward makes the endpoint identical and prevents the
-            # visible jump that ruins projected ambient loops.
-            loop_frames = result + list(reversed(result[1:-1]))
-            output_path = Path("/tmp") / f"{_safe_slug(str(job['id']))}-{seed}.mp4"
-            diffusers.utils.export_to_video(loop_frames, output_path, fps=fps)
-            content = output_path.read_bytes()
-            output_path.unlink(missing_ok=True)
-            outputs.append(
-                {
-                    "id": str(job["id"]),
-                    "seed": seed,
-                    "width": width,
-                    "height": height,
-                    "frames": len(loop_frames),
-                    "fps": fps,
-                    "generation_seconds": time.perf_counter() - started,
-                    "sha256": hashlib.sha256(content).hexdigest(),
-                    "content": content,
-                }
-            )
+        outputs = [self._generate_one(source, job) for job in jobs]
+        torch.cuda.empty_cache()
+        return outputs
+
+    @modal.method()
+    def generate_multi_batch(self, requests: list[dict[str, Any]]) -> list[dict[str, Any]]:
+        if not 1 <= len(requests) <= 12:
+            raise ValueError("a multi-image motion batch must contain between 1 and 12 jobs")
+        outputs = []
+        for request in requests:
+            source = diffusers.utils.load_image(
+                Image.open(io.BytesIO(request["image_bytes"]))
+            ).convert("RGB")
+            outputs.append(self._generate_one(source, request["job"]))
         torch.cuda.empty_cache()
         return outputs
 
@@ -380,8 +393,17 @@ def _write_results(
     return records
 
 
+def _budget_types():
+    repository_source = Path(__file__).resolve().parents[1] / "src"
+    if str(repository_source) not in sys.path:
+        sys.path.insert(0, str(repository_source))
+    from bookforge.visual_lab import BudgetEnvelope, GenerationRecord, VisualLabLedger
+
+    return BudgetEnvelope, GenerationRecord, VisualLabLedger
+
+
 def _open_budget(plan_file: str, ledger_path: str):
-    from bookforge.visual_lab import BudgetEnvelope, VisualLabLedger
+    BudgetEnvelope, _, VisualLabLedger = _budget_types()
 
     plan = json.loads(Path(plan_file).read_text())
     envelope = BudgetEnvelope(**plan["budget"])
@@ -395,7 +417,7 @@ def _open_budget(plan_file: str, ledger_path: str):
 
 
 def _record_budget(ledger, ledger_path: str, records: list[dict[str, Any]]) -> None:
-    from bookforge.visual_lab import GenerationRecord
+    _, GenerationRecord, _ = _budget_types()
 
     for record in records:
         ledger.add(
@@ -457,6 +479,58 @@ def _load_score_jobs(manifest_path: str) -> list[dict[str, Any]]:
             }
         )
     return jobs
+
+
+def _load_multi_motion_jobs(
+    master_manifest_path: str,
+    selection_path: str,
+) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
+    manifest = json.loads(Path(master_manifest_path).read_text())
+    selection = json.loads(Path(selection_path).read_text())
+    masters = {record["experiment_id"]: record for record in manifest.get("records", [])}
+    winners = selection.get("winners")
+    if not isinstance(winners, list) or not 1 <= len(winners) <= 6:
+        raise ValueError("master selection requires between 1 and 6 winners")
+    jobs: list[dict[str, Any]] = []
+    requests: list[dict[str, Any]] = []
+    templates = [
+        (
+            "ambient",
+            "Locked storybook camera. Preserve the exact character, objects, watercolor-paper "
+            "composition, and palette. Add only gentle breathing, blinking, lantern glow, and "
+            "sparse drifting motes. Calm readable motion, no new content or scene transition.",
+        ),
+        (
+            "parallax",
+            "Nearly locked storybook camera with an extremely shallow push. Preserve exact forms "
+            "and identity. Add restrained foreground-to-background parallax, soft paper movement, "
+            "and breathing warm light. No morphing, cuts, added characters, or camera shake.",
+        ),
+    ]
+    for winner in winners:
+        candidate_id = str(winner["candidate_id"])
+        record = masters.get(candidate_id)
+        if record is None or record["sha256"] != winner["sha256"]:
+            raise ValueError(f"selected master is missing or mismatched: {candidate_id}")
+        source = Path(record["artifact_path"])
+        content = source.read_bytes()
+        if hashlib.sha256(content).hexdigest() != record["sha256"]:
+            raise ValueError(f"selected master checksum mismatch: {candidate_id}")
+        for offset, (variant, prompt) in enumerate(templates):
+            seed = (int(record["sha256"][:8], 16) + offset) % (2**32)
+            job = {
+                "id": f"{candidate_id}-motion-{variant}",
+                "prompt": prompt,
+                "seed": seed,
+                "width": 768,
+                "height": 512,
+                "frames": 49,
+                "fps": 24,
+                "steps": 40,
+            }
+            jobs.append(job)
+            requests.append({"image_bytes": content, "job": job})
+    return jobs, requests
 
 
 @app.local_entrypoint()
@@ -541,7 +615,7 @@ def score_batch_cli(
     plan_file: str = "experiments/visual-lab/plan.json",
     ledger_path: str = "artifacts/visual-lab/ledger.json",
 ) -> None:
-    from bookforge.visual_lab import GenerationRecord
+    _, GenerationRecord, _ = _budget_types()
 
     jobs = _load_score_jobs(manifest_path)
     reference = Path(reference_image_path).read_bytes() if reference_image_path else None
@@ -595,3 +669,39 @@ def score_batch_cli(
     )
     ledger.write(Path(ledger_path))
     print(serialized, end="")
+
+
+@app.local_entrypoint()
+def multi_motion_batch_cli(
+    master_manifest_path: str,
+    selection_path: str,
+    output_dir: str,
+    plan_file: str = "experiments/visual-lab/plan.json",
+    ledger_path: str = "artifacts/visual-lab/ledger.json",
+) -> None:
+    jobs, requests = _load_multi_motion_jobs(master_manifest_path, selection_path)
+    ledger = _open_budget(plan_file, ledger_path)
+    _reject_recorded_jobs(ledger, stage="motion", jobs=jobs)
+    reservation_id = _reserve_budget(
+        ledger,
+        ledger_path=ledger_path,
+        stage="motion",
+        prompt_file=selection_path,
+        gpu=MOTION_GPU,
+        timeout_seconds=MOTION_TIMEOUT_SECONDS,
+    )
+    started = time.perf_counter()
+    results = MotionStudio().generate_multi_batch.remote(requests)
+    records = _write_results(
+        jobs=jobs,
+        results=results,
+        output_dir=output_dir,
+        suffix=".mp4",
+        stage="motion",
+        model=LTX_MODEL,
+        revision=LTX_REVISION,
+        gpu=MOTION_GPU,
+        remote_seconds=time.perf_counter() - started,
+    )
+    ledger.release(reservation_id)
+    _record_budget(ledger, ledger_path, records)

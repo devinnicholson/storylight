@@ -7,7 +7,7 @@
     "run_cap_usd": 15.0
   },
   "ledger": "artifacts/visual-lab/ledger.json",
-  "ledger_baseline_usd": 0.13317055,
+  "ledger_baseline_usd": 0.18517822,
   "stages": [
     {
       "id": "sana-master-calibration",
@@ -22,7 +22,7 @@
       "model": "Lightricks/LTX-Video",
       "gpu": "L4",
       "jobs": 12,
-      "hard_timeout_seconds_per_job": 240,
+      "hard_timeout_seconds_per_batch": 600,
       "purpose": "Compare subtle loop prompts and seeds on the strongest master frames."
     },
     {

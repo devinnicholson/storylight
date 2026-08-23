@@ -143,6 +143,16 @@ python -m bookforge.visual_selection \
   artifacts/visual-lab/lost-words-semantic.json \
   --expected-pages 6 \
   --output artifacts/visual-lab/lost-words-selection.json
+modal run deploy/modal_visual_lab.py::multi_motion_batch_cli \
+  --master-manifest-path artifacts/visual-lab/lost-words-masters/manifest.json \
+  --selection-path artifacts/visual-lab/lost-words-selection.json \
+  --output-dir artifacts/visual-lab/lost-words-motion
+python -m bookforge.visual_evaluation artifacts/visual-lab/lost-words-motion/*.mp4 \
+  --output artifacts/visual-lab/lost-words-motion-technical.json
+python -m bookforge.motion_selection \
+  artifacts/visual-lab/lost-words-motion-technical.json \
+  --expected-pages 6 \
+  --output artifacts/visual-lab/lost-words-motion-selection.json
 python -m bookforge.literacy_pack \
   experiments/visual-lab/silver-fox-literacy-story.json \
   artifacts/visual-lab/lost-words-final-assets.json \
@@ -227,3 +237,4 @@ run on JetPack 7.2.1.
 - [`benchmarks/visual-lab-modal-l4-2026-08-22.json`](benchmarks/visual-lab-modal-l4-2026-08-22.json): pinned SANA/LTX generation, loop quality, cost, and projector playback evidence
 - [`benchmarks/visual-technical-existing-2026-08-23.json`](benchmarks/visual-technical-existing-2026-08-23.json): reproducible FFmpeg projection and loop measurements for the two accepted scenes
 - [`benchmarks/literacy-navigation-2026-08-23.json`](benchmarks/literacy-navigation-2026-08-23.json): six-page session, media lifecycle, and final-page live-trigger browser acceptance
+- [`benchmarks/modal-billing-gate-2026-08-23.json`](benchmarks/modal-billing-gate-2026-08-23.json): authoritative monthly usage, remaining credit, and paid-generation gate evidence
