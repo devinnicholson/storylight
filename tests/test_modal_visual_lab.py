@@ -45,3 +45,17 @@ def test_multi_motion_loader_accepts_a_comma_separated_manifest_pool() -> None:
 
     assert 'master_manifest_path.split(",")' in loader
     assert "duplicate master candidate" in loader
+
+
+def test_motion_profile_is_projection_native_and_has_an_identical_endpoint() -> None:
+    source = (ROOT / "deploy/modal_visual_lab.py").read_text()
+    motion = source.split("class MotionStudio:", 1)[1].split("class ScoreStudio:", 1)[0]
+    loader = source.split("def _load_multi_motion_jobs(", 1)[1].split("@app.local_entrypoint()", 1)[
+        0
+    ]
+
+    assert "_validate_dimensions(width, height, min_dimension=384)" in motion
+    assert "result + list(reversed(result[:-1]))" in motion
+    assert '"width": 800' in loader
+    assert '"height": 448' in loader
+    assert '"ambient-projection"' in loader

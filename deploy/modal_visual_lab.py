@@ -85,9 +85,9 @@ with runtime_image.imports():
     from PIL import Image
 
 
-def _validate_dimensions(width: int, height: int) -> None:
-    if not (512 <= width <= 1536 and 512 <= height <= 1536):
-        raise ValueError("width and height must be between 512 and 1536")
+def _validate_dimensions(width: int, height: int, *, min_dimension: int = 512) -> None:
+    if not (min_dimension <= width <= 1536 and min_dimension <= height <= 1536):
+        raise ValueError(f"width and height must be between {min_dimension} and 1536")
     if width % 32 or height % 32:
         raise ValueError("width and height must be divisible by 32")
 
@@ -170,9 +170,9 @@ class MotionStudio:
         ).to("cuda")
 
     def _generate_one(self, source, job: dict[str, Any]) -> dict[str, Any]:
-        width = int(job.get("width", 768))
-        height = int(job.get("height", 512))
-        _validate_dimensions(width, height)
+        width = int(job.get("width", 800))
+        height = int(job.get("height", 448))
+        _validate_dimensions(width, height, min_dimension=384)
         seed = int(job["seed"])
         num_frames = int(job.get("frames", 49))
         fps = int(job.get("fps", 24))
@@ -193,7 +193,7 @@ class MotionStudio:
         ).frames[0]
         # Forward then backward makes the endpoint identical and prevents the
         # visible jump that ruins projected ambient loops.
-        loop_frames = result + list(reversed(result[1:-1]))
+        loop_frames = result + list(reversed(result[:-1]))
         output_path = Path("/tmp") / f"{_safe_slug(str(job['id']))}-{seed}.mp4"
         diffusers.utils.export_to_video(loop_frames, output_path, fps=fps)
         content = output_path.read_bytes()
@@ -508,13 +508,13 @@ def _load_multi_motion_jobs(
     requests: list[dict[str, Any]] = []
     templates = [
         (
-            "ambient",
+            "ambient-projection",
             "Locked storybook camera. Preserve the exact character, objects, watercolor-paper "
             "composition, and palette. Add only gentle breathing, blinking, lantern glow, and "
             "sparse drifting motes. Calm readable motion, no new content or scene transition.",
         ),
         (
-            "parallax",
+            "parallax-projection",
             "Nearly locked storybook camera with an extremely shallow push. Preserve exact forms "
             "and identity. Add restrained foreground-to-background parallax, soft paper movement, "
             "and breathing warm light. No morphing, cuts, added characters, or camera shake.",
@@ -535,8 +535,8 @@ def _load_multi_motion_jobs(
                 "id": f"{candidate_id}-motion-{variant}",
                 "prompt": prompt,
                 "seed": seed,
-                "width": 768,
-                "height": 512,
+                "width": 800,
+                "height": 448,
                 "frames": 49,
                 "fps": 24,
                 "steps": 40,
