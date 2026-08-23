@@ -3,10 +3,13 @@ const LOGICAL_HEIGHT = 1080;
 const PROFILE_KEY = "bookforge.projectionProfile.yaber-t1-pro";
 const FIRED_CLASSES = ["action-reveal", "action-move", "action-transform", "action-open", "action-glow", "action-fade"];
 const query = new URLSearchParams(window.location.search);
-const SESSION_ID = query.get("session") || "moon-gate-demo";
+const SESSION_ID = query.get("session") || "bookforge-live";
 const PACK_SOURCE = query.get("pack") || "fixture";
 const PRESENTATION_MODE = query.get("debug") !== "1";
 const OFFLINE_REPLAY = query.get("offline") === "1";
+const LIVE_MODE = query.get("live") === "1";
+const LIVE_SCENE_STORAGE_KEY = "bookforge.liveSceneSnapshot.v1";
+const LIVE_SCENE_CHANNEL = "bookforge.live-scenes";
 
 if (PRESENTATION_MODE) document.body.classList.add("hud-hidden");
 if (OFFLINE_REPLAY) document.body.dataset.replayBoundary = "loopback-only";
@@ -52,6 +55,10 @@ const elements = {
   resetCalibration: document.querySelector("#resetCalibrationButton"),
   handles: [...document.querySelectorAll("#cornerHandles button")],
   startupError: document.querySelector("#startupError"),
+  liveGenerationBadge: document.querySelector("#liveGenerationBadge"),
+  liveGenerationStage: document.querySelector("#liveGenerationStage"),
+  liveGenerationDetail: document.querySelector("#liveGenerationDetail"),
+  liveGenerationElapsed: document.querySelector("#liveGenerationElapsed"),
 };
 
 const bus = new EventTarget();
@@ -76,6 +83,35 @@ const state = {
   resyncAfterCurrent: false,
   pendingReaderEvents: [],
   depthRenderer: null,
+  liveSceneChannel: null,
+  liveEventSource: null,
+  liveSessionEventSource: null,
+  liveSessionStreamHealthy: false,
+  liveRendezvousTimer: null,
+  liveRendezvousInFlight: false,
+  liveTransportEpoch: 0,
+  liveServerInstanceId: null,
+  liveSessionRevision: 0,
+  liveSessionJobId: null,
+  liveAcceptedJobId: null,
+  liveAcceptedRevision: -1,
+  liveCommittedJobId: null,
+  liveCommittedRevision: -1,
+  liveRenderPending: false,
+  liveRenderEpoch: 0,
+  liveRenderAbortController: null,
+  liveAssetFingerprint: null,
+  liveRevision: -1,
+  liveJobId: null,
+  liveStage: null,
+  liveStartedAt: 0,
+  liveElapsedMs: 0,
+  liveUpdatedAt: 0,
+  liveTerminal: false,
+  liveLastEnvelopeAt: 0,
+  liveTransition: Promise.resolve(),
+  screenWakeLock: null,
+  screenWakeLockRequest: null,
 };
 
 function publish(type, detail = {}) {
@@ -85,6 +121,40 @@ function publish(type, detail = {}) {
 function setEvent(type, detail) {
   elements.eventType.textContent = type;
   elements.eventDetail.textContent = detail;
+}
+
+async function requestProjectorWakeLock() {
+  if (!PRESENTATION_MODE || document.visibilityState !== "visible") return;
+  if (!("wakeLock" in navigator)) {
+    document.body.dataset.projectorWakeLock = "unsupported";
+    return;
+  }
+  if (state.screenWakeLock || state.screenWakeLockRequest) return;
+
+  document.body.dataset.projectorWakeLock = "requesting";
+  state.screenWakeLockRequest = navigator.wakeLock.request("screen");
+  try {
+    const sentinel = await state.screenWakeLockRequest;
+    state.screenWakeLock = sentinel;
+    document.body.dataset.projectorWakeLock = "active";
+    sentinel.addEventListener("release", () => {
+      if (state.screenWakeLock === sentinel) state.screenWakeLock = null;
+      document.body.dataset.projectorWakeLock = "released";
+    });
+  } catch (_) {
+    document.body.dataset.projectorWakeLock = "unavailable";
+  } finally {
+    state.screenWakeLockRequest = null;
+  }
+}
+
+function setupProjectorWakeLock() {
+  if (!PRESENTATION_MODE) return;
+  document.addEventListener("visibilitychange", () => {
+    if (document.visibilityState === "visible") void requestProjectorWakeLock();
+    else void state.screenWakeLock?.release();
+  });
+  void requestProjectorWakeLock();
 }
 
 function setReaderConnection(status, text) {
@@ -154,6 +224,80 @@ function layerPalette(index) {
   return palettes[index % palettes.length];
 }
 
+function stablePassageHash(text) {
+  let hash = 2166136261;
+  for (const character of text) {
+    hash ^= character.codePointAt(0);
+    hash = Math.imul(hash, 16777619);
+  }
+  return hash >>> 0;
+}
+
+function passageDraftTheme(page) {
+  const text = page.source_text.toLocaleLowerCase();
+  const ambientKinds = new Set((page.scene_spec?.ambience || []).map((effect) => effect.kind));
+  const themes = [
+    {
+      name: "space",
+      matches: ambientKinds.has("stars") || /\b(star|moon|planet|space|galaxy|rocket)\b/u.test(text),
+      palettes: [
+        ["#080d2b", "#22245a", "#a9c9ff99"],
+        ["#241344", "#0d2848", "#e5dcff99"],
+        ["#071c39", "#1b1745", "#86bfff99"],
+      ],
+    },
+    {
+      name: "ocean",
+      matches: /\b(ocean|sea|wave|whale|fish|river|boat|water)\b/u.test(text),
+      palettes: [
+        ["#052f45", "#087b7c", "#83f3e499"],
+        ["#07364e", "#155f6d", "#b9fff499"],
+        ["#0a2945", "#0b8086", "#65d7d599"],
+      ],
+    },
+    {
+      name: "forest",
+      matches: ambientKinds.has("fireflies") || /\b(forest|tree|fox|deer|mushroom|garden|leaf|wood)\b/u.test(text),
+      palettes: [
+        ["#0b281d", "#315232", "#ffe58a99"],
+        ["#132b22", "#536331", "#a9e59099"],
+        ["#081f1a", "#3e4e2a", "#f5d06f99"],
+      ],
+    },
+    {
+      name: "storm",
+      matches: /\b(storm|rain|thunder|lightning|cloud|wind|snow)\b/u.test(text),
+      palettes: [
+        ["#111a2b", "#3e4a60", "#e7f2ff99"],
+        ["#172033", "#5a6071", "#b9c8dc99"],
+        ["#0b1528", "#3d4862", "#d6e9ff99"],
+      ],
+    },
+    {
+      name: "literacy",
+      matches: /\b(book|letter|word|read|library|story|page|school)\b/u.test(text),
+      palettes: [
+        ["#21182f", "#5b3c33", "#ffe2a199"],
+        ["#15233a", "#614b35", "#fff0c799"],
+        ["#2a1830", "#69412d", "#f4d27d99"],
+      ],
+    },
+  ];
+  const hash = stablePassageHash(page.source_text);
+  const selected = themes.find((theme) => theme.matches) || {
+    name: "imaginative",
+    palettes: [
+      ["#111940", "#163438", "#82e6bd88"],
+      ["#2b1231", "#421d26", "#ed654f88"],
+      ["#20183d", "#102b3c", "#7cbff688"],
+    ],
+  };
+  return {
+    ...selected,
+    paletteOffset: hash % selected.palettes.length,
+  };
+}
+
 function placeholderLayout(kind, index) {
   const layouts = {
     background: {x: 60, y: 18, width: 48, height: 15},
@@ -171,7 +315,21 @@ function placeholderLayout(kind, index) {
   };
 }
 
+function sceneCompositionLayout(sceneSpec, layer, index) {
+  const composition = (sceneSpec?.composition || []).find(
+    (item) => item.layer_id === layer.layer_id,
+  );
+  if (!composition || layer.kind === "background") return placeholderLayout(layer.kind, index);
+  return {
+    x: composition.center_x * 100,
+    y: composition.center_y * 100,
+    width: composition.width * 100,
+    height: composition.height * 100,
+  };
+}
+
 function bundledHeroForPage(page) {
+  if (LIVE_MODE) return null;
   const source = page.source_text.trim().toLocaleLowerCase();
   if (source === "the small moth went through the red gate.") {
     return {
@@ -190,12 +348,37 @@ function bundledHeroForPage(page) {
   return null;
 }
 
-function loadSceneImage(uri) {
+function loadSceneImage(uri, {signal = null, timeoutMs = 5000} = {}) {
   return new Promise((resolve, reject) => {
     const image = new Image();
     image.decoding = "async";
-    image.addEventListener("load", () => resolve(image), {once: true});
-    image.addEventListener("error", () => reject(new Error(`Scene asset failed to load: ${uri}`)), {once: true});
+    let settled = false;
+    const finish = (callback, value) => {
+      if (settled) return;
+      settled = true;
+      window.clearTimeout(timeout);
+      signal?.removeEventListener("abort", onAbort);
+      callback(value);
+    };
+    const onAbort = () => {
+      image.src = "";
+      finish(reject, new Error("Scene image load superseded"));
+    };
+    const timeout = window.setTimeout(() => {
+      image.src = "";
+      finish(reject, new Error(`Scene asset timed out: ${uri}`));
+    }, timeoutMs);
+    image.addEventListener("load", () => finish(resolve, image), {once: true});
+    image.addEventListener(
+      "error",
+      () => finish(reject, new Error(`Scene asset failed to load: ${uri}`)),
+      {once: true},
+    );
+    if (signal?.aborted) {
+      onAbort();
+      return;
+    }
+    signal?.addEventListener("abort", onAbort, {once: true});
     image.src = uri;
   });
 }
@@ -225,10 +408,10 @@ function createTexture(gl, image, textureUnit) {
   return texture;
 }
 
-async function startDepthRenderer(canvas, masterUri, depthUri, sceneSpec) {
+async function startDepthRenderer(canvas, masterUri, depthUri, sceneSpec, signal = null) {
   const [masterImage, depthImage] = await Promise.all([
-    loadSceneImage(masterUri),
-    loadSceneImage(depthUri),
+    loadSceneImage(masterUri, {signal}),
+    loadSceneImage(depthUri, {signal}),
   ]);
   const gl = canvas.getContext("webgl2", {
     alpha: false,
@@ -264,7 +447,7 @@ async function startDepthRenderer(canvas, masterUri, depthUri, sceneSpec) {
       vec2 drift = vec2(sin(phase * 6.2831853), cos(phase * 4.7123890));
       vec2 parallax = drift * (depth - 0.42) * u_strength;
       vec3 color = texture(u_master, clamp(uv + parallax, 0.002, 0.998)).rgb;
-      float vignette = smoothstep(0.88, 0.26, length(v_uv - 0.5));
+      float vignette = 1.0 - smoothstep(0.26, 0.88, length(v_uv - 0.5));
       float lanternBreath = 1.0 + 0.018 * sin(u_time * 0.0017);
       color *= mix(0.92, lanternBreath, vignette);
       out_color = vec4(color, 1.0);
@@ -302,24 +485,45 @@ async function startDepthRenderer(canvas, masterUri, depthUri, sceneSpec) {
   gl.viewport(0, 0, canvas.width, canvas.height);
   let animationFrame = null;
   let stopped = false;
+  const release = () => {
+    gl.deleteTexture(masterTexture);
+    gl.deleteTexture(depthTexture);
+    gl.deleteBuffer(buffer);
+    gl.deleteProgram(program);
+    gl.deleteShader(vertex);
+    gl.deleteShader(fragment);
+  };
+  const revealFallback = () => {
+    stopped = true;
+    if (animationFrame !== null) cancelAnimationFrame(animationFrame);
+    canvas.classList.remove("ready");
+    setEvent("renderer.fallback", "WebGL context was lost; provider artwork remains visible");
+  };
+  canvas.addEventListener("webglcontextlost", revealFallback);
   const render = (timestamp) => {
     if (stopped) return;
     gl.uniform1f(timeLocation, timestamp);
     gl.drawArrays(gl.TRIANGLES, 0, 6);
     animationFrame = requestAnimationFrame(render);
   };
+  // Paint once before the opaque canvas is revealed. If Firefox accepts WebGL but
+  // cannot execute the first draw on Jetson, the caller keeps the master image fallback.
+  render(performance.now());
+  const firstDrawError = gl.getError();
+  if (gl.isContextLost() || firstDrawError !== gl.NO_ERROR) {
+    stopped = true;
+    if (animationFrame !== null) cancelAnimationFrame(animationFrame);
+    canvas.removeEventListener("webglcontextlost", revealFallback);
+    release();
+    throw new Error(`WebGL first frame failed (${firstDrawError}); using the still-image fallback`);
+  }
   canvas.classList.add("ready");
-  animationFrame = requestAnimationFrame(render);
   return {
     destroy() {
       stopped = true;
-      cancelAnimationFrame(animationFrame);
-      gl.deleteTexture(masterTexture);
-      gl.deleteTexture(depthTexture);
-      gl.deleteBuffer(buffer);
-      gl.deleteProgram(program);
-      gl.deleteShader(vertex);
-      gl.deleteShader(fragment);
+      if (animationFrame !== null) cancelAnimationFrame(animationFrame);
+      canvas.removeEventListener("webglcontextlost", revealFallback);
+      release();
     },
   };
 }
@@ -365,17 +569,106 @@ function appendSceneHotspots(container, page) {
   });
 }
 
-async function renderPackLayers(pack, page) {
-  state.depthRenderer?.destroy();
-  state.depthRenderer = null;
-  elements.fixtureScene.hidden = true;
-  elements.generatedScene.innerHTML = "";
+function createSceneVersion() {
+  const version = document.createElement("div");
+  version.className = "scene-version incoming";
+  version.dataset.stage = state.liveStage || "story-pack";
+  return version;
+}
+
+function waitForVideoFrame(video, signal = null) {
+  if (video.readyState >= HTMLMediaElement.HAVE_CURRENT_DATA) return Promise.resolve();
+  return new Promise((resolve, reject) => {
+    let settled = false;
+    const finish = (callback, value) => {
+      if (settled) return;
+      settled = true;
+      window.clearTimeout(timeout);
+      signal?.removeEventListener("abort", onAbort);
+      callback(value);
+    };
+    const onAbort = () => {
+      video.pause();
+      video.removeAttribute("src");
+      video.load();
+      finish(reject, new Error("Motion asset load superseded"));
+    };
+    const timeout = window.setTimeout(
+      () => finish(reject, new Error("Motion asset did not become playable")),
+      8000,
+    );
+    video.addEventListener("loadeddata", () => finish(resolve), {once: true});
+    video.addEventListener(
+      "error",
+      () => finish(reject, new Error("Motion asset failed to load")),
+      {once: true},
+    );
+    if (signal?.aborted) {
+      onAbort();
+      return;
+    }
+    signal?.addEventListener("abort", onAbort, {once: true});
+    video.load();
+  });
+}
+
+function liveRenderTokenIsCurrent(token) {
+  if (!token) return true;
+  return token.epoch === state.liveRenderEpoch
+    && token.serverInstanceId === state.liveServerInstanceId
+    && token.sessionRevision === state.liveSessionRevision
+    && token.jobId === state.liveSessionJobId
+    && token.revision === state.liveAcceptedRevision
+    && !token.signal.aborted;
+}
+
+function discardSceneVersion(version, renderer = null) {
+  renderer?.destroy();
+  version.querySelectorAll("video").forEach((video) => {
+    video.pause();
+    video.removeAttribute("src");
+    video.load();
+  });
+  version.remove();
+}
+
+function commitSceneVersion(nextVersion, mode, nextRenderer = null, renderToken = null) {
+  if (!liveRenderTokenIsCurrent(renderToken)) {
+    discardSceneVersion(nextVersion, nextRenderer);
+    return false;
+  }
+  const previousVersions = [...elements.generatedScene.querySelectorAll(":scope > .scene-version")];
+  const previousRenderer = state.depthRenderer;
+  state.depthRenderer = nextRenderer;
   elements.generatedScene.classList.remove(
     "depth-composed",
     "hero-composed",
     "motion-composed",
+    "draft-composed",
   );
+  if (mode) elements.generatedScene.classList.add(mode);
+  elements.generatedScene.prepend(nextVersion);
+  elements.fixtureScene.hidden = true;
+  previousVersions.forEach((version) => {
+    version.classList.remove("current");
+    version.classList.add("retiring");
+    version.querySelectorAll("[data-layer-id]").forEach((layer) => {
+      layer.dataset.retiredLayerId = layer.dataset.layerId;
+      delete layer.dataset.layerId;
+    });
+  });
+  requestAnimationFrame(() => requestAnimationFrame(() => {
+    nextVersion.classList.remove("incoming");
+    nextVersion.classList.add("current");
+  }));
+  window.setTimeout(() => {
+    previousVersions.forEach((version) => version.remove());
+    previousRenderer?.destroy();
+  }, 760);
+  return true;
+}
 
+async function renderPackLayers(pack, page, renderToken = null) {
   const readyAssets = (pack.assets || []).filter(
     (asset) => asset.page_id === page.page_id && asset.state === "ready" && asset.kind !== "procedural",
   );
@@ -383,7 +676,7 @@ async function renderPackLayers(pack, page) {
     (asset) => asset.role === "motion" && asset.kind === "video_loop",
   );
   if (motionAsset?.local_uri?.startsWith("/v1/assets/")) {
-    elements.generatedScene.classList.add("motion-composed");
+    const version = createSceneVersion();
     const scene = document.createElement("div");
     scene.className = "motion-scene";
     const video = document.createElement("video");
@@ -396,8 +689,20 @@ async function renderPackLayers(pack, page) {
     scene.append(video);
     appendAmbientEffects(scene, page.scene_spec);
     appendSceneHotspots(scene, page);
-    elements.generatedScene.append(scene);
-    return;
+    version.append(scene);
+    try {
+      await waitForVideoFrame(video, renderToken?.signal);
+      if (!commitSceneVersion(version, "motion-composed", null, renderToken)) return false;
+      video.play().catch(() => setEvent("renderer.waiting", "Tap once to allow motion playback"));
+      return "motion-composed";
+    } catch (error) {
+      if (!liveRenderTokenIsCurrent(renderToken)) {
+        discardSceneVersion(version);
+        return false;
+      }
+      discardSceneVersion(version);
+      setEvent("renderer.fallback", `${error.message}; using provider artwork`);
+    }
   }
   const masterAsset = readyAssets.find((asset) => asset.role === "master");
   const depthAsset = readyAssets.find((asset) => asset.role === "depth");
@@ -405,7 +710,7 @@ async function renderPackLayers(pack, page) {
     masterAsset?.local_uri?.startsWith("/v1/assets/")
     && depthAsset?.local_uri?.startsWith("/v1/assets/")
   ) {
-    elements.generatedScene.classList.add("depth-composed");
+    const version = createSceneVersion();
     const scene = document.createElement("div");
     scene.className = "depth-scene";
     const fallback = document.createElement("img");
@@ -419,18 +724,27 @@ async function renderPackLayers(pack, page) {
     scene.append(fallback, canvas);
     appendAmbientEffects(scene, page.scene_spec);
     appendSceneHotspots(scene, page);
-    elements.generatedScene.append(scene);
+    version.append(scene);
     try {
-      state.depthRenderer = await startDepthRenderer(
+      const renderer = await startDepthRenderer(
         canvas,
         masterAsset.local_uri,
         depthAsset.local_uri,
         page.scene_spec,
+        renderToken?.signal,
       );
+      if (!commitSceneVersion(version, "depth-composed", renderer, renderToken)) return false;
+      return "depth-composed";
     } catch (error) {
+      if (!liveRenderTokenIsCurrent(renderToken)) {
+        discardSceneVersion(version);
+        return false;
+      }
       setEvent("renderer.fallback", error.message);
+      await loadSceneImage(masterAsset.local_uri, {signal: renderToken?.signal});
+      if (!commitSceneVersion(version, "depth-composed", null, renderToken)) return false;
+      return "master-fallback";
     }
-    return;
   }
 
   const assets = new Map(
@@ -439,7 +753,10 @@ async function renderPackLayers(pack, page) {
       .map((asset) => [asset.layer_id, asset]),
   );
   const bundledHero = assets.size === 0 ? bundledHeroForPage(page) : null;
-  elements.generatedScene.classList.toggle("hero-composed", Boolean(bundledHero));
+  const version = createSceneVersion();
+  const draftTheme = passageDraftTheme(page);
+  version.dataset.passageTheme = draftTheme.name;
+  version.style.setProperty("--passage-theme-name", draftTheme.name);
   if (bundledHero) {
     const hero = document.createElement("div");
     hero.className = "visual-layer bundled-hero-scene";
@@ -452,11 +769,13 @@ async function renderPackLayers(pack, page) {
     video.playsInline = true;
     video.setAttribute("aria-label", bundledHero.label);
     hero.append(video);
-    elements.generatedScene.append(hero);
+    version.append(hero);
   }
   [...page.layers].sort((left, right) => left.z_index - right.z_index).forEach((layer, index) => {
     const node = document.createElement("div");
-    const [start, end, accent] = layerPalette(index);
+    const [start, end, accent] = draftTheme.palettes[
+      (index + draftTheme.paletteOffset) % draftTheme.palettes.length
+    ] || layerPalette(index);
     node.className = `visual-layer generic-layer layer-kind-${layer.kind}`;
     node.dataset.layerId = layer.layer_id;
     node.style.zIndex = String(layer.z_index);
@@ -483,7 +802,7 @@ async function renderPackLayers(pack, page) {
     } else if (bundledHero) {
       node.classList.add("hero-trigger-layer");
     } else {
-      const layout = placeholderLayout(layer.kind, index);
+      const layout = sceneCompositionLayout(page.scene_spec, layer, index);
       node.classList.add("development-layer");
       node.style.setProperty("--placeholder-x", `${layout.x}%`);
       node.style.setProperty("--placeholder-y", `${layout.y}%`);
@@ -492,14 +811,22 @@ async function renderPackLayers(pack, page) {
       const label = document.createElement("span");
       label.className = "layer-development-label";
       const kind = document.createElement("small");
-      kind.textContent = `${layer.kind} · generated plan`;
+      kind.textContent = `${layer.kind} · scene plan`;
       const prompt = document.createElement("strong");
       prompt.textContent = layer.prompt;
       label.append(kind, prompt);
       node.append(label);
     }
-    elements.generatedScene.append(node);
+    version.append(node);
   });
+  appendAmbientEffects(version, page.scene_spec);
+  const mode = bundledHero ? "hero-composed" : "draft-composed";
+  return commitSceneVersion(
+    version,
+    mode,
+    null,
+    renderToken,
+  ) ? mode : false;
 }
 
 function renderTimeline() {
@@ -786,8 +1113,9 @@ function updatePageControls() {
   elements.nextPage.disabled = state.pageIndex >= total - 1;
 }
 
-async function activatePage(nextIndex) {
-  if (!state.pack || nextIndex < 0 || nextIndex >= state.pack.pages.length) return;
+async function activatePage(nextIndex, renderToken = null) {
+  if (!state.pack || nextIndex < 0 || nextIndex >= state.pack.pages.length) return false;
+  if (!liveRenderTokenIsCurrent(renderToken)) return false;
   state.pageIndex = nextIndex;
   state.page = state.pack.pages[nextIndex];
   state.pendingReaderEvents = [];
@@ -797,8 +1125,10 @@ async function activatePage(nextIndex) {
   clearLayerState();
   renderTimeline();
   updatePageControls();
-  await renderPackLayers(state.pack, state.page);
+  const renderedMode = await renderPackLayers(state.pack, state.page, renderToken);
+  if (!renderedMode || !liveRenderTokenIsCurrent(renderToken)) return false;
   const session = await configureReaderSession();
+  if (!liveRenderTokenIsCurrent(renderToken)) return false;
   goToWord(session.last_reached_index ?? -1);
   const currentUrl = new URL(window.location.href);
   currentUrl.searchParams.set("page", String(nextIndex + 1));
@@ -813,6 +1143,7 @@ async function activatePage(nextIndex) {
     "page.loaded",
     `${nextIndex + 1}/${state.pack.pages.length} · ${state.tokens.length} words`,
   );
+  return renderedMode;
 }
 
 function requestPage(nextIndex) {
@@ -824,6 +1155,458 @@ function requestPage(nextIndex) {
     });
   state.pageTransition = transition;
   return transition;
+}
+
+function liveProviderLabel(provider) {
+  if (!provider) return "provider pending";
+  if (typeof provider === "string") return provider;
+  return [
+    provider.name || provider.provider || provider.backend,
+    provider.model || provider.model_id || provider.variant,
+  ].filter(Boolean).join(" · ") || "generation provider";
+}
+
+function liveArtifactRoles(snapshot) {
+  const roles = new Set();
+  const artifacts = snapshot?.artifacts;
+  if (Array.isArray(artifacts)) {
+    artifacts.forEach((artifact) => roles.add(artifact.role || artifact.kind));
+  } else if (artifacts && typeof artifacts === "object") {
+    Object.entries(artifacts).forEach(([role, artifact]) => {
+      if (artifact) roles.add(role);
+    });
+  }
+  (snapshot?.story_pack?.assets || []).forEach((asset) => {
+    if (asset.state === "ready") roles.add(asset.role);
+  });
+  if (snapshot?.story_pack) roles.add("draft");
+  return [...roles].filter(Boolean);
+}
+
+function updateLiveGenerationClock() {
+  if (!state.liveJobId) return;
+  const continued = state.liveTerminal ? 0 : Math.max(0, performance.now() - state.liveUpdatedAt);
+  elements.liveGenerationElapsed.textContent = `${((state.liveElapsedMs + continued) / 1000).toFixed(1)} s`;
+}
+
+function renderLiveGenerationBadge(snapshot, {activated = true, fallbackMode = null} = {}) {
+  const readyStageLabels = {
+    queued: "Generation job queued",
+    planning: "Planning visual world",
+    draft_ready: "Animated draft live",
+    master_ready: "Artwork + depth live",
+    motion_ready: "Motion loop live",
+    failed: "Generation failed",
+  };
+  const pendingStageLabels = {
+    draft_ready: "Preparing animated draft",
+    master_ready: "Loading artwork + depth",
+    motion_ready: "Loading motion loop",
+  };
+  state.liveStage = snapshot.stage || "queued";
+  const snapshotTerminal = state.liveStage === "motion_ready"
+    || state.liveStage === "failed"
+    || snapshot.complete === true
+    || snapshot.terminal === true;
+  state.liveTerminal = snapshotTerminal && activated;
+  const timestampElapsed = Date.parse(snapshot.updated_at || "") - Date.parse(snapshot.created_at || "");
+  state.liveElapsedMs = Number.isFinite(snapshot.metrics?.elapsed_ms)
+    ? snapshot.metrics.elapsed_ms
+    : Number.isFinite(snapshot.elapsed_ms)
+      ? snapshot.elapsed_ms
+    : Number.isFinite(snapshot.latency_ms)
+      ? snapshot.latency_ms
+      : Number.isFinite(timestampElapsed) ? Math.max(0, timestampElapsed) : state.liveElapsedMs;
+  state.liveUpdatedAt = performance.now();
+  elements.liveGenerationBadge.classList.remove("hidden");
+  elements.liveGenerationBadge.dataset.stage = state.liveStage;
+  elements.liveGenerationBadge.dataset.terminal = String(state.liveTerminal);
+  elements.liveGenerationStage.textContent = (
+    activated ? readyStageLabels[state.liveStage] : pendingStageLabels[state.liveStage]
+  ) || readyStageLabels[state.liveStage] || state.liveStage.replaceAll("_", " ");
+  const roles = liveArtifactRoles(snapshot);
+  const provenance = liveProviderLabel(snapshot.provider);
+  const warning = snapshot.warning?.message || snapshot.warning;
+  const detail = roles.length
+    ? `${provenance} · ${roles.join(" + ")}`
+    : provenance;
+  const hardware = snapshot.metrics?.gpu
+    ? `${snapshot.metrics.warm_state || "unknown"} · ${snapshot.metrics.gpu}`
+    : null;
+  const fallback = fallbackMode === "master-fallback"
+    ? "artwork fallback · depth retrying"
+    : fallbackMode === "depth-composed"
+      ? "depth fallback · video retrying"
+      : !activated && snapshot.story_pack ? "media retrying" : null;
+  const evidence = [
+    detail,
+    hardware,
+    fallback,
+    warning ? "motion skipped" : null,
+  ].filter(Boolean).join(" · ");
+  elements.liveGenerationDetail.textContent = evidence;
+  elements.liveGenerationBadge.classList.toggle("has-warning", Boolean(warning));
+  updateLiveGenerationClock();
+}
+
+function livePageAssetFingerprint(pack, page) {
+  const assets = (pack.assets || [])
+    .filter((asset) => asset.page_id === page.page_id && asset.state === "ready")
+    .map((asset) => [
+      asset.asset_id,
+      asset.role,
+      asset.checksum_sha256,
+      asset.local_uri,
+    ].join(":"))
+    .sort();
+  return `${page.page_id}|${assets.join("|")}`;
+}
+
+function invalidateLiveRender({jobId, revision, serverInstanceId, sessionRevision}) {
+  state.liveRenderAbortController?.abort();
+  state.liveRenderAbortController = new AbortController();
+  state.liveRenderEpoch += 1;
+  state.liveAcceptedJobId = jobId;
+  state.liveAcceptedRevision = revision;
+  state.liveRenderPending = true;
+  return {
+    epoch: state.liveRenderEpoch,
+    serverInstanceId,
+    sessionRevision,
+    jobId,
+    revision,
+    signal: state.liveRenderAbortController.signal,
+  };
+}
+
+function liveModeSatisfiesStage(stage, mode) {
+  if (stage === "motion_ready") return mode === "motion-composed";
+  if (stage === "master_ready") return mode === "depth-composed";
+  if (stage === "draft_ready") return mode === "draft-composed" || mode === "hero-composed";
+  return true;
+}
+
+function queueLiveSceneSnapshot(envelope) {
+  if (!LIVE_MODE || envelope?.type !== "bookforge.live-scene") return;
+  if (envelope.sessionId && envelope.sessionId !== SESSION_ID) return;
+  const snapshot = envelope.snapshot;
+  if (!snapshot || typeof snapshot !== "object") return;
+  const jobId = snapshot.job_id || state.liveJobId || "live-scene";
+  const serverInstanceId = envelope.serverInstanceId || null;
+  const sessionRevision = Number(envelope.sessionRevision || 0);
+  if (!state.liveServerInstanceId) {
+    // The envelope is only a wake-up hint. Fetch the authoritative server epoch
+    // immediately so the first scene does not wait for the one-second poll.
+    void rendezvousLiveScene();
+    return;
+  }
+  // Only the server-issued epoch is authoritative. This also ignores legacy
+  // localStorage envelopes whose process-local revision could pin a kiosk after restart.
+  if (!serverInstanceId || !Number.isInteger(sessionRevision) || sessionRevision < 1) return;
+  if (state.liveServerInstanceId && state.liveServerInstanceId !== serverInstanceId) return;
+  if (!state.liveServerInstanceId) return;
+  if (sessionRevision < state.liveSessionRevision) return;
+  if (
+    sessionRevision === state.liveSessionRevision
+    && state.liveSessionJobId
+    && state.liveSessionJobId !== jobId
+  ) return;
+  if (sessionRevision > state.liveSessionRevision) return;
+  if (state.liveSessionJobId !== jobId) return;
+
+  const revision = Number.isFinite(Number(snapshot.revision)) ? Number(snapshot.revision) : 0;
+  if (state.liveAcceptedJobId === jobId && revision < state.liveAcceptedRevision) return;
+  if (state.liveAcceptedJobId !== jobId) {
+    state.liveAssetFingerprint = null;
+    state.liveCommittedJobId = null;
+    state.liveCommittedRevision = -1;
+    state.liveRevision = -1;
+    state.liveElapsedMs = 0;
+    state.liveStartedAt = performance.now();
+  } else if (revision === state.liveAcceptedRevision) {
+    if (state.liveRenderPending) return;
+    if (!snapshot.story_pack && snapshot.stage === state.liveStage) return;
+    if (
+      state.liveCommittedJobId === jobId
+      && state.liveCommittedRevision === revision
+    ) return;
+  }
+  const renderToken = invalidateLiveRender({
+    jobId,
+    revision,
+    serverInstanceId,
+    sessionRevision,
+  });
+  state.liveTransition = state.liveTransition.then(async () => {
+    if (!liveRenderTokenIsCurrent(renderToken)) return;
+    if (state.liveJobId !== jobId) {
+      const sentAt = Number(envelope.sentAt || 0);
+      if (state.liveJobId && sentAt && sentAt < state.liveLastEnvelopeAt) return;
+      state.liveJobId = jobId;
+    }
+    if (revision < state.liveRevision || !liveRenderTokenIsCurrent(renderToken)) return;
+    state.liveLastEnvelopeAt = Math.max(state.liveLastEnvelopeAt, Number(envelope.sentAt || 0));
+    state.liveRevision = revision;
+    if (!snapshot.story_pack) {
+      state.liveRenderPending = false;
+      renderLiveGenerationBadge(snapshot);
+      setEvent("scene.generating", `${snapshot.stage || "queued"} · revision ${revision}`);
+      return;
+    }
+    renderLiveGenerationBadge(snapshot, {activated: false});
+    const pack = assertStoryPack(snapshot.story_pack);
+    const currentPageId = state.page?.page_id;
+    state.pack = pack;
+    const nextIndex = Math.max(0, pack.pages.findIndex((page) => page.page_id === currentPageId));
+    elements.packLabel.textContent = `${pack.title} · live ${snapshot.stage} · r${revision}`;
+    const nextPage = pack.pages[nextIndex];
+    const fingerprint = livePageAssetFingerprint(pack, nextPage);
+    if (state.liveAssetFingerprint === fingerprint) {
+      state.page = nextPage;
+      state.liveRenderPending = false;
+      state.liveCommittedJobId = jobId;
+      state.liveCommittedRevision = revision;
+      renderLiveGenerationBadge(snapshot);
+      setEvent("scene.status-updated", `${snapshot.stage} · revision ${revision} · media unchanged`);
+      return;
+    }
+    const renderedMode = await activatePage(nextIndex, renderToken);
+    if (!renderedMode || !liveRenderTokenIsCurrent(renderToken)) return;
+    state.liveRenderPending = false;
+    if (!liveModeSatisfiesStage(snapshot.stage, renderedMode)) {
+      renderLiveGenerationBadge(snapshot, {activated: false, fallbackMode: renderedMode});
+      setEvent("scene.retrying", `${snapshot.stage} · revision ${revision} · ${renderedMode}`);
+      return;
+    }
+    state.liveAssetFingerprint = fingerprint;
+    state.liveCommittedJobId = jobId;
+    state.liveCommittedRevision = revision;
+    renderLiveGenerationBadge(snapshot);
+    setEvent("scene.upgraded", `${snapshot.stage} · revision ${revision} · no reload`);
+  }).catch((error) => {
+    if (renderToken.signal.aborted) return;
+    if (renderToken.epoch === state.liveRenderEpoch) {
+      state.liveRenderPending = false;
+      renderLiveGenerationBadge(snapshot, {activated: false});
+    }
+    setEvent("scene.upgrade-error", error.message);
+  });
+}
+
+function liveSnapshotIsTerminal(snapshot) {
+  return snapshot?.complete === true
+    || snapshot?.terminal === true
+    || snapshot?.stage === "motion_ready"
+    || snapshot?.stage === "failed";
+}
+
+function closeLiveJobEvents() {
+  state.liveTransportEpoch += 1;
+  state.liveEventSource?.close();
+  state.liveEventSource = null;
+}
+
+function connectLiveJobEvents(jobId, serverInstanceId, sessionRevision) {
+  closeLiveJobEvents();
+  const transportEpoch = state.liveTransportEpoch;
+  const source = new EventSource(`/v1/live-scenes/${encodeURIComponent(jobId)}/events`);
+  state.liveEventSource = source;
+  const receive = (event) => {
+    if (
+      transportEpoch !== state.liveTransportEpoch
+      || state.liveServerInstanceId !== serverInstanceId
+      || state.liveSessionRevision !== sessionRevision
+      || state.liveSessionJobId !== jobId
+    ) return;
+    try {
+      const snapshot = JSON.parse(event.data);
+      if (snapshot.job_id !== jobId) return;
+      if (snapshot.revision === undefined && event.lastEventId) {
+        snapshot.revision = Number(event.lastEventId);
+      }
+      queueLiveSceneSnapshot({
+        type: "bookforge.live-scene",
+        sessionId: SESSION_ID,
+        serverInstanceId,
+        sessionRevision,
+        sentAt: Date.now(),
+        snapshot,
+      });
+      if (liveSnapshotIsTerminal(snapshot)) closeLiveJobEvents();
+    } catch (_) {
+      setEvent("scene.stream-error", "Ignored an invalid live-scene event");
+    }
+  };
+  source.addEventListener("scene.job", receive);
+  source.addEventListener("message", receive);
+  source.addEventListener("error", () => {
+    if (transportEpoch === state.liveTransportEpoch) {
+      setEvent("scene.reconnecting", `job ${jobId}`);
+    }
+  });
+}
+
+function acceptLiveSceneSessionPointer(payload) {
+  const serverInstanceId = payload?.server_instance_id;
+  const sessionRevision = Number(payload?.session_revision);
+  const snapshot = payload?.job || null;
+  const jobId = snapshot?.job_id || null;
+  if (
+    payload?.session_id !== SESSION_ID
+    || typeof serverInstanceId !== "string"
+    || !serverInstanceId
+    || !Number.isInteger(sessionRevision)
+    || sessionRevision < 0
+    || (snapshot && (!jobId || sessionRevision < 1))
+    || (!snapshot && sessionRevision !== 0)
+  ) throw new Error("rendezvous returned an invalid session pointer");
+
+  if (!state.liveServerInstanceId || state.liveServerInstanceId !== serverInstanceId) {
+    closeLiveJobEvents();
+    state.liveRenderAbortController?.abort();
+    state.liveRenderAbortController = null;
+    state.liveServerInstanceId = serverInstanceId;
+    state.liveSessionRevision = 0;
+    state.liveSessionJobId = null;
+    state.liveAcceptedJobId = null;
+    state.liveAcceptedRevision = -1;
+    state.liveCommittedJobId = null;
+    state.liveCommittedRevision = -1;
+    state.liveRenderPending = false;
+    state.liveAssetFingerprint = null;
+    state.liveRenderEpoch += 1;
+  }
+  if (!snapshot) return true;
+  if (sessionRevision < state.liveSessionRevision) return false;
+  if (
+    sessionRevision === state.liveSessionRevision
+    && state.liveSessionJobId
+    && state.liveSessionJobId !== jobId
+  ) return false;
+
+  const changedJob = sessionRevision > state.liveSessionRevision
+    || state.liveSessionJobId !== jobId;
+  state.liveSessionRevision = sessionRevision;
+  state.liveSessionJobId = jobId;
+  queueLiveSceneSnapshot({
+    type: "bookforge.live-scene",
+    sessionId: SESSION_ID,
+    serverInstanceId,
+    sessionRevision,
+    sentAt: Date.now(),
+    snapshot,
+  });
+  if (changedJob) {
+    closeLiveJobEvents();
+    if (!liveSnapshotIsTerminal(snapshot)) {
+      connectLiveJobEvents(jobId, serverInstanceId, sessionRevision);
+    }
+  } else if (!state.liveEventSource && !liveSnapshotIsTerminal(snapshot)) {
+    connectLiveJobEvents(jobId, serverInstanceId, sessionRevision);
+  }
+  return true;
+}
+
+function connectLiveSceneSessionEvents() {
+  state.liveSessionEventSource?.close();
+  state.liveSessionStreamHealthy = false;
+  const source = new EventSource(
+    `/v1/live-scene-sessions/${encodeURIComponent(SESSION_ID)}/events`,
+  );
+  state.liveSessionEventSource = source;
+  const receive = (event) => {
+    try {
+      acceptLiveSceneSessionPointer(JSON.parse(event.data));
+      if (source === state.liveSessionEventSource) {
+        state.liveSessionStreamHealthy = true;
+        stopLiveSceneRendezvous();
+      }
+    } catch (error) {
+      if (source === state.liveSessionEventSource) {
+        state.liveSessionStreamHealthy = false;
+        scheduleLiveSceneRendezvous(0);
+      }
+      setEvent("scene.session-stream-error", error.message);
+    }
+  };
+  source.addEventListener("scene.session", receive);
+  source.addEventListener("message", receive);
+  source.addEventListener("error", () => {
+    if (source !== state.liveSessionEventSource) return;
+    state.liveSessionStreamHealthy = false;
+    scheduleLiveSceneRendezvous(0);
+    setEvent("scene.session-reconnecting", "Server session stream reconnecting; polling is active");
+  });
+}
+
+function liveSessionStreamIsHealthy() {
+  const source = state.liveSessionEventSource;
+  return Boolean(
+    state.liveSessionStreamHealthy
+    && source
+    && source.readyState === EventSource.OPEN
+  );
+}
+
+function stopLiveSceneRendezvous() {
+  window.clearTimeout(state.liveRendezvousTimer);
+  state.liveRendezvousTimer = null;
+}
+
+function scheduleLiveSceneRendezvous(delayMs = 1000) {
+  stopLiveSceneRendezvous();
+  if (!LIVE_MODE || liveSessionStreamIsHealthy()) return;
+  state.liveRendezvousTimer = window.setTimeout(rendezvousLiveScene, delayMs);
+}
+
+async function rendezvousLiveScene() {
+  if (!LIVE_MODE || state.liveRendezvousInFlight || liveSessionStreamIsHealthy()) return;
+  state.liveRendezvousInFlight = true;
+  try {
+    const response = await localFetch(
+      `/v1/live-scene-sessions/${encodeURIComponent(SESSION_ID)}`,
+      {cache: "no-store"},
+    );
+    if (response.status === 404) return;
+    const payload = await response.json().catch(() => ({}));
+    if (!response.ok) throw new Error(payload.detail || `rendezvous failed (${response.status})`);
+    acceptLiveSceneSessionPointer(payload);
+  } catch (error) {
+    setEvent("scene.rendezvous-error", error.message);
+  } finally {
+    state.liveRendezvousInFlight = false;
+    scheduleLiveSceneRendezvous();
+  }
+}
+
+function setupLiveSceneTransport() {
+  if (!LIVE_MODE) return;
+  connectLiveSceneSessionEvents();
+  window.addEventListener("message", (event) => {
+    if (event.origin !== window.location.origin) return;
+    queueLiveSceneSnapshot(event.data);
+  });
+  if ("BroadcastChannel" in window) {
+    state.liveSceneChannel = new BroadcastChannel(LIVE_SCENE_CHANNEL);
+    state.liveSceneChannel.addEventListener("message", (event) => queueLiveSceneSnapshot(event.data));
+  }
+  window.addEventListener("storage", (event) => {
+    if (event.key !== LIVE_SCENE_STORAGE_KEY || !event.newValue) return;
+    try {
+      queueLiveSceneSnapshot(JSON.parse(event.newValue));
+    } catch (_) {
+      setEvent("scene.upgrade-error", "Ignored an invalid saved live scene update");
+    }
+  });
+  try {
+    const saved = JSON.parse(localStorage.getItem(LIVE_SCENE_STORAGE_KEY));
+    const recent = saved && Date.now() - Number(saved.sentAt || 0) < 30 * 60 * 1000;
+    if (recent) queueLiveSceneSnapshot(saved);
+  } catch (_) {
+    localStorage.removeItem(LIVE_SCENE_STORAGE_KEY);
+  }
+  rendezvousLiveScene();
+  window.setInterval(updateLiveGenerationClock, 100);
 }
 
 function defaultCorners() {
@@ -1041,8 +1824,14 @@ document.addEventListener("keydown", (event) => {
 window.addEventListener("resize", updateProjection);
 window.addEventListener("beforeunload", () => {
   clearTimeout(state.reconnectTimer);
+  stopLiveSceneRendezvous();
+  state.liveSessionEventSource?.close();
+  state.liveSessionStreamHealthy = false;
+  closeLiveJobEvents();
   state.depthRenderer?.destroy();
+  state.liveSceneChannel?.close();
   state.socket?.close();
+  void state.screenWakeLock?.release();
 });
 elements.transcriptSimulator.addEventListener("submit", async (event) => {
   event.preventDefault();
@@ -1058,6 +1847,8 @@ elements.sessionLabel.textContent = SESSION_ID;
 loadCalibration();
 bindCalibrationHandles();
 updateProjection();
+setupProjectorWakeLock();
+setupLiveSceneTransport();
 loadStoryPack().then(() => {
   if (state.page) connectReaderSession();
 });

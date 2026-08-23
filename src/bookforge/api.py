@@ -1,11 +1,21 @@
 import asyncio
 from contextlib import asynccontextmanager
+from dataclasses import asdict
 from ipaddress import ip_address
 from pathlib import Path
+from typing import Annotated
 
-from fastapi import FastAPI, HTTPException, Request, WebSocket, WebSocketDisconnect, status
+from fastapi import (
+    FastAPI,
+    HTTPException,
+    Query,
+    Request,
+    WebSocket,
+    WebSocketDisconnect,
+    status,
+)
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse, JSONResponse
+from fastapi.responses import FileResponse, JSONResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 
 from bookforge import __version__
@@ -35,6 +45,21 @@ from bookforge.event_hub import (
     ReaderEventHub,
     ReaderEventPublishRequest,
     SessionId,
+)
+from bookforge.live_scene import (
+    LiveSceneCapacityError,
+    LiveSceneCreateRequest,
+    LiveSceneJob,
+    LiveSceneJobId,
+    LiveSceneJobRegistry,
+    LiveSceneNotFoundError,
+    LiveScenePrewarmRequest,
+    LiveScenePrewarmResponse,
+    LiveSceneRegistryClosedError,
+    LiveSceneSessionEvent,
+    LiveSceneSessionStatus,
+    LiveSceneWarmProviderStatus,
+    build_live_scene_provider,
 )
 from bookforge.model_client import ModelUnavailableError, build_model_client
 from bookforge.reader_runtime import (
@@ -76,7 +101,21 @@ async def lifespan(app: FastAPI):
         width=settings.asset_width,
         height=settings.asset_height,
     )
+    app.state.live_scenes = LiveSceneJobRegistry(
+        build_live_scene_provider(
+            settings.live_scene_backend,
+            asset_backend=settings.asset_backend,
+            cache=app.state.asset_cache,
+            output_root=settings.live_scene_output_dir,
+            enable_motion=settings.live_scene_enable_motion,
+            modal_session_gpu_cap_usd=settings.live_scene_modal_session_gpu_cap_usd,
+        ),
+        max_active_jobs=settings.live_scene_max_active_jobs,
+        max_retained_jobs=settings.live_scene_max_retained_jobs,
+        event_queue_size=settings.live_scene_event_queue_size,
+    )
     yield
+    await app.state.live_scenes.close()
     await app.state.reader_events.close()
     http_client = getattr(client, "client", None)
     if http_client is not None:
@@ -313,6 +352,209 @@ async def cached_asset(checksum: str, filename: str, request: Request) -> FileRe
         return FileResponse(cache.resolve(checksum, filename))
     except AssetCacheError as error:
         raise HTTPException(status_code=404, detail=str(error)) from error
+
+
+@app.post(
+    "/v1/live-scenes",
+    response_model=LiveSceneJob,
+    status_code=status.HTTP_202_ACCEPTED,
+)
+async def create_live_scene(
+    payload: LiveSceneCreateRequest,
+    request: Request,
+) -> LiveSceneJob:
+    if not _is_local_connection(request):
+        raise HTTPException(status_code=403, detail="Live-scene generation is local-only")
+    registry: LiveSceneJobRegistry = request.app.state.live_scenes
+    try:
+        return await registry.submit(payload)
+    except LiveSceneCapacityError as error:
+        raise HTTPException(status_code=429, detail=str(error)) from error
+    except LiveSceneRegistryClosedError as error:
+        raise HTTPException(status_code=503, detail=str(error)) from error
+
+
+def _configured_warm_scene_provider(registry: LiveSceneJobRegistry):
+    adapter = registry.provider
+    provider = getattr(adapter, "provider", None)
+    if provider is None or not callable(getattr(provider, "prewarm", None)):
+        raise HTTPException(
+            status_code=409,
+            detail="BOOKFORGE_LIVE_SCENE_BACKEND is not configured as modal_warm",
+        )
+    return adapter, provider
+
+
+@app.get(
+    "/v1/live-scene-provider/warm-status",
+    response_model=LiveSceneWarmProviderStatus,
+)
+async def live_scene_warm_status(request: Request) -> LiveSceneWarmProviderStatus:
+    if not _is_local_connection(request):
+        raise HTTPException(status_code=403, detail="Live-scene provider status is local-only")
+    registry: LiveSceneJobRegistry = request.app.state.live_scenes
+    _, provider = _configured_warm_scene_provider(registry)
+    try:
+        report = await provider.warm_status()
+    except RuntimeError as error:
+        raise HTTPException(status_code=503, detail=str(error)) from error
+    return LiveSceneWarmProviderStatus.model_validate(asdict(report))
+
+
+@app.post(
+    "/v1/live-scene-provider/prewarm",
+    response_model=LiveScenePrewarmResponse,
+)
+async def prewarm_live_scene_provider(
+    payload: LiveScenePrewarmRequest,
+    request: Request,
+) -> LiveScenePrewarmResponse:
+    """Explicitly prewarm bounded Modal classes; this is never called automatically."""
+
+    if not _is_local_connection(request):
+        raise HTTPException(status_code=403, detail="Live-scene prewarm is local-only")
+    registry: LiveSceneJobRegistry = request.app.state.live_scenes
+    adapter, provider = _configured_warm_scene_provider(registry)
+    if payload.include_motion and not adapter.enable_motion:
+        raise HTTPException(
+            status_code=409,
+            detail="Enable BOOKFORGE_LIVE_SCENE_ENABLE_MOTION before prewarming motion",
+        )
+    try:
+        report = await provider.prewarm(
+            prewarm_id=payload.prewarm_id,
+            include_motion=payload.include_motion,
+        )
+    except RuntimeError as error:
+        raise HTTPException(status_code=409, detail=str(error)) from error
+    return LiveScenePrewarmResponse.model_validate(asdict(report))
+
+
+@app.get("/v1/live-scenes/{job_id}", response_model=LiveSceneJob)
+async def live_scene_status(
+    job_id: LiveSceneJobId,
+    request: Request,
+) -> LiveSceneJob:
+    if not _is_local_connection(request):
+        raise HTTPException(status_code=403, detail="Live-scene status is local-only")
+    registry: LiveSceneJobRegistry = request.app.state.live_scenes
+    try:
+        return await registry.get(job_id)
+    except LiveSceneNotFoundError as error:
+        raise HTTPException(status_code=404, detail=str(error)) from error
+
+
+@app.get(
+    "/v1/live-scene-sessions/{session_id}",
+    response_model=LiveSceneSessionStatus,
+)
+async def live_scene_session_status(
+    session_id: SessionId,
+    request: Request,
+) -> LiveSceneSessionStatus:
+    if not _is_local_connection(request):
+        raise HTTPException(status_code=403, detail="Live-scene sessions are local-only")
+    registry: LiveSceneJobRegistry = request.app.state.live_scenes
+    try:
+        return await registry.get_session(session_id)
+    except LiveSceneNotFoundError as error:
+        raise HTTPException(status_code=404, detail=str(error)) from error
+
+
+@app.get(
+    "/v1/live-scene-sessions/{session_id}/events",
+    response_class=StreamingResponse,
+)
+async def live_scene_session_events(
+    session_id: SessionId,
+    request: Request,
+) -> StreamingResponse:
+    """Stream the server epoch before any job, then every current-job revision."""
+
+    if not _is_local_connection(request):
+        raise HTTPException(status_code=403, detail="Live-scene session events are local-only")
+    registry: LiveSceneJobRegistry = request.app.state.live_scenes
+    try:
+        subscription = await registry.subscribe_session(session_id)
+    except LiveSceneRegistryClosedError as error:
+        raise HTTPException(status_code=503, detail=str(error)) from error
+
+    async def stream():
+        try:
+            async with subscription:
+                while True:
+                    event: LiveSceneSessionEvent = await subscription.receive()
+                    job_revision = event.job.revision if event.job is not None else 0
+                    event_id = (
+                        f"{event.server_instance_id}:{event.session_revision}:{job_revision}"
+                    )
+                    yield (
+                        f"id: {event_id}\n"
+                        "event: scene.session\n"
+                        f"data: {event.model_dump_json()}\n\n"
+                    )
+        except LiveSceneRegistryClosedError:
+            return
+
+    return StreamingResponse(
+        stream(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-store",
+            "X-Accel-Buffering": "no",
+        },
+    )
+
+
+@app.get("/v1/live-scenes/{job_id}/events", response_class=StreamingResponse)
+async def live_scene_events(
+    job_id: LiveSceneJobId,
+    request: Request,
+    after_revision: Annotated[int, Query(ge=0)] = 0,
+) -> StreamingResponse:
+    if not _is_local_connection(request):
+        raise HTTPException(status_code=403, detail="Live-scene events are local-only")
+
+    last_event_id = request.headers.get("last-event-id")
+    if last_event_id and after_revision == 0:
+        try:
+            after_revision = int(last_event_id)
+            if after_revision < 0:
+                raise ValueError
+        except ValueError as error:
+            raise HTTPException(status_code=400, detail="Invalid Last-Event-ID header") from error
+
+    registry: LiveSceneJobRegistry = request.app.state.live_scenes
+    try:
+        subscription = await registry.subscribe(job_id, after_revision=after_revision)
+    except LiveSceneNotFoundError as error:
+        raise HTTPException(status_code=404, detail=str(error)) from error
+    except LiveSceneRegistryClosedError as error:
+        raise HTTPException(status_code=503, detail=str(error)) from error
+
+    async def stream():
+        try:
+            async with subscription:
+                while True:
+                    snapshot = await subscription.receive()
+                    yield (
+                        f"id: {snapshot.revision}\n"
+                        "event: scene.job\n"
+                        f"data: {snapshot.model_dump_json()}\n\n"
+                    )
+                    if snapshot.terminal:
+                        return
+        except LiveSceneRegistryClosedError:
+            return
+
+    return StreamingResponse(
+        stream(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-store",
+            "X-Accel-Buffering": "no",
+        },
+    )
 
 
 def _is_local_connection(request: Request | WebSocket) -> bool:

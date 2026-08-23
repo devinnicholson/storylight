@@ -2,7 +2,7 @@ from functools import lru_cache
 from pathlib import Path
 from typing import Annotated, Literal
 
-from pydantic import field_validator
+from pydantic import Field, field_validator
 from pydantic_settings import BaseSettings, NoDecode, SettingsConfigDict
 
 
@@ -33,6 +33,15 @@ class Settings(BaseSettings):
     asset_quantize: Literal[3, 4, 5, 6, 8] = 4
     asset_timeout_seconds: float = 1_800.0
     asset_low_ram: bool = True
+    live_scene_backend: Literal[
+        "auto", "disabled", "fake", "modal", "modal_warm"
+    ] = "auto"
+    live_scene_enable_motion: bool = False
+    live_scene_output_dir: Path = Path("artifacts/live-scenes/generated")
+    live_scene_modal_session_gpu_cap_usd: Annotated[float, Field(gt=0, le=10)] = 1.0
+    live_scene_max_active_jobs: Annotated[int, Field(ge=1, le=16)] = 2
+    live_scene_max_retained_jobs: Annotated[int, Field(ge=1, le=256)] = 64
+    live_scene_event_queue_size: Annotated[int, Field(ge=1, le=128)] = 8
     asr_backend: Literal["mlx_whisper", "whisper_trt", "disabled", "test"] = "mlx_whisper"
     asr_model: str = ".models/whisper-base.en"
     asr_engine_path: str = ""

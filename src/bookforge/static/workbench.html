@@ -4,27 +4,28 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <meta name="theme-color" content="#07110f" />
-    <title>Bookforge Demo</title>
-    <link rel="stylesheet" href="/workbench-assets/workbench.css?v=0.1.0-hw4" />
+    <title>Bookforge Live Scene Foundry</title>
+    <link rel="stylesheet" href="/workbench-assets/workbench.css?v=0.2.0-live3" />
   </head>
   <body>
     <main class="shell">
       <header class="hero">
         <div>
-          <p class="eyebrow">Bookforge · The book that listens back</p>
-          <h1>Make the story react as you read.</h1>
+          <p class="eyebrow">Bookforge · Live Scene Foundry</p>
+          <h1>Turn one line of story into a living world.</h1>
           <p class="lede">
-            Add the exact words from one book page. Gemma designs a scene for it. Then read the
-            page aloud and watch the projected world respond to specific words.
+            Type a passage and watch the actual projector improve in place: an immediate animated
+            draft, provider artwork, depth motion, then an optional cinematic loop.
+            Make the story react as you read later—today we are proving live scene generation.
           </p>
         </div>
-        <div class="privacy-chip"><span></span> Audio stays on this device</div>
+        <div class="privacy-chip"><span></span> Text only · no microphone required</div>
       </header>
 
       <ol class="journey" aria-label="How the demo works">
-        <li><b>1</b><span><strong>Add a page</strong><small>Use the book's exact words</small></span></li>
-        <li><b>2</b><span><strong>Create its scene</strong><small>Gemma plans visuals and cues</small></span></li>
-        <li><b>3</b><span><strong>Read it aloud</strong><small>The projection reacts in time</small></span></li>
+        <li><b>1</b><span><strong>Add a page</strong><small>Type the scene you want to see</small></span></li>
+        <li><b>2</b><span><strong>Create its scene</strong><small>Draft appears while the generation provider works</small></span></li>
+        <li><b>3</b><span><strong>Watch it evolve</strong><small>Artwork and motion arrive live</small></span></li>
       </ol>
 
       <section class="grid">
@@ -32,38 +33,23 @@
           <div class="card-heading">
             <div>
               <p class="section-label">Step 1</p>
-              <h2>Add a page from the book</h2>
+              <h2>Describe the story moment</h2>
             </div>
           </div>
 
           <p class="instruction">
-            Copy one short page exactly as printed. The microphone will later follow these words
-            while you read—it does not create the page text.
+            Use a sentence or short paragraph. Bookforge uses these exact words to plan the visual
+            world; it does not create the page text or rewrite it.
           </p>
 
-          <label class="field-block">
-            <span>Book or story title</span>
-            <input id="titleInput" value="The Moon Gate" />
-          </label>
-
           <label class="field-block page-field">
-            <span>Exact words on this page</span>
-            <textarea id="storyInput" rows="7">The small moth went through the red gate.</textarea>
+            <span>Story text</span>
+            <textarea id="storyInput" rows="7">At dusk, a silver fox carried a golden lantern beneath the enormous cedar trees.</textarea>
           </label>
 
           <details class="options">
             <summary>Optional scene settings</summary>
-            <div class="fields two-up">
-              <label>
-                <span>Reader level</span>
-                <select id="levelInput">
-                  <option value="1">Early reader</option>
-                  <option value="2" selected>Developing reader</option>
-                  <option value="3">Independent reader</option>
-                  <option value="4">Advanced reader</option>
-                  <option value="5">Advanced reader +</option>
-                </select>
-              </label>
+            <div class="fields">
               <label>
                 <span>Art style</span>
                 <input
@@ -75,22 +61,52 @@
           </details>
 
           <button class="button primary generate-button" id="compileButton">
-            Create this scene with Gemma
+            Generate moving scene
           </button>
           <p class="generate-note">
-            This takes about 20 seconds on this laptop. The demo page has finished hero artwork;
-            newly entered pages use scene stand-ins until the image generator is connected.
+            The first animated draft should appear almost immediately. Richer stages replace it without
+            refreshing the projector, so you can see where every second goes.
           </p>
         </article>
 
         <article class="card output-card">
           <div class="card-heading">
             <div>
-              <p class="section-label">Step 2</p>
-              <h2>See the actual projection</h2>
+              <p class="section-label">Live output</p>
+              <h2>See the actual projection evolve</h2>
             </div>
             <div class="status" id="status" data-state="idle"><span></span> Waiting for a page</div>
           </div>
+
+          <section class="generation-progress hidden" id="generationProgress" aria-live="polite">
+            <div class="generation-heading">
+              <div>
+                <p class="section-label">Generation pipeline</p>
+                <h3 id="generationStage">Starting…</h3>
+              </div>
+              <strong id="generationElapsed">0.0 s</strong>
+            </div>
+            <div class="progress-track"><i id="generationBar"></i></div>
+            <ol class="stage-rail" id="stageRail">
+              <li data-stage="planning"><i></i><span>Plan</span></li>
+              <li data-stage="draft_ready"><i></i><span>Live draft</span></li>
+              <li data-stage="master_ready"><i></i><span>Artwork + depth</span></li>
+              <li data-stage="motion_ready"><i></i><span>Motion loop</span></li>
+            </ol>
+            <div class="artifact-strip" id="artifactStrip">
+              <span data-artifact="draft">Draft</span>
+              <span data-artifact="master">Master</span>
+              <span data-artifact="depth">Depth</span>
+              <span data-artifact="motion">Motion</span>
+            </div>
+            <div class="provenance-line">
+              <span id="generationProvider">Provider pending</span>
+              <code id="generationJob">job —</code>
+              <span id="generationRevision">revision 0</span>
+            </div>
+            <p class="generation-metrics" id="generationMetrics">Backend metrics pending</p>
+            <p class="generation-warning hidden" id="generationWarning"></p>
+          </section>
 
           <section class="projection-preview hidden" id="projectionPreview">
             <div class="preview-label">
@@ -110,12 +126,12 @@
           <div class="empty-state" id="emptyState">
             <div class="orb"><span></span></div>
             <strong>Your scene will appear here</strong>
-            <p>Click “Create this scene with Gemma” after adding the page text.</p>
+            <p>Click “Generate moving scene”. The first draft will animate while richer assets arrive.</p>
           </div>
 
           <div class="results hidden" id="results">
             <details class="scene-details">
-              <summary>See how Gemma designed this projection</summary>
+              <summary>See how Bookforge designed this projection</summary>
               <div class="scene-details-body">
             <section class="scene-summary">
               <p class="section-label">The scene</p>
@@ -163,9 +179,11 @@
 
           <div class="error hidden" id="errorBox"></div>
 
-          <section class="try-live" id="tryLive">
+          <details class="try-live deferred-reader" id="tryLive">
+            <summary>Later: Read it aloud and trigger the scene</summary>
+            <section class="deferred-reader-body">
             <div>
-              <p class="section-label">Step 3</p>
+              <p class="section-label">Reader integration · later milestone</p>
               <h3>Try reading it aloud</h3>
               <p>
                 First open the projection view and leave it visible. Then come back here, press
@@ -176,7 +194,7 @@
               <a
                 class="button projector-link disabled"
                 id="projectorLink"
-                href="/projector?pack=latest&amp;session=moon-gate-demo&amp;present=1"
+                href="/projector?pack=latest&amp;session=bookforge-live&amp;present=1&amp;live=1"
                 target="_blank"
                 aria-disabled="true"
               >Open projection view ↗</a>
@@ -190,17 +208,18 @@
             </div>
             <p class="browser-note" id="browserNote">
               Your microphone recording is processed by local Whisper and discarded. Raw audio is
-              not sent to Gemma or Google Cloud.
+              not sent to Bookforge's generation providers or Google Cloud.
             </p>
-          </section>
+            </section>
+          </details>
         </article>
       </section>
 
       <footer>
-        Current prototype: Gemma creates the scene plan and reading cues. The Moon Gate demonstrates
-        the finished visual target; automated artwork for every new page is the next connection.
+        Every visual upgrade carries its provider, revision, and measured latency. Audio remains a
+        separate local-only milestone after the live generation path is proven.
       </footer>
     </main>
-    <script src="/workbench-assets/workbench.js?v=0.1.0-hw4"></script>
+    <script src="/workbench-assets/workbench.js?v=0.2.0-live3"></script>
   </body>
 </html>

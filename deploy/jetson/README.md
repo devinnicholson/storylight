@@ -13,15 +13,18 @@ explicit device-administration task that must follow NVIDIA's documentation.
 ## Included files
 
 - `check-device.sh`: read-only report for L4T, CUDA, TensorRT, Docker, Python, power mode, NVMe,
-  camera, microphone, display, Chromium, and thermal zones.
+  camera, microphone, display, projector browser, and thermal zones.
 - `bootstrap.sh`: diagnostic-first setup; mutation requires an explicit option.
 - `bookforge.env.example`: conservative API environment with ASR disabled by default.
-- `launch-kiosk.sh`: Chromium projector launcher without `--no-sandbox` or privilege escalation.
+- `check-kiosk-session.sh`: fail-closed, read-only lock/idle/DPMS preflight for the X11 projector
+  session.
+- `launch-kiosk.sh`: Chromium-first projector launcher with a Firefox fallback and no privilege
+  escalation. Chromium retains its sandbox and background-network hardening.
 - `collect-evidence.sh`: one-command JSON acceptance artifact, with optional real I/O exercises.
 - `check-privacy.sh`: fail-closed process socket audit for listeners plus active TCP/UDP traffic.
 - `warm-asr.sh`: supervised-service-safe Whisper checkpoint and TensorRT engine warmup.
 - `systemd/bookforge@.service`: system API service parameterized by the Linux user.
-- `systemd/bookforge-kiosk.service`: graphical-session user service for Chromium.
+- `systemd/bookforge-kiosk.service`: graphical-session user service for the projector browser.
 - `kiosk.env.example`: kiosk URL/browser overrides.
 
 ## 1. Inspect the device
@@ -191,19 +194,43 @@ curl -fsS http://127.0.0.1:8080/v1/story-packs/latest
 The installer rejects schema errors, checksum mismatches, package path traversal, unsupported media
 types, and ready assets without a local source. It atomically copies permitted image/video files
 with private permissions, rewrites their manifest locations to loopback asset URLs, and only then
-promotes the Story Pack to `latest`. Chromium never receives a raw filesystem path.
+promotes the Story Pack to `latest`. The projector browser never receives a raw filesystem path.
 
-## 5. Install the Chromium kiosk
+## 5. Install the projector browser kiosk
 
-First use `check-device.sh` to confirm that either `chromium` or `chromium-browser` is available.
-If it is missing, install Chromium through the supported software installation path on the JetPack
-desktop image; packaging differs between Ubuntu images, so this repository does not guess a package
-or silently install a browser.
+The launcher prefers `chromium`, then `chromium-browser`, and accepts `firefox` or `firefox-esr` as
+a fallback. Set `BOOKFORGE_BROWSER_BIN` to choose either browser explicitly. The legacy
+`BOOKFORGE_CHROMIUM_BIN` override remains supported and is treated as Chromium. Chromium keeps the
+existing kiosk/app sandbox and background-network hardening flags; Firefox uses only its supported
+`--kiosk` and `--private-window` flags. This repository never silently installs a browser.
 
 Test the launcher inside the logged-in graphical desktop session:
 
 ```bash
-BOOKFORGE_KIOSK_URL=http://127.0.0.1:8080/projector ./deploy/jetson/launch-kiosk.sh
+./deploy/jetson/check-kiosk-session.sh
+BOOKFORGE_KIOSK_URL='http://127.0.0.1:8080/projector?pack=latest&session=bookforge-live&live=1' \
+  ./deploy/jetson/launch-kiosk.sh
+```
+
+The preflight requires an active, local X11 session owned by the kiosk user with
+`LockedHint=no`, `IdleHint=no`, and `Monitor is On`. It never unlocks the desktop, synthesizes
+input, or changes DPMS. If it reports a locked or idle session, unlock it on the physical display,
+interact with the desktop, confirm the projector is visibly on, and run the check again. Kiosk
+startup maps this operator-state failure to exit status 78; the user service deliberately does not
+restart-loop on that status. Restart it manually after the physical session passes:
+
+```bash
+systemctl --user restart bookforge-kiosk.service
+```
+
+When the Mac hosts the development API on port 18081 through the loopback-only reverse SSH tunnel,
+override the projector and readiness URLs together. Changing only the kiosk URL can falsely report
+readiness from the Jetson's separate port-8080 fallback service:
+
+```bash
+BOOKFORGE_KIOSK_URL='http://127.0.0.1:18081/projector?pack=latest&session=bookforge-live&live=1&present=1' \
+BOOKFORGE_READY_URL=http://127.0.0.1:18081/readyz \
+  ./deploy/jetson/launch-kiosk.sh
 ```
 
 Then install the user service while logged in as the desktop user:
@@ -224,16 +251,22 @@ systemctl --user status bookforge-kiosk.service --no-pager
 journalctl --user -u bookforge-kiosk.service -n 100 --no-pager
 ```
 
-The kiosk must run in the actual graphical user's session. Do not run Chromium as root and do not
-add `--no-sandbox` to work around session or permission problems. The launcher waits for `/readyz`
-before opening Chromium and restarts if the graphical session begins before the API is ready. Its
-default URL loads the latest device-stored Story Pack and retains the deterministic fixture/manual
-fallback.
+The kiosk must run in the actual graphical user's session. Do not run the browser as root and do
+not add `--no-sandbox` to work around Chromium session or permission problems. The launcher waits
+for `/readyz` before opening the browser and restarts if the graphical session begins before the
+API is ready. Its default URL joins the canonical `bookforge-live` session, enables progressive
+live-scene updates, and retains the latest device-stored Story Pack as a fallback.
+
+While the browser process exists, `systemd-inhibit --what=sleep` prevents system suspend. It does
+not inhibit `idle`, disable the lock screen, or change a login policy. The visible projector page
+also requests the browser Screen Wake Lock API; browsers release that lock when the page becomes
+hidden or the workstation locks, then request it again only after the authenticated session is
+visible. Stopping the kiosk process releases both protections automatically.
 
 ## 6. Capture hardware acceptance evidence
 
 After the service is running and a prepared Story Pack is installed, collect exact JetPack/CUDA/
-TensorRT versions, API/model readiness, the actual Bookforge NVMe mount, Chromium, thermals,
+TensorRT versions, API/model readiness, the actual Bookforge NVMe mount, browser, thermals,
 camera, microphone, display, latest content, and process privacy into one timestamped JSON artifact:
 
 ```bash
@@ -273,8 +306,9 @@ During a complete offline reading rehearsal, run the dedicated audit from anothe
 It resolves the supervised API PID, maps that process's descriptors through `/proc`, and fails
 closed if socket tables are unreadable, if TCP/UDP activity reaches a non-loopback peer, or if the
 process listens beyond loopback. This proves the API process boundary, not all traffic on the
-machine. The kiosk disables Chromium background networking, but the final offline claim still
-requires a network-disabled full rehearsal or an independent whole-device packet capture.
+machine. When Chromium is used, the kiosk disables its background networking. The final offline
+claim still requires a network-disabled full rehearsal or an independent whole-device packet
+capture; the Firefox fallback does not establish that boundary by itself.
 
 ## Device caveats
 

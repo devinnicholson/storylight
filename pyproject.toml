@@ -20,6 +20,9 @@ dependencies = [
 mac-asr = [
     "mlx-whisper>=0.4.3",
 ]
+modal-authoring = [
+    "modal>=1.4,<2",
+]
 
 [dependency-groups]
 dev = [
@@ -40,4 +43,3 @@ target-version = "py311"
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "UP", "B", "SIM"]
-

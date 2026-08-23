@@ -1,0 +1,96 @@
+{
+  "schema_version": "1.0",
+  "hero_prompt_id": "winged-library",
+  "cases": [
+    {
+      "id": "winged-library",
+      "text": "The last library on Earth grew wings at midnight, and Mira climbed aboard as its glowing pages became constellations.",
+      "visual_style": "luminous hand-painted storybook, layered paper theater, lifted indigo and navy midtones, radiant warm gold light, projection-bright exposure with no crushed black background, cinematic 16:9 composition",
+      "seed": 20261021,
+      "required_motifs": [
+        "child reader",
+        "winged library",
+        "glowing pages",
+        "constellations"
+      ],
+      "expected_motion": [
+        "slow wing movement",
+        "drifting pages",
+        "twinkling constellations",
+        "gentle camera push"
+      ]
+    },
+    {
+      "id": "moon-whale",
+      "text": "A tiny astronaut planted a glowing library on the back of a sleeping moon whale drifting above the clouds.",
+      "visual_style": "dreamlike watercolor picture book, sculpted paper layers, moonlit cyan and amber palette, cinematic 16:9 composition",
+      "seed": 31415926,
+      "required_motifs": [
+        "tiny astronaut",
+        "sleeping moon whale",
+        "small glowing library",
+        "clouds"
+      ],
+      "expected_motion": [
+        "whale breathing",
+        "slow cloud drift",
+        "library glow",
+        "floating stardust"
+      ]
+    },
+    {
+      "id": "underwater-classroom",
+      "text": "When Nia opened her alphabet book underwater, every letter became a bright fish and formed a school around her.",
+      "visual_style": "vibrant cut-paper children's illustration, translucent ocean layers, coral pink and turquoise, cinematic 16:9 composition",
+      "seed": 27182818,
+      "required_motifs": [
+        "child with book",
+        "letters becoming fish",
+        "underwater school",
+        "coral"
+      ],
+      "expected_motion": [
+        "fish circling",
+        "bubbles rising",
+        "sea plants swaying",
+        "light caustics"
+      ]
+    },
+    {
+      "id": "storm-word-bridge",
+      "text": "Arlo spoke one brave word into the storm, and each letter turned into a lantern that built a bridge home.",
+      "visual_style": "dramatic ink-and-watercolor storybook, tactile paper layers, storm violet against lantern gold, cinematic 16:9 composition",
+      "seed": 16180339,
+      "required_motifs": [
+        "child in storm",
+        "spoken letters",
+        "lantern bridge",
+        "distant home"
+      ],
+      "expected_motion": [
+        "rain and wind",
+        "lanterns igniting in sequence",
+        "bridge assembling",
+        "warm light spreading"
+      ]
+    },
+    {
+      "id": "clockwork-garden",
+      "text": "At sunrise, the shy clockwork fox wound the forgotten garden and thousands of paper flowers opened at once.",
+      "visual_style": "intricate storybook gouache, handcrafted mechanical paper theater, moss green and sunrise coral, cinematic 16:9 composition",
+      "seed": 14142135,
+      "required_motifs": [
+        "clockwork fox",
+        "forgotten garden",
+        "winding mechanism",
+        "paper flowers"
+      ],
+      "expected_motion": [
+        "fox mechanism turning",
+        "flowers opening",
+        "sunrise light sweep",
+        "floating pollen"
+      ]
+    }
+  ]
+}

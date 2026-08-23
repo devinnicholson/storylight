@@ -13,6 +13,9 @@ This repository now contains working model-facing services rather than only a vi
 - a Story Compiler that returns validated SceneSpec v2 composition, motion, triggers, scaffolds,
   and questions;
 - a provider-neutral asynchronous Scene Foundry with real Modal GPU and local MFLUX backends;
+- a bounded, text-only live-scene job API with revisioned status and Server-Sent Events;
+- progressive typed-text projection: an immediate animated draft, a generated master plus depth
+  scene, and an optional generative video upgrade without reloading or blanking the projector;
 - immutable asset manifests with provider, seed, checksum, dimensions, state, and location;
 - a fullscreen 1920×1080 projector runtime with depth-aware WebGL parallax, authored ambience,
   localized word effects, and deterministic cached visuals;
@@ -64,10 +67,21 @@ make compile-demo
 
 Interactive API documentation is available at `http://127.0.0.1:8080/docs`.
 
-The local voice workbench is available at `http://127.0.0.1:8080/workbench`. It records a spoken
-story page, transcribes it locally with MLX Whisper, and compiles it into a Story Pack with the
-configured Gemma model. Install the Mac ASR extra with `uv sync --extra mac-asr`, then download the
-small local model with `make asr-model-pull`. GCP is not required for this flow.
+The workbench is available at `http://127.0.0.1:8080/workbench`. Its primary path is now typed story
+text becoming the exact moving projector output in progressive stages: an immediate procedural
+draft, generated artwork with depth-aware WebGL movement, and an optional cinematic loop. Stage,
+revision, provider, latency, and artifact provenance remain visible throughout. The microphone is
+intentionally a later, collapsed milestone; GCP is not required to exercise the typed-text flow.
+
+Run the complete interface without model weights or cloud spend:
+
+```bash
+BOOKFORGE_MODEL_BACKEND=fake \
+BOOKFORGE_ASSET_BACKEND=fake \
+BOOKFORGE_LIVE_SCENE_BACKEND=fake \
+BOOKFORGE_ASR_BACKEND=disabled \
+make dev
+```
 
 The projection POC is available at `http://127.0.0.1:8080/projector`. It deliberately does not call
 Gemma, Modal, or GCP during playback: it loads a validated cached Story Pack, connects to a local
@@ -80,20 +94,68 @@ Use Space or Right Arrow to advance, Left Arrow to rewind, `R` to reset, `F` for
 calibration, `B` for blackout, and `H` to hide controls. Calibration is saved locally as the
 `yaber-t1-pro` profile.
 
-### Generate scenes on Modal while GCP is pending
+### Generate live scenes on Modal while GCP is pending
 
-The Modal backend uses an NVIDIA T4 on the Starter plan, SDXL-Turbo for the 16:9 master, and Depth
-Anything V2 for the depth sidecar. Both assets return in one remote call and are stored under their
-SHA-256 checksums before the Story Pack becomes `latest`.
+The live Modal backend makes one finite NVIDIA L4 call for a SANA 1.5 16:9 master and Depth Anything
+V2 sidecar. The projector is already moving from its procedural draft while that call runs, then
+crossfades to depth-aware WebGL motion as soon as both checksum-addressed files are ready. In finite
+mode no GPU service is deployed. The optional warm mode uses authenticated, scale-to-zero Modal
+classes with no public web endpoint and no permanently warm container. LTX-Video is an explicit
+opt-in upgrade; it is off by default so every typed sentence does not silently start a slower,
+costlier video job.
 
 ```bash
 modal profile current
-BOOKFORGE_ASSET_BACKEND=modal make dev
+BOOKFORGE_MODEL_BACKEND=fake \
+BOOKFORGE_ASSET_BACKEND=modal \
+BOOKFORGE_LIVE_SCENE_BACKEND=modal \
+BOOKFORGE_LIVE_SCENE_ENABLE_MOTION=false \
+BOOKFORGE_ASR_BACKEND=disabled \
+make dev
 ```
 
-Then create a scene in the workbench. The first run builds the reusable container and populates the
-`bookforge-model-cache` Modal Volume. The backend boundary is provider-neutral: GCP can replace
-Modal later without changing SceneSpec, Story Pack storage, the Jetson cache, or the projector.
+Then type a new passage and select **Generate moving scene**. The first run builds the reusable
+container and populates the `bookforge-model-cache` Modal Volume. Every call is bounded by the
+finite-provider timeout, per-stage maximum, session maximum, and the monthly envelope in
+`experiments/live-scenes/modal-plan.json`. The backend boundary is provider-neutral: GCP can replace
+Modal later without changing the live-scene API, SceneSpec, Story Pack, Jetson cache, or projector.
+
+For an intentional warm demo run, install the authoring extra and deploy the named classes first.
+`modal app list` verifies the app exists without allocating a GPU; the API's warm-status route then
+performs an authenticated metadata lookup for both class names. Select
+`BOOKFORGE_LIVE_SCENE_BACKEND=modal_warm`, start the API, and explicitly prewarm master/depth. The
+route is loopback-only, budget-checked, expires with Modal's scale-down window, and is never invoked
+automatically:
+
+```bash
+uv sync --extra modal-authoring
+modal profile current
+modal deploy deploy/modal_fast_scene.py
+modal app list
+
+BOOKFORGE_MODEL_BACKEND=fake \
+BOOKFORGE_ASSET_BACKEND=modal \
+BOOKFORGE_LIVE_SCENE_BACKEND=modal_warm \
+BOOKFORGE_LIVE_SCENE_ENABLE_MOTION=false \
+BOOKFORGE_ASR_BACKEND=disabled \
+make dev
+
+curl -sS http://127.0.0.1:8080/v1/live-scene-provider/warm-status
+curl -sS -X POST http://127.0.0.1:8080/v1/live-scene-provider/prewarm \
+  -H 'content-type: application/json' \
+  -d '{"prewarm_id":"bookforge-demo","include_motion":false}'
+# Submit one scene from the workbench immediately after prewarm returns.
+
+# Explicit teardown after the demo; this terminates any remaining containers.
+modal app stop bookforge-fast-scene --yes
+```
+
+On the August 23 acceptance, fast-only prewarm took 28.459 seconds and the following master/depth
+job completed in 5.256 seconds end to end (3.528 seconds inference and 2.87 ms cache promotion).
+The authoritative Modal delta was $0.01350024 under the atomic $0.12 session ceiling. These are
+measurements, not a pricing guarantee; the provider still checks current billing and reserves the
+full ceiling before prewarm. On a Mac that must retain local microphone support, sync both optional
+groups with `uv sync --extra modal-authoring --extra mac-asr`.
 
 For higher-quality offline scene R&D, `deploy/modal_visual_lab.py` provides finite `modal run`
 jobs on an NVIDIA L4. It pins SANA 1.5, SigLIP, and LTX-Video revisions; records prompts, seeds,
@@ -222,6 +284,13 @@ frame-streaming Jetson ASR engine—and the typed/manual paths remain the determ
 | `POST /v1/story-packs:compile` | Yes | Compile book pages into a Story Pack |
 | `POST /v1/story-packs:build` | Yes + asset GPU | Compile, generate master/depth assets, checksum, cache, and save the ready pack |
 | `GET /v1/story-packs/latest` | No | Recover the latest private device-stored Story Pack |
+| `POST /v1/live-scenes` | Asset provider | Submit typed text and receive a bounded progressive generation job immediately |
+| `GET /v1/live-scenes/{job_id}` | No | Read the newest revision, stage, artifacts, completion, and nonfatal warning state |
+| `GET /v1/live-scenes/{job_id}/events` | No | Stream full revisioned job snapshots as `scene.job` Server-Sent Events |
+| `GET /v1/live-scene-sessions/{session_id}` | No | Recover the authoritative current live job after a browser reconnect |
+| `GET /v1/live-scene-sessions/{session_id}/events` | No | Stream the server epoch, current job, revisions, and same-session replacements |
+| `GET /v1/live-scene-provider/warm-status` | No | Inspect explicit Modal warm-provider readiness without allocating a GPU |
+| `POST /v1/live-scene-provider/prewarm` | Modal warm provider | Budget-check and intentionally prewarm the selected Modal classes |
 | `PUT /v1/reader-sessions/{id}` | No | Configure trusted page text for local alignment |
 | `GET /v1/reader-sessions/{id}` | No | Recover the current generation and aligned position after reconnect |
 | `POST /v1/reader-sessions/{id}:reset` | No | Rewind the aligner and every connected projector for another reading |
@@ -233,18 +302,19 @@ frame-streaming Jetson ASR engine—and the typed/manual paths remain the determ
 Tests and API integration can use the deterministic fake backend:
 
 ```bash
-BOOKFORGE_MODEL_BACKEND=fake BOOKFORGE_MODEL_NAME=fake make dev
+BOOKFORGE_MODEL_BACKEND=fake \
+BOOKFORGE_ASSET_BACKEND=fake \
+BOOKFORGE_LIVE_SCENE_BACKEND=fake \
+BOOKFORGE_ASR_BACKEND=disabled \
+make dev
 make test
 ```
 
 ## Google Cloud
 
 The GCP path is documented in [`infra/gcp/README.md`](infra/gcp/README.md). The scripts default to
-a non-mutating cost guard; they will not create a cluster or GPU workload without an explicit
-environment variable acknowledging billable resources.
-
-No GCP project or account is configured on this machine yet, so cloud resources have not been
-created.
+a non-mutating cost guard; configuring a project does not create a cluster or GPU workload, and
+provisioning still requires an explicit environment variable acknowledging billable resources.
 
 ## Jetson Orin Nano
 
@@ -256,9 +326,9 @@ automating a device flash. Start with its read-only hardware and runtime report:
 ```
 
 The diagnostic covers L4T, CUDA, TensorRT, Docker, Python, power mode, NVMe, camera, microphone,
-display, Chromium, and thermal zones. `bootstrap.sh` is also diagnostic-only unless an explicit
-installation option is supplied. System and graphical-user service templates provide a loopback API
-and Chromium projector kiosk, respectively.
+display, the projector browser, and thermal zones. `bootstrap.sh` is also diagnostic-only unless an
+explicit installation option is supplied. System and graphical-user service templates provide a
+loopback API and Chromium-first projector kiosk with a Firefox fallback, respectively.
 
 See [`deploy/jetson/README.md`](deploy/jetson/README.md) for the guarded setup, interactive smoke
 test, systemd installation, kiosk configuration, WhisperTRT activation, privacy audit, and hardware
@@ -279,3 +349,6 @@ run on JetPack 7.2.1.
 - [`benchmarks/literacy-navigation-2026-08-23.json`](benchmarks/literacy-navigation-2026-08-23.json): six-page session, media lifecycle, and final-page live-trigger browser acceptance
 - [`benchmarks/modal-billing-gate-2026-08-23.json`](benchmarks/modal-billing-gate-2026-08-23.json): authoritative monthly usage, remaining credit, and paid-generation gate evidence
 - [`benchmarks/lost-words-modal-acceptance-2026-08-23.json`](benchmarks/lost-words-modal-acceptance-2026-08-23.json): final six-page generation, quality, billing, bundle, and read-aloud acceptance
+- [`benchmarks/winged-library-modal-live-scene-2026-08-23.json`](benchmarks/winged-library-modal-live-scene-2026-08-23.json): pinned cold SANA/depth/LTX smoke, loop quality, checksums, guardrails, and authoritative billing evidence
+- [`benchmarks/winged-library-modal-warm-acceptance-2026-08-23.json`](benchmarks/winged-library-modal-warm-acceptance-2026-08-23.json): authenticated scale-to-zero prewarm, 5.256-second live master, cache/StoryPack validation, and $0.01350024 authoritative cost
+- [`benchmarks/jetson-projector-live-scene-2026-08-23.json`](benchmarks/jetson-projector-live-scene-2026-08-23.json): physical-Jetson cross-device generation and asset-delivery pass, with the projector display gate explicitly pending an unlocked screenshot or video

@@ -1,6 +1,116 @@
+import os
+import subprocess
 from pathlib import Path
 
 ROOT = Path(__file__).parents[1]
+KIOSK_LAUNCHER = ROOT / "deploy/jetson/launch-kiosk.sh"
+KIOSK_PREFLIGHT = ROOT / "deploy/jetson/check-kiosk-session.sh"
+
+
+def _write_executable(path: Path, body: str) -> None:
+    path.write_text(f"#!/bin/sh\n{body}")
+    path.chmod(0o755)
+
+
+def _write_kiosk_system_fakes(
+    fake_bin: Path,
+    *,
+    locked_hint: str,
+    idle_hint: str,
+    monitor_state: str,
+) -> None:
+    loginctl = f"""
+property=
+for argument in "$@"; do
+  case "$argument" in
+    --property=*) property="${{argument#--property=}}" ;;
+  esac
+done
+case "$1" in
+  list-sessions) printf '2 {os.getuid()} tester seat0 tty2 active yes 1h\\n' ;;
+  show-session)
+    case "$property" in
+      User) printf '{os.getuid()}\\n' ;;
+      Type) printf 'x11\\n' ;;
+      Remote) printf 'no\\n' ;;
+      Active) printf 'yes\\n' ;;
+      State) printf 'active\\n' ;;
+      LockedHint) printf '{locked_hint}\\n' ;;
+      IdleHint) printf '{idle_hint}\\n' ;;
+      *) exit 1 ;;
+    esac
+    ;;
+  *) exit 1 ;;
+esac
+"""
+    _write_executable(fake_bin / "loginctl", loginctl)
+    _write_executable(
+        fake_bin / "xset",
+        f"printf 'DPMS is Enabled\\n  Monitor is {monitor_state}\\n'\n",
+    )
+    _write_executable(
+        fake_bin / "systemd-inhibit",
+        """printf 'inhibitor=sleep\n'
+while [ "$#" -gt 0 ]; do
+  case "$1" in
+    --what=*|--who=*|--why=*|--mode=*) shift ;;
+    *) exec "$@" ;;
+  esac
+done
+exit 1
+""",
+    )
+
+
+def _run_fake_kiosk(
+    tmp_path: Path,
+    *browser_names: str,
+    overrides: dict[str, str] | None = None,
+    locked_hint: str = "no",
+    idle_hint: str = "no",
+    monitor_state: str = "On",
+    check: bool = True,
+) -> subprocess.CompletedProcess[str]:
+    fake_bin = tmp_path / "bin"
+    fake_bin.mkdir(parents=True)
+    _write_executable(fake_bin / "curl", "exit 0\n")
+    _write_kiosk_system_fakes(
+        fake_bin,
+        locked_hint=locked_hint,
+        idle_hint=idle_hint,
+        monitor_state=monitor_state,
+    )
+    for browser_name in browser_names:
+        _write_executable(
+            fake_bin / browser_name,
+            f"printf 'browser={browser_name}\\n'\nprintf 'arg=%s\\n' \"$@\"\n",
+        )
+
+    environment = os.environ.copy()
+    environment.pop("BOOKFORGE_BROWSER_BIN", None)
+    environment.pop("BOOKFORGE_CHROMIUM_BIN", None)
+    environment.update(
+        {
+            "PATH": f"{fake_bin}:/usr/bin:/bin",
+            "HOME": str(tmp_path / "home"),
+            "XDG_STATE_HOME": str(tmp_path / "state"),
+            "XDG_SESSION_ID": "2",
+            "DISPLAY": ":1",
+            "XAUTHORITY": str(tmp_path / "Xauthority"),
+            "BOOKFORGE_KIOSK_URL": "http://127.0.0.1:18081/projector?live=1",
+            "BOOKFORGE_READY_URL": "http://127.0.0.1:18081/readyz",
+            "BOOKFORGE_KIOSK_STARTUP_TIMEOUT": "1",
+        }
+    )
+    (tmp_path / "Xauthority").write_text("test authority")
+    environment.update(overrides or {})
+    return subprocess.run(
+        [str(KIOSK_LAUNCHER)],
+        check=check,
+        capture_output=True,
+        text=True,
+        env=environment,
+    )
 
 
 def test_system_service_has_persistent_private_paths_and_preflight() -> None:
@@ -17,12 +127,98 @@ def test_system_service_has_persistent_private_paths_and_preflight() -> None:
 
 def test_kiosk_preserves_chromium_sandbox_and_waits_for_readiness() -> None:
     unit = (ROOT / "deploy/jetson/systemd/bookforge-kiosk.service").read_text()
-    launcher = (ROOT / "deploy/jetson/launch-kiosk.sh").read_text()
+    launcher = KIOSK_LAUNCHER.read_text()
 
     assert unit.count("[Service]") == 1
     assert "Restart=always" in unit
+    assert "RestartPreventExitStatus=78" in unit
     assert "/readyz" in launcher
     assert "--no-sandbox" not in launcher
+
+
+def test_kiosk_launcher_shell_is_valid_and_browser_precedence_is_explicit() -> None:
+    subprocess.run(["bash", "-n", str(KIOSK_LAUNCHER)], check=True)
+    subprocess.run(["bash", "-n", str(KIOSK_PREFLIGHT)], check=True)
+    launcher = KIOSK_LAUNCHER.read_text()
+
+    assert launcher.index("${BOOKFORGE_BROWSER_BIN:-}") < launcher.index(
+        "${BOOKFORGE_CHROMIUM_BIN:-}"
+    )
+    assert launcher.index("command -v chromium") < launcher.index("command -v firefox")
+    assert '--private-window "$KIOSK_URL"' in launcher
+    assert '"${SCRIPT_DIR}/check-kiosk-session.sh" || exit 78' in launcher
+    assert "--what=sleep" in launcher
+    assert "--what=idle:sleep" not in launcher
+
+
+def test_kiosk_preflight_refuses_locked_idle_and_dark_sessions(tmp_path: Path) -> None:
+    cases = (
+        ("locked", {"locked_hint": "yes"}, "is locked"),
+        ("idle", {"idle_hint": "yes"}, "is idle"),
+        ("display-off", {"monitor_state": "Off"}, "display is off"),
+    )
+    for name, state, expected_error in cases:
+        result = _run_fake_kiosk(
+            tmp_path / name,
+            "firefox",
+            check=False,
+            **state,
+        )
+
+        assert result.returncode == 78
+        assert expected_error in result.stderr
+        assert "browser=firefox" not in result.stdout
+
+
+def test_preferred_firefox_override_uses_only_supported_kiosk_flags(tmp_path: Path) -> None:
+    firefox = tmp_path / "bin" / "firefox"
+    legacy = tmp_path / "bin" / "legacy-chromium-wrapper"
+    result = _run_fake_kiosk(
+        tmp_path,
+        "firefox",
+        "legacy-chromium-wrapper",
+        overrides={
+            "BOOKFORGE_BROWSER_BIN": str(firefox),
+            "BOOKFORGE_CHROMIUM_BIN": str(legacy),
+        },
+    )
+
+    assert "browser=firefox" in result.stdout
+    assert "inhibitor=sleep" in result.stdout
+    assert "arg=--kiosk" in result.stdout
+    assert "arg=--private-window" in result.stdout
+    assert "arg=http://127.0.0.1:18081/projector?live=1" in result.stdout
+    assert "--app=" not in result.stdout
+    assert "--disable-background-networking" not in result.stdout
+    assert "--user-data-dir" not in result.stdout
+
+
+def test_legacy_chromium_override_retains_hardened_arguments(tmp_path: Path) -> None:
+    legacy = tmp_path / "bin" / "legacy-chromium-wrapper"
+    result = _run_fake_kiosk(
+        tmp_path,
+        "legacy-chromium-wrapper",
+        overrides={"BOOKFORGE_CHROMIUM_BIN": str(legacy)},
+    )
+
+    assert "browser=legacy-chromium-wrapper" in result.stdout
+    assert "inhibitor=sleep" in result.stdout
+    assert "arg=--kiosk" in result.stdout
+    assert "arg=--app=http://127.0.0.1:18081/projector?live=1" in result.stdout
+    assert "arg=--disable-background-networking" in result.stdout
+    assert "arg=--disable-component-update" in result.stdout
+    assert "arg=--disable-sync" in result.stdout
+    assert "arg=--user-data-dir=" in result.stdout
+
+
+def test_browser_autodetection_prefers_chromium_and_accepts_firefox(tmp_path: Path) -> None:
+    preferred = _run_fake_kiosk(tmp_path / "preferred", "chromium", "firefox")
+    fallback = _run_fake_kiosk(tmp_path / "fallback", "firefox")
+
+    assert "browser=chromium" in preferred.stdout
+    assert "browser=firefox" not in preferred.stdout
+    assert "browser=firefox" in fallback.stdout
+    assert "arg=--private-window" in fallback.stdout
 
 
 def test_projector_only_loads_assets_from_the_loopback_cache() -> None:
@@ -31,6 +227,17 @@ def test_projector_only_loads_assets_from_the_loopback_cache() -> None:
     assert 'uri.startsWith("/v1/assets/")' in projector
     assert "asset?.storage_uri" not in projector
     assert 'localFetch("/workbench-assets/moon-gate.story-pack.json"' in projector
+
+
+def test_projector_wake_lock_is_visibility_scoped_and_never_bypasses_login() -> None:
+    projector = (ROOT / "src/bookforge/static/projector.js").read_text()
+
+    assert 'navigator.wakeLock.request("screen")' in projector
+    assert 'document.visibilityState !== "visible"' in projector
+    assert 'document.addEventListener("visibilitychange"' in projector
+    assert "state.screenWakeLock?.release()" in projector
+    assert 'document.body.dataset.projectorWakeLock = "active"' in projector
+    assert "setupProjectorWakeLock();" in projector
 
 
 def test_projector_uses_depth_webgl_and_enforces_offline_replay_boundary() -> None:
@@ -76,6 +283,9 @@ def test_generated_pack_placeholders_use_separate_storyboard_positions() -> None
     stylesheet = (ROOT / "src/bookforge/static/projector.css").read_text()
 
     assert "placeholderLayout(layer.kind, index)" in projector
+    assert "passageDraftTheme(page)" in projector
+    assert "sceneCompositionLayout(page.scene_spec, layer, index)" in projector
+    assert "version.dataset.passageTheme = draftTheme.name" in projector
     assert 'node.classList.add("development-layer")' in projector
     assert "--placeholder-x" in stylesheet
     assert ".generic-layer.development-layer::before" in stylesheet
@@ -93,8 +303,8 @@ def test_projector_validates_and_navigates_every_story_page() -> None:
     markup = (ROOT / "src/bookforge/static/projector.html").read_text()
 
     assert "for (const page of pack.pages)" in projector
-    assert "async function activatePage(nextIndex)" in projector
-    assert "await renderPackLayers(state.pack, state.page);" in projector
+    assert "async function activatePage(nextIndex, renderToken = null)" in projector
+    assert "await renderPackLayers(state.pack, state.page, renderToken);" in projector
     assert "await configureReaderSession();" in projector
     assert 'currentUrl.searchParams.set("page", String(nextIndex + 1));' in projector
     assert 'event.key === "["' in projector
@@ -167,8 +377,155 @@ def test_workbench_explains_the_three_step_reader_flow() -> None:
     assert 'document.body.classList.add("hud-hidden")' in projector
 
 
+def test_live_scene_workbench_uses_progressive_job_contract() -> None:
+    markup = (ROOT / "src/bookforge/static/workbench.html").read_text()
+    controller = (ROOT / "src/bookforge/static/workbench.js").read_text()
+
+    assert "Generate moving scene" in markup
+    assert 'id="generationProgress"' in markup
+    assert 'data-stage="draft_ready"' in markup
+    assert 'data-stage="master_ready"' in markup
+    assert 'data-stage="motion_ready"' in markup
+    assert "Later: Read it aloud" in markup
+    assert 'fetch("/v1/live-scenes"' in controller
+    assert 'new EventSource(`/v1/live-scenes/${encodeURIComponent(jobId)}/events`)' in controller
+    assert 'source.addEventListener("scene.job", receive)' in controller
+    assert "response.status !== 202" in controller
+    assert "snapshot.story_pack" in controller
+    assert "broadcastLiveSnapshot" in controller
+    assert "if (revision < lastLiveRevision) return;" in controller
+    assert 'elements.compileButton.textContent = "Try generation again"' in controller
+
+
+def test_projector_hot_swaps_generated_stages_without_reloading() -> None:
+    markup = (ROOT / "src/bookforge/static/projector.html").read_text()
+    controller = (ROOT / "src/bookforge/static/projector.js").read_text()
+    stylesheet = (ROOT / "src/bookforge/static/projector.css").read_text()
+
+    assert 'id="liveGenerationBadge"' in markup
+    assert 'query.get("live") === "1"' in controller
+    assert 'new BroadcastChannel(LIVE_SCENE_CHANNEL)' in controller
+    assert 'event.origin !== window.location.origin' in controller
+    assert "async function renderPackLayers(pack, page, renderToken = null)" in controller
+    assert 'commitSceneVersion(version, "motion-composed", null, renderToken)' in controller
+    assert "previousVersions.forEach" in controller
+    assert "previousRenderer?.destroy();" in controller
+    assert "await activatePage(nextIndex, renderToken);" in controller
+    assert "liveRenderTokenIsCurrent(renderToken)" in controller
+    assert "state.liveRenderAbortController?.abort();" in controller
+    assert "new AbortController()" in controller
+    assert "Scene asset timed out" in controller
+    assert "livePageAssetFingerprint" in controller
+    assert "liveCommittedRevision" in controller
+    assert "liveRenderPending" in controller
+    assert "liveModeSatisfiesStage" in controller
+    assert 'renderLiveGenerationBadge(snapshot, {activated: false})' in controller
+    assert "state.liveCommittedRevision === revision" in controller
+    assert 'setEvent("scene.retrying"' in controller
+    assert "window.location.reload" not in controller
+    assert ".scene-version.retiring" in stylesheet
+    assert "@keyframes draft-camera" in stylesheet
+    assert ".generated-scene.draft-composed" in stylesheet
+    assert 'dataset.terminal = String(state.liveTerminal)' in controller
+    assert '.live-generation-badge[data-terminal="true"]' in stylesheet
+
+
+def test_server_rendezvous_synchronizes_separate_workbench_and_kiosk_browsers() -> None:
+    workbench = (ROOT / "src/bookforge/static/workbench.js").read_text()
+    projector = (ROOT / "src/bookforge/static/projector.js").read_text()
+
+    assert 'workbenchQuery.get("session") || "bookforge-live"' in workbench
+    assert 'query.get("session") || "bookforge-live"' in projector
+    assert "/v1/live-scene-sessions/${encodeURIComponent(readerSessionId)}" in workbench
+    assert "/v1/live-scene-sessions/${encodeURIComponent(readerSessionId)}/events" in workbench
+    assert 'source.addEventListener("scene.session", receive)' in workbench
+    assert "async function recoverLiveSceneSession()" in workbench
+    assert "restoreInitialScene();" in workbench
+    assert "/v1/live-scene-sessions/${encodeURIComponent(SESSION_ID)}" in projector
+    assert "/v1/live-scene-sessions/${encodeURIComponent(SESSION_ID)}/events" in projector
+    assert "function connectLiveSceneSessionEvents()" in projector
+    assert 'source.addEventListener("scene.session", receive)' in projector
+    assert "async function rendezvousLiveScene()" in projector
+    assert "connectLiveJobEvents(jobId, serverInstanceId, sessionRevision)" in projector
+    assert 'new EventSource(`/v1/live-scenes/${encodeURIComponent(jobId)}/events`)' in projector
+    assert "sessionRevision < state.liveSessionRevision" in projector
+    assert "state.liveSessionJobId !== jobId" in projector
+    assert "server_instance_id" in workbench
+    assert "serverChanged || revisionAdvanced" in workbench
+    assert "!serverInstanceId || !Number.isInteger(sessionRevision)" in projector
+    assert "rendezvousLiveScene();" in projector
+    # BroadcastChannel remains a fast same-browser path, not the authoritative transport.
+    assert "new BroadcastChannel(LIVE_SCENE_CHANNEL)" in projector
+
+
+def test_projector_uses_session_polling_only_while_session_sse_is_unhealthy() -> None:
+    projector = (ROOT / "src/bookforge/static/projector.js").read_text()
+
+    assert "liveSessionStreamHealthy: false" in projector
+    assert "function liveSessionStreamIsHealthy()" in projector
+    assert "source.readyState === EventSource.OPEN" in projector
+    assert "state.liveSessionStreamHealthy = true;" in projector
+    assert "stopLiveSceneRendezvous();" in projector
+    assert "state.liveSessionStreamHealthy = false;" in projector
+    assert "scheduleLiveSceneRendezvous(0);" in projector
+    assert (
+        "if (!LIVE_MODE || state.liveRendezvousInFlight || "
+        "liveSessionStreamIsHealthy()) return;"
+    ) in projector
+    assert "scheduleLiveSceneRendezvous();" in projector
+
+
+def test_projector_never_reveals_an_undrawn_or_lost_webgl_canvas() -> None:
+    projector = (ROOT / "src/bookforge/static/projector.js").read_text()
+
+    assert "1.0 - smoothstep(0.26, 0.88" in projector
+    assert "smoothstep(0.88, 0.26" not in projector
+    first_draw = projector.index("render(performance.now());")
+    reveal_canvas = projector.index('canvas.classList.add("ready");', first_draw)
+    assert first_draw < reveal_canvas
+    assert "const firstDrawError = gl.getError();" in projector
+    assert "gl.isContextLost() || firstDrawError !== gl.NO_ERROR" in projector
+    assert 'canvas.addEventListener("webglcontextlost", revealFallback);' in projector
+    assert 'canvas.classList.remove("ready");' in projector
+    assert "provider artwork remains visible" in projector
+    assert "await loadSceneImage(masterAsset.local_uri" in projector
+
+
+def test_packaged_kiosk_defaults_join_the_canonical_live_session() -> None:
+    example = (ROOT / "deploy/jetson/kiosk.env.example").read_text()
+    launcher = (ROOT / "deploy/jetson/launch-kiosk.sh").read_text()
+
+    expected_query = "pack=latest&session=bookforge-live&live=1"
+    assert expected_query in example
+    assert expected_query in launcher
+
+
+def test_live_ui_displays_backend_metrics_without_a_saved_local_fallback() -> None:
+    markup = (ROOT / "src/bookforge/static/workbench.html").read_text()
+    controller = (ROOT / "src/bookforge/static/workbench.js").read_text()
+    stylesheet = (ROOT / "src/bookforge/static/workbench.css").read_text()
+
+    assert 'id="generationMetrics"' in markup
+    assert "backend wall" in controller
+    assert "provider remote" in controller
+    assert "inference" in controller
+    assert "cache promotion" in controller
+    assert "estimated_gpu_usd" in controller
+    assert "metrics.models" in controller
+    assert "Saved locally" not in controller
+    assert 'dataset.terminal = String(isTerminalSnapshot(snapshot))' in controller
+    assert '.generation-progress:not([data-terminal="true"])' in stylesheet
+    assert '.generation-progress:not([data-terminal="true"]) .stage-rail li.current i' in stylesheet
+
+
 def test_hardware_evidence_and_privacy_scripts_are_executable() -> None:
-    for name in ("collect-evidence.sh", "check-privacy.sh", "check-device.sh", "warm-asr.sh"):
+    for name in (
+        "collect-evidence.sh",
+        "check-privacy.sh",
+        "check-device.sh",
+        "check-kiosk-session.sh",
+        "warm-asr.sh",
+    ):
         path = ROOT / "deploy/jetson" / name
         assert path.stat().st_mode & 0o111
 

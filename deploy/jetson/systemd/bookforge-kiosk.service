@@ -1,5 +1,5 @@
 [Unit]
-Description=Bookforge Chromium projector kiosk
+Description=Bookforge projector browser kiosk
 After=graphical-session.target
 
 [Service]
@@ -7,6 +7,7 @@ Type=simple
 EnvironmentFile=-%h/.config/bookforge/kiosk.env
 ExecStart=/opt/bookforge/deploy/jetson/launch-kiosk.sh
 Restart=always
+RestartPreventExitStatus=78
 RestartSec=5
 TimeoutStartSec=120
 

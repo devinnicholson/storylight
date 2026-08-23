@@ -209,11 +209,19 @@ fi
 printf 'Session: XDG_SESSION_TYPE=%s DISPLAY=%s WAYLAND_DISPLAY=%s\n' \
   "${XDG_SESSION_TYPE:-unset}" "${DISPLAY:-unset}" "${WAYLAND_DISPLAY:-unset}"
 if have chromium; then
-  printf 'Chromium: %s\n' "$(command -v chromium)"
+  printf 'Projector browser: %s\n' "$(command -v chromium)"
+  pass "Chromium projector browser detected"
 elif have chromium-browser; then
-  printf 'Chromium: %s\n' "$(command -v chromium-browser)"
+  printf 'Projector browser: %s\n' "$(command -v chromium-browser)"
+  pass "Chromium projector browser detected"
+elif have firefox; then
+  printf 'Projector browser: %s\n' "$(command -v firefox)"
+  pass "Firefox projector browser fallback detected"
+elif have firefox-esr; then
+  printf 'Projector browser: %s\n' "$(command -v firefox-esr)"
+  pass "Firefox ESR projector browser fallback detected"
 else
-  fail "Chromium was not detected; the kiosk launcher will remain unavailable"
+  fail "Neither Chromium nor Firefox was detected; the kiosk launcher will remain unavailable"
 fi
 
 section "Thermals"

@@ -20,3 +20,4 @@ terraform.tfstate.*
 artifacts/visual-lab/*
 !artifacts/visual-lab/handoff/
 !artifacts/visual-lab/handoff/**
+artifacts/live-scenes/

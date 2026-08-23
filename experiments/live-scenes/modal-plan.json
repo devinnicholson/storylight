@@ -1,0 +1,26 @@
+{
+  "schema_version": "1.0",
+  "captured_at": "2026-08-23T13:00:00-07:00",
+  "monthly_credit_usd": 30.0,
+  "workspace_usage_before_live_scenes_usd": 13.82393786,
+  "billing_delay_reserve_usd": 1.0,
+  "hard_stop_workspace_total_usd": 29.0,
+  "maximum_new_spend_usd": 15.17606214,
+  "persistent_gpu_endpoint": false,
+  "payment_method_added": false,
+  "targets": {
+    "post_ack_ms": 50,
+    "draft_ready_ms": 100,
+    "master_depth_warm_ms": 8000,
+    "motion_upgrade_warm_ms": 40000,
+    "projector_hot_swap_ms": 100,
+    "minimum_loop_endpoint_ssim": 0.94
+  },
+  "stop_rules": [
+    "Reconcile the provider billing total before every paid batch.",
+    "Never schedule a worst-case job that can cross the hard stop.",
+    "Stop after a failed smoke instead of automatically retrying.",
+    "Do not generate more candidates after the latency and visual acceptance gates pass.",
+    "Record model revision, prompt, seed, dimensions, latency, checksum, and cost."
+  ]
+}

@@ -1,6 +1,4 @@
 const elements = {
-  title: document.querySelector("#titleInput"),
-  level: document.querySelector("#levelInput"),
   style: document.querySelector("#styleInput"),
   story: document.querySelector("#storyInput"),
   micButton: document.querySelector("#micButton"),
@@ -27,6 +25,17 @@ const elements = {
   raw: document.querySelector("#rawOutput"),
   micLevel: document.querySelector("#micLevel"),
   browserNote: document.querySelector("#browserNote"),
+  generationProgress: document.querySelector("#generationProgress"),
+  generationStage: document.querySelector("#generationStage"),
+  generationElapsed: document.querySelector("#generationElapsed"),
+  generationBar: document.querySelector("#generationBar"),
+  stageRail: document.querySelector("#stageRail"),
+  artifactStrip: document.querySelector("#artifactStrip"),
+  generationProvider: document.querySelector("#generationProvider"),
+  generationJob: document.querySelector("#generationJob"),
+  generationRevision: document.querySelector("#generationRevision"),
+  generationMetrics: document.querySelector("#generationMetrics"),
+  generationWarning: document.querySelector("#generationWarning"),
 };
 
 let listening = false;
@@ -44,7 +53,37 @@ let readerGeneration = null;
 let activePageText = null;
 let starting = false;
 let sceneReady = false;
-const readerSessionId = "moon-gate-demo";
+const workbenchQuery = new URLSearchParams(window.location.search);
+const readerSessionId = workbenchQuery.get("session") || "bookforge-live";
+const LIVE_SCENE_STORAGE_KEY = "bookforge.liveSceneSnapshot.v1";
+const LIVE_SCENE_CHANNEL = "bookforge.live-scenes";
+const liveSceneChannel = "BroadcastChannel" in window
+  ? new BroadcastChannel(LIVE_SCENE_CHANNEL)
+  : null;
+let liveEventSource = null;
+let liveSessionEventSource = null;
+let livePollTimer = null;
+let liveElapsedTimer = null;
+let liveStartedAt = 0;
+let liveElapsedBaseMs = 0;
+let liveElapsedBaseAt = 0;
+let liveIsTerminal = false;
+let liveRequestEpoch = 0;
+let activeLiveJobId = null;
+let latestLiveSnapshot = null;
+let lastLiveRevision = -1;
+let liveSessionRevision = 0;
+let liveServerInstanceId = null;
+
+const LIVE_STAGES = ["queued", "planning", "draft_ready", "master_ready", "motion_ready"];
+const STAGE_LABELS = {
+  queued: "Generation job queued",
+  planning: "Planning the visual world",
+  draft_ready: "Animated draft is live",
+  master_ready: "Artwork and depth are live",
+  motion_ready: "Cinematic motion loop is live",
+  failed: "Generation stopped",
+};
 
 function setStatus(state, text) {
   elements.status.dataset.state = state;
@@ -63,9 +102,35 @@ function setSceneReady(ready) {
   }
 }
 
+function ensureProjectionPreview() {
+  if (!elements.projectorFrame.src) {
+    elements.projectorFrame.src = `/projector?pack=latest&session=${readerSessionId}&present=1&live=1`;
+  }
+}
+
+elements.projectorLink.href = `/projector?pack=latest&session=${encodeURIComponent(readerSessionId)}&present=1&live=1`;
+
+// Kept as the public preview hook; it initializes once and never reloads during stage upgrades.
 function reloadProjectionPreview() {
-  const cacheBuster = Date.now();
-  elements.projectorFrame.src = `/projector?pack=latest&session=${readerSessionId}&present=1&preview=${cacheBuster}`;
+  ensureProjectionPreview();
+}
+
+function broadcastLiveSnapshot(snapshot) {
+  const envelope = {
+    type: "bookforge.live-scene",
+    sessionId: readerSessionId,
+    serverInstanceId: liveServerInstanceId,
+    sessionRevision: liveSessionRevision,
+    sentAt: Date.now(),
+    snapshot,
+  };
+  try {
+    localStorage.setItem(LIVE_SCENE_STORAGE_KEY, JSON.stringify(envelope));
+  } catch (_) {
+    // Direct messaging and BroadcastChannel still provide the live path if storage is full.
+  }
+  liveSceneChannel?.postMessage(envelope);
+  elements.projectorFrame.contentWindow?.postMessage(envelope, window.location.origin);
 }
 
 function safeText(value) {
@@ -292,15 +357,380 @@ async function transcribeRecording() {
   }
 }
 
-function renderPack(payload) {
+function liveRevision(snapshot) {
+  const revision = Number(snapshot?.revision);
+  return Number.isFinite(revision) ? revision : 0;
+}
+
+function providerLabel(provider) {
+  if (!provider) return "Provider pending";
+  if (typeof provider === "string") return provider;
+  const name = provider.name || provider.provider || provider.backend || "generation provider";
+  const model = provider.model || provider.model_id || provider.variant;
+  const location = provider.region || provider.location;
+  return [name, model, location].filter(Boolean).join(" · ");
+}
+
+function artifactIsReady(snapshot, role) {
+  if (role === "draft") return Boolean(snapshot?.story_pack);
+  const explicit = snapshot?.artifacts;
+  if (Array.isArray(explicit)) {
+    return explicit.some((asset) => (
+      (asset.role === role || asset.kind === role) && asset.state !== "failed"
+    ));
+  }
+  if (explicit && typeof explicit === "object") {
+    const artifact = explicit[role];
+    if (artifact && typeof artifact === "object") return artifact.state !== "failed";
+    if (artifact) return true;
+  }
+  const assets = snapshot?.story_pack?.assets || [];
+  return assets.some((asset) => asset.role === role && asset.state === "ready");
+}
+
+function snapshotProgress(snapshot) {
+  if (snapshot?.complete === true) return 1;
+  if (Number.isFinite(snapshot?.progress)) {
+    return Math.max(0, Math.min(1, snapshot.progress > 1 ? snapshot.progress / 100 : snapshot.progress));
+  }
+  return {
+    queued: 0.04,
+    planning: 0.16,
+    draft_ready: 0.38,
+    master_ready: 0.74,
+    motion_ready: 1,
+    failed: 1,
+  }[snapshot?.stage] || 0;
+}
+
+function stageIsReached(stage, currentStage) {
+  if (currentStage === "failed") return false;
+  const stageIndex = LIVE_STAGES.indexOf(stage);
+  const currentIndex = LIVE_STAGES.indexOf(currentStage);
+  return stageIndex >= 0 && currentIndex >= stageIndex;
+}
+
+function currentElapsedMs(snapshot = latestLiveSnapshot) {
+  if (liveElapsedBaseAt) {
+    return liveElapsedBaseMs + (liveIsTerminal ? 0 : performance.now() - liveElapsedBaseAt);
+  }
+  return liveStartedAt ? performance.now() - liveStartedAt : 0;
+}
+
+function updateElapsedClock() {
+  elements.generationElapsed.textContent = `${(currentElapsedMs() / 1000).toFixed(1)} s`;
+}
+
+function formatBackendMs(value) {
+  return Number.isFinite(value) ? `${Math.round(value)} ms` : "pending";
+}
+
+function renderBackendMetrics(snapshot) {
+  const metrics = snapshot?.metrics;
+  if (!metrics) {
+    elements.generationMetrics.textContent = "Backend metrics pending";
+    return;
+  }
+  const modelEvidence = (metrics.models || [])
+    .map((model) => `${model.role}:${model.model}@${model.revision}`)
+    .join(", ") || "models pending";
+  const gpu = metrics.gpu || "GPU not reported";
+  const warmState = metrics.warm_state || "unknown";
+  const estimatedCost = Number(metrics.estimated_gpu_usd || 0).toFixed(4);
+  elements.generationMetrics.textContent = [
+    `backend wall ${formatBackendMs(metrics.elapsed_ms)}`,
+    `provider remote ${formatBackendMs(metrics.provider_ms)}`,
+    `inference ${formatBackendMs(metrics.inference_ms)}`,
+    `cache promotion ${formatBackendMs(metrics.cache_ms)}`,
+    `provider overhead ${formatBackendMs(metrics.overhead_ms)}`,
+    `${warmState} · ${gpu}`,
+    `est. GPU $${estimatedCost} (${metrics.cost_source || "unavailable"})`,
+    modelEvidence,
+  ].join(" · ");
+}
+
+function renderGenerationProgress(snapshot) {
+  const stage = snapshot.stage || "queued";
+  const progress = snapshotProgress(snapshot);
+  elements.generationProgress.classList.remove("hidden");
+  elements.generationProgress.dataset.stage = stage;
+  elements.generationProgress.dataset.terminal = String(isTerminalSnapshot(snapshot));
+  elements.generationStage.textContent = STAGE_LABELS[stage] || stage.replaceAll("_", " ");
+  elements.generationBar.style.width = `${progress * 100}%`;
+  elements.generationProvider.textContent = providerLabel(snapshot.provider);
+  elements.generationJob.textContent = `job ${snapshot.job_id || activeLiveJobId || "—"}`;
+  elements.generationRevision.textContent = `revision ${liveRevision(snapshot)}`;
+  renderBackendMetrics(snapshot);
+  elements.stageRail.querySelectorAll("[data-stage]").forEach((item) => {
+    const itemStage = item.dataset.stage;
+    item.classList.toggle("reached", stageIsReached(itemStage, stage));
+    item.classList.toggle("current", itemStage === stage);
+  });
+  elements.artifactStrip.querySelectorAll("[data-artifact]").forEach((item) => {
+    item.classList.toggle("ready", artifactIsReady(snapshot, item.dataset.artifact));
+  });
+  const warning = snapshot.warning?.message || snapshot.warning || "";
+  elements.generationWarning.textContent = warning ? `Motion optional: ${warning}` : "";
+  elements.generationWarning.classList.toggle("hidden", !warning);
+  updateElapsedClock();
+  setStatus(stage === "failed" ? "error" : "working", STAGE_LABELS[stage] || stage);
+}
+
+function setGenerateButtonForStage(stage) {
+  const labels = {
+    queued: "Waiting for generation provider…",
+    planning: "Building animated draft…",
+    draft_ready: "Preparing artwork + depth…",
+    master_ready: "Preparing motion loop…",
+    motion_ready: "Generate another moving scene",
+    failed: "Try generation again",
+  };
+  elements.compileButton.textContent = labels[stage] || "Generating moving scene…";
+}
+
+function isTerminalSnapshot(snapshot) {
+  return snapshot.stage === "motion_ready"
+    || snapshot.stage === "failed"
+    || snapshot.complete === true
+    || snapshot.terminal === true;
+}
+
+function stopLiveJobTransport() {
+  liveEventSource?.close();
+  liveEventSource = null;
+  window.clearTimeout(livePollTimer);
+  livePollTimer = null;
+  window.clearInterval(liveElapsedTimer);
+  liveElapsedTimer = null;
+}
+
+function setSceneInputsDisabled(disabled) {
+  elements.story.disabled = disabled;
+  elements.style.disabled = disabled;
+}
+
+function finishLiveJob(snapshot) {
+  stopLiveJobTransport();
+  activeLiveJobId = null;
+  setSceneInputsDisabled(false);
+  elements.compileButton.disabled = false;
+  setGenerateButtonForStage(snapshot.stage);
+  if (snapshot.stage === "failed") {
+    const detail = snapshot.error?.message || snapshot.error || snapshot.detail || "The generator did not finish.";
+    elements.error.textContent = detail;
+    elements.error.classList.remove("hidden");
+    elements.interim.textContent = "Generation failed before the scene could finish.";
+    setStatus("error", "Generation failed");
+    return;
+  }
+  elements.compileButton.textContent = "Generate another moving scene";
+  elements.interim.textContent = snapshot.stage === "motion_ready"
+    ? "The final moving scene is live. No projector reload occurred."
+    : "The best available scene is live; this provider returned no additional motion stage.";
+  setStatus("idle", snapshot.stage === "motion_ready" ? "Moving scene ready" : "Scene ready");
+}
+
+function renderLiveSnapshot(snapshot, epoch = liveRequestEpoch) {
+  if (!snapshot || epoch !== liveRequestEpoch) return;
+  const jobId = snapshot.job_id || activeLiveJobId;
+  if (activeLiveJobId && jobId && jobId !== activeLiveJobId) return;
+  const revision = liveRevision(snapshot);
+  if (revision < lastLiveRevision) return;
+  if (revision === lastLiveRevision && latestLiveSnapshot?.stage === snapshot.stage) return;
+  lastLiveRevision = revision;
+  latestLiveSnapshot = snapshot;
+  const reportedElapsed = Number.isFinite(snapshot.metrics?.elapsed_ms)
+    ? snapshot.metrics.elapsed_ms
+    : Number.isFinite(snapshot.elapsed_ms)
+      ? snapshot.elapsed_ms
+    : Number.isFinite(snapshot.latency_ms)
+      ? snapshot.latency_ms
+      : Number.isFinite(snapshot.timings?.total_ms) ? snapshot.timings.total_ms : null;
+  liveElapsedBaseMs = reportedElapsed ?? (performance.now() - liveStartedAt);
+  liveElapsedBaseAt = performance.now();
+  liveIsTerminal = isTerminalSnapshot(snapshot);
+  renderGenerationProgress(snapshot);
+  setGenerateButtonForStage(snapshot.stage);
+  if (snapshot.story_pack) {
+    renderPack({story_pack: snapshot.story_pack, live_snapshot: snapshot}, {hotSwap: true});
+    const stageCopy = {
+      draft_ready: "Animated draft live—the generation provider is preparing the master.",
+      master_ready: snapshot.complete
+        ? "Artwork and depth are live with local WebGL motion."
+        : "Artwork and depth are live—optional video motion is preparing next.",
+      motion_ready: "Cinematic motion loop live.",
+    }[snapshot.stage];
+    if (stageCopy) elements.interim.textContent = stageCopy;
+  }
+  if (isTerminalSnapshot(snapshot)) finishLiveJob(snapshot);
+}
+
+async function fetchLiveSceneSession() {
+  const response = await fetch(
+    `/v1/live-scene-sessions/${encodeURIComponent(readerSessionId)}`,
+    {cache: "no-store"},
+  );
+  if (response.status === 404) return null;
+  const payload = await response.json().catch(() => ({}));
+  if (!response.ok) throw new Error(payload.detail || `Session rendezvous failed (${response.status})`);
+  if (payload.session_id !== readerSessionId || !payload.job?.job_id) {
+    throw new Error("Generation session returned an invalid job pointer.");
+  }
+  return payload;
+}
+
+function trackLiveSceneSession(pointer, {restoreInputs = false} = {}) {
+  const serverInstanceId = pointer?.server_instance_id;
+  const sessionRevision = Number(pointer?.session_revision);
+  const snapshot = pointer?.job;
+  if (
+    !snapshot?.job_id
+    || typeof serverInstanceId !== "string"
+    || !serverInstanceId
+    || !Number.isInteger(sessionRevision)
+    || sessionRevision < 1
+  ) return false;
+  if (liveServerInstanceId && liveServerInstanceId !== serverInstanceId) {
+    liveSessionRevision = 0;
+    activeLiveJobId = null;
+    latestLiveSnapshot = null;
+    lastLiveRevision = -1;
+  }
+  if (sessionRevision < liveSessionRevision) return false;
+  const knownJobId = latestLiveSnapshot?.job_id || activeLiveJobId;
+  if (sessionRevision === liveSessionRevision && knownJobId && knownJobId !== snapshot.job_id) {
+    return false;
+  }
+
+  stopLiveJobTransport();
+  liveServerInstanceId = serverInstanceId;
+  liveSessionRevision = sessionRevision;
+  liveRequestEpoch += 1;
+  const epoch = liveRequestEpoch;
+  activeLiveJobId = snapshot.job_id;
+  latestLiveSnapshot = null;
+  lastLiveRevision = -1;
+  const createdAt = Date.parse(snapshot.created_at || "");
+  const ageMs = Number.isFinite(createdAt) ? Math.max(0, Date.now() - createdAt) : 0;
+  liveStartedAt = performance.now() - ageMs;
+  liveElapsedBaseMs = ageMs;
+  liveElapsedBaseAt = performance.now();
+  liveIsTerminal = false;
+  if (restoreInputs) {
+    elements.story.value = snapshot.request?.text || elements.story.value;
+    elements.style.value = snapshot.request?.visual_style || elements.style.value;
+  }
+  elements.compileButton.disabled = true;
+  setSceneInputsDisabled(true);
+  elements.error.classList.add("hidden");
+  elements.generationProgress.classList.remove("hidden");
+  ensureProjectionPreview();
+  renderLiveSnapshot(snapshot, epoch);
+  if (!isTerminalSnapshot(snapshot)) {
+    liveElapsedTimer = window.setInterval(updateElapsedClock, 100);
+    connectLiveSceneEvents(snapshot.job_id, epoch);
+    pollLiveScene(snapshot.job_id, epoch);
+  }
+  return true;
+}
+
+async function pollLiveScene(jobId, epoch) {
+  if (epoch !== liveRequestEpoch || !activeLiveJobId) return;
+  try {
+    const pointer = await fetchLiveSceneSession();
+    if (pointer && handleLiveSceneSessionPointer(pointer, {restoreInputs: true})) return;
+    if (pointer?.job?.job_id === jobId) renderLiveSnapshot(pointer.job, epoch);
+  } catch (error) {
+    if (epoch === liveRequestEpoch) elements.interim.textContent = `Scene is still rendering; status retrying: ${error.message}`;
+  }
+  if (epoch === liveRequestEpoch && activeLiveJobId) {
+    livePollTimer = window.setTimeout(() => pollLiveScene(jobId, epoch), 2500);
+  }
+}
+
+function handleLiveSceneSessionPointer(pointer, {restoreInputs = false} = {}) {
+  if (!pointer || pointer.session_id !== readerSessionId) return false;
+  const serverInstanceId = pointer.server_instance_id;
+  if (typeof serverInstanceId !== "string" || !serverInstanceId) return false;
+  if (!pointer.job) {
+    if (liveServerInstanceId && liveServerInstanceId !== serverInstanceId) {
+      stopLiveJobTransport();
+      liveSessionRevision = 0;
+      activeLiveJobId = null;
+      latestLiveSnapshot = null;
+      lastLiveRevision = -1;
+    }
+    liveServerInstanceId = serverInstanceId;
+    return false;
+  }
+  const sessionRevision = Number(pointer.session_revision);
+  const serverChanged = serverInstanceId !== liveServerInstanceId;
+  const revisionAdvanced = sessionRevision > liveSessionRevision;
+  const jobChanged = pointer.job.job_id !== (activeLiveJobId || latestLiveSnapshot?.job_id);
+  if (serverChanged || revisionAdvanced || jobChanged) {
+    return trackLiveSceneSession(pointer, {restoreInputs});
+  }
+  renderLiveSnapshot(pointer.job, liveRequestEpoch);
+  return false;
+}
+
+function connectLiveSceneSessionEvents() {
+  liveSessionEventSource?.close();
+  const source = new EventSource(
+    `/v1/live-scene-sessions/${encodeURIComponent(readerSessionId)}/events`,
+  );
+  liveSessionEventSource = source;
+  const receive = (event) => {
+    try {
+      handleLiveSceneSessionPointer(JSON.parse(event.data), {restoreInputs: true});
+    } catch (_) {
+      elements.interim.textContent = "Ignored an invalid session update; polling remains active.";
+    }
+  };
+  source.addEventListener("scene.session", receive);
+  source.addEventListener("message", receive);
+  source.addEventListener("error", () => {
+    elements.interim.textContent = "Session updates reconnecting; status polling remains available.";
+  });
+}
+
+function connectLiveSceneEvents(jobId, epoch) {
+  liveEventSource?.close();
+  const source = new EventSource(`/v1/live-scenes/${encodeURIComponent(jobId)}/events`);
+  liveEventSource = source;
+  const receive = (event) => {
+    if (epoch !== liveRequestEpoch) return;
+    try {
+      const snapshot = JSON.parse(event.data);
+      if (snapshot.revision === undefined && event.lastEventId) snapshot.revision = Number(event.lastEventId);
+      renderLiveSnapshot(snapshot, epoch);
+    } catch (_) {
+      elements.interim.textContent = "Ignored an invalid generation update; polling remains active.";
+    }
+  };
+  source.addEventListener("scene.job", receive);
+  source.addEventListener("message", receive);
+  source.addEventListener("error", () => {
+    if (epoch === liveRequestEpoch && activeLiveJobId) {
+      elements.interim.textContent = "Live updates reconnecting; the scene status is also being polled.";
+    }
+  });
+}
+
+function renderPack(payload, {hotSwap = false} = {}) {
   const pack = payload.story_pack;
   const metrics = payload.compile_metrics || payload.metrics;
   const generation = payload.generation_metrics;
+  const liveMetrics = payload.live_snapshot?.metrics;
   localStorage.setItem("bookforge.latestStoryPack", JSON.stringify(pack));
   const page = pack.pages[0];
-  elements.model.textContent = metrics?.model || pack.compiler_model;
+  elements.model.textContent = liveMetrics?.models?.length
+    ? liveMetrics.models.map((model) => `${model.model}@${model.revision}`).join(" + ")
+    : metrics?.model || pack.compiler_model;
   const totalMs = (metrics?.total_ms || 0) + (generation?.total_ms || 0);
-  elements.time.textContent = totalMs ? `${(totalMs / 1000).toFixed(1)} s` : "Saved locally";
+  elements.time.textContent = Number.isFinite(liveMetrics?.elapsed_ms)
+    ? `${(liveMetrics.elapsed_ms / 1000).toFixed(1)} s backend wall`
+    : totalMs ? `${(totalMs / 1000).toFixed(1)} s` : "Not measured";
   elements.tokens.textContent = metrics ? `${metrics.output_tokens} tokens` : `${page.layers.length + page.triggers.length} parts`;
   elements.summary.textContent = page.scene_summary;
   elements.layerCount.textContent = `${page.layers.length} layers`;
@@ -331,6 +761,7 @@ function renderPack(payload) {
   elements.results.classList.remove("hidden");
   setSceneReady(true);
   reloadProjectionPreview();
+  if (hotSwap) broadcastLiveSnapshot(payload.live_snapshot || {story_pack: pack, stage: "master_ready", revision: 0});
 }
 
 async function compileStory() {
@@ -340,35 +771,50 @@ async function compileStory() {
     return;
   }
   if (listening) stopSpeaking();
+  stopLiveJobTransport();
+  liveRequestEpoch += 1;
+  activeLiveJobId = null;
+  latestLiveSnapshot = null;
+  lastLiveRevision = -1;
+  liveStartedAt = performance.now();
+  liveElapsedBaseMs = 0;
+  liveElapsedBaseAt = liveStartedAt;
+  liveIsTerminal = false;
   elements.compileButton.disabled = true;
-  elements.compileButton.textContent = "Gemma + GPU are creating the scene…";
+  setSceneInputsDisabled(true);
+  elements.compileButton.textContent = "Starting live generation…";
   elements.error.classList.add("hidden");
-  setStatus("working", "Creating the scene");
+  renderGenerationProgress({stage: "queued", revision: 0});
+  liveElapsedTimer = window.setInterval(updateElapsedClock, 100);
+  ensureProjectionPreview();
 
   try {
-    const response = await fetch("/v1/story-packs:build", {
+    const response = await fetch("/v1/live-scenes", {
       method: "POST",
       headers: {"Content-Type": "application/json"},
       body: JSON.stringify({
-        story_id: `voice-${Date.now()}`,
-        title: elements.title.value.trim() || "Untitled Story",
-        reading_level: Number(elements.level.value),
+        text,
         visual_style: elements.style.value.trim() || "luminous paper theater",
-        pages: [{page_id: "page-01", text, art_direction: ""}],
+        session_id: readerSessionId,
       }),
     });
-    const payload = await response.json();
-    if (!response.ok) throw new Error(payload.detail || `Request failed (${response.status})`);
-    renderPack(payload);
-    setStatus("idle", "Scene ready");
-    elements.interim.textContent = "Scene ready. Open the projection view, then press Start reading.";
+    const snapshot = await response.json();
+    if (response.status !== 202) throw new Error(snapshot.detail || `Request failed (${response.status})`);
+    if (!snapshot.job_id) throw new Error("Generation service returned no job ID.");
+    const pointer = await fetchLiveSceneSession();
+    if (!pointer || !trackLiveSceneSession(pointer)) {
+      throw new Error("Generation session did not retain the accepted job.");
+    }
+    elements.interim.textContent = "Generation job accepted. The projector will upgrade itself as each stage arrives.";
   } catch (error) {
+    stopLiveJobTransport();
+    activeLiveJobId = null;
+    setSceneInputsDisabled(false);
     elements.error.textContent = error.message;
     elements.error.classList.remove("hidden");
     setStatus("error", "Could not create scene");
-  } finally {
     elements.compileButton.disabled = false;
-    elements.compileButton.textContent = "Create this scene with Gemma";
+    elements.compileButton.textContent = "Try generation again";
   }
 }
 
@@ -378,8 +824,6 @@ async function loadLatestScene() {
     if (!response.ok) return;
     const pack = await response.json();
     const page = pack.pages[0];
-    elements.title.value = pack.title;
-    elements.level.value = String(pack.reading_level);
     elements.style.value = pack.visual_style;
     elements.story.value = page.source_text;
     renderPack({story_pack: pack});
@@ -389,8 +833,25 @@ async function loadLatestScene() {
   }
 }
 
+async function recoverLiveSceneSession() {
+  try {
+    const pointer = await fetchLiveSceneSession();
+    if (!pointer) return false;
+    return handleLiveSceneSessionPointer(pointer, {restoreInputs: true})
+      || Boolean(pointer.job?.story_pack);
+  } catch (error) {
+    elements.interim.textContent = `Could not restore the live session: ${error.message}`;
+    return false;
+  }
+}
+
+async function restoreInitialScene() {
+  if (await recoverLiveSceneSession()) return;
+  await loadLatestScene();
+}
+
 function invalidateScene() {
-  if (!sceneReady || listening || starting) return;
+  if (!sceneReady || listening || starting || activeLiveJobId) return;
   setSceneReady(false);
   setStatus("stale", "Page changed—create it again");
   elements.interim.textContent = "The page changed. Create the scene again before reading it.";
@@ -405,7 +866,10 @@ elements.compileButton.addEventListener("click", compileStory);
 elements.projectorLink.addEventListener("click", (event) => {
   if (!sceneReady) event.preventDefault();
 });
-[elements.title, elements.level, elements.style, elements.story].forEach((element) => {
+elements.projectorFrame.addEventListener("load", () => {
+  if (latestLiveSnapshot?.story_pack) broadcastLiveSnapshot(latestLiveSnapshot);
+});
+[elements.style, elements.story].forEach((element) => {
   element.addEventListener("input", invalidateScene);
 });
 
@@ -417,4 +881,9 @@ if (!canRecordAudio) {
   elements.browserNote.textContent = "The scene creator still works here. Chrome on localhost supports the private local microphone flow.";
 }
 
-loadLatestScene();
+connectLiveSceneSessionEvents();
+restoreInitialScene();
+window.addEventListener("beforeunload", () => {
+  liveSessionEventSource?.close();
+  stopLiveJobTransport();
+});
