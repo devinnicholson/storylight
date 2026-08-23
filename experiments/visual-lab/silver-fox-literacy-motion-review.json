@@ -1,0 +1,73 @@
+{
+  "schema_version": "1.0",
+  "reviewer": "Bookforge motion acceptance",
+  "reviewed_at": "2026-08-23T19:11:59Z",
+  "criteria": [
+    "Required characters and objects remain present through the motion midpoint",
+    "Faces, paws, books, and lanterns do not visibly morph or ghost",
+    "Motion remains calm and readable for projected literacy use",
+    "The loop introduces no new character, text, cut, or camera shake"
+  ],
+  "reviews": [
+    {
+      "id": "lost-words-page-01-a-motion-ambient-projection",
+      "approved": true,
+      "notes": "Clean fox silhouette and lantern through midpoint."
+    },
+    {
+      "id": "lost-words-page-01-a-motion-parallax-projection",
+      "approved": true,
+      "notes": "Clean alternative with restrained camera depth."
+    },
+    {
+      "id": "lost-words-page-02-a-motion-ambient-projection",
+      "approved": true,
+      "notes": "Book, paper forms, fox, and lantern remain readable."
+    },
+    {
+      "id": "lost-words-page-02-a-motion-parallax-projection",
+      "approved": true,
+      "notes": "Calm projection-safe movement with no added subjects."
+    },
+    {
+      "id": "lost-words-page-03-c-motion-ambient-projection",
+      "approved": true,
+      "notes": "Reader, book, blue fox, and lantern remain intact."
+    },
+    {
+      "id": "lost-words-page-03-c-motion-parallax-projection",
+      "approved": true,
+      "notes": "Clean alternative with the required reader still prominent."
+    },
+    {
+      "id": "lost-words-page-04-d-motion-ambient-projection",
+      "approved": false,
+      "notes": "Fox face briefly ghosts at the inspected motion midpoint."
+    },
+    {
+      "id": "lost-words-page-04-d-motion-parallax-projection",
+      "approved": true,
+      "notes": "Reader and fox faces remain clean; book, lantern, and motes stay stable."
+    },
+    {
+      "id": "lost-words-page-05-c-motion-ambient-projection",
+      "approved": true,
+      "notes": "Child and fox remain together at the library portal."
+    },
+    {
+      "id": "lost-words-page-05-c-motion-parallax-projection",
+      "approved": true,
+      "notes": "Clean depth motion and stable awakened-library composition."
+    },
+    {
+      "id": "lost-words-page-06-a-motion-ambient-projection",
+      "approved": true,
+      "notes": "Children, book, shelf, fox, and lantern remain present."
+    },
+    {
+      "id": "lost-words-page-06-a-motion-parallax-projection",
+      "approved": true,
+      "notes": "Clean inclusive closing tableau with restrained motion."
+    }
+  ]
+}

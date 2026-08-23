@@ -17,4 +17,6 @@ terraform.tfstate.*
 .terraform/
 *.tfvars
 !*.tfvars.example
-artifacts/visual-lab/
+artifacts/visual-lab/*
+!artifacts/visual-lab/handoff/
+!artifacts/visual-lab/handoff/**

@@ -96,11 +96,11 @@ Then create a scene in the workbench. The first run builds the reusable containe
 Modal later without changing SceneSpec, Story Pack storage, the Jetson cache, or the projector.
 
 For higher-quality offline scene R&D, `deploy/modal_visual_lab.py` provides finite `modal run`
-jobs on an NVIDIA L4. It pins SANA 1.5 and LTX-Video revisions, records prompts, seeds, checksums,
-generation time, and estimated GPU cost, and never deploys a persistent endpoint. The experiment
-envelope in `experiments/visual-lab/plan.json` caps this month's lab work at $15 while retaining a
-$1.66 credit reserve. Raw candidates stay under the ignored `artifacts/visual-lab/` directory;
-selected production loops are promoted into checksum-verified Story Packs.
+jobs on an NVIDIA L4. It pins SANA 1.5, SigLIP, and LTX-Video revisions; records prompts, seeds,
+checksums, generation time, and estimated GPU cost; and never deploys a persistent endpoint. The
+experiment envelope in `experiments/visual-lab/plan.json` enforces a hard monthly stop and a retained
+credit reserve. Raw candidates stay under the ignored `artifacts/visual-lab/` directory; selected
+production loops are promoted into checksum-verified Story Packs.
 
 ```bash
 modal run deploy/modal_visual_lab.py::master_batch_cli \
@@ -124,7 +124,9 @@ python -m bookforge.pack_installer artifacts/visual-lab/promoted.story-pack.json
 
 The visual lab intentionally stops instead of silently falling back when the selected GPU is not
 available. Premium GPU access was not enabled on the no-payment Modal workspace, so the planned
-Cosmos comparison remains gated rather than adding a payment method or risking overage.
+Cosmos comparison remains gated rather than adding a payment method or risking overage. The accepted
+six-page milestone used $0.48878335 of Modal compute and platform services and left $16.17606214 of
+the monthly credit unused.
 
 The six-page literacy pipeline adds two independent quality gates. Local FFmpeg measurements cover
 checksum integrity, projection luminance and contrast, frame rate, temporal change, and loop-end
@@ -132,32 +134,69 @@ SSIM. A pinned SigLIP scorer on the same bounded Modal L4 measures prompt fideli
 continuity, child-safety contrast, and accidental text. The selector refuses mismatched checksums,
 missing pages, unsafe candidates, or text-contaminated candidates before ranking the remaining art.
 
+The exact accepted inputs, human decisions, final benchmark, and GCP handoff are tracked in the repo.
+The large generated files remain ignored and are rebuilt with the following pipeline:
+
 ```bash
+modal run deploy/modal_visual_lab.py::master_batch_cli \
+  --prompt-file experiments/visual-lab/silver-fox-literacy-masters.json \
+  --output-dir artifacts/visual-lab/lost-words-masters
+modal run deploy/modal_visual_lab.py::master_batch_cli \
+  --prompt-file experiments/visual-lab/silver-fox-literacy-remediation.json \
+  --output-dir artifacts/visual-lab/lost-words-remediation
 python -m bookforge.visual_evaluation artifacts/visual-lab/lost-words-masters/*.png \
   --output artifacts/visual-lab/lost-words-technical.json
+python -m bookforge.visual_evaluation artifacts/visual-lab/lost-words-remediation/*.png \
+  --output artifacts/visual-lab/lost-words-remediation-technical.json
 modal run deploy/modal_visual_lab.py::score_batch_cli \
   --manifest-path artifacts/visual-lab/lost-words-masters/manifest.json \
+  --reference-image-path \
+  artifacts/visual-lab/silver-fox-masters/silver-fox-watercolor-theater-a__2026082231.png \
   --output-path artifacts/visual-lab/lost-words-semantic.json
+modal run deploy/modal_visual_lab.py::score_batch_cli \
+  --manifest-path artifacts/visual-lab/lost-words-remediation/manifest.json \
+  --reference-image-path \
+  artifacts/visual-lab/silver-fox-masters/silver-fox-watercolor-theater-a__2026082231.png \
+  --output-path artifacts/visual-lab/lost-words-remediation-semantic.json
+
 python -m bookforge.visual_selection \
   artifacts/visual-lab/lost-words-technical.json \
   artifacts/visual-lab/lost-words-semantic.json \
+  --additional-technical artifacts/visual-lab/lost-words-remediation-technical.json \
+  --additional-semantic artifacts/visual-lab/lost-words-remediation-semantic.json \
+  --human-review experiments/visual-lab/silver-fox-literacy-human-review.json \
   --expected-pages 6 \
-  --output artifacts/visual-lab/lost-words-selection.json
+  --output artifacts/visual-lab/lost-words-master-selection.json
 modal run deploy/modal_visual_lab.py::multi_motion_batch_cli \
-  --master-manifest-path artifacts/visual-lab/lost-words-masters/manifest.json \
-  --selection-path artifacts/visual-lab/lost-words-selection.json \
-  --output-dir artifacts/visual-lab/lost-words-motion
-python -m bookforge.visual_evaluation artifacts/visual-lab/lost-words-motion/*.mp4 \
-  --output artifacts/visual-lab/lost-words-motion-technical.json
+  --master-manifest-path \
+  "artifacts/visual-lab/lost-words-masters/manifest.json,\
+artifacts/visual-lab/lost-words-remediation/manifest.json" \
+  --selection-path artifacts/visual-lab/lost-words-master-selection.json \
+  --output-dir artifacts/visual-lab/lost-words-motion-projection
+python -m bookforge.visual_evaluation \
+  artifacts/visual-lab/lost-words-motion-projection/*.mp4 \
+  --output artifacts/visual-lab/lost-words-motion-projection-technical.json
 python -m bookforge.motion_selection \
-  artifacts/visual-lab/lost-words-motion-technical.json \
+  artifacts/visual-lab/lost-words-motion-projection-technical.json \
+  --human-review experiments/visual-lab/silver-fox-literacy-motion-review.json \
   --expected-pages 6 \
-  --output artifacts/visual-lab/lost-words-motion-selection.json
+  --output artifacts/visual-lab/lost-words-motion-projection-selection.json
+python -m bookforge.final_asset_manifest \
+  --master-manifest artifacts/visual-lab/lost-words-masters/manifest.json \
+  --master-manifest artifacts/visual-lab/lost-words-remediation/manifest.json \
+  --master-selection artifacts/visual-lab/lost-words-master-selection.json \
+  --motion-manifest artifacts/visual-lab/lost-words-motion-projection/manifest.json \
+  --motion-selection artifacts/visual-lab/lost-words-motion-projection-selection.json \
+  --output artifacts/visual-lab/lost-words-final-assets.json
 python -m bookforge.literacy_pack \
   experiments/visual-lab/silver-fox-literacy-story.json \
   artifacts/visual-lab/lost-words-final-assets.json \
   --asset-root . \
   --output artifacts/visual-lab/silver-fox-lost-words.story-pack.json
+python -m bookforge.handoff_bundle \
+  artifacts/visual-lab/silver-fox-lost-words.story-pack.json \
+  --asset-root . \
+  --output-dir artifacts/visual-lab/handoff/silver-fox-lost-words
 ```
 
 The projector validates every page in a Story Pack. Its page controls and `[` / `]` shortcuts swap
@@ -230,6 +269,7 @@ run on JetPack 7.2.1.
 ## Design documents
 
 - [`docs/architecture.md`](docs/architecture.md): data boundary and cloud/edge responsibilities
+- [`docs/gcp-handoff.md`](docs/gcp-handoff.md): portable offline bundle and GCP promotion boundary
 - [`infra/gcp/README.md`](infra/gcp/README.md): guarded GKE and Gemma serving workflow
 - [`benchmarks/macbook-m4-smoke-2026-08-20.json`](benchmarks/macbook-m4-smoke-2026-08-20.json): first real-model latency measurements
 - [`benchmarks/live-reader-laptop-2026-08-21.json`](benchmarks/live-reader-laptop-2026-08-21.json): clean-wheel, browser, persistence, and live event latency evidence
@@ -238,3 +278,4 @@ run on JetPack 7.2.1.
 - [`benchmarks/visual-technical-existing-2026-08-23.json`](benchmarks/visual-technical-existing-2026-08-23.json): reproducible FFmpeg projection and loop measurements for the two accepted scenes
 - [`benchmarks/literacy-navigation-2026-08-23.json`](benchmarks/literacy-navigation-2026-08-23.json): six-page session, media lifecycle, and final-page live-trigger browser acceptance
 - [`benchmarks/modal-billing-gate-2026-08-23.json`](benchmarks/modal-billing-gate-2026-08-23.json): authoritative monthly usage, remaining credit, and paid-generation gate evidence
+- [`benchmarks/lost-words-modal-acceptance-2026-08-23.json`](benchmarks/lost-words-modal-acceptance-2026-08-23.json): final six-page generation, quality, billing, bundle, and read-aloud acceptance

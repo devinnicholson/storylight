@@ -23,13 +23,30 @@ class MotionCandidateScore:
     endpoint_ssim: float
     temporal_change: float
     motion_stability: float
+    human_approved: bool
+    review_notes: str
     overall: float
 
 
-def build_motion_selection_report(technical: dict, *, expected_pages: int) -> dict:
+def build_motion_selection_report(
+    technical: dict,
+    *,
+    expected_pages: int,
+    human_review: dict | None = None,
+) -> dict:
     evaluations = technical.get("evaluations")
     if not isinstance(evaluations, list):
         raise MotionSelectionError("technical motion evaluations are required")
+    review_by_id: dict[str, dict] = {}
+    if human_review is not None:
+        reviews = human_review.get("reviews")
+        if not isinstance(reviews, list):
+            raise MotionSelectionError("human review requires a reviews list")
+        review_by_id = {str(review.get("id")): review for review in reviews}
+        if len(review_by_id) != len(reviews):
+            raise MotionSelectionError("human review contains duplicate candidate IDs")
+        if any(not isinstance(review.get("approved"), bool) for review in reviews):
+            raise MotionSelectionError("every human review requires boolean approved")
     candidates: list[MotionCandidateScore] = []
     seen: set[str] = set()
     for evaluation in evaluations:
@@ -58,15 +75,22 @@ def build_motion_selection_report(technical: dict, *, expected_pages: int) -> di
         )
         if not 3 <= duration <= 8 or fps < 20 or values["endpoint_ssim"] < 0.94:
             overall = min(overall, 0.49)
+        review = review_by_id.get(candidate_id, {"approved": True, "notes": ""})
+        if not review["approved"]:
+            overall = min(overall, 0.49)
         candidates.append(
             MotionCandidateScore(
                 candidate_id=candidate_id,
                 page_number=int(match.group(1)),
                 sha256=str(evaluation["sha256"]),
+                human_approved=review["approved"],
+                review_notes=str(review.get("notes", "")),
                 overall=round(overall, 6),
                 **{name: round(value, 6) for name, value in values.items()},
             )
         )
+    if human_review is not None and set(review_by_id) != seen:
+        raise MotionSelectionError("human review and candidate sets do not match")
     winners = []
     for page_number in range(1, expected_pages + 1):
         page_candidates = [item for item in candidates if item.page_number == page_number]
@@ -83,6 +107,14 @@ def build_motion_selection_report(technical: dict, *, expected_pages: int) -> di
     return {
         "schema_version": "1.0",
         "expected_pages": expected_pages,
+        "human_review": (
+            {
+                "reviewer": human_review.get("reviewer", "unspecified"),
+                "reviewed_at": human_review.get("reviewed_at", "unspecified"),
+            }
+            if human_review is not None
+            else None
+        ),
         "candidates": [
             asdict(item) for item in sorted(candidates, key=lambda item: item.candidate_id)
         ],
@@ -95,12 +127,16 @@ def main() -> int:
     parser.add_argument("technical", type=Path)
     parser.add_argument("--expected-pages", required=True, type=int)
     parser.add_argument("--output", required=True, type=Path)
+    parser.add_argument("--human-review", type=Path)
     arguments = parser.parse_args()
     if not 1 <= arguments.expected_pages <= 12:
         raise MotionSelectionError("expected pages must be between 1 and 12")
     report = build_motion_selection_report(
         json.loads(arguments.technical.read_text()),
         expected_pages=arguments.expected_pages,
+        human_review=(
+            json.loads(arguments.human_review.read_text()) if arguments.human_review else None
+        ),
     )
     arguments.output.parent.mkdir(parents=True, exist_ok=True)
     arguments.output.write_text(json.dumps(report, indent=2, sort_keys=True) + "\n")

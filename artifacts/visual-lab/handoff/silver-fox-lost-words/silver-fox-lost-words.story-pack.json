@@ -1,0 +1,1038 @@
+{
+  "schema_version": "2.0",
+  "story_id": "silver-fox-lost-words",
+  "title": "The Silver Fox and the Lost Words",
+  "reading_level": 2,
+  "visual_style": "luminous layered watercolor paper theater",
+  "compiler_model": "bookforge-literacy-pack-assembler-v1",
+  "pages": [
+    {
+      "page_id": "page-01",
+      "source_text": "At dusk, a silver fox carried a golden lantern beneath the enormous cedar trees.",
+      "scene_summary": "The fox enters the blue forest with the lantern as the sole warm focal light.",
+      "scene_spec": {
+        "version": "2.0",
+        "canvas": {
+          "width": 1920,
+          "height": 1080,
+          "aspect_ratio": "16:9"
+        },
+        "master_prompt": "The fox enters the blue forest with the lantern as the sole warm focal light. Visual style: luminous layered watercolor paper theater. Character continuity: One elegant silver-blue fox with a white muzzle and tail tip, dark indigo eyes, and one small round golden lantern on a curved handle. Never add clothing, extra lanterns, or another fox. Projection-safe 16:9 illustration without readable text or interface.",
+        "negative_prompt": "readable text, captions, logos, extra foxes, extra lanterns, fear, violence",
+        "camera": {
+          "kind": "slow_push",
+          "start_scale": 1.01,
+          "end_scale": 1.035,
+          "travel_x": 0.0,
+          "travel_y": 0.0,
+          "duration_ms": 16000
+        },
+        "composition": [
+          {
+            "layer_id": "page-01-background",
+            "center_x": 0.5,
+            "center_y": 0.5,
+            "width": 1.0,
+            "height": 1.0,
+            "depth": 1.0,
+            "feather": 0.12,
+            "ambient_motion": {
+              "kind": "parallax",
+              "amplitude_x": 0.002,
+              "amplitude_y": 0.0,
+              "scale_delta": 0.0,
+              "period_ms": 8000
+            }
+          },
+          {
+            "layer_id": "page-01-focus",
+            "center_x": 0.5,
+            "center_y": 0.62,
+            "width": 0.58,
+            "height": 0.66,
+            "depth": 3.0,
+            "feather": 0.12,
+            "ambient_motion": {
+              "kind": "breathe",
+              "amplitude_x": 0.0,
+              "amplitude_y": 0.0,
+              "scale_delta": 0.004,
+              "period_ms": 8000
+            }
+          },
+          {
+            "layer_id": "page-01-light",
+            "center_x": 0.56,
+            "center_y": 0.48,
+            "width": 0.7,
+            "height": 0.7,
+            "depth": 4.0,
+            "feather": 0.12,
+            "ambient_motion": {
+              "kind": "float",
+              "amplitude_x": 0.0,
+              "amplitude_y": 0.006,
+              "scale_delta": 0.0,
+              "period_ms": 8000
+            }
+          }
+        ],
+        "ambience": [
+          {
+            "kind": "dust",
+            "density": 0.22,
+            "speed": 0.35,
+            "color": "#ffe4a8"
+          }
+        ]
+      },
+      "layers": [
+        {
+          "layer_id": "page-01-background",
+          "kind": "background",
+          "prompt": "Environment for: The fox enters the blue forest with the lantern as the sole warm focal light.",
+          "z_index": 1,
+          "motion": "Subtle depth drift"
+        },
+        {
+          "layer_id": "page-01-focus",
+          "kind": "character",
+          "prompt": "Story focus for: The fox enters the blue forest with the lantern as the sole warm focal light.. One elegant silver-blue fox with a white muzzle and tail tip, dark indigo eyes, and one small round golden lantern on a curved handle. Never add clothing, extra lanterns, or another fox.",
+          "z_index": 2,
+          "motion": "Gentle reveal synchronized to the spoken trigger"
+        },
+        {
+          "layer_id": "page-01-light",
+          "kind": "effect",
+          "prompt": "Warm word-light and restrained paper motes",
+          "z_index": 3,
+          "motion": "Slow breathing glow"
+        }
+      ],
+      "triggers": [
+        {
+          "trigger_id": "page-01-fox",
+          "word": "fox",
+          "occurrence": 1,
+          "action": "reveal",
+          "target_layer_id": "page-01-focus",
+          "duration_ms": 1200
+        }
+      ],
+      "literacy_support": [
+        {
+          "word": "fox",
+          "grapheme": "f-o-x",
+          "hint_ladder": [
+            "f",
+            "fo",
+            "fox"
+          ]
+        }
+      ],
+      "comprehension": [
+        {
+          "question": "What happened when you read the word fox?",
+          "expected_concepts": [
+            "fox",
+            "light",
+            "story"
+          ]
+        }
+      ]
+    },
+    {
+      "page_id": "page-02",
+      "source_text": "On the path, glowing letters had fallen from a frightened little book.",
+      "scene_summary": "The fox discovers a small open book and a trail of dim paper letters.",
+      "scene_spec": {
+        "version": "2.0",
+        "canvas": {
+          "width": 1920,
+          "height": 1080,
+          "aspect_ratio": "16:9"
+        },
+        "master_prompt": "The fox discovers a small open book and a trail of dim paper letters. Visual style: luminous layered watercolor paper theater. Character continuity: One elegant silver-blue fox with a white muzzle and tail tip, dark indigo eyes, and one small round golden lantern on a curved handle. Never add clothing, extra lanterns, or another fox. Projection-safe 16:9 illustration without readable text or interface.",
+        "negative_prompt": "readable text, captions, logos, extra foxes, extra lanterns, fear, violence",
+        "camera": {
+          "kind": "slow_push",
+          "start_scale": 1.01,
+          "end_scale": 1.035,
+          "travel_x": 0.0,
+          "travel_y": 0.0,
+          "duration_ms": 16000
+        },
+        "composition": [
+          {
+            "layer_id": "page-02-background",
+            "center_x": 0.5,
+            "center_y": 0.5,
+            "width": 1.0,
+            "height": 1.0,
+            "depth": 1.0,
+            "feather": 0.12,
+            "ambient_motion": {
+              "kind": "parallax",
+              "amplitude_x": 0.002,
+              "amplitude_y": 0.0,
+              "scale_delta": 0.0,
+              "period_ms": 8000
+            }
+          },
+          {
+            "layer_id": "page-02-focus",
+            "center_x": 0.5,
+            "center_y": 0.62,
+            "width": 0.58,
+            "height": 0.66,
+            "depth": 3.0,
+            "feather": 0.12,
+            "ambient_motion": {
+              "kind": "breathe",
+              "amplitude_x": 0.0,
+              "amplitude_y": 0.0,
+              "scale_delta": 0.004,
+              "period_ms": 8000
+            }
+          },
+          {
+            "layer_id": "page-02-light",
+            "center_x": 0.56,
+            "center_y": 0.48,
+            "width": 0.7,
+            "height": 0.7,
+            "depth": 4.0,
+            "feather": 0.12,
+            "ambient_motion": {
+              "kind": "float",
+              "amplitude_x": 0.0,
+              "amplitude_y": 0.006,
+              "scale_delta": 0.0,
+              "period_ms": 8000
+            }
+          }
+        ],
+        "ambience": [
+          {
+            "kind": "dust",
+            "density": 0.22,
+            "speed": 0.35,
+            "color": "#ffe4a8"
+          }
+        ]
+      },
+      "layers": [
+        {
+          "layer_id": "page-02-background",
+          "kind": "background",
+          "prompt": "Environment for: The fox discovers a small open book and a trail of dim paper letters.",
+          "z_index": 1,
+          "motion": "Subtle depth drift"
+        },
+        {
+          "layer_id": "page-02-focus",
+          "kind": "character",
+          "prompt": "Story focus for: The fox discovers a small open book and a trail of dim paper letters.. One elegant silver-blue fox with a white muzzle and tail tip, dark indigo eyes, and one small round golden lantern on a curved handle. Never add clothing, extra lanterns, or another fox.",
+          "z_index": 2,
+          "motion": "Gentle reveal synchronized to the spoken trigger"
+        },
+        {
+          "layer_id": "page-02-light",
+          "kind": "effect",
+          "prompt": "Warm word-light and restrained paper motes",
+          "z_index": 3,
+          "motion": "Slow breathing glow"
+        }
+      ],
+      "triggers": [
+        {
+          "trigger_id": "page-02-letters",
+          "word": "letters",
+          "occurrence": 1,
+          "action": "glow",
+          "target_layer_id": "page-02-focus",
+          "duration_ms": 1200
+        }
+      ],
+      "literacy_support": [
+        {
+          "word": "letters",
+          "grapheme": "l-e-t-t-e-r-s",
+          "hint_ladder": [
+            "l",
+            "le",
+            "letters"
+          ]
+        }
+      ],
+      "comprehension": [
+        {
+          "question": "What happened when you read the word letters?",
+          "expected_concepts": [
+            "letters",
+            "light",
+            "story"
+          ]
+        }
+      ]
+    },
+    {
+      "page_id": "page-03",
+      "source_text": "The fox listened while a young reader slowly sounded out each letter.",
+      "scene_summary": "A child reads beside the fox; individual letter-shaped lights begin to wake.",
+      "scene_spec": {
+        "version": "2.0",
+        "canvas": {
+          "width": 1920,
+          "height": 1080,
+          "aspect_ratio": "16:9"
+        },
+        "master_prompt": "A child reads beside the fox; individual letter-shaped lights begin to wake. Visual style: luminous layered watercolor paper theater. Character continuity: One elegant silver-blue fox with a white muzzle and tail tip, dark indigo eyes, and one small round golden lantern on a curved handle. Never add clothing, extra lanterns, or another fox. Projection-safe 16:9 illustration without readable text or interface.",
+        "negative_prompt": "readable text, captions, logos, extra foxes, extra lanterns, fear, violence",
+        "camera": {
+          "kind": "slow_push",
+          "start_scale": 1.01,
+          "end_scale": 1.035,
+          "travel_x": 0.0,
+          "travel_y": 0.0,
+          "duration_ms": 16000
+        },
+        "composition": [
+          {
+            "layer_id": "page-03-background",
+            "center_x": 0.5,
+            "center_y": 0.5,
+            "width": 1.0,
+            "height": 1.0,
+            "depth": 1.0,
+            "feather": 0.12,
+            "ambient_motion": {
+              "kind": "parallax",
+              "amplitude_x": 0.002,
+              "amplitude_y": 0.0,
+              "scale_delta": 0.0,
+              "period_ms": 8000
+            }
+          },
+          {
+            "layer_id": "page-03-focus",
+            "center_x": 0.5,
+            "center_y": 0.62,
+            "width": 0.58,
+            "height": 0.66,
+            "depth": 3.0,
+            "feather": 0.12,
+            "ambient_motion": {
+              "kind": "breathe",
+              "amplitude_x": 0.0,
+              "amplitude_y": 0.0,
+              "scale_delta": 0.004,
+              "period_ms": 8000
+            }
+          },
+          {
+            "layer_id": "page-03-light",
+            "center_x": 0.56,
+            "center_y": 0.48,
+            "width": 0.7,
+            "height": 0.7,
+            "depth": 4.0,
+            "feather": 0.12,
+            "ambient_motion": {
+              "kind": "float",
+              "amplitude_x": 0.0,
+              "amplitude_y": 0.006,
+              "scale_delta": 0.0,
+              "period_ms": 8000
+            }
+          }
+        ],
+        "ambience": [
+          {
+            "kind": "dust",
+            "density": 0.22,
+            "speed": 0.35,
+            "color": "#ffe4a8"
+          }
+        ]
+      },
+      "layers": [
+        {
+          "layer_id": "page-03-background",
+          "kind": "background",
+          "prompt": "Environment for: A child reads beside the fox; individual letter-shaped lights begin to wake.",
+          "z_index": 1,
+          "motion": "Subtle depth drift"
+        },
+        {
+          "layer_id": "page-03-focus",
+          "kind": "character",
+          "prompt": "Story focus for: A child reads beside the fox; individual letter-shaped lights begin to wake.. One elegant silver-blue fox with a white muzzle and tail tip, dark indigo eyes, and one small round golden lantern on a curved handle. Never add clothing, extra lanterns, or another fox.",
+          "z_index": 2,
+          "motion": "Gentle reveal synchronized to the spoken trigger"
+        },
+        {
+          "layer_id": "page-03-light",
+          "kind": "effect",
+          "prompt": "Warm word-light and restrained paper motes",
+          "z_index": 3,
+          "motion": "Slow breathing glow"
+        }
+      ],
+      "triggers": [
+        {
+          "trigger_id": "page-03-reader",
+          "word": "reader",
+          "occurrence": 1,
+          "action": "reveal",
+          "target_layer_id": "page-03-focus",
+          "duration_ms": 1200
+        }
+      ],
+      "literacy_support": [
+        {
+          "word": "reader",
+          "grapheme": "r-e-a-d-e-r",
+          "hint_ladder": [
+            "r",
+            "re",
+            "reader"
+          ]
+        }
+      ],
+      "comprehension": [
+        {
+          "question": "What happened when you read the word reader?",
+          "expected_concepts": [
+            "reader",
+            "light",
+            "story"
+          ]
+        }
+      ]
+    },
+    {
+      "page_id": "page-04",
+      "source_text": "Every spoken word rose like a firefly and returned to the waiting page.",
+      "scene_summary": "Warm word-shaped fireflies arc from the reader toward the open book.",
+      "scene_spec": {
+        "version": "2.0",
+        "canvas": {
+          "width": 1920,
+          "height": 1080,
+          "aspect_ratio": "16:9"
+        },
+        "master_prompt": "Warm word-shaped fireflies arc from the reader toward the open book. Visual style: luminous layered watercolor paper theater. Character continuity: One elegant silver-blue fox with a white muzzle and tail tip, dark indigo eyes, and one small round golden lantern on a curved handle. Never add clothing, extra lanterns, or another fox. Projection-safe 16:9 illustration without readable text or interface.",
+        "negative_prompt": "readable text, captions, logos, extra foxes, extra lanterns, fear, violence",
+        "camera": {
+          "kind": "slow_push",
+          "start_scale": 1.01,
+          "end_scale": 1.035,
+          "travel_x": 0.0,
+          "travel_y": 0.0,
+          "duration_ms": 16000
+        },
+        "composition": [
+          {
+            "layer_id": "page-04-background",
+            "center_x": 0.5,
+            "center_y": 0.5,
+            "width": 1.0,
+            "height": 1.0,
+            "depth": 1.0,
+            "feather": 0.12,
+            "ambient_motion": {
+              "kind": "parallax",
+              "amplitude_x": 0.002,
+              "amplitude_y": 0.0,
+              "scale_delta": 0.0,
+              "period_ms": 8000
+            }
+          },
+          {
+            "layer_id": "page-04-focus",
+            "center_x": 0.5,
+            "center_y": 0.62,
+            "width": 0.58,
+            "height": 0.66,
+            "depth": 3.0,
+            "feather": 0.12,
+            "ambient_motion": {
+              "kind": "breathe",
+              "amplitude_x": 0.0,
+              "amplitude_y": 0.0,
+              "scale_delta": 0.004,
+              "period_ms": 8000
+            }
+          },
+          {
+            "layer_id": "page-04-light",
+            "center_x": 0.56,
+            "center_y": 0.48,
+            "width": 0.7,
+            "height": 0.7,
+            "depth": 4.0,
+            "feather": 0.12,
+            "ambient_motion": {
+              "kind": "float",
+              "amplitude_x": 0.0,
+              "amplitude_y": 0.006,
+              "scale_delta": 0.0,
+              "period_ms": 8000
+            }
+          }
+        ],
+        "ambience": [
+          {
+            "kind": "dust",
+            "density": 0.22,
+            "speed": 0.35,
+            "color": "#ffe4a8"
+          }
+        ]
+      },
+      "layers": [
+        {
+          "layer_id": "page-04-background",
+          "kind": "background",
+          "prompt": "Environment for: Warm word-shaped fireflies arc from the reader toward the open book.",
+          "z_index": 1,
+          "motion": "Subtle depth drift"
+        },
+        {
+          "layer_id": "page-04-focus",
+          "kind": "character",
+          "prompt": "Story focus for: Warm word-shaped fireflies arc from the reader toward the open book.. One elegant silver-blue fox with a white muzzle and tail tip, dark indigo eyes, and one small round golden lantern on a curved handle. Never add clothing, extra lanterns, or another fox.",
+          "z_index": 2,
+          "motion": "Gentle reveal synchronized to the spoken trigger"
+        },
+        {
+          "layer_id": "page-04-light",
+          "kind": "effect",
+          "prompt": "Warm word-light and restrained paper motes",
+          "z_index": 3,
+          "motion": "Slow breathing glow"
+        }
+      ],
+      "triggers": [
+        {
+          "trigger_id": "page-04-word",
+          "word": "word",
+          "occurrence": 1,
+          "action": "move",
+          "target_layer_id": "page-04-focus",
+          "duration_ms": 1200
+        }
+      ],
+      "literacy_support": [
+        {
+          "word": "word",
+          "grapheme": "w-o-r-d",
+          "hint_ladder": [
+            "w",
+            "wo",
+            "word"
+          ]
+        }
+      ],
+      "comprehension": [
+        {
+          "question": "What happened when you read the word word?",
+          "expected_concepts": [
+            "word",
+            "light",
+            "story"
+          ]
+        }
+      ]
+    },
+    {
+      "page_id": "page-05",
+      "source_text": "When the final word was read, the dark library bloomed with color.",
+      "scene_summary": "A hidden forest library transforms from indigo darkness into luminous color.",
+      "scene_spec": {
+        "version": "2.0",
+        "canvas": {
+          "width": 1920,
+          "height": 1080,
+          "aspect_ratio": "16:9"
+        },
+        "master_prompt": "A hidden forest library transforms from indigo darkness into luminous color. Visual style: luminous layered watercolor paper theater. Character continuity: One elegant silver-blue fox with a white muzzle and tail tip, dark indigo eyes, and one small round golden lantern on a curved handle. Never add clothing, extra lanterns, or another fox. Projection-safe 16:9 illustration without readable text or interface.",
+        "negative_prompt": "readable text, captions, logos, extra foxes, extra lanterns, fear, violence",
+        "camera": {
+          "kind": "slow_push",
+          "start_scale": 1.01,
+          "end_scale": 1.035,
+          "travel_x": 0.0,
+          "travel_y": 0.0,
+          "duration_ms": 16000
+        },
+        "composition": [
+          {
+            "layer_id": "page-05-background",
+            "center_x": 0.5,
+            "center_y": 0.5,
+            "width": 1.0,
+            "height": 1.0,
+            "depth": 1.0,
+            "feather": 0.12,
+            "ambient_motion": {
+              "kind": "parallax",
+              "amplitude_x": 0.002,
+              "amplitude_y": 0.0,
+              "scale_delta": 0.0,
+              "period_ms": 8000
+            }
+          },
+          {
+            "layer_id": "page-05-focus",
+            "center_x": 0.5,
+            "center_y": 0.62,
+            "width": 0.58,
+            "height": 0.66,
+            "depth": 3.0,
+            "feather": 0.12,
+            "ambient_motion": {
+              "kind": "breathe",
+              "amplitude_x": 0.0,
+              "amplitude_y": 0.0,
+              "scale_delta": 0.004,
+              "period_ms": 8000
+            }
+          },
+          {
+            "layer_id": "page-05-light",
+            "center_x": 0.56,
+            "center_y": 0.48,
+            "width": 0.7,
+            "height": 0.7,
+            "depth": 4.0,
+            "feather": 0.12,
+            "ambient_motion": {
+              "kind": "float",
+              "amplitude_x": 0.0,
+              "amplitude_y": 0.006,
+              "scale_delta": 0.0,
+              "period_ms": 8000
+            }
+          }
+        ],
+        "ambience": [
+          {
+            "kind": "dust",
+            "density": 0.22,
+            "speed": 0.35,
+            "color": "#ffe4a8"
+          }
+        ]
+      },
+      "layers": [
+        {
+          "layer_id": "page-05-background",
+          "kind": "background",
+          "prompt": "Environment for: A hidden forest library transforms from indigo darkness into luminous color.",
+          "z_index": 1,
+          "motion": "Subtle depth drift"
+        },
+        {
+          "layer_id": "page-05-focus",
+          "kind": "character",
+          "prompt": "Story focus for: A hidden forest library transforms from indigo darkness into luminous color.. One elegant silver-blue fox with a white muzzle and tail tip, dark indigo eyes, and one small round golden lantern on a curved handle. Never add clothing, extra lanterns, or another fox.",
+          "z_index": 2,
+          "motion": "Gentle reveal synchronized to the spoken trigger"
+        },
+        {
+          "layer_id": "page-05-light",
+          "kind": "effect",
+          "prompt": "Warm word-light and restrained paper motes",
+          "z_index": 3,
+          "motion": "Slow breathing glow"
+        }
+      ],
+      "triggers": [
+        {
+          "trigger_id": "page-05-library",
+          "word": "library",
+          "occurrence": 1,
+          "action": "transform",
+          "target_layer_id": "page-05-focus",
+          "duration_ms": 1200
+        }
+      ],
+      "literacy_support": [
+        {
+          "word": "library",
+          "grapheme": "l-i-b-r-a-r-y",
+          "hint_ladder": [
+            "l",
+            "li",
+            "library"
+          ]
+        }
+      ],
+      "comprehension": [
+        {
+          "question": "What happened when you read the word library?",
+          "expected_concepts": [
+            "library",
+            "light",
+            "story"
+          ]
+        }
+      ]
+    },
+    {
+      "page_id": "page-06",
+      "source_text": "The fox placed the bright book where every young reader could reach it.",
+      "scene_summary": "The fox presents the restored book on a low welcoming shelf for many children.",
+      "scene_spec": {
+        "version": "2.0",
+        "canvas": {
+          "width": 1920,
+          "height": 1080,
+          "aspect_ratio": "16:9"
+        },
+        "master_prompt": "The fox presents the restored book on a low welcoming shelf for many children. Visual style: luminous layered watercolor paper theater. Character continuity: One elegant silver-blue fox with a white muzzle and tail tip, dark indigo eyes, and one small round golden lantern on a curved handle. Never add clothing, extra lanterns, or another fox. Projection-safe 16:9 illustration without readable text or interface.",
+        "negative_prompt": "readable text, captions, logos, extra foxes, extra lanterns, fear, violence",
+        "camera": {
+          "kind": "slow_push",
+          "start_scale": 1.01,
+          "end_scale": 1.035,
+          "travel_x": 0.0,
+          "travel_y": 0.0,
+          "duration_ms": 16000
+        },
+        "composition": [
+          {
+            "layer_id": "page-06-background",
+            "center_x": 0.5,
+            "center_y": 0.5,
+            "width": 1.0,
+            "height": 1.0,
+            "depth": 1.0,
+            "feather": 0.12,
+            "ambient_motion": {
+              "kind": "parallax",
+              "amplitude_x": 0.002,
+              "amplitude_y": 0.0,
+              "scale_delta": 0.0,
+              "period_ms": 8000
+            }
+          },
+          {
+            "layer_id": "page-06-focus",
+            "center_x": 0.5,
+            "center_y": 0.62,
+            "width": 0.58,
+            "height": 0.66,
+            "depth": 3.0,
+            "feather": 0.12,
+            "ambient_motion": {
+              "kind": "breathe",
+              "amplitude_x": 0.0,
+              "amplitude_y": 0.0,
+              "scale_delta": 0.004,
+              "period_ms": 8000
+            }
+          },
+          {
+            "layer_id": "page-06-light",
+            "center_x": 0.56,
+            "center_y": 0.48,
+            "width": 0.7,
+            "height": 0.7,
+            "depth": 4.0,
+            "feather": 0.12,
+            "ambient_motion": {
+              "kind": "float",
+              "amplitude_x": 0.0,
+              "amplitude_y": 0.006,
+              "scale_delta": 0.0,
+              "period_ms": 8000
+            }
+          }
+        ],
+        "ambience": [
+          {
+            "kind": "dust",
+            "density": 0.22,
+            "speed": 0.35,
+            "color": "#ffe4a8"
+          }
+        ]
+      },
+      "layers": [
+        {
+          "layer_id": "page-06-background",
+          "kind": "background",
+          "prompt": "Environment for: The fox presents the restored book on a low welcoming shelf for many children.",
+          "z_index": 1,
+          "motion": "Subtle depth drift"
+        },
+        {
+          "layer_id": "page-06-focus",
+          "kind": "character",
+          "prompt": "Story focus for: The fox presents the restored book on a low welcoming shelf for many children.. One elegant silver-blue fox with a white muzzle and tail tip, dark indigo eyes, and one small round golden lantern on a curved handle. Never add clothing, extra lanterns, or another fox.",
+          "z_index": 2,
+          "motion": "Gentle reveal synchronized to the spoken trigger"
+        },
+        {
+          "layer_id": "page-06-light",
+          "kind": "effect",
+          "prompt": "Warm word-light and restrained paper motes",
+          "z_index": 3,
+          "motion": "Slow breathing glow"
+        }
+      ],
+      "triggers": [
+        {
+          "trigger_id": "page-06-book",
+          "word": "book",
+          "occurrence": 1,
+          "action": "glow",
+          "target_layer_id": "page-06-focus",
+          "duration_ms": 1200
+        }
+      ],
+      "literacy_support": [
+        {
+          "word": "book",
+          "grapheme": "b-o-o-k",
+          "hint_ladder": [
+            "b",
+            "bo",
+            "book"
+          ]
+        }
+      ],
+      "comprehension": [
+        {
+          "question": "What happened when you read the word book?",
+          "expected_concepts": [
+            "book",
+            "light",
+            "story"
+          ]
+        }
+      ]
+    }
+  ],
+  "assets": [
+    {
+      "asset_id": "page-01-master",
+      "page_id": "page-01",
+      "layer_id": "page-01-background",
+      "kind": "image",
+      "role": "master",
+      "provider": "modal:Efficient-Large-Model/SANA1.5_1.6B_1024px_diffusers@caa51e5ea874be07d3a9c7c2d0fd800570b18440",
+      "prompt": "Story page 1 of a coherent premium picture book. One elegant silver-blue fox with a white muzzle and tail tip, dark indigo eyes, no clothing, carrying exactly one small round golden lantern on a curved handle, walks beneath enormous cedar trees at deep blue dusk. Luminous layered watercolor paper theater, tactile deckled fibers, deep indigo and teal forest, restrained amber glow, graceful readable silhouette, quiet anticipation, cinematic full-bleed 16:9 projection plate, no words, no letters, no border, no interface, no other fox.",
+      "seed": 2026082301,
+      "width": 1024,
+      "height": 576,
+      "duration_ms": 0,
+      "checksum_sha256": "013fa9a2c8318df770e40a950302de8ce8828a69da730cdc9fa46fcbac4d3ab9",
+      "storage_uri": "",
+      "local_uri": "assets/page-01-master.png",
+      "state": "ready",
+      "generation_ms": 7773.131
+    },
+    {
+      "asset_id": "page-01-motion",
+      "page_id": "page-01",
+      "layer_id": "page-01-background",
+      "kind": "video_loop",
+      "role": "motion",
+      "provider": "modal:Lightricks/LTX-Video@a6d59ee37c13c58261aa79027d3e41cd41960925",
+      "prompt": "Locked storybook camera. Preserve the exact character, objects, watercolor-paper composition, and palette. Add only gentle breathing, blinking, lantern glow, and sparse drifting motes. Calm readable motion, no new content or scene transition.",
+      "seed": 20949410,
+      "width": 800,
+      "height": 448,
+      "duration_ms": 4042,
+      "checksum_sha256": "e0ed5ab510e689120474e33ceed0748716040d2c5f4f61cf50352895f75a91e5",
+      "storage_uri": "",
+      "local_uri": "assets/page-01-motion.mp4",
+      "state": "ready",
+      "generation_ms": 32343.616
+    },
+    {
+      "asset_id": "page-02-master",
+      "page_id": "page-02",
+      "layer_id": "page-02-background",
+      "kind": "image",
+      "role": "master",
+      "provider": "modal:Efficient-Large-Model/SANA1.5_1.6B_1024px_diffusers@caa51e5ea874be07d3a9c7c2d0fd800570b18440",
+      "prompt": "Story page 2 in the same luminous layered watercolor paper theater. The same single silver-blue fox with white muzzle and tail tip and dark indigo eyes crouches beside one small open frightened picture book on a moonlit forest path; its one round golden lantern rests nearby. A trail of separate dim abstract paper letter-shapes has tumbled from the book, shown as simple glyph-like cut-paper forms without readable words. Deep teal cedars, amber and cream light, clean focal hierarchy, cinematic 16:9 projection art, no captions, no border, no other fox.",
+      "seed": 2026082303,
+      "width": 1024,
+      "height": 576,
+      "duration_ms": 0,
+      "checksum_sha256": "920da45b3a4a2af1d9eac9e53fbba05a9ebe0bcd36e2ab8478f83cf040f4c609",
+      "storage_uri": "",
+      "local_uri": "assets/page-02-master.png",
+      "state": "ready",
+      "generation_ms": 7073.765
+    },
+    {
+      "asset_id": "page-02-motion",
+      "page_id": "page-02",
+      "layer_id": "page-02-background",
+      "kind": "video_loop",
+      "role": "motion",
+      "provider": "modal:Lightricks/LTX-Video@a6d59ee37c13c58261aa79027d3e41cd41960925",
+      "prompt": "Nearly locked storybook camera with an extremely shallow push. Preserve exact forms and identity. Add restrained foreground-to-background parallax, soft paper movement, and breathing warm light. No morphing, cuts, added characters, or camera shake.",
+      "seed": 2450367580,
+      "width": 800,
+      "height": 448,
+      "duration_ms": 4042,
+      "checksum_sha256": "618d023cb152f5583326b172976528190d391cf399c992ab3e4c227911eada74",
+      "storage_uri": "",
+      "local_uri": "assets/page-02-motion.mp4",
+      "state": "ready",
+      "generation_ms": 31825.17
+    },
+    {
+      "asset_id": "page-03-master",
+      "page_id": "page-03",
+      "layer_id": "page-03-background",
+      "kind": "image",
+      "role": "master",
+      "provider": "modal:Efficient-Large-Model/SANA1.5_1.6B_1024px_diffusers@caa51e5ea874be07d3a9c7c2d0fd800570b18440",
+      "prompt": "Exactly two main characters fill the foreground: one young child reading aloud from a large open picture book, and one small silver-blue fox listening beside the child. The child is the largest figure and is unmistakably human; the fox has a navy body, cyan-blue face, white muzzle and tail tip. One golden lantern. Deep indigo cedar hollow, luminous layered watercolor cut-paper theater, warm safe literacy moment, clean widescreen 16:9 projection composition, no other characters, no readable text, no border.",
+      "seed": 2026082313,
+      "width": 1024,
+      "height": 576,
+      "duration_ms": 0,
+      "checksum_sha256": "4418b7bbeb020542a935f18a6ab348ccf98d256d54ceaebf42451f16299c2f0e",
+      "storage_uri": "",
+      "local_uri": "assets/page-03-master.png",
+      "state": "ready",
+      "generation_ms": 9840.093
+    },
+    {
+      "asset_id": "page-03-motion",
+      "page_id": "page-03",
+      "layer_id": "page-03-background",
+      "kind": "video_loop",
+      "role": "motion",
+      "provider": "modal:Lightricks/LTX-Video@a6d59ee37c13c58261aa79027d3e41cd41960925",
+      "prompt": "Locked storybook camera. Preserve the exact character, objects, watercolor-paper composition, and palette. Add only gentle breathing, blinking, lantern glow, and sparse drifting motes. Calm readable motion, no new content or scene transition.",
+      "seed": 1142470587,
+      "width": 800,
+      "height": 448,
+      "duration_ms": 4042,
+      "checksum_sha256": "48b7de90ed5e79eca24d4428ff046d660d435043504534c72cf93a47188f601a",
+      "storage_uri": "",
+      "local_uri": "assets/page-03-motion.mp4",
+      "state": "ready",
+      "generation_ms": 31758.377
+    },
+    {
+      "asset_id": "page-04-master",
+      "page_id": "page-04",
+      "layer_id": "page-04-background",
+      "kind": "image",
+      "role": "master",
+      "provider": "modal:Efficient-Large-Model/SANA1.5_1.6B_1024px_diffusers@caa51e5ea874be07d3a9c7c2d0fd800570b18440",
+      "prompt": "Foreground literacy scene with exactly one human child, one silver-blue fox, and one open book. The child reads with visible confidence; the same fox has a dark navy body, cyan-blue face, white muzzle and white tail tip. Warm glowing speech motes arc from child to book while one golden lantern lights both faces. Premium watercolor paper theater in a dark teal cedar hollow, strong warm-cool contrast, spacious cinematic widescreen, no readable letters, no captions, no extra animals.",
+      "seed": 2026082316,
+      "width": 1024,
+      "height": 576,
+      "duration_ms": 0,
+      "checksum_sha256": "ff34a934c8dd9c875ec8fafe1cd516c50a7a0c76d34abc561fa3cb805fff893c",
+      "storage_uri": "",
+      "local_uri": "assets/page-04-master.png",
+      "state": "ready",
+      "generation_ms": 8832.797
+    },
+    {
+      "asset_id": "page-04-motion",
+      "page_id": "page-04",
+      "layer_id": "page-04-background",
+      "kind": "video_loop",
+      "role": "motion",
+      "provider": "modal:Lightricks/LTX-Video@a6d59ee37c13c58261aa79027d3e41cd41960925",
+      "prompt": "Nearly locked storybook camera with an extremely shallow push. Preserve exact forms and identity. Add restrained foreground-to-background parallax, soft paper movement, and breathing warm light. No morphing, cuts, added characters, or camera shake.",
+      "seed": 4281641269,
+      "width": 800,
+      "height": 448,
+      "duration_ms": 4042,
+      "checksum_sha256": "a28184b61008306de44421364cb7be940b93df4688865b45635ac1a5605a9c41",
+      "storage_uri": "",
+      "local_uri": "assets/page-04-motion.mp4",
+      "state": "ready",
+      "generation_ms": 32030.965
+    },
+    {
+      "asset_id": "page-05-master",
+      "page_id": "page-05",
+      "layer_id": "page-05-background",
+      "kind": "image",
+      "role": "master",
+      "provider": "modal:Efficient-Large-Model/SANA1.5_1.6B_1024px_diffusers@caa51e5ea874be07d3a9c7c2d0fd800570b18440",
+      "prompt": "One young child and one small navy-and-cyan silver fox stand together in the foreground, both looking into a newly awakened library inside giant cedar trees. The child and fox are large and clearly visible; the fox has a white muzzle and white tail tip. One open glowing picture book and one round golden lantern sit between them. The library blooms from indigo into teal, amber, coral, and violet watercolor paper shelves and leaves. Triumphant full-bleed 16:9 projection illustration, no other characters, no readable titles or text.",
+      "seed": 2026082317,
+      "width": 1024,
+      "height": 576,
+      "duration_ms": 0,
+      "checksum_sha256": "9d38251233edd2cde9b88c1f619c65fb4fbf56394ceb5e659546355641489e56",
+      "storage_uri": "",
+      "local_uri": "assets/page-05-master.png",
+      "state": "ready",
+      "generation_ms": 8385.619
+    },
+    {
+      "asset_id": "page-05-motion",
+      "page_id": "page-05",
+      "layer_id": "page-05-background",
+      "kind": "video_loop",
+      "role": "motion",
+      "provider": "modal:Lightricks/LTX-Video@a6d59ee37c13c58261aa79027d3e41cd41960925",
+      "prompt": "Nearly locked storybook camera with an extremely shallow push. Preserve exact forms and identity. Add restrained foreground-to-background parallax, soft paper movement, and breathing warm light. No morphing, cuts, added characters, or camera shake.",
+      "seed": 2637702419,
+      "width": 800,
+      "height": 448,
+      "duration_ms": 4042,
+      "checksum_sha256": "50e868cc27327a5d78e7fb7ec34cbd8f6709841cf1b49e7a38fe3fee1d42e05c",
+      "storage_uri": "",
+      "local_uri": "assets/page-05-motion.mp4",
+      "state": "ready",
+      "generation_ms": 31863.629
+    },
+    {
+      "asset_id": "page-06-master",
+      "page_id": "page-06",
+      "layer_id": "page-06-background",
+      "kind": "image",
+      "role": "master",
+      "provider": "modal:Efficient-Large-Model/SANA1.5_1.6B_1024px_diffusers@caa51e5ea874be07d3a9c7c2d0fd800570b18440",
+      "prompt": "Final story page in the same luminous watercolor paper theater. The same elegant silver-blue fox with white muzzle and tail tip gently places the restored glowing picture book on a low welcoming shelf that every child can reach. A small diverse group of young readers approaches with curiosity; exactly one round golden lantern rests beside the fox. The cedar library is warm, open, accessible, and filled with soft color, triumphant but calm, cinematic 16:9 projection plate, no readable text, no border, no interface.",
+      "seed": 2026082311,
+      "width": 1024,
+      "height": 576,
+      "duration_ms": 0,
+      "checksum_sha256": "12837690f632891eba29611bb7f6f33f02172780fb323bb0c6ef4cdcb0ae731f",
+      "storage_uri": "",
+      "local_uri": "assets/page-06-master.png",
+      "state": "ready",
+      "generation_ms": 7279.848
+    },
+    {
+      "asset_id": "page-06-motion",
+      "page_id": "page-06",
+      "layer_id": "page-06-background",
+      "kind": "video_loop",
+      "role": "motion",
+      "provider": "modal:Lightricks/LTX-Video@a6d59ee37c13c58261aa79027d3e41cd41960925",
+      "prompt": "Nearly locked storybook camera with an extremely shallow push. Preserve exact forms and identity. Add restrained foreground-to-background parallax, soft paper movement, and breathing warm light. No morphing, cuts, added characters, or camera shake.",
+      "seed": 310605457,
+      "width": 800,
+      "height": 448,
+      "duration_ms": 4042,
+      "checksum_sha256": "456e8561e655ba8047447efdc9c2b21f1b48b5596196881dcd1f757421f49c6c",
+      "storage_uri": "",
+      "local_uri": "assets/page-06-motion.mp4",
+      "state": "ready",
+      "generation_ms": 32590.725
+    }
+  ]
+}

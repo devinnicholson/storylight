@@ -1,0 +1,83 @@
+{
+  "assets": [
+    {
+      "asset_id": "page-01-master",
+      "bytes": 949530,
+      "path": "assets/page-01-master.png",
+      "sha256": "013fa9a2c8318df770e40a950302de8ce8828a69da730cdc9fa46fcbac4d3ab9"
+    },
+    {
+      "asset_id": "page-01-motion",
+      "bytes": 147291,
+      "path": "assets/page-01-motion.mp4",
+      "sha256": "e0ed5ab510e689120474e33ceed0748716040d2c5f4f61cf50352895f75a91e5"
+    },
+    {
+      "asset_id": "page-02-master",
+      "bytes": 948148,
+      "path": "assets/page-02-master.png",
+      "sha256": "920da45b3a4a2af1d9eac9e53fbba05a9ebe0bcd36e2ab8478f83cf040f4c609"
+    },
+    {
+      "asset_id": "page-02-motion",
+      "bytes": 162428,
+      "path": "assets/page-02-motion.mp4",
+      "sha256": "618d023cb152f5583326b172976528190d391cf399c992ab3e4c227911eada74"
+    },
+    {
+      "asset_id": "page-03-master",
+      "bytes": 720370,
+      "path": "assets/page-03-master.png",
+      "sha256": "4418b7bbeb020542a935f18a6ab348ccf98d256d54ceaebf42451f16299c2f0e"
+    },
+    {
+      "asset_id": "page-03-motion",
+      "bytes": 112848,
+      "path": "assets/page-03-motion.mp4",
+      "sha256": "48b7de90ed5e79eca24d4428ff046d660d435043504534c72cf93a47188f601a"
+    },
+    {
+      "asset_id": "page-04-master",
+      "bytes": 829253,
+      "path": "assets/page-04-master.png",
+      "sha256": "ff34a934c8dd9c875ec8fafe1cd516c50a7a0c76d34abc561fa3cb805fff893c"
+    },
+    {
+      "asset_id": "page-04-motion",
+      "bytes": 140472,
+      "path": "assets/page-04-motion.mp4",
+      "sha256": "a28184b61008306de44421364cb7be940b93df4688865b45635ac1a5605a9c41"
+    },
+    {
+      "asset_id": "page-05-master",
+      "bytes": 926508,
+      "path": "assets/page-05-master.png",
+      "sha256": "9d38251233edd2cde9b88c1f619c65fb4fbf56394ceb5e659546355641489e56"
+    },
+    {
+      "asset_id": "page-05-motion",
+      "bytes": 252024,
+      "path": "assets/page-05-motion.mp4",
+      "sha256": "50e868cc27327a5d78e7fb7ec34cbd8f6709841cf1b49e7a38fe3fee1d42e05c"
+    },
+    {
+      "asset_id": "page-06-master",
+      "bytes": 895542,
+      "path": "assets/page-06-master.png",
+      "sha256": "12837690f632891eba29611bb7f6f33f02172780fb323bb0c6ef4cdcb0ae731f"
+    },
+    {
+      "asset_id": "page-06-motion",
+      "bytes": 180199,
+      "path": "assets/page-06-motion.mp4",
+      "sha256": "456e8561e655ba8047447efdc9c2b21f1b48b5596196881dcd1f757421f49c6c"
+    }
+  ],
+  "schema_version": "1.0",
+  "story_id": "silver-fox-lost-words",
+  "story_pack": {
+    "path": "silver-fox-lost-words.story-pack.json",
+    "sha256": "ffead1991c07f9f143144c1d64a460aa3dbd4e7d8519386c62f5e61a27886875"
+  },
+  "total_asset_bytes": 6264613
+}
