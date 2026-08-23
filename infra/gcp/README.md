@@ -46,6 +46,11 @@ Then call `http://127.0.0.1:8080/v1/story-packs:compile` using the example reque
 
 ## Cost containment
 
+The contest project also has enforced service caps plus a project-scoped $10 gross-cost emergency
+billing disconnect. Its reviewed source and threat boundary are documented in
+`infra/gcp/billing-kill-switch/README.md`. Budget notifications are asynchronous, so this guard is
+not a promise of a mathematically exact $10 ceiling.
+
 Delete the GPU deployment whenever it is not being tested:
 
 ```bash
@@ -61,4 +66,3 @@ gcloud container clusters delete bookforge-dev --region us-central1
 The E2B/L4 deployment is a plumbing and evaluation baseline. Once the complete Story Pack schema
 is stable, benchmark a larger Gemma model for cloud compilation instead of increasing model size
 before the output can be measured.
-

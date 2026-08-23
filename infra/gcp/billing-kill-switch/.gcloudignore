@@ -1,0 +1,9 @@
+.gcloudignore
+.git
+.gitignore
+README.md
+artifact-cleanup-policy.json
+index.test.js
+logic.test.js
+node_modules
+npm-debug.log
