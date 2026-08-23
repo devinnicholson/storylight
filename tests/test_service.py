@@ -13,6 +13,8 @@ from bookforge.domain import (
     GeneratedPagePlan,
     GeneratedStoryPlan,
     InterventionRequest,
+    LayerComposition,
+    SceneSpecV2,
     StoryCompileRequest,
     StoryPack,
     StoryTrigger,
@@ -119,13 +121,20 @@ def test_story_compiler_returns_versioned_validated_pack() -> None:
         )
     )
 
-    assert response.story_pack.schema_version == "1.1"
+    assert response.story_pack.schema_version == "2.0"
+    assert response.story_pack.pages[0].scene_spec is not None
     assert response.story_pack.pages[0].page_id == "page-01"
     assert response.story_pack.pages[0].source_text == (
         "The small moth went through the red gate."
     )
     assert response.story_pack.pages[0].triggers[0].word == "the"
     assert response.metrics.backend == "fake"
+
+
+def test_story_authoring_schema_requires_scene_spec_even_with_legacy_playback_support() -> None:
+    schema = GeneratedStoryPlan.model_json_schema()
+
+    assert "scene_spec" in schema["$defs"]["GeneratedPagePlan"]["required"]
 
 
 def test_story_compiler_anchors_a_valid_trigger_phrase_to_its_final_word() -> None:
@@ -144,6 +153,19 @@ def test_story_compiler_anchors_a_valid_trigger_phrase_to_its_final_word() -> No
             GeneratedPagePlan(
                 page_id="page-01",
                 scene_summary="A red gate glows.",
+                scene_spec=SceneSpecV2(
+                    master_prompt="A glowing red paper gate in a cinematic landscape",
+                    composition=[
+                        LayerComposition(
+                            layer_id="gate",
+                            center_x=0.7,
+                            center_y=0.5,
+                            width=0.3,
+                            height=0.7,
+                            depth=0.7,
+                        )
+                    ],
+                ),
                 layers=[
                     VisualLayer(
                         layer_id="gate",

@@ -3,6 +3,7 @@ from hashlib import sha256
 
 os.environ["BOOKFORGE_MODEL_BACKEND"] = "fake"
 os.environ["BOOKFORGE_MODEL_NAME"] = "fake"
+os.environ["BOOKFORGE_ASSET_BACKEND"] = "fake"
 os.environ["BOOKFORGE_DATA_DIR"] = "/tmp/bookforge-api-tests/data"
 os.environ["BOOKFORGE_CACHE_DIR"] = "/tmp/bookforge-api-tests/cache"
 
@@ -76,6 +77,33 @@ def test_compile_demo_contract() -> None:
         latest = client.get("/v1/story-packs/latest")
     assert latest.status_code == 200
     assert latest.json()["story_id"] == "moon-gate-demo"
+
+
+def test_build_story_pack_generates_and_stores_ready_assets() -> None:
+    payload = {
+        "story_id": "silver-fox-api",
+        "title": "The Silver Fox",
+        "reading_level": 2,
+        "visual_style": "layered watercolor paper theater",
+        "pages": [
+            {
+                "page_id": "page-01",
+                "text": "A silver fox found a lantern under the old cedar tree.",
+                "art_direction": "Blue hour with warm lantern light.",
+            }
+        ],
+    }
+    with TestClient(app) as client:
+        response = client.post("/v1/story-packs:build", json=payload)
+        latest = client.get("/v1/story-packs/latest")
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["story_pack"]["story_id"] == "silver-fox-api"
+    assert body["generation_metrics"]["generated_assets"] == 2
+    assert {asset["role"] for asset in body["story_pack"]["assets"]} == {"master", "depth"}
+    assert all(asset["state"] == "ready" for asset in body["story_pack"]["assets"])
+    assert latest.json()["story_id"] == "silver-fox-api"
 
 
 def test_local_audio_transcription_contract() -> None:

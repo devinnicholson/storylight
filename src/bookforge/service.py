@@ -78,6 +78,7 @@ class BookforgeService:
             for page in generated.pages
         ]
         pack = StoryPack(
+            schema_version="2.0",
             story_id=request.story_id,
             title=request.title,
             reading_level=request.reading_level,
@@ -103,6 +104,8 @@ class BookforgeService:
         source_pages = {page.page_id: tokenize(page.text) for page in request.pages}
         normalized_pages = []
         for page in plan.pages:
+            if page.scene_spec is None:
+                raise ValueError(f"Model omitted SceneSpec v2 for page {page.page_id}")
             layer_ids = {layer.layer_id for layer in page.layers}
             source_words = source_pages[page.page_id]
             normalized_triggers = []

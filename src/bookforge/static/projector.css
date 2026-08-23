@@ -42,6 +42,56 @@ body.blackout #projectionStage { opacity: 0; }
 .fixture-scene, .generated-scene { position: absolute; inset: 0; }
 .generated-scene:empty { display: none; }
 
+.depth-scene { position: absolute; inset: 0; overflow: hidden; background: #02050a; }
+.depth-scene-fallback, .depth-scene-canvas { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
+.depth-scene-fallback { transform: scale(1.025); animation: hero-breathe 18s ease-in-out infinite alternate; }
+.depth-scene-canvas { opacity: 0; transition: opacity 700ms ease; }
+.depth-scene-canvas.ready { opacity: 1; }
+.scene-hotspot {
+  left: var(--hotspot-x);
+  top: var(--hotspot-y);
+  right: auto;
+  bottom: auto;
+  width: var(--hotspot-width);
+  height: var(--hotspot-height);
+  transform: translate(-50%, -50%);
+  pointer-events: none;
+}
+.scene-hotspot::before, .scene-hotspot::after {
+  content: "";
+  position: absolute;
+  inset: -12%;
+  border-radius: 50%;
+  opacity: 0;
+  background: radial-gradient(ellipse, var(--hotspot-accent, rgba(255,214,132,.75)), transparent 68%);
+  mix-blend-mode: screen;
+  filter: blur(18px);
+}
+.scene-hotspot.action-reveal::before, .scene-hotspot.action-open::before,
+.scene-hotspot.action-glow::before, .scene-hotspot.action-transform::before,
+.scene-hotspot.action-move::before { animation: localized-bloom var(--trigger-duration, 900ms) ease-out both; }
+.scene-hotspot.action-glow::after { animation: localized-pulse 1.7s ease-in-out infinite alternate; }
+.scene-hotspot.action-move { animation: localized-lift var(--trigger-duration, 900ms) cubic-bezier(.2,.8,.2,1) both; }
+.scene-hotspot.action-transform { animation: localized-transform var(--trigger-duration, 900ms) ease-out both; }
+.scene-hotspot.action-fade { animation: localized-fade var(--trigger-duration, 900ms) ease-out both; }
+
+.ambient-field { position: absolute; z-index: 8; inset: 0; overflow: hidden; pointer-events: none; mix-blend-mode: screen; }
+.ambient-particle {
+  position: absolute;
+  left: var(--ambient-x);
+  top: var(--ambient-y);
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  opacity: .34;
+  background: var(--ambient-color, #fff1c9);
+  box-shadow: 0 0 18px var(--ambient-color, #fff1c9);
+  animation: ambient-float var(--ambient-duration, 8s) ease-in-out var(--ambient-delay, 0s) infinite alternate;
+}
+.ambient-fog { width: 280px; height: 90px; opacity: .08; filter: blur(30px); }
+.ambient-light_rays { width: 3px; height: 210px; border-radius: 100%; opacity: .06; transform: rotate(22deg); filter: blur(5px); }
+.ambient-stars { width: 4px; height: 4px; }
+
 .generic-layer {
   display: grid;
   place-items: center;
@@ -167,6 +217,20 @@ body.blackout #projectionStage { opacity: 0; }
 .generated-scene.hero-composed .hero-trigger-layer.action-move { opacity: 1; }
 .generated-scene.hero-composed .hero-trigger-layer.action-move::before { animation: hero-drift 1.2s ease-out both; }
 .generated-scene.hero-composed .hero-trigger-layer.action-glow::before { animation: hero-glow 1.6s ease-in-out infinite alternate; }
+
+@keyframes localized-bloom {
+  0% { opacity: 0; transform: scale(.55); }
+  42% { opacity: .9; }
+  100% { opacity: .18; transform: scale(1.14); }
+}
+@keyframes localized-pulse { from { opacity: .12; transform: scale(.9); } to { opacity: .62; transform: scale(1.08); } }
+@keyframes localized-lift { from { transform: translate(-50%, -50%); } to { transform: translate(-50%, -54%); } }
+@keyframes localized-transform { from { filter: hue-rotate(0); } to { filter: hue-rotate(18deg) saturate(1.3); } }
+@keyframes localized-fade { from { opacity: 1; } to { opacity: .12; } }
+@keyframes ambient-float {
+  from { transform: translate3d(-18px, 14px, 0) scale(.75); opacity: .08; }
+  to { transform: translate3d(24px, -36px, 0) scale(1.2); opacity: .52; }
+}
 
 .paper-grain {
   z-index: 30;

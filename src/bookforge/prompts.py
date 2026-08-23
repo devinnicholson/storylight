@@ -27,6 +27,18 @@ def story_compile_prompt(request: StoryCompileRequest) -> str:
 
 Requirements:
 - Preserve the supplied story. Do not rewrite or extend its plot.
+- For every page, return scene_spec version 2.0. It is the authoritative 1920x1080 composition.
+- scene_spec.master_prompt must describe one cohesive, finished, cinematic 16:9 illustration with
+  no text, labels, interface, frames, split panels, or placeholder geometry. Include the supplied
+  visual style, clear spatial composition, lighting, materials, palette, and all story subjects.
+- scene_spec.composition must contain every visual layer exactly once. Use normalized coordinates
+  from 0 to 1 for center_x, center_y, width, and height; keep each region inside the canvas.
+  Use non-negative depth values up to 20 and assign smaller values to distant layers. Regions must
+  tightly cover the intended subject so local effects land correctly.
+- Give the camera a restrained, loopable ambient move. Give each layer deterministic loopable
+  ambient_motion; backgrounds should use subtle parallax and characters may float or breathe.
+- Add zero to three restrained ambient effects that support the page rather than distracting from
+  reading.
 - Make every visual layer independently renderable and stylistically consistent.
 - Every trigger word must be exactly one token that literally appears on that page; never return
   a phrase such as "red gate". Anchor a phrase-level event to its final spoken word instead.

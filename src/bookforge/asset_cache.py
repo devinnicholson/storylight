@@ -14,6 +14,8 @@ CHECKSUM_PATTERN = re.compile(r"^[a-f0-9]{64}$")
 ALLOWED_SUFFIXES = {
     AssetKind.IMAGE: {".avif", ".jpeg", ".jpg", ".png", ".webp"},
     AssetKind.SPRITE: {".avif", ".jpeg", ".jpg", ".png", ".webp"},
+    AssetKind.DEPTH_MAP: {".png", ".webp"},
+    AssetKind.MASK: {".png", ".webp"},
     AssetKind.VIDEO_LOOP: {".mp4", ".webm"},
 }
 
@@ -48,6 +50,50 @@ class AssetCache:
         if not path.is_file():
             raise AssetCacheError("Cached asset was not found")
         return path
+
+    async def store_generated(
+        self,
+        *,
+        asset_id: str,
+        kind: AssetKind,
+        content: bytes,
+        suffix: str,
+    ) -> tuple[str, str]:
+        return await asyncio.to_thread(
+            self._store_generated_sync,
+            asset_id=asset_id,
+            kind=kind,
+            content=content,
+            suffix=suffix,
+        )
+
+    def _store_generated_sync(
+        self,
+        *,
+        asset_id: str,
+        kind: AssetKind,
+        content: bytes,
+        suffix: str,
+    ) -> tuple[str, str]:
+        self._initialize_sync()
+        suffix = suffix.lower()
+        if not content:
+            raise AssetCacheError("Generated asset is empty")
+        if suffix not in ALLOWED_SUFFIXES.get(kind, set()):
+            raise AssetCacheError(f"Unsupported {kind.value} generated asset format: {suffix}")
+        digest = hashlib.sha256(content).hexdigest()
+        safe_id = re.sub(r"[^a-z0-9_-]+", "-", asset_id.lower()).strip("-") or "asset"
+        filename = f"{safe_id[:48]}{suffix}"
+        directory = self.root / digest
+        directory.mkdir(parents=True, exist_ok=True, mode=0o700)
+        directory.chmod(0o700)
+        destination = directory / filename
+        if destination.exists():
+            if _sha256(destination) != digest:
+                raise AssetCacheError("Generated asset cache collision")
+        else:
+            _atomic_write_bytes(destination, content)
+        return digest, f"/v1/assets/{digest}/{filename}"
 
     def _install_asset(self, asset: AssetRecord, source_root: Path) -> AssetRecord:
         if asset.state is not AssetState.READY or asset.kind is AssetKind.PROCEDURAL:
@@ -124,6 +170,27 @@ def _atomic_copy(source: Path, destination: Path) -> None:
         with source.open("rb") as input_stream, os.fdopen(descriptor, "wb") as output_stream:
             for chunk in iter(lambda: input_stream.read(1024 * 1024), b""):
                 output_stream.write(chunk)
+            output_stream.flush()
+            os.fsync(output_stream.fileno())
+        os.replace(temporary, destination)
+        directory = os.open(destination.parent, os.O_RDONLY)
+        try:
+            os.fsync(directory)
+        finally:
+            os.close(directory)
+    finally:
+        temporary.unlink(missing_ok=True)
+
+
+def _atomic_write_bytes(destination: Path, content: bytes) -> None:
+    descriptor, temporary_name = tempfile.mkstemp(
+        prefix=f".{destination.name}.", dir=destination.parent
+    )
+    temporary = Path(temporary_name)
+    try:
+        os.fchmod(descriptor, 0o600)
+        with os.fdopen(descriptor, "wb") as output_stream:
+            output_stream.write(content)
             output_stream.flush()
             os.fsync(output_stream.fileno())
         os.replace(temporary, destination)

@@ -12,12 +12,19 @@ from bookforge import __version__
 from bookforge.asr import TranscriptionError, build_asr_backend
 from bookforge.asr_backend import AsrBackend, AsrBackendError, AsrBackendUnavailableError
 from bookforge.asset_cache import AssetCache, AssetCacheError
+from bookforge.asset_generator import (
+    AssetGenerationError,
+    AssetGeneratorUnavailableError,
+    build_asset_generator,
+    build_depth_estimator,
+)
 from bookforge.config import get_settings
 from bookforge.domain import (
     CompileResponse,
     InterventionRequest,
     InterventionResponse,
     ModelProbe,
+    SceneBuildResponse,
     StoryCompileRequest,
     StoryPack,
     TranscriptionResponse,
@@ -41,6 +48,7 @@ from bookforge.reader_runtime import (
     TranscriptUpdateResult,
 )
 from bookforge.runtime_status import RuntimeComponent, RuntimeStatus
+from bookforge.scene_foundry import SceneFoundry, SceneFoundryError
 from bookforge.service import BookforgeService
 from bookforge.story_store import StoryPackCorruptError, StoryPackNotFoundError, StoryPackStore
 
@@ -61,6 +69,13 @@ async def lifespan(app: FastAPI):
     settings.cache_dir.chmod(0o700)
     app.state.asset_cache = AssetCache(settings.cache_dir / "assets")
     await app.state.asset_cache.initialize()
+    app.state.scene_foundry = SceneFoundry(
+        generator=build_asset_generator(settings),
+        depth_estimator=build_depth_estimator(settings),
+        cache=app.state.asset_cache,
+        width=settings.asset_width,
+        height=settings.asset_height,
+    )
     yield
     await app.state.reader_events.close()
     http_client = getattr(client, "client", None)
@@ -105,6 +120,23 @@ async def asr_unavailable_handler(_: Request, error: AsrBackendUnavailableError)
 @app.exception_handler(AsrBackendError)
 async def asr_error_handler(_: Request, error: AsrBackendError):
     return JSONResponse(status_code=422, content={"detail": str(error)})
+
+
+@app.exception_handler(SceneFoundryError)
+async def scene_foundry_error_handler(_: Request, error: SceneFoundryError):
+    return JSONResponse(status_code=422, content={"detail": str(error)})
+
+
+@app.exception_handler(AssetGeneratorUnavailableError)
+async def asset_generator_unavailable_handler(
+    _: Request, error: AssetGeneratorUnavailableError
+):
+    return JSONResponse(status_code=503, content={"detail": str(error)})
+
+
+@app.exception_handler(AssetGenerationError)
+async def asset_generation_error_handler(_: Request, error: AssetGenerationError):
+    return JSONResponse(status_code=502, content={"detail": str(error)})
 
 
 @app.get("/healthz")
@@ -161,7 +193,16 @@ async def workbench() -> FileResponse:
 
 @app.get("/projector", include_in_schema=False)
 async def projector() -> FileResponse:
-    return FileResponse(static_directory / "projector.html")
+    return FileResponse(
+        static_directory / "projector.html",
+        headers={
+            "Content-Security-Policy": (
+                "default-src 'self'; img-src 'self' data:; media-src 'self'; "
+                "connect-src 'self' ws: wss:; script-src 'self'; "
+                "style-src 'self' 'unsafe-inline'; object-src 'none'; base-uri 'none'"
+            )
+        },
+    )
 
 
 @app.get("/v1/models:probe", response_model=ModelProbe)
@@ -226,6 +267,26 @@ async def compile_story(payload: StoryCompileRequest, request: Request) -> Compi
         response = await service.compile_story(payload)
         await store.save(response.story_pack)
         return response
+    except ValueError as error:
+        raise HTTPException(status_code=422, detail=str(error)) from error
+
+
+@app.post("/v1/story-packs:build", response_model=SceneBuildResponse)
+async def build_story_pack(payload: StoryCompileRequest, request: Request) -> SceneBuildResponse:
+    if not _is_local_connection(request):
+        raise HTTPException(status_code=403, detail="Story generation is local-only")
+    service: BookforgeService = request.app.state.service
+    foundry: SceneFoundry = request.app.state.scene_foundry
+    store: StoryPackStore = request.app.state.story_store
+    try:
+        compiled = await service.compile_story(payload)
+        story_pack, generation_metrics = await foundry.build(compiled.story_pack)
+        await store.save(story_pack)
+        return SceneBuildResponse(
+            story_pack=story_pack,
+            compile_metrics=compiled.metrics,
+            generation_metrics=generation_metrics,
+        )
     except ValueError as error:
         raise HTTPException(status_code=422, detail=str(error)) from error
 

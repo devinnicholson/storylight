@@ -8,12 +8,17 @@ from pydantic import BaseModel
 
 from bookforge.config import Settings
 from bookforge.domain import (
+    AmbientEffect,
+    AmbientMotion,
+    CameraMotion,
     ComprehensionPrompt,
     GeneratedPagePlan,
     GeneratedStoryPlan,
     InterventionDecision,
+    LayerComposition,
     LiteracySupport,
     ModelMetrics,
+    SceneSpecV2,
     StoryTrigger,
     SupportAction,
     VisualLayer,
@@ -196,6 +201,28 @@ class FakeModelClient(StructuredModelClient):
                     GeneratedPagePlan(
                         page_id=page["page_id"],
                         scene_summary="A test scene generated without a model runtime.",
+                        scene_spec=SceneSpecV2(
+                            master_prompt=(
+                                "Cinematic luminous paper theater landscape, wide 16:9 composition"
+                            ),
+                            camera=CameraMotion(kind="slow_push"),
+                            composition=[
+                                LayerComposition(
+                                    layer_id="background",
+                                    center_x=0.5,
+                                    center_y=0.5,
+                                    width=1,
+                                    height=1,
+                                    depth=0.15,
+                                    ambient_motion=AmbientMotion(
+                                        kind="parallax",
+                                        amplitude_x=0.01,
+                                        period_ms=12_000,
+                                    ),
+                                )
+                            ],
+                            ambience=[AmbientEffect(kind="dust")],
+                        ),
                         layers=[
                             VisualLayer(
                                 layer_id="background",

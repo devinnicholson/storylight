@@ -294,11 +294,13 @@ async function transcribeRecording() {
 
 function renderPack(payload) {
   const pack = payload.story_pack;
-  const metrics = payload.metrics;
+  const metrics = payload.compile_metrics || payload.metrics;
+  const generation = payload.generation_metrics;
   localStorage.setItem("bookforge.latestStoryPack", JSON.stringify(pack));
   const page = pack.pages[0];
   elements.model.textContent = metrics?.model || pack.compiler_model;
-  elements.time.textContent = metrics ? `${(metrics.total_ms / 1000).toFixed(1)} s` : "Saved locally";
+  const totalMs = (metrics?.total_ms || 0) + (generation?.total_ms || 0);
+  elements.time.textContent = totalMs ? `${(totalMs / 1000).toFixed(1)} s` : "Saved locally";
   elements.tokens.textContent = metrics ? `${metrics.output_tokens} tokens` : `${page.layers.length + page.triggers.length} parts`;
   elements.summary.textContent = page.scene_summary;
   elements.layerCount.textContent = `${page.layers.length} layers`;
@@ -339,12 +341,12 @@ async function compileStory() {
   }
   if (listening) stopSpeaking();
   elements.compileButton.disabled = true;
-  elements.compileButton.textContent = "Gemma is creating the scene…";
+  elements.compileButton.textContent = "Gemma + GPU are creating the scene…";
   elements.error.classList.add("hidden");
   setStatus("working", "Creating the scene");
 
   try {
-    const response = await fetch("/v1/story-packs:compile", {
+    const response = await fetch("/v1/story-packs:build", {
       method: "POST",
       headers: {"Content-Type": "application/json"},
       body: JSON.stringify({

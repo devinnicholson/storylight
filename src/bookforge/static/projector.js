@@ -6,8 +6,19 @@ const query = new URLSearchParams(window.location.search);
 const SESSION_ID = query.get("session") || "moon-gate-demo";
 const PACK_SOURCE = query.get("pack") || "fixture";
 const PRESENTATION_MODE = query.get("debug") !== "1";
+const OFFLINE_REPLAY = query.get("offline") === "1";
 
 if (PRESENTATION_MODE) document.body.classList.add("hud-hidden");
+if (OFFLINE_REPLAY) document.body.dataset.replayBoundary = "loopback-only";
+
+function localFetch(input, init) {
+  const rawUrl = typeof input === "string" ? input : input.url;
+  const url = new URL(rawUrl, window.location.href);
+  if (OFFLINE_REPLAY && url.origin !== window.location.origin) {
+    throw new Error(`Offline replay blocked a non-local request to ${url.origin}`);
+  }
+  return window.fetch(input, init);
+}
 
 const elements = {
   stage: document.querySelector("#projectionStage"),
@@ -59,6 +70,7 @@ const state = {
   readerSync: null,
   resyncAfterCurrent: false,
   pendingReaderEvents: [],
+  depthRenderer: null,
 };
 
 function publish(type, detail = {}) {
@@ -106,8 +118,9 @@ function indexTriggers(page) {
 }
 
 function assertStoryPack(pack) {
-  if (!pack || pack.schema_version !== "1.1" || !Array.isArray(pack.pages) || !pack.pages.length) {
-    throw new Error("Story Pack must use schema 1.1 and contain at least one page");
+  const supportedSchema = pack && ["1.1", "2.0"].includes(pack.schema_version);
+  if (!supportedSchema || !Array.isArray(pack.pages) || !pack.pages.length) {
+    throw new Error("Story Pack must use schema 1.1 or 2.0 and contain at least one page");
   }
   const page = pack.pages[0];
   if (!page.page_id || !page.source_text?.trim() || !Array.isArray(page.layers) || !Array.isArray(page.triggers)) {
@@ -157,15 +170,229 @@ function bundledHeroForPage(page) {
   return "";
 }
 
-function renderPackLayers(pack, page) {
+function loadSceneImage(uri) {
+  return new Promise((resolve, reject) => {
+    const image = new Image();
+    image.decoding = "async";
+    image.addEventListener("load", () => resolve(image), {once: true});
+    image.addEventListener("error", () => reject(new Error(`Scene asset failed to load: ${uri}`)), {once: true});
+    image.src = uri;
+  });
+}
+
+function compileShader(gl, type, source) {
+  const shader = gl.createShader(type);
+  gl.shaderSource(shader, source);
+  gl.compileShader(shader);
+  if (!gl.getShaderParameter(shader, gl.COMPILE_STATUS)) {
+    const detail = gl.getShaderInfoLog(shader);
+    gl.deleteShader(shader);
+    throw new Error(`Depth shader failed: ${detail}`);
+  }
+  return shader;
+}
+
+function createTexture(gl, image, textureUnit) {
+  const texture = gl.createTexture();
+  gl.activeTexture(textureUnit);
+  gl.bindTexture(gl.TEXTURE_2D, texture);
+  gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, true);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+  gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, image);
+  return texture;
+}
+
+async function startDepthRenderer(canvas, masterUri, depthUri, sceneSpec) {
+  const [masterImage, depthImage] = await Promise.all([
+    loadSceneImage(masterUri),
+    loadSceneImage(depthUri),
+  ]);
+  const gl = canvas.getContext("webgl2", {
+    alpha: false,
+    antialias: false,
+    depth: false,
+    powerPreference: "high-performance",
+  });
+  if (!gl) throw new Error("WebGL 2 is unavailable; using the still-image fallback");
+  const vertexSource = `#version 300 es
+    in vec2 a_position;
+    out vec2 v_uv;
+    void main() {
+      v_uv = a_position * 0.5 + 0.5;
+      gl_Position = vec4(a_position, 0.0, 1.0);
+    }
+  `;
+  const fragmentSource = `#version 300 es
+    precision highp float;
+    uniform sampler2D u_master;
+    uniform sampler2D u_depth;
+    uniform float u_time;
+    uniform float u_strength;
+    uniform float u_camera_scale;
+    uniform vec2 u_camera_travel;
+    in vec2 v_uv;
+    out vec4 out_color;
+    void main() {
+      float phase = u_time * 0.00018;
+      float cameraWave = 0.5 - 0.5 * cos(phase * 6.2831853);
+      float scale = 1.0 + u_camera_scale * cameraWave;
+      vec2 uv = (v_uv - 0.5) / scale + 0.5 - u_camera_travel * cameraWave;
+      float depth = texture(u_depth, uv).r;
+      vec2 drift = vec2(sin(phase * 6.2831853), cos(phase * 4.7123890));
+      vec2 parallax = drift * (depth - 0.42) * u_strength;
+      vec3 color = texture(u_master, clamp(uv + parallax, 0.002, 0.998)).rgb;
+      float vignette = smoothstep(0.88, 0.26, length(v_uv - 0.5));
+      float lanternBreath = 1.0 + 0.018 * sin(u_time * 0.0017);
+      color *= mix(0.92, lanternBreath, vignette);
+      out_color = vec4(color, 1.0);
+    }
+  `;
+  const program = gl.createProgram();
+  const vertex = compileShader(gl, gl.VERTEX_SHADER, vertexSource);
+  const fragment = compileShader(gl, gl.FRAGMENT_SHADER, fragmentSource);
+  gl.attachShader(program, vertex);
+  gl.attachShader(program, fragment);
+  gl.linkProgram(program);
+  if (!gl.getProgramParameter(program, gl.LINK_STATUS)) {
+    throw new Error(`Depth shader link failed: ${gl.getProgramInfoLog(program)}`);
+  }
+  gl.useProgram(program);
+  const buffer = gl.createBuffer();
+  gl.bindBuffer(gl.ARRAY_BUFFER, buffer);
+  gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([-1, -1, 1, -1, -1, 1, -1, 1, 1, -1, 1, 1]), gl.STATIC_DRAW);
+  const position = gl.getAttribLocation(program, "a_position");
+  gl.enableVertexAttribArray(position);
+  gl.vertexAttribPointer(position, 2, gl.FLOAT, false, 0, 0);
+  const masterTexture = createTexture(gl, masterImage, gl.TEXTURE0);
+  const depthTexture = createTexture(gl, depthImage, gl.TEXTURE1);
+  gl.uniform1i(gl.getUniformLocation(program, "u_master"), 0);
+  gl.uniform1i(gl.getUniformLocation(program, "u_depth"), 1);
+  const timeLocation = gl.getUniformLocation(program, "u_time");
+  const strengthLocation = gl.getUniformLocation(program, "u_strength");
+  const scaleLocation = gl.getUniformLocation(program, "u_camera_scale");
+  const travelLocation = gl.getUniformLocation(program, "u_camera_travel");
+  const camera = sceneSpec?.camera || {};
+  const scaleDelta = Math.max(0, (camera.end_scale || 1.04) - (camera.start_scale || 1.01));
+  gl.uniform1f(strengthLocation, 0.010);
+  gl.uniform1f(scaleLocation, Math.min(0.08, scaleDelta));
+  gl.uniform2f(travelLocation, camera.travel_x || 0, -(camera.travel_y || 0));
+  gl.viewport(0, 0, canvas.width, canvas.height);
+  let animationFrame = null;
+  let stopped = false;
+  const render = (timestamp) => {
+    if (stopped) return;
+    gl.uniform1f(timeLocation, timestamp);
+    gl.drawArrays(gl.TRIANGLES, 0, 6);
+    animationFrame = requestAnimationFrame(render);
+  };
+  canvas.classList.add("ready");
+  animationFrame = requestAnimationFrame(render);
+  return {
+    destroy() {
+      stopped = true;
+      cancelAnimationFrame(animationFrame);
+      gl.deleteTexture(masterTexture);
+      gl.deleteTexture(depthTexture);
+      gl.deleteBuffer(buffer);
+      gl.deleteProgram(program);
+      gl.deleteShader(vertex);
+      gl.deleteShader(fragment);
+    },
+  };
+}
+
+function appendAmbientEffects(container, sceneSpec) {
+  const effects = (sceneSpec?.ambience || []).filter((effect) => effect.kind !== "none");
+  if (!effects.length) return;
+  const field = document.createElement("div");
+  field.className = "ambient-field";
+  effects.forEach((effect, effectIndex) => {
+    const count = Math.max(4, Math.round(8 + effect.density * 28));
+    for (let index = 0; index < count; index += 1) {
+      const mote = document.createElement("i");
+      mote.className = `ambient-particle ambient-${effect.kind}`;
+      mote.style.setProperty("--ambient-color", effect.color);
+      mote.style.setProperty("--ambient-x", `${(index * 37 + effectIndex * 19) % 101}%`);
+      mote.style.setProperty("--ambient-y", `${(index * 61 + effectIndex * 23) % 101}%`);
+      mote.style.setProperty("--ambient-delay", `${-((index * 0.71) % 8)}s`);
+      mote.style.setProperty("--ambient-duration", `${Math.max(3, 12 - effect.speed * 4 + (index % 4))}s`);
+      field.append(mote);
+    }
+  });
+  container.append(field);
+}
+
+function appendSceneHotspots(container, page) {
+  const compositionByLayer = new Map(
+    (page.scene_spec?.composition || []).map((item) => [item.layer_id, item]),
+  );
+  [...page.layers].sort((left, right) => left.z_index - right.z_index).forEach((layer, index) => {
+    const region = compositionByLayer.get(layer.layer_id);
+    if (!region) return;
+    const node = document.createElement("div");
+    node.className = `visual-layer scene-hotspot layer-kind-${layer.kind}`;
+    node.dataset.layerId = layer.layer_id;
+    node.style.zIndex = String(10 + layer.z_index);
+    node.style.setProperty("--hotspot-x", `${region.center_x * 100}%`);
+    node.style.setProperty("--hotspot-y", `${region.center_y * 100}%`);
+    node.style.setProperty("--hotspot-width", `${region.width * 100}%`);
+    node.style.setProperty("--hotspot-height", `${region.height * 100}%`);
+    node.style.setProperty("--hotspot-accent", layerPalette(index)[2]);
+    container.append(node);
+  });
+}
+
+async function renderPackLayers(pack, page) {
   const fixture = pack.story_id === "moon-gate-projector-fixture";
+  state.depthRenderer?.destroy();
+  state.depthRenderer = null;
   elements.fixtureScene.hidden = !fixture;
   elements.generatedScene.innerHTML = "";
   if (fixture) return;
 
+  const readyAssets = (pack.assets || []).filter(
+    (asset) => asset.page_id === page.page_id && asset.state === "ready",
+  );
+  const masterAsset = readyAssets.find((asset) => asset.role === "master");
+  const depthAsset = readyAssets.find((asset) => asset.role === "depth");
+  if (
+    masterAsset?.local_uri?.startsWith("/v1/assets/")
+    && depthAsset?.local_uri?.startsWith("/v1/assets/")
+  ) {
+    elements.generatedScene.classList.add("depth-composed");
+    const scene = document.createElement("div");
+    scene.className = "depth-scene";
+    const fallback = document.createElement("img");
+    fallback.className = "depth-scene-fallback";
+    fallback.src = masterAsset.local_uri;
+    fallback.alt = page.scene_summary;
+    const canvas = document.createElement("canvas");
+    canvas.className = "depth-scene-canvas";
+    canvas.width = LOGICAL_WIDTH;
+    canvas.height = LOGICAL_HEIGHT;
+    scene.append(fallback, canvas);
+    appendAmbientEffects(scene, page.scene_spec);
+    appendSceneHotspots(scene, page);
+    elements.generatedScene.append(scene);
+    try {
+      state.depthRenderer = await startDepthRenderer(
+        canvas,
+        masterAsset.local_uri,
+        depthAsset.local_uri,
+        page.scene_spec,
+      );
+    } catch (error) {
+      setEvent("renderer.fallback", error.message);
+    }
+    return;
+  }
+
   const assets = new Map(
-    (pack.assets || [])
-      .filter((asset) => asset.page_id === page.page_id && asset.state === "ready")
+    readyAssets
+      .filter((asset) => asset.role !== "depth")
       .map((asset) => [asset.layer_id, asset]),
   );
   const bundledHero = assets.size === 0 ? bundledHeroForPage(page) : "";
@@ -364,7 +591,7 @@ function applyReaderStatus(status) {
 
 async function synchronizeReaderSession() {
   if (!state.page) return;
-  const response = await fetch(`/v1/reader-sessions/${encodeURIComponent(SESSION_ID)}`, {
+  const response = await localFetch(`/v1/reader-sessions/${encodeURIComponent(SESSION_ID)}`, {
     cache: "no-store",
   });
   if (response.status === 404) return false;
@@ -456,7 +683,7 @@ function connectReaderSession() {
 }
 
 async function simulateTranscript(text) {
-  const response = await fetch(`/v1/reader-sessions/${encodeURIComponent(SESSION_ID)}/transcripts:simulate`, {
+  const response = await localFetch(`/v1/reader-sessions/${encodeURIComponent(SESSION_ID)}/transcripts:simulate`, {
     method: "POST",
     headers: {"Content-Type": "application/json"},
     body: JSON.stringify({
@@ -475,7 +702,7 @@ async function simulateTranscript(text) {
 }
 
 async function configureReaderSession() {
-  const response = await fetch(`/v1/reader-sessions/${encodeURIComponent(SESSION_ID)}`, {
+  const response = await localFetch(`/v1/reader-sessions/${encodeURIComponent(SESSION_ID)}`, {
     method: "PUT",
     headers: {"Content-Type": "application/json"},
     body: JSON.stringify({page_id: state.page.page_id, page_text: state.page.source_text}),
@@ -490,7 +717,7 @@ async function configureReaderSession() {
 }
 
 async function resetReaderSession() {
-  const response = await fetch(`/v1/reader-sessions/${encodeURIComponent(SESSION_ID)}:reset`, {
+  const response = await localFetch(`/v1/reader-sessions/${encodeURIComponent(SESSION_ID)}:reset`, {
     method: "POST",
   });
   if (!response.ok) {
@@ -636,7 +863,7 @@ function monitorFrames(timestamp) {
 async function loadStoryPack() {
   try {
     if (PACK_SOURCE === "latest") {
-      const response = await fetch("/v1/story-packs/latest", {cache: "no-store"});
+      const response = await localFetch("/v1/story-packs/latest", {cache: "no-store"});
       if (response.ok) {
         state.pack = assertStoryPack(await response.json());
       } else {
@@ -644,21 +871,22 @@ async function loadStoryPack() {
         if (saved) {
           state.pack = assertStoryPack(JSON.parse(saved));
         } else {
-          const fixture = await fetch("/workbench-assets/moon-gate.story-pack.json", {cache: "no-store"});
+          const fixture = await localFetch("/workbench-assets/moon-gate.story-pack.json", {cache: "no-store"});
           if (!fixture.ok) throw new Error(`Fallback Story Pack failed to load (${fixture.status})`);
           state.pack = assertStoryPack(await fixture.json());
         }
       }
     } else {
-      const response = await fetch("/workbench-assets/moon-gate.story-pack.json", {cache: "no-store"});
+      const response = await localFetch("/workbench-assets/moon-gate.story-pack.json", {cache: "no-store"});
       if (!response.ok) throw new Error(`Story Pack failed to load (${response.status})`);
       state.pack = assertStoryPack(await response.json());
     }
     state.page = state.pack.pages[0];
-    renderPackLayers(state.pack, state.page);
+    await renderPackLayers(state.pack, state.page);
     state.tokens = tokenize(state.page.source_text);
     state.triggerIndices = indexTriggers(state.page);
-    elements.packLabel.textContent = `${state.pack.title} · ${state.pack.schema_version}`;
+    const replayLabel = OFFLINE_REPLAY ? " · offline cache" : "";
+    elements.packLabel.textContent = `${state.pack.title} · ${state.pack.schema_version}${replayLabel}`;
     renderTimeline();
     const session = await configureReaderSession();
     goToWord(session.last_reached_index ?? -1);
@@ -713,6 +941,7 @@ document.addEventListener("keydown", (event) => {
 window.addEventListener("resize", updateProjection);
 window.addEventListener("beforeunload", () => {
   clearTimeout(state.reconnectTimer);
+  state.depthRenderer?.destroy();
   state.socket?.close();
 });
 elements.transcriptSimulator.addEventListener("submit", async (event) => {

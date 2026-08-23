@@ -10,9 +10,12 @@ This repository now contains working model-facing services rather than only a vi
 - the same client contract for vLLM or NVIDIA NIM-compatible cloud endpoints;
 - a deterministic sub-900 ms intervention fast path;
 - schema-constrained Gemma intervention decisions;
-- a Story Compiler that returns versioned scene layers, triggers, scaffolds, and questions;
+- a Story Compiler that returns validated SceneSpec v2 composition, motion, triggers, scaffolds,
+  and questions;
+- a provider-neutral asynchronous Scene Foundry with real Modal GPU and local MFLUX backends;
 - immutable asset manifests with provider, seed, checksum, dimensions, state, and location;
-- a fullscreen 1920×1080 projector runtime with deterministic cached visuals;
+- a fullscreen 1920×1080 projector runtime with depth-aware WebGL parallax, authored ambience,
+  localized word effects, and deterministic cached visuals;
 - monotonic known-text alignment and a local WebSocket event stream for live word progression;
 - rolling local partial transcription, typed recovery controls, four-corner calibration, blackout,
   fullscreen, and live latency telemetry;
@@ -67,12 +70,30 @@ configured Gemma model. Install the Mac ASR extra with `uv sync --extra mac-asr`
 small local model with `make asr-model-pull`. GCP is not required for this flow.
 
 The projection POC is available at `http://127.0.0.1:8080/projector`. It deliberately does not call
-Gemma or GCP during playback: it loads a validated cached Moon Gate fixture, connects to a local
-reader-session WebSocket, and responds instantly to aligned word events. Enter a cumulative phrase
-in the typed transcript simulator to exercise the complete recovery path. Compile in the workbench
-and use its **Open this Story Pack** link to load the new pack with `pack=latest`. Use Space or Right
-Arrow to advance, Left Arrow to rewind, `R` to reset, `F` for fullscreen, `C` for calibration, `B`
-for blackout, and `H` to hide controls. Calibration is saved locally as the `yaber-t1-pro` profile.
+Gemma, Modal, or GCP during playback: it loads a validated cached Story Pack, connects to a local
+reader-session WebSocket, and responds instantly to aligned word events. A ready schema 2.0 pack
+with master and depth assets uses the WebGL 2 renderer; the master PNG remains the automatic
+fallback. Enter a cumulative phrase in the typed transcript simulator to exercise the complete
+recovery path. Compile in the workbench and use its **Open this Story Pack** link to load the new
+pack with `pack=latest`. Add `offline=1` to enforce a same-origin resource boundary during rehearsal.
+Use Space or Right Arrow to advance, Left Arrow to rewind, `R` to reset, `F` for fullscreen, `C` for
+calibration, `B` for blackout, and `H` to hide controls. Calibration is saved locally as the
+`yaber-t1-pro` profile.
+
+### Generate scenes on Modal while GCP is pending
+
+The Modal backend uses an NVIDIA T4 on the Starter plan, SDXL-Turbo for the 16:9 master, and Depth
+Anything V2 for the depth sidecar. Both assets return in one remote call and are stored under their
+SHA-256 checksums before the Story Pack becomes `latest`.
+
+```bash
+modal profile current
+BOOKFORGE_ASSET_BACKEND=modal make dev
+```
+
+Then create a scene in the workbench. The first run builds the reusable container and populates the
+`bookforge-model-cache` Modal Volume. The backend boundary is provider-neutral: GCP can replace
+Modal later without changing SceneSpec, Story Pack storage, the Jetson cache, or the projector.
 
 Microphone capture remains private to the local API. While recording, the workbench sends rolling
 cumulative clips every two seconds, aligns each partial transcript to the trusted page text, and
@@ -91,6 +112,7 @@ frame-streaming Jetson ASR engine—and the typed/manual paths remain the determ
 | `POST /v1/audio:transcribe` | No | Transcribe recorded audio with local Whisper |
 | `POST /v1/interventions:select` | Only after the fast path | Select constrained support |
 | `POST /v1/story-packs:compile` | Yes | Compile book pages into a Story Pack |
+| `POST /v1/story-packs:build` | Yes + asset GPU | Compile, generate master/depth assets, checksum, cache, and save the ready pack |
 | `GET /v1/story-packs/latest` | No | Recover the latest private device-stored Story Pack |
 | `PUT /v1/reader-sessions/{id}` | No | Configure trusted page text for local alignment |
 | `GET /v1/reader-sessions/{id}` | No | Recover the current generation and aligned position after reconnect |
@@ -142,3 +164,4 @@ run on JetPack 7.2.1.
 - [`infra/gcp/README.md`](infra/gcp/README.md): guarded GKE and Gemma serving workflow
 - [`benchmarks/macbook-m4-smoke-2026-08-20.json`](benchmarks/macbook-m4-smoke-2026-08-20.json): first real-model latency measurements
 - [`benchmarks/live-reader-laptop-2026-08-21.json`](benchmarks/live-reader-laptop-2026-08-21.json): clean-wheel, browser, persistence, and live event latency evidence
+- [`benchmarks/scene-engine-modal-t4-2026-08-22.json`](benchmarks/scene-engine-modal-t4-2026-08-22.json): real Gemma → Modal master/depth → local ASR → WebGL trigger evidence

@@ -1,6 +1,6 @@
 # Bookforge living implementation plan
 
-Last updated: 2026-08-21
+Last updated: 2026-08-22
 
 ## North-star demonstration
 
@@ -20,10 +20,10 @@ the Jetson controls the live experience without sending raw audio or video to th
 | Local Gemma compiler | Complete | `gemma4:e2b-it-qat` produces validated Story Packs |
 | Visual prompt and trigger plan | Complete | Workbench renders layers, triggers, scaffolds, and questions |
 | Visual asset contract | Complete | Immutable provider, seed, checksum, dimensions, URI, state, and latency records |
-| Finished visual assets | Fixture complete | Five deterministic Moon Gate layers; generated provider still pending |
+| Finished visual assets | Modal vertical slice complete | Gemma-authored silver-fox page generated a checksummed 16:9 master and depth map on NVIDIA T4 |
 | Cosmos integration | Not started | Target is Image2World through a provider abstraction |
 | Google Cloud deployment | Scaffolded | Infrastructure exists but no project has been deployed |
-| Projector runtime | Live laptop POC complete | Fullscreen stage consumes aligned WebSocket word events and compiled packs |
+| Projector runtime | Depth scene POC complete | WebGL 2 depth parallax, authored ambience, localized effects, cached fallback, and live telemetry |
 | Target projector | Selected | Yaber T1 Pro; 1920x1080 input, 40-inch minimum image, 1.18:1 throw |
 | Target Jetson OS | Selected with gate | JetPack 7.2.1 / L4T r39.2.1 after confirming UEFI 36.x+ |
 | Jetson runtime | Software hardware-ready; device proof pending | Wheel install, preflight, persistence, WhisperTRT adapter, services, privacy and evidence tooling pass without Jetson-only imports |
@@ -42,18 +42,20 @@ Status: complete
 
 ### M1 — Visual asset contract
 
-Status: in progress
+Status: vertical slice complete; durable background jobs remain
 
-- Add immutable asset records to the Story Pack: provider, prompt, seed, dimensions, duration,
+- [x] Add immutable asset records to the Story Pack: provider, prompt, seed, dimensions, duration,
   checksum, storage URI, generation state, and measured latency.
-- Define an `AssetGenerator` interface so Cosmos, a fast baseline generator, and deterministic test
+- [x] Define an `AssetGenerator` interface so Modal, MFLUX, Cosmos, and deterministic test
   fixtures share the same contract.
 - Add asynchronous generation jobs and idempotency keys.
-- Render real images or clips in the workbench instead of prompts alone.
-- Persist the generated manifest beside the Story Pack.
+- [x] Render real generated master/depth assets in the exact projector surface.
+- [x] Persist the generated manifest beside the Story Pack.
 
-Exit criterion: one spoken page becomes a validated Story Pack plus at least one visible generated
-asset without changing the compiler API contract.
+Exit evidence: the non-fixture silver-fox page became SceneSpec v2 plus a 1024×576 SDXL-Turbo
+master and Depth Anything V2 map in 38.5 seconds on Modal T4. Both were checksum-addressed and
+promoted atomically to the latest Story Pack. Local Whisper transcribed a spoken phrase in 412.8 ms;
+the aligned word fired a spatial effect in 8.4 ms at 120 fps with zero observed dropped frames.
 
 ### M1A — Laptop projection vertical slice
 
@@ -217,10 +219,10 @@ core from the repository.
 | Recording-state feedback | Under 100 ms | Immediate UI state change observed |
 | Local ASR, short page | Under 4 s warm | Synthetic sentence transcribed correctly in about 3 s |
 | Warm one-page Gemma compile | Under 8 s | 16.0 s warm; 24.1 s cold with 8.1 s load; optimization required |
-| Cached word-trigger response | Under 50 ms | 7.5 ms average in the live WebSocket browser proof |
+| Cached word-trigger response | Under 50 ms | 8.4 ms on the real depth scene through the local ASR/alignment path |
 | Cached page transition | Under 100 ms | Not implemented |
 | Cosmos generation | Offline/background job | Not measured |
-| Network-loss reading mode | No interruption | Clean wheel recovered a stored Story Pack after API restart; physical unplugged rehearsal pending |
+| Network-loss reading mode | No interruption | Projector has a same-origin-only offline replay mode; physical Jetson unplugged rehearsal pending |
 
 Targets are engineering budgets, not reported achievements. Only the evidence column records
 observed results.
@@ -237,7 +239,8 @@ observed results.
    manifest plus camera, microphone, projector, and thermal diagnostics.
 7. [x] Add and connect a cross-platform `AsrBackend` plus WhisperTRT adapter; benchmark it on the
    Jetson against the laptop alignment fixture before enabling it in the service environment.
-8. Add the asynchronous cloud asset job endpoints behind the same asset contract.
+8. [x] Add a blocking vertical-slice build endpoint behind the asset contract; next make it a
+   durable asynchronous job with idempotency.
 9. Create one fixed hero-page keyframe and acceptance rubric for the Cosmos spike.
 10. Confirm GCP project, region, GPU quota, and budget before creating billable resources.
 
@@ -310,6 +313,14 @@ Gemma, Cosmos, Google Cloud, and the edge device naturally central roles.
   network-disabled or packet-captured rehearsal for whole-device offline claims.
 - 2026-08-21: Warm WhisperTRT and its upstream checkpoint under the persistent service cache before
   timing acceptance; the first engine build is not a live-demo latency measurement.
+- 2026-08-22: Use Modal T4 as the temporary cloud Scene Foundry while GCP account setup is pending.
+  It generates master and depth assets in one call; GCP will replace the provider behind the same
+  interface rather than changing Story Packs or playback.
+- 2026-08-22: Require SceneSpec v2 structurally in the authoring JSON schema while retaining legacy
+  schema 1.1 playback. Interpret depth as an ordered non-negative plane value; only screen-space
+  composition coordinates are normalized.
+- 2026-08-22: Render generated master/depth pairs with a WebGL 2 depth shader and keep the master
+  PNG as the zero-setup fallback. All reading-time resources remain checksum-verified and local.
 
 ## Plan maintenance rule
 

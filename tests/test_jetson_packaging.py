@@ -30,7 +30,22 @@ def test_projector_only_loads_assets_from_the_loopback_cache() -> None:
 
     assert 'uri.startsWith("/v1/assets/")' in projector
     assert "asset?.storage_uri" not in projector
-    assert 'fetch("/workbench-assets/moon-gate.story-pack.json"' in projector
+    assert 'localFetch("/workbench-assets/moon-gate.story-pack.json"' in projector
+
+
+def test_projector_uses_depth_webgl_and_enforces_offline_replay_boundary() -> None:
+    projector = (ROOT / "src/bookforge/static/projector.js").read_text()
+    stylesheet = (ROOT / "src/bookforge/static/projector.css").read_text()
+
+    assert 'asset.role === "master"' in projector
+    assert 'asset.role === "depth"' in projector
+    assert 'canvas.getContext("webgl2"' in projector
+    assert "texture(u_depth, uv).r" in projector
+    assert "appendSceneHotspots" in projector
+    assert 'query.get("offline") === "1"' in projector
+    assert "url.origin !== window.location.origin" in projector
+    assert ".depth-scene-canvas.ready" in stylesheet
+    assert ".scene-hotspot.action-glow::after" in stylesheet
 
 
 def test_projector_has_a_finished_bundled_hero_instead_of_debug_layers() -> None:

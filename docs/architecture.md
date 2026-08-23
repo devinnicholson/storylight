@@ -40,12 +40,15 @@ to loopback API URLs. The renderer never receives arbitrary device filesystem pa
 ## Cloud authoring plane
 
 The cloud sees publisher-supplied book content, not a child's live session. The Story Compiler
-turns pages into a versioned Story Pack containing scene layers, generation prompts, deterministic
-word triggers, literacy scaffolds, and comprehension prompts.
+turns pages into SceneSpec v2: a validated 16:9 master prompt, spatial composition, depth ordering,
+camera motion, ambience, deterministic word triggers, literacy scaffolds, and comprehension prompts.
+The provider-neutral Scene Foundry turns that specification into a finished master plus depth
+sidecar, caches both by checksum, and only then promotes the complete Story Pack.
 
 ```text
-book input -> Bookforge API -> Gemma on GKE -> validated Story Pack -> Cloud Storage
-                                                              -> downloaded to edge SSD
+book input -> Bookforge API -> Gemma -> SceneSpec v2 -> AssetGenerator -> master + depth
+                                                                  -> checksummed Story Pack
+                                                                  -> downloaded to edge SSD
 ```
 
 The API uses the same structured model client locally and in GCP:
@@ -53,6 +56,17 @@ The API uses the same structured model client locally and in GCP:
 - `ollama`: Mac development and the first Gemma smoke tests.
 - `openai`: vLLM or NVIDIA NIM-compatible serving on GKE.
 - `fake`: deterministic tests with no model process.
+
+Asset generation currently supports:
+
+- `modal`: temporary NVIDIA T4 authoring with SDXL-Turbo and Depth Anything V2 in one call.
+- `mflux`: local Apple Silicon generation and Depth Pro fallback.
+- `fake`: deterministic contract tests.
+- GCP/Cosmos: planned providers behind the same `AssetGenerator` boundary.
+
+Playback never calls any of these authoring providers. The projector loads only loopback cache URLs.
+Its `offline=1` mode rejects non-origin fetches, and its response CSP restricts images, media,
+scripts, styles, and WebSocket traffic to the local application boundary.
 
 ## Trust boundary
 
