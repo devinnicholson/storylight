@@ -1,0 +1,54 @@
+{
+  "schema_version": "1.0",
+  "budget": {
+    "monthly_credit_usd": 30.0,
+    "usage_before_lab_usd": 13.33515451,
+    "reserve_usd": 1.66484549,
+    "run_cap_usd": 15.0
+  },
+  "ledger": "artifacts/visual-lab/ledger.json",
+  "ledger_baseline_usd": 0.13317055,
+  "stages": [
+    {
+      "id": "sana-master-calibration",
+      "model": "Efficient-Large-Model/SANA1.5_1.6B_1024px_diffusers",
+      "gpu": "L4",
+      "jobs": 12,
+      "hard_timeout_seconds_per_job": 180,
+      "purpose": "Select a projection-safe visual language before creating motion."
+    },
+    {
+      "id": "ltx-motion-calibration",
+      "model": "Lightricks/LTX-Video",
+      "gpu": "L4",
+      "jobs": 12,
+      "hard_timeout_seconds_per_job": 240,
+      "purpose": "Compare subtle loop prompts and seeds on the strongest master frames."
+    },
+    {
+      "id": "cosmos-hero-gate",
+      "model": "nvidia-cosmos/Cosmos-Predict2.5-2B",
+      "gpu": "premium-gpu-required",
+      "jobs": 2,
+      "hard_timeout_seconds_per_job": 1200,
+      "purpose": "Run only after the lighter pipeline passes; test contest-aligned world generation.",
+      "enabled": false,
+      "blocked_reason": "The current no-payment Modal workspace rejects H100 and L40S functions. Keep this gated until a free-credit-compatible 32 GB GPU path is available."
+    },
+    {
+      "id": "winning-recipe-scaleout",
+      "model": "selected-after-calibration",
+      "gpu": "selected-after-calibration",
+      "jobs": 24,
+      "hard_timeout_seconds_per_job": 300,
+      "purpose": "Produce a coherent multi-page demo set with two candidates per scene."
+    }
+  ],
+  "stop_rules": [
+    "Never deploy a persistent endpoint for this experiment.",
+    "Do not schedule a stage until its worst-case GPU cost fits under the run cap.",
+    "Stop after any failed smoke test instead of automatically retrying.",
+    "Stop if the Modal billing report reaches 28.50 USD total monthly usage.",
+    "Keep every prompt, seed, revision, duration, checksum, and artifact."
+  ]
+}

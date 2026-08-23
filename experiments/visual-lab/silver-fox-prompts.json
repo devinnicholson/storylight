@@ -1,0 +1,59 @@
+{
+  "schema_version": "1.0",
+  "jobs": [
+    {
+      "id": "silver-fox-watercolor-theater-a",
+      "seed": 2026082231,
+      "prompt": "Wide cinematic picture-book scene at deep blue dusk, one elegant silver fox walking beneath enormous ancient cedar trees and carrying a small golden lantern low beside its chest, layered watercolor paper theater with visible deckled edges, indigo and forest-green silhouettes, intense soft amber light illuminating the fox's face, fur, and narrow path, strong foreground-midground-background separation, graceful readable fox silhouette, quiet wonder, sophisticated premium children's illustration, full-bleed 16:9 projection plate, no words, no frame, no interface",
+      "width": 1024,
+      "height": 576,
+      "steps": 28,
+      "guidance_scale": 4.7
+    },
+    {
+      "id": "silver-fox-watercolor-theater-b",
+      "seed": 2026082232,
+      "prompt": "A solitary silver fox carries a glowing golden hand lantern through a cathedral-like cedar forest at twilight, widescreen layered watercolor and cut-paper stage, monumental dark trunks rising beyond the frame, rich ultramarine sky, deep emerald foliage, amber pool of lantern light on damp earth and silver fur, tactile paper grain, restrained palette, dramatic scale, poetic and safe for young children, award-winning contemporary storybook art, projection-ready 16:9, no text or border",
+      "width": 1024,
+      "height": 576,
+      "steps": 28,
+      "guidance_scale": 4.7
+    },
+    {
+      "id": "silver-fox-shadowbox-a",
+      "seed": 2026082233,
+      "prompt": "Illuminated paper shadow-box diorama, a small elegant silver fox in profile walking from left to right with one warm golden lantern, surrounded by immense layered cedar trunks at blue hour, translucent watercolor paper, deep navy and teal layers, warm amber rim light, exquisite fibers and handcrafted edges, spacious cinematic composition, clean focal hierarchy, magical but calm, premium picture-book theater, widescreen full bleed, no captions, no frame",
+      "width": 1024,
+      "height": 576,
+      "steps": 28,
+      "guidance_scale": 4.7
+    },
+    {
+      "id": "silver-fox-gouache-a",
+      "seed": 2026082234,
+      "prompt": "Poetic widescreen gouache and torn-paper children's book illustration, graceful silver fox carrying a tiny golden lantern under gigantic cedar trees at dusk, fox clearly visible in the lower third, luminous amber light against cool indigo and pine green, painterly paper texture, long tree shadows, subtle mist, elegant negative space, emotionally warm and mysterious, museum-quality story art, full-bleed 16:9 projection image, no letters or border",
+      "width": 1024,
+      "height": 576,
+      "steps": 28,
+      "guidance_scale": 4.7
+    },
+    {
+      "id": "silver-fox-lantern-a",
+      "seed": 2026082235,
+      "prompt": "Enchanted nocturnal forest built from translucent watercolor paper lantern layers, one silver fox carrying a bright golden lantern along a winding path beneath enormous cedar trees, fox and lantern crisp and readable, deep cyan-blue dusk, near-black green trees, amber light filtering through paper fibers, layered atmospheric depth, quiet cinematic discovery, sophisticated animated-film concept art translated into tactile children's illustration, wide 16:9 full bleed, no text",
+      "width": 1024,
+      "height": 576,
+      "steps": 28,
+      "guidance_scale": 4.7
+    },
+    {
+      "id": "silver-fox-minimal-a",
+      "seed": 2026082236,
+      "prompt": "Minimal luxurious watercolor paper landscape at twilight, a single small silver fox with one glowing gold lantern moving through towering cedar silhouettes, bold clean shapes for projection, vast indigo negative space, layered teal forest floor, warm amber focal glow, tactile fibers and soft pigment blooms, iconic modern children's book composition, calm, magical, highly legible, widescreen full bleed, no words, no border, no clutter",
+      "width": 1024,
+      "height": 576,
+      "steps": 28,
+      "guidance_scale": 4.7
+    }
+  ]
+}

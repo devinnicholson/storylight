@@ -48,14 +48,25 @@ def test_projector_uses_depth_webgl_and_enforces_offline_replay_boundary() -> No
     assert ".scene-hotspot.action-glow::after" in stylesheet
 
 
-def test_projector_has_a_finished_bundled_hero_instead_of_debug_layers() -> None:
+def test_projector_has_a_generated_motion_hero_instead_of_debug_layers() -> None:
     projector = (ROOT / "src/bookforge/static/projector.js").read_text()
     css = (ROOT / "src/bookforge/static/projector.css").read_text()
     hero = ROOT / "src/bookforge/static/assets/moon-gate-hero-v1.png"
+    motion = ROOT / "src/bookforge/static/assets/moon-gate-loop-v1.mp4"
+    silver_fox_motion = ROOT / "src/bookforge/static/assets/silver-fox-loop-v1.mp4"
 
     assert hero.is_file()
     assert hero.stat().st_size > 1_000_000
-    assert "/workbench-assets/assets/moon-gate-hero-v1.png" in projector
+    assert motion.is_file()
+    assert motion.stat().st_size > 50_000
+    assert silver_fox_motion.is_file()
+    assert silver_fox_motion.stat().st_size > 100_000
+    assert "/workbench-assets/assets/moon-gate-loop-v1.mp4" in projector
+    assert "/workbench-assets/assets/silver-fox-loop-v1.mp4" in projector
+    assert 'poster: "/workbench-assets/assets/moon-gate-hero-v1.png"' in projector
+    assert "video.autoplay = true" in projector
+    assert "video.loop = true" in projector
+    assert "elements.generatedScene.querySelector(selector)" in projector
     assert "hero-trigger-layer" in projector
     assert ".bundled-hero-scene" in css
 
@@ -130,7 +141,7 @@ def test_workbench_explains_the_three_step_reader_flow() -> None:
     controller = (ROOT / "src/bookforge/static/workbench.js").read_text()
     assert "reloadProjectionPreview();" in controller
     assert (
-        'elements.projectorFrame.src = `/projector?pack=latest&session=${readerSessionId}'
+        "elements.projectorFrame.src = `/projector?pack=latest&session=${readerSessionId}"
         in controller
     )
     assert "&present=1" in controller
@@ -158,4 +169,4 @@ def test_bootstrap_keeps_jetpack_python_packages_visible() -> None:
     bootstrap = (ROOT / "deploy/jetson/bootstrap.sh").read_text()
 
     assert "python3 -m venv --system-site-packages" in bootstrap
-    assert "pip install --upgrade \"$REPO_ROOT\"" in bootstrap
+    assert 'pip install --upgrade "$REPO_ROOT"' in bootstrap

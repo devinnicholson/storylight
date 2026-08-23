@@ -47,6 +47,8 @@ body.blackout #projectionStage { opacity: 0; }
 .depth-scene-fallback { transform: scale(1.025); animation: hero-breathe 18s ease-in-out infinite alternate; }
 .depth-scene-canvas { opacity: 0; transition: opacity 700ms ease; }
 .depth-scene-canvas.ready { opacity: 1; }
+.motion-scene { position: absolute; inset: 0; overflow: hidden; background: #02050a; }
+.motion-scene > video { width: 100%; height: 100%; object-fit: cover; transform: scale(1.006); }
 .scene-hotspot {
   left: var(--hotspot-x);
   top: var(--hotspot-y);
@@ -170,13 +172,16 @@ body.blackout #projectionStage { opacity: 0; }
 .generic-layer.action-fade { opacity: .05; }
 
 .bundled-hero-scene { z-index: 0; overflow: hidden; }
-.bundled-hero-scene img {
+.bundled-hero-scene img, .bundled-hero-scene video {
   width: 100%;
   height: 100%;
   object-fit: cover;
   transform: scale(1.018);
+}
+.bundled-hero-scene img {
   animation: hero-breathe 14s ease-in-out infinite alternate;
 }
+.bundled-hero-scene video { background: #020912; }
 .generated-scene.hero-composed .hero-trigger-layer {
   opacity: 0;
   transform: none;

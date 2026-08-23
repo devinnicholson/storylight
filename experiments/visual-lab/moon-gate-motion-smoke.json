@@ -1,0 +1,13 @@
+{
+  "schema_version": "1.0",
+  "jobs": [
+    {
+      "id": "moon-gate-breathing-light-smoke",
+      "seed": 2026082211,
+      "prompt": "Locked camera. Preserve the exact handcrafted paper composition and character identity. The moths' wings flutter delicately in place, seven tiny firefly motes drift slowly, moonlight breathes along the paper edges, distant grass moves almost imperceptibly. The red gate remains still. Subtle ambient storybook loop, calm and magical, no scene change.",
+      "frames": 25,
+      "fps": 24,
+      "steps": 30
+    }
+  ]
+}

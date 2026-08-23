@@ -1,0 +1,29 @@
+{
+  "schema_version": "1.0",
+  "jobs": [
+    {
+      "id": "moon-gate-breathing-light",
+      "seed": 2026082211,
+      "prompt": "Locked camera. Preserve the exact handcrafted paper composition and character identity. The moth's wings flutter delicately in place, seven tiny firefly motes drift slowly, moonlight breathes along the paper edges, distant grass moves almost imperceptibly. The red gate remains still. Subtle ambient storybook loop, calm and magical, no scene change.",
+      "frames": 49,
+      "fps": 24,
+      "steps": 40
+    },
+    {
+      "id": "moon-gate-moth-approach",
+      "seed": 2026082212,
+      "prompt": "Locked camera. Preserve the exact paper-art scene. The tiny moth makes one gentle short arc toward the red gate while its wings flutter, warm light grows faintly inside the gate, paper grass sways slowly, sparse motes drift. Extremely restrained cinematic motion, consistent shapes and palette, no cuts or camera movement.",
+      "frames": 49,
+      "fps": 24,
+      "steps": 40
+    },
+    {
+      "id": "moon-gate-parallax-breeze",
+      "seed": 2026082213,
+      "prompt": "Nearly locked storybook camera with only a very subtle depth drift. Preserve every object and the tactile cut-paper style. Foreground grass shifts slightly faster than distant hills, translucent moth wings shimmer, gate light flickers softly, stars remain stable. Slow meditative movement designed to repeat behind a child reading aloud, no new objects, no transition.",
+      "frames": 49,
+      "fps": 24,
+      "steps": 40
+    }
+  ]
+}

@@ -1,0 +1,29 @@
+{
+  "schema_version": "1.0",
+  "jobs": [
+    {
+      "id": "silver-fox-lantern-breathe",
+      "seed": 2026082241,
+      "prompt": "Locked storybook camera. Preserve the exact watercolor composition, silver-blue fox, cedar silhouettes, and lantern. The fox breathes gently and takes one tiny careful step, its tail sways slightly, the golden lantern swings only a few centimeters and its warm light softly pulses on the ground. Cedar branches move almost imperceptibly. Slow calm motion, no new objects, no scene change.",
+      "frames": 49,
+      "fps": 24,
+      "steps": 40
+    },
+    {
+      "id": "silver-fox-forest-breeze",
+      "seed": 2026082242,
+      "prompt": "Locked camera on the exact watercolor paper theater. Preserve the fox anatomy and lantern shape. A very gentle breeze moves the upper cedar canopy, the fox's tail and ear shift subtly, and warm lantern light flickers across the path while the rest of the scene remains stable. Meditative ambient movement for reading aloud, no cuts, no camera move, no added animals.",
+      "frames": 49,
+      "fps": 24,
+      "steps": 40
+    },
+    {
+      "id": "silver-fox-cinematic-drift",
+      "seed": 2026082243,
+      "prompt": "Almost locked cinematic storybook camera with an extremely slow shallow push. Keep the silver fox, golden lantern, trees, and watercolor texture identical. The lantern glow breathes, tiny dust motes cross its light, the fox blinks and tail moves gently, distant branches drift with parallax. Quiet magical continuity, no morphing, no transition, no new content.",
+      "frames": 49,
+      "fps": 24,
+      "steps": 40
+    }
+  ]
+}

@@ -17,3 +17,4 @@ terraform.tfstate.*
 .terraform/
 *.tfvars
 !*.tfvars.example
+artifacts/visual-lab/

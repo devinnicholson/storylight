@@ -1,0 +1,59 @@
+{
+  "schema_version": "1.0",
+  "jobs": [
+    {
+      "id": "moon-gate-theater-a",
+      "seed": 2026082201,
+      "prompt": "Wide cinematic storybook stage at blue hour, a tiny cream-and-teal moth approaching a monumental glowing vermilion moon gate on a quiet hill, layered hand-cut Japanese washi paper and translucent vellum, deep indigo sky, teal hills, warm cream moon, coral rim light, delicate fibers and deckled edges, strong foreground-midground-background separation, sparse elegant composition, luminous shadows, emotionally wondrous, premium children's book illustration, full-bleed 16:9 projection plate, no words or border",
+      "width": 1024,
+      "height": 576,
+      "steps": 24,
+      "guidance_scale": 4.5
+    },
+    {
+      "id": "moon-gate-theater-b",
+      "seed": 2026082202,
+      "prompt": "A moonlit paper theater world seen from a low storybook camera, tiny luminous moth at left, red circular gate at right opening into golden light, sculpted layers of indigo and teal cut paper, cream moon and seven floating firefly motes, tactile paper grain, restrained coral accents, dreamy volumetric glow, graphic silhouette readability, cinematic depth, quiet magical anticipation, museum-quality children's illustration, full-bleed widescreen projection art, no text, no frame",
+      "width": 1024,
+      "height": 576,
+      "steps": 24,
+      "guidance_scale": 4.5
+    },
+    {
+      "id": "moon-gate-shadowbox-a",
+      "seed": 2026082203,
+      "prompt": "Handcrafted illuminated shadow-box diorama of a tiny moth crossing layered hills toward a vermilion moon gate, indigo night, cyan-teal foliage, cream paper moon, translucent wings catching coral and gold light, exquisite paper fibers, deep parallax layers, clean silhouettes, gentle mystery, theatrical lighting without photorealism, sophisticated contemporary picture-book art, wide 16:9 canvas with generous negative space, no writing, no UI",
+      "width": 1024,
+      "height": 576,
+      "steps": 24,
+      "guidance_scale": 4.5
+    },
+    {
+      "id": "moon-gate-gouache-a",
+      "seed": 2026082204,
+      "prompt": "Poetic widescreen gouache-and-collage children's book illustration, tiny pale moth flying across a moonlit teal valley toward a brilliant red circular gate, deep ultramarine atmosphere, cream moonlight, coral glow reflected on grass, expressive paper shapes, visible brush texture, elegant reduced palette, dramatic scale, clear focal path, soft cinematic depth, breathtaking yet calm, projection-ready full bleed, no letters or border",
+      "width": 1024,
+      "height": 576,
+      "steps": 24,
+      "guidance_scale": 4.5
+    },
+    {
+      "id": "moon-gate-lantern-a",
+      "seed": 2026082205,
+      "prompt": "An enchanted nocturnal landscape built from translucent paper lantern layers, tiny cream moth fluttering toward a vermilion moon gate radiating warm light, sweeping teal hills under an immense indigo sky, pale moon, subtle stars and firefly embers, sophisticated silhouette design, handcrafted imperfections, rich luminous color, quiet sense of discovery, premium animated-film concept art translated into a tactile picture-book style, cinematic 16:9 projection image, no text",
+      "width": 1024,
+      "height": 576,
+      "steps": 24,
+      "guidance_scale": 4.5
+    },
+    {
+      "id": "moon-gate-minimal-a",
+      "seed": 2026082206,
+      "prompt": "Minimal but luxurious cut-paper story landscape, a single tiny moth and one glowing vermilion moon gate across rolling teal layers, vast indigo night and cream crescent moon, coral light threading through paper edges, crisp readable shapes for projection, strong depth staging, tactile fibers, restrained magical atmosphere, iconic contemporary children's illustration, widescreen full bleed, no words, no border, no clutter",
+      "width": 1024,
+      "height": 576,
+      "steps": 24,
+      "guidance_scale": 4.5
+    }
+  ]
+}

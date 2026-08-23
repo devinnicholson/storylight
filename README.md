@@ -95,6 +95,37 @@ Then create a scene in the workbench. The first run builds the reusable containe
 `bookforge-model-cache` Modal Volume. The backend boundary is provider-neutral: GCP can replace
 Modal later without changing SceneSpec, Story Pack storage, the Jetson cache, or the projector.
 
+For higher-quality offline scene R&D, `deploy/modal_visual_lab.py` provides finite `modal run`
+jobs on an NVIDIA L4. It pins SANA 1.5 and LTX-Video revisions, records prompts, seeds, checksums,
+generation time, and estimated GPU cost, and never deploys a persistent endpoint. The experiment
+envelope in `experiments/visual-lab/plan.json` caps this month's lab work at $15 while retaining a
+$1.66 credit reserve. Raw candidates stay under the ignored `artifacts/visual-lab/` directory;
+selected production loops are promoted into checksum-verified Story Packs.
+
+```bash
+modal run deploy/modal_visual_lab.py::master_batch_cli \
+  --prompt-file experiments/visual-lab/moon-gate-prompts.json \
+  --output-dir artifacts/visual-lab/masters
+
+modal run deploy/modal_visual_lab.py::motion_batch_cli \
+  --image-path artifacts/visual-lab/masters/moon-gate-lantern-a__2026082205.png \
+  --prompt-file experiments/visual-lab/moon-gate-motion-prompts.json \
+  --output-dir artifacts/visual-lab/motion
+
+python -m bookforge.motion_promotion SOURCE.story-pack.json LOOP.mp4 \
+  --asset-root artifacts/visual-lab \
+  --output artifacts/visual-lab/promoted.story-pack.json \
+  --prompt "Locked camera, subtle ambient motion" \
+  --seed 2026082211 \
+  --generation-ms 34653
+python -m bookforge.pack_installer artifacts/visual-lab/promoted.story-pack.json \
+  --asset-root artifacts/visual-lab
+```
+
+The visual lab intentionally stops instead of silently falling back when the selected GPU is not
+available. Premium GPU access was not enabled on the no-payment Modal workspace, so the planned
+Cosmos comparison remains gated rather than adding a payment method or risking overage.
+
 Microphone capture remains private to the local API. While recording, the workbench sends rolling
 cumulative clips every two seconds, aligns each partial transcript to the trusted page text, and
 emits only reader events to the projector. This laptop POC is rolling-batch partial ASR—not yet a
@@ -165,3 +196,4 @@ run on JetPack 7.2.1.
 - [`benchmarks/macbook-m4-smoke-2026-08-20.json`](benchmarks/macbook-m4-smoke-2026-08-20.json): first real-model latency measurements
 - [`benchmarks/live-reader-laptop-2026-08-21.json`](benchmarks/live-reader-laptop-2026-08-21.json): clean-wheel, browser, persistence, and live event latency evidence
 - [`benchmarks/scene-engine-modal-t4-2026-08-22.json`](benchmarks/scene-engine-modal-t4-2026-08-22.json): real Gemma → Modal master/depth → local ASR → WebGL trigger evidence
+- [`benchmarks/visual-lab-modal-l4-2026-08-22.json`](benchmarks/visual-lab-modal-l4-2026-08-22.json): pinned SANA/LTX generation, loop quality, cost, and projector playback evidence

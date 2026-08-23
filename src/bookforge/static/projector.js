@@ -165,9 +165,20 @@ function placeholderLayout(kind, index) {
 function bundledHeroForPage(page) {
   const source = page.source_text.trim().toLocaleLowerCase();
   if (source === "the small moth went through the red gate.") {
-    return "/workbench-assets/assets/moon-gate-hero-v1.png";
+    return {
+      video: "/workbench-assets/assets/moon-gate-loop-v1.mp4",
+      poster: "/workbench-assets/assets/moon-gate-hero-v1.png",
+      label: "Moonlit cut-paper valley with a moth near a glowing red gate",
+    };
   }
-  return "";
+  if (source === "at dusk, a silver fox carried a golden lantern beneath the enormous cedar trees.") {
+    return {
+      video: "/workbench-assets/assets/silver-fox-loop-v1.mp4",
+      poster: "",
+      label: "Silver fox carrying a golden lantern beneath enormous watercolor cedar trees",
+    };
+  }
+  return null;
 }
 
 function loadSceneImage(uri) {
@@ -346,16 +357,39 @@ function appendSceneHotspots(container, page) {
 }
 
 async function renderPackLayers(pack, page) {
-  const fixture = pack.story_id === "moon-gate-projector-fixture";
   state.depthRenderer?.destroy();
   state.depthRenderer = null;
-  elements.fixtureScene.hidden = !fixture;
+  elements.fixtureScene.hidden = true;
   elements.generatedScene.innerHTML = "";
-  if (fixture) return;
+  elements.generatedScene.classList.remove(
+    "depth-composed",
+    "hero-composed",
+    "motion-composed",
+  );
 
   const readyAssets = (pack.assets || []).filter(
-    (asset) => asset.page_id === page.page_id && asset.state === "ready",
+    (asset) => asset.page_id === page.page_id && asset.state === "ready" && asset.kind !== "procedural",
   );
+  const motionAsset = readyAssets.find(
+    (asset) => asset.role === "motion" && asset.kind === "video_loop",
+  );
+  if (motionAsset?.local_uri?.startsWith("/v1/assets/")) {
+    elements.generatedScene.classList.add("motion-composed");
+    const scene = document.createElement("div");
+    scene.className = "motion-scene";
+    const video = document.createElement("video");
+    video.src = motionAsset.local_uri;
+    video.muted = true;
+    video.loop = true;
+    video.autoplay = true;
+    video.playsInline = true;
+    video.setAttribute("aria-label", page.scene_summary);
+    scene.append(video);
+    appendAmbientEffects(scene, page.scene_spec);
+    appendSceneHotspots(scene, page);
+    elements.generatedScene.append(scene);
+    return;
+  }
   const masterAsset = readyAssets.find((asset) => asset.role === "master");
   const depthAsset = readyAssets.find((asset) => asset.role === "depth");
   if (
@@ -395,15 +429,20 @@ async function renderPackLayers(pack, page) {
       .filter((asset) => asset.role !== "depth")
       .map((asset) => [asset.layer_id, asset]),
   );
-  const bundledHero = assets.size === 0 ? bundledHeroForPage(page) : "";
+  const bundledHero = assets.size === 0 ? bundledHeroForPage(page) : null;
   elements.generatedScene.classList.toggle("hero-composed", Boolean(bundledHero));
   if (bundledHero) {
     const hero = document.createElement("div");
     hero.className = "visual-layer bundled-hero-scene";
-    const image = document.createElement("img");
-    image.src = bundledHero;
-    image.alt = "Moonlit cut-paper valley with a moth approaching a glowing red gate";
-    hero.append(image);
+    const video = document.createElement("video");
+    video.src = bundledHero.video;
+    if (bundledHero.poster) video.poster = bundledHero.poster;
+    video.muted = true;
+    video.loop = true;
+    video.autoplay = true;
+    video.playsInline = true;
+    video.setAttribute("aria-label", bundledHero.label);
+    hero.append(video);
     elements.generatedScene.append(hero);
   }
   [...page.layers].sort((left, right) => left.z_index - right.z_index).forEach((layer, index) => {
@@ -484,7 +523,8 @@ function clearLayerState() {
 }
 
 function applyTrigger(trigger, emittedAt, measure = true, publishedAt = null) {
-  const target = elements.scene.querySelector(`[data-layer-id="${CSS.escape(trigger.target_layer_id)}"]`);
+  const selector = `[data-layer-id="${CSS.escape(trigger.target_layer_id)}"]`;
+  const target = elements.generatedScene.querySelector(selector) || elements.scene.querySelector(selector);
   if (!target) return;
   target.style.setProperty("--trigger-duration", `${trigger.duration_ms}ms`);
   target.classList.add(`action-${trigger.action}`, `trigger-${trigger.trigger_id.replace(/[^a-z0-9_-]/gi, "-")}`);
