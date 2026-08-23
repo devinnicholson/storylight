@@ -486,9 +486,21 @@ def _load_multi_motion_jobs(
     master_manifest_path: str,
     selection_path: str,
 ) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
-    manifest = json.loads(Path(master_manifest_path).read_text())
     selection = json.loads(Path(selection_path).read_text())
-    masters = {record["experiment_id"]: record for record in manifest.get("records", [])}
+    masters: dict[str, dict[str, Any]] = {}
+    manifest_paths = [Path(value.strip()) for value in master_manifest_path.split(",")]
+    if not manifest_paths or any(not str(path) for path in manifest_paths):
+        raise ValueError("at least one master manifest path is required")
+    for path in manifest_paths:
+        manifest = json.loads(path.read_text())
+        records = manifest.get("records")
+        if not isinstance(records, list):
+            raise ValueError(f"master manifest has no records: {path}")
+        for record in records:
+            candidate_id = str(record["experiment_id"])
+            if candidate_id in masters:
+                raise ValueError(f"duplicate master candidate: {candidate_id}")
+            masters[candidate_id] = record
     winners = selection.get("winners")
     if not isinstance(winners, list) or not 1 <= len(winners) <= 6:
         raise ValueError("master selection requires between 1 and 6 winners")

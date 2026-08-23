@@ -35,3 +35,13 @@ def test_siglip_text_batch_is_explicitly_truncated_and_padded() -> None:
 
     assert 'padding="max_length"' in scorer
     assert "truncation=True" in scorer
+
+
+def test_multi_motion_loader_accepts_a_comma_separated_manifest_pool() -> None:
+    source = (ROOT / "deploy/modal_visual_lab.py").read_text()
+    loader = source.split("def _load_multi_motion_jobs(", 1)[1].split("@app.local_entrypoint()", 1)[
+        0
+    ]
+
+    assert 'master_manifest_path.split(",")' in loader
+    assert "duplicate master candidate" in loader

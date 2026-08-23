@@ -1,0 +1,60 @@
+{
+  "schema_version": "1.0",
+  "purpose": "Human-review remediation for pages 3-5: make the child and canonical fox unmistakable.",
+  "jobs": [
+    {
+      "id": "lost-words-page-03-c",
+      "seed": 2026082313,
+      "prompt": "Exactly two main characters fill the foreground: one young child reading aloud from a large open picture book, and one small silver-blue fox listening beside the child. The child is the largest figure and is unmistakably human; the fox has a navy body, cyan-blue face, white muzzle and tail tip. One golden lantern. Deep indigo cedar hollow, luminous layered watercolor cut-paper theater, warm safe literacy moment, clean widescreen 16:9 projection composition, no other characters, no readable text, no border.",
+      "width": 1024,
+      "height": 576,
+      "steps": 32,
+      "guidance_scale": 5.2
+    },
+    {
+      "id": "lost-words-page-03-d",
+      "seed": 2026082314,
+      "prompt": "A young human reader seen clearly in profile sits on the left, holding a large open picture book and sounding out a story. On the right, the same elegant navy-and-cyan silver fox with white muzzle and white tail tip watches attentively. One small round amber lantern between them. Both characters large and fully visible, sheltered blue cedar alcove, premium hand-cut watercolor paper illustration, emotionally encouraging, bold projection contrast, cinematic 16:9, no words, no captions, no extra animals.",
+      "width": 1024,
+      "height": 576,
+      "steps": 32,
+      "guidance_scale": 5.2
+    },
+    {
+      "id": "lost-words-page-04-c",
+      "seed": 2026082315,
+      "prompt": "One young child is clearly reading aloud on the left while one small navy-and-cyan silver fox listens on the right. Between them lies one large open picture book. A single graceful stream of abstract golden firefly sparks travels visibly from the child's mouth into the book; the sparks are not letters or text. One round lantern, deep blue cedar forest, luminous layered watercolor cut-paper theater, two large readable silhouettes, magical but calm, full-bleed 16:9 projection art, no other characters, no writing.",
+      "width": 1024,
+      "height": 576,
+      "steps": 32,
+      "guidance_scale": 5.2
+    },
+    {
+      "id": "lost-words-page-04-d",
+      "seed": 2026082316,
+      "prompt": "Foreground literacy scene with exactly one human child, one silver-blue fox, and one open book. The child reads with visible confidence; the same fox has a dark navy body, cyan-blue face, white muzzle and white tail tip. Warm glowing speech motes arc from child to book while one golden lantern lights both faces. Premium watercolor paper theater in a dark teal cedar hollow, strong warm-cool contrast, spacious cinematic widescreen, no readable letters, no captions, no extra animals.",
+      "width": 1024,
+      "height": 576,
+      "steps": 32,
+      "guidance_scale": 5.2
+    },
+    {
+      "id": "lost-words-page-05-c",
+      "seed": 2026082317,
+      "prompt": "One young child and one small navy-and-cyan silver fox stand together in the foreground, both looking into a newly awakened library inside giant cedar trees. The child and fox are large and clearly visible; the fox has a white muzzle and white tail tip. One open glowing picture book and one round golden lantern sit between them. The library blooms from indigo into teal, amber, coral, and violet watercolor paper shelves and leaves. Triumphant full-bleed 16:9 projection illustration, no other characters, no readable titles or text.",
+      "width": 1024,
+      "height": 576,
+      "steps": 32,
+      "guidance_scale": 5.2
+    },
+    {
+      "id": "lost-words-page-05-d",
+      "seed": 2026082318,
+      "prompt": "A clearly human young reader kneels beside the same elegant silver-blue fox in the foreground as their open book releases color into a hidden cedar library. The fox is navy and cyan with a white muzzle and white tail tip; the child and fox are equally prominent. Exactly one amber lantern. Jewel-blue, coral, violet, and gold light spreads through layered watercolor paper shelves, leaves, and book spines. Joyful literacy transformation, bold cinematic 16:9 projection plate, no readable writing, no extra characters, no frame.",
+      "width": 1024,
+      "height": 576,
+      "steps": 32,
+      "guidance_scale": 5.2
+    }
+  ]
+}

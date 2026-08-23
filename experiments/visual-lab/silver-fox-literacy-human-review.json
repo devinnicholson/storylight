@@ -1,0 +1,103 @@
+{
+  "schema_version": "1.0",
+  "reviewer": "Bookforge visual acceptance",
+  "reviewed_at": "2026-08-23T18:45:10Z",
+  "criteria": [
+    "Required story subjects are visibly present",
+    "Fox is acceptably close to the canonical navy/cyan silver-blue character",
+    "Composition remains legible under projection",
+    "No malformed, unsafe, or accidental textual content"
+  ],
+  "reviews": [
+    {
+      "id": "lost-words-page-01-a",
+      "approved": true,
+      "notes": "Canonical navy/cyan fox, one lantern, strong cedar depth and clean silhouette."
+    },
+    {
+      "id": "lost-words-page-01-b",
+      "approved": false,
+      "notes": "Fox drifts to white and the scene contains multiple lanterns."
+    },
+    {
+      "id": "lost-words-page-02-a",
+      "approved": true,
+      "notes": "Fox, open book, scattered paper forms, and lantern are all readable."
+    },
+    {
+      "id": "lost-words-page-02-b",
+      "approved": false,
+      "notes": "Fox is nearly white and the book is not visually distinct enough."
+    },
+    {
+      "id": "lost-words-page-03-a",
+      "approved": false,
+      "notes": "Required young reader is absent."
+    },
+    {
+      "id": "lost-words-page-03-b",
+      "approved": false,
+      "notes": "Required young reader is absent and the fox palette drifts orange."
+    },
+    {
+      "id": "lost-words-page-04-a",
+      "approved": false,
+      "notes": "Required reading child is absent."
+    },
+    {
+      "id": "lost-words-page-04-b",
+      "approved": false,
+      "notes": "Required reading child is absent."
+    },
+    {
+      "id": "lost-words-page-05-a",
+      "approved": false,
+      "notes": "The library is strong, but the fox is not clearly visible."
+    },
+    {
+      "id": "lost-words-page-05-b",
+      "approved": false,
+      "notes": "The library and fox are strong, but the required child is absent."
+    },
+    {
+      "id": "lost-words-page-06-a",
+      "approved": true,
+      "notes": "Fox, restored book, reachable shelf, and approaching children are visible."
+    },
+    {
+      "id": "lost-words-page-06-b",
+      "approved": false,
+      "notes": "Required group of young readers is absent."
+    },
+    {
+      "id": "lost-words-page-03-c",
+      "approved": true,
+      "notes": "Child reads prominently beside a large canonical blue fox; one lantern and book are clear."
+    },
+    {
+      "id": "lost-words-page-03-d",
+      "approved": false,
+      "notes": "Composition passes, but the fox drifts almost entirely white."
+    },
+    {
+      "id": "lost-words-page-04-c",
+      "approved": false,
+      "notes": "Speech magic is excellent, but the oversized shadow reads as a second fox."
+    },
+    {
+      "id": "lost-words-page-04-d",
+      "approved": true,
+      "notes": "Child, open book, canonical teal fox, lantern, and speech motes form a clean reading tableau."
+    },
+    {
+      "id": "lost-words-page-05-c",
+      "approved": true,
+      "notes": "Child and fox enter the awakened library together with a strong warm/cool focal portal."
+    },
+    {
+      "id": "lost-words-page-05-d",
+      "approved": false,
+      "notes": "Required child is absent and the scene duplicates the fox."
+    }
+  ]
+}

@@ -5,6 +5,8 @@ import pytest
 from bookforge.visual_selection import (
     VisualSelectionError,
     build_selection_report,
+    merge_semantic_payloads,
+    merge_technical_payloads,
     score_candidate,
 )
 
@@ -92,3 +94,69 @@ def test_rejects_missing_or_failed_page() -> None:
         score["child_safety"] = 0.1
     with pytest.raises(VisualSelectionError, match="page 01 has no candidate passing"):
         build_selection_report(technical, scores, expected_pages=2)
+
+
+def test_human_review_can_veto_a_high_scoring_candidate() -> None:
+    technical, scores = payloads()
+    reviews = {
+        "reviewer": "visual acceptance",
+        "reviewed_at": "2026-08-23T00:00:00Z",
+        "reviews": [
+            {
+                "id": item["id"],
+                "approved": item["id"] != "lost-words-page-02-b",
+                "notes": "missing required child" if item["id"].endswith("02-b") else "passes",
+            }
+            for item in scores["scores"]
+        ],
+    }
+
+    report = build_selection_report(
+        technical,
+        scores,
+        expected_pages=2,
+        human_review=reviews,
+    )
+
+    assert report["winners"][1]["candidate_id"] == "lost-words-page-02-a"
+    vetoed = next(item for item in report["candidates"] if item["candidate_id"].endswith("02-b"))
+    assert vetoed["human_approved"] is False
+    assert vetoed["overall"] == 0.49
+
+
+def test_human_review_must_cover_exact_candidate_set() -> None:
+    technical, scores = payloads()
+
+    with pytest.raises(VisualSelectionError, match="sets do not match"):
+        build_selection_report(
+            technical,
+            scores,
+            expected_pages=2,
+            human_review={"reviews": [{"id": "lost-words-page-01-a", "approved": True}]},
+        )
+
+
+def test_evidence_batches_merge_without_losing_model_identity() -> None:
+    technical, scores = payloads()
+    technical_batches = [
+        {"evaluations": technical["evaluations"][:2]},
+        {"evaluations": technical["evaluations"][2:]},
+    ]
+    semantic_batches = [
+        {**scores, "scores": scores["scores"][:2]},
+        {**scores, "scores": scores["scores"][2:]},
+    ]
+
+    assert len(merge_technical_payloads(technical_batches)["evaluations"]) == 4
+    merged_semantic = merge_semantic_payloads(semantic_batches)
+    assert len(merged_semantic["scores"]) == 4
+    assert merged_semantic["model_revision"] == "revision"
+
+
+def test_semantic_batches_reject_mixed_model_revisions() -> None:
+    _, scores = payloads()
+    changed = deepcopy(scores)
+    changed["model_revision"] = "different"
+
+    with pytest.raises(VisualSelectionError, match="model identities"):
+        merge_semantic_payloads([scores, changed])
