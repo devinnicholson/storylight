@@ -1773,6 +1773,17 @@ async function loadStoryPack() {
   }
 }
 
+async function startProjector() {
+  try {
+    // Activate the device fallback before session SSE is allowed to replace state.pack.
+    // The session stream replays its current pointer on subscribe, so this cannot miss a job.
+    await loadStoryPack();
+  } finally {
+    setupLiveSceneTransport();
+    if (state.page) connectReaderSession();
+  }
+}
+
 elements.previous.addEventListener("click", () => goToWord(state.cursor - 1));
 elements.next.addEventListener("click", () => goToWord(state.cursor + 1));
 elements.previousPage.addEventListener("click", () => requestPage(state.pageIndex - 1));
@@ -1848,8 +1859,5 @@ loadCalibration();
 bindCalibrationHandles();
 updateProjection();
 setupProjectorWakeLock();
-setupLiveSceneTransport();
-loadStoryPack().then(() => {
-  if (state.page) connectReaderSession();
-});
+void startProjector();
 requestAnimationFrame(monitorFrames);

@@ -475,6 +475,23 @@ def test_projector_uses_session_polling_only_while_session_sse_is_unhealthy() ->
     assert "scheduleLiveSceneRendezvous();" in projector
 
 
+def test_projector_activates_initial_pack_before_subscribing_to_live_session() -> None:
+    projector = (ROOT / "src/bookforge/static/projector.js").read_text()
+
+    startup = projector.split("async function startProjector()", 1)[1].split(
+        'elements.previous.addEventListener("click"', 1
+    )[0]
+    assert startup.index("await loadStoryPack();") < startup.index(
+        "setupLiveSceneTransport();"
+    )
+    assert startup.index("setupLiveSceneTransport();") < startup.index(
+        "if (state.page) connectReaderSession();"
+    )
+    assert "session stream replays its current pointer on subscribe" in startup
+    assert projector.count("setupLiveSceneTransport();") == 1
+    assert "void startProjector();" in projector
+
+
 def test_projector_never_reveals_an_undrawn_or_lost_webgl_canvas() -> None:
     projector = (ROOT / "src/bookforge/static/projector.js").read_text()
 
