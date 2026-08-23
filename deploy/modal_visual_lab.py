@@ -292,6 +292,7 @@ class ScoreStudio:
                 text=texts,
                 images=[image],
                 padding="max_length",
+                truncation=True,
                 return_tensors="pt",
             ).to("cuda")
             with torch.inference_mode():
@@ -620,7 +621,9 @@ def score_batch_cli(
     jobs = _load_score_jobs(manifest_path)
     reference = Path(reference_image_path).read_bytes() if reference_image_path else None
     ledger = _open_budget(plan_file, ledger_path)
-    score_id = f"score:{hashlib.sha256(Path(manifest_path).read_bytes()).hexdigest()[:16]}"
+    score_identity = hashlib.sha256(Path(manifest_path).read_bytes())
+    score_identity.update(reference or b"")
+    score_id = f"score:{score_identity.hexdigest()[:16]}"
     if any(record.experiment_id == score_id for record in ledger.records):
         raise ValueError(f"score batch already recorded: {score_id}")
     reservation_id = _reserve_budget(

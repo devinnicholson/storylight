@@ -137,6 +137,22 @@ class VisualLabLedger:
             raise ValueError(f"unknown reservation_id: {reservation_id}")
         del self.reservations[reservation_id]
 
+    def reconcile_billed_total(
+        self,
+        billed_total_usd: float,
+        *,
+        release_reservation_id: str | None = None,
+    ) -> None:
+        """Anchor the ledger to an authoritative provider total after a stopped run."""
+        if not math.isfinite(billed_total_usd) or billed_total_usd < 0:
+            raise ValueError("billed total must be finite and non-negative")
+        recorded = sum(record.estimated_gpu_usd for record in self.records)
+        if billed_total_usd + 1e-9 < recorded:
+            raise ValueError("billed total cannot be lower than recorded generation estimates")
+        if release_reservation_id is not None:
+            self.release(release_reservation_id)
+        self.prior_estimated_usd = billed_total_usd - recorded
+
     def add(self, record: GenerationRecord) -> None:
         if any(existing.experiment_id == record.experiment_id for existing in self.records):
             raise ValueError(f"duplicate experiment_id: {record.experiment_id}")

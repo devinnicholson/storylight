@@ -101,6 +101,27 @@ def test_reservation_is_persisted_and_counts_against_cap(tmp_path: Path) -> None
     assert resumed.estimated_usage_usd == pytest.approx(14.93)
 
 
+def test_reconcile_billed_total_releases_only_named_failed_reservation() -> None:
+    ledger = VisualLabLedger(envelope=envelope())
+    ledger.reserve(gpu="L4", maximum_seconds=10, reservation_id="failed-score")
+    ledger.reserve(gpu="L4", maximum_seconds=10, reservation_id="other")
+
+    ledger.reconcile_billed_total(0.25, release_reservation_id="failed-score")
+
+    assert "failed-score" not in ledger.reservations
+    assert "other" in ledger.reservations
+    assert ledger.prior_estimated_usd == pytest.approx(0.25)
+    assert ledger.estimated_usage_usd == pytest.approx(0.25222)
+
+
+def test_reconcile_billed_total_fails_closed_below_recorded_estimates() -> None:
+    ledger = VisualLabLedger(envelope=envelope())
+    ledger.add(record(cost=0.3))
+
+    with pytest.raises(ValueError, match="cannot be lower"):
+        ledger.reconcile_billed_total(0.29)
+
+
 def test_cost_helpers_validate_inputs() -> None:
     assert worst_case_gpu_cost(gpu="L4", maximum_seconds=100, jobs=2) == pytest.approx(0.0444)
     assert measured_gpu_cost(gpu="H100", seconds=15) == pytest.approx(0.016455)

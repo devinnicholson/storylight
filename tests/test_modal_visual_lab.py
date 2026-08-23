@@ -19,3 +19,19 @@ def test_budget_gate_uses_authoritative_reconciled_baseline() -> None:
     assert plan["budget"]["monthly_credit_usd"] == 30
     assert plan["ledger_baseline_usd"] == 0.18517822
     assert any("28.50" in rule for rule in plan["stop_rules"])
+
+
+def test_semantic_score_identity_includes_reference_image_bytes() -> None:
+    source = (ROOT / "deploy/modal_visual_lab.py").read_text()
+    entrypoint = source.split("def score_batch_cli(", 1)[1]
+
+    assert 'score_identity.update(reference or b"")' in entrypoint
+    assert 'score_id = f"score:{score_identity.hexdigest()[:16]}"' in entrypoint
+
+
+def test_siglip_text_batch_is_explicitly_truncated_and_padded() -> None:
+    source = (ROOT / "deploy/modal_visual_lab.py").read_text()
+    scorer = source.split("class ScoreStudio:", 1)[1].split("def _load_jobs", 1)[0]
+
+    assert 'padding="max_length"' in scorer
+    assert "truncation=True" in scorer
