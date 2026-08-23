@@ -1,0 +1,40 @@
+{
+  "schema_version": "1.0",
+  "story_id": "silver-fox-lost-words",
+  "title": "The Silver Fox and the Lost Words",
+  "reading_level": 2,
+  "visual_style": "luminous layered watercolor paper theater",
+  "character_bible": "One elegant silver-blue fox with a white muzzle and tail tip, dark indigo eyes, and one small round golden lantern on a curved handle. Never add clothing, extra lanterns, or another fox.",
+  "pages": [
+    {
+      "page_id": "page-01",
+      "text": "At dusk, a silver fox carried a golden lantern beneath the enormous cedar trees.",
+      "beat": "The fox enters the blue forest with the lantern as the sole warm focal light."
+    },
+    {
+      "page_id": "page-02",
+      "text": "On the path, glowing letters had fallen from a frightened little book.",
+      "beat": "The fox discovers a small open book and a trail of dim paper letters."
+    },
+    {
+      "page_id": "page-03",
+      "text": "The fox listened while a young reader slowly sounded out each letter.",
+      "beat": "A child reads beside the fox; individual letter-shaped lights begin to wake."
+    },
+    {
+      "page_id": "page-04",
+      "text": "Every spoken word rose like a firefly and returned to the waiting page.",
+      "beat": "Warm word-shaped fireflies arc from the reader toward the open book."
+    },
+    {
+      "page_id": "page-05",
+      "text": "When the final word was read, the dark library bloomed with color.",
+      "beat": "A hidden forest library transforms from indigo darkness into luminous color."
+    },
+    {
+      "page_id": "page-06",
+      "text": "The fox placed the bright book where every young reader could reach it.",
+      "beat": "The fox presents the restored book on a low welcoming shelf for many children."
+    }
+  ]
+}

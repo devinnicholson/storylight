@@ -1,0 +1,113 @@
+{
+  "schema_version": "1.0",
+  "jobs": [
+    {
+      "id": "lost-words-page-01-a",
+      "seed": 2026082301,
+      "prompt": "Story page 1 of a coherent premium picture book. One elegant silver-blue fox with a white muzzle and tail tip, dark indigo eyes, no clothing, carrying exactly one small round golden lantern on a curved handle, walks beneath enormous cedar trees at deep blue dusk. Luminous layered watercolor paper theater, tactile deckled fibers, deep indigo and teal forest, restrained amber glow, graceful readable silhouette, quiet anticipation, cinematic full-bleed 16:9 projection plate, no words, no letters, no border, no interface, no other fox.",
+      "width": 1024,
+      "height": 576,
+      "steps": 28,
+      "guidance_scale": 4.7
+    },
+    {
+      "id": "lost-words-page-01-b",
+      "seed": 2026082302,
+      "prompt": "Opening page of a six-page watercolor paper story. A single elegant silver-blue fox, white muzzle and tail tip, dark indigo eyes, no clothes, carries one small round golden lantern along a winding path under monumental cedar trunks at twilight. The fox is crisp in the lower third; cool ultramarine forest surrounds one amber pool of light. Layered hand-cut watercolor paper, sophisticated children's illustration, strong depth and projection contrast, widescreen full bleed, no text, no frame, no extra animals or lanterns.",
+      "width": 1024,
+      "height": 576,
+      "steps": 28,
+      "guidance_scale": 4.7
+    },
+    {
+      "id": "lost-words-page-02-a",
+      "seed": 2026082303,
+      "prompt": "Story page 2 in the same luminous layered watercolor paper theater. The same single silver-blue fox with white muzzle and tail tip and dark indigo eyes crouches beside one small open frightened picture book on a moonlit forest path; its one round golden lantern rests nearby. A trail of separate dim abstract paper letter-shapes has tumbled from the book, shown as simple glyph-like cut-paper forms without readable words. Deep teal cedars, amber and cream light, clean focal hierarchy, cinematic 16:9 projection art, no captions, no border, no other fox.",
+      "width": 1024,
+      "height": 576,
+      "steps": 28,
+      "guidance_scale": 4.7
+    },
+    {
+      "id": "lost-words-page-02-b",
+      "seed": 2026082304,
+      "prompt": "Second page of a coherent premium children's book, layered watercolor paper stage at blue hour. One elegant silver-blue fox with white muzzle and tail tip discovers a tiny open book trembling on the cedar path, exactly one golden lantern illuminating scattered luminous alphabet-like paper symbols. The symbols are decorative and isolated, not readable text. Indigo negative space, tactile paper grain, fox and book highly legible for projection, widescreen full bleed, no writing, no interface, no extra character.",
+      "width": 1024,
+      "height": 576,
+      "steps": 28,
+      "guidance_scale": 4.7
+    },
+    {
+      "id": "lost-words-page-03-a",
+      "seed": 2026082305,
+      "prompt": "Story page 3 in the same luminous watercolor paper theater. A young reader with a simple universal silhouette sits safely beside the same one silver-blue fox with white muzzle and tail tip, both facing a small open picture book. The fox listens closely; one round golden lantern softly lights their faces. A few separate paper letter-shapes begin to glow above the page. Warm, encouraging, nonjudgmental literacy moment, deep indigo cedar alcove, clean silhouettes, cinematic 16:9 projection plate, no readable words, no caption, no border.",
+      "width": 1024,
+      "height": 576,
+      "steps": 28,
+      "guidance_scale": 4.7
+    },
+    {
+      "id": "lost-words-page-03-b",
+      "seed": 2026082306,
+      "prompt": "Third page of a coherent sophisticated picture book. In a sheltered cedar hollow, one young child slowly sounds out a book while the same elegant silver-blue fox listens with gentle attention, white muzzle and tail tip clearly visible. Exactly one round golden lantern creates a warm circle around reader, fox, and open book; tiny isolated letter-like lights wake one by one. Layered cut watercolor paper, emotionally safe and empowering, widescreen full bleed, projection contrast, no readable text or interface.",
+      "width": 1024,
+      "height": 576,
+      "steps": 28,
+      "guidance_scale": 4.7
+    },
+    {
+      "id": "lost-words-page-04-a",
+      "seed": 2026082307,
+      "prompt": "Story page 4 in the same luminous layered watercolor paper world. From a young reader beside the same silver-blue fox, a graceful arc of warm firefly-like word lights rises and flows toward a waiting open book. Show the spoken words as abstract golden paper sparks and glyph shapes, never readable text. The fox's one round lantern joins the glow. Indigo cedar darkness, sweeping motion path, tactile fibers, wonder and agency, uncluttered cinematic 16:9 projection illustration, no caption, no border.",
+      "width": 1024,
+      "height": 576,
+      "steps": 28,
+      "guidance_scale": 4.7
+    },
+    {
+      "id": "lost-words-page-04-b",
+      "seed": 2026082308,
+      "prompt": "Fourth page of a coherent premium literacy story. Golden firefly-like speech lights stream in one elegant curve from a reading child into an open book while the same single silver-blue fox watches, white muzzle and tail tip, one small round lantern at its paws. Abstract letter-shaped motes only, no legible words. Luminous watercolor cut-paper theater, layered blue forest depth, strong warm-cool contrast, magical but calm, wide full-bleed projection plate, no labels or frame.",
+      "width": 1024,
+      "height": 576,
+      "steps": 28,
+      "guidance_scale": 4.7
+    },
+    {
+      "id": "lost-words-page-05-a",
+      "seed": 2026082309,
+      "prompt": "Story page 5 in the same layered watercolor paper theater. A hidden library grown inside enormous cedar trees blooms from deep indigo into jewel-like teal, coral, violet, and gold as the final warm word-light enters an open book. The same silver-blue fox and young reader stand together in the foreground beside one round golden lantern. Shelves, paper leaves, and book spines glow without readable titles. Transformative celebratory color, spacious cinematic 16:9 projection art, no text, no border, no interface.",
+      "width": 1024,
+      "height": 576,
+      "steps": 28,
+      "guidance_scale": 4.7
+    },
+    {
+      "id": "lost-words-page-05-b",
+      "seed": 2026082310,
+      "prompt": "Fifth page of a coherent sophisticated children's book. The dark cedar forest opens into a wondrous living library just as an open book ignites with color; watercolor paper shelves, leaves, and lantern-like blooms illuminate outward in cyan, amber, coral, and violet. The same one silver-blue fox with white muzzle and tail tip celebrates quietly beside the young reader and one round lantern. Full-bleed widescreen projection composition, clear focal transformation, no readable writing, no frame.",
+      "width": 1024,
+      "height": 576,
+      "steps": 28,
+      "guidance_scale": 4.7
+    },
+    {
+      "id": "lost-words-page-06-a",
+      "seed": 2026082311,
+      "prompt": "Final story page in the same luminous watercolor paper theater. The same elegant silver-blue fox with white muzzle and tail tip gently places the restored glowing picture book on a low welcoming shelf that every child can reach. A small diverse group of young readers approaches with curiosity; exactly one round golden lantern rests beside the fox. The cedar library is warm, open, accessible, and filled with soft color, triumphant but calm, cinematic 16:9 projection plate, no readable text, no border, no interface.",
+      "width": 1024,
+      "height": 576,
+      "steps": 28,
+      "guidance_scale": 4.7
+    },
+    {
+      "id": "lost-words-page-06-b",
+      "seed": 2026082312,
+      "prompt": "Closing page of a coherent premium literacy picture book. One silver-blue fox, white muzzle and tail tip, presents a bright restored book on a child-height shelf inside the glowing cedar library while several young readers gather easily around it. One small round golden lantern remains by the fox. Luminous layered watercolor paper, warm amber and jewel-blue palette, generous inclusive space, emotionally hopeful, bold clean silhouettes for projection, widescreen full bleed, no legible words, no caption, no frame.",
+      "width": 1024,
+      "height": 576,
+      "steps": 28,
+      "guidance_scale": 4.7
+    }
+  ]
+}
