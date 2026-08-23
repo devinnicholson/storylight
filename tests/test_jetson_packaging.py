@@ -33,6 +33,18 @@ def test_projector_only_loads_assets_from_the_loopback_cache() -> None:
     assert 'fetch("/workbench-assets/moon-gate.story-pack.json"' in projector
 
 
+def test_projector_has_a_finished_bundled_hero_instead_of_debug_layers() -> None:
+    projector = (ROOT / "src/bookforge/static/projector.js").read_text()
+    css = (ROOT / "src/bookforge/static/projector.css").read_text()
+    hero = ROOT / "src/bookforge/static/assets/moon-gate-hero-v1.png"
+
+    assert hero.is_file()
+    assert hero.stat().st_size > 1_000_000
+    assert "/workbench-assets/assets/moon-gate-hero-v1.png" in projector
+    assert "hero-trigger-layer" in projector
+    assert ".bundled-hero-scene" in css
+
+
 def test_generated_pack_placeholders_use_separate_storyboard_positions() -> None:
     projector = (ROOT / "src/bookforge/static/projector.js").read_text()
     stylesheet = (ROOT / "src/bookforge/static/projector.css").read_text()
@@ -109,7 +121,7 @@ def test_workbench_explains_the_three_step_reader_flow() -> None:
     assert "&present=1" in controller
 
     projector = (ROOT / "src/bookforge/static/projector.js").read_text()
-    assert 'query.get("present") === "1"' in projector
+    assert 'query.get("debug") !== "1"' in projector
     assert 'document.body.classList.add("hud-hidden")' in projector
 
 

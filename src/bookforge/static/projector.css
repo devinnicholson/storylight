@@ -119,6 +119,55 @@ body.blackout #projectionStage { opacity: 0; }
 .generic-layer.action-glow { opacity: 1; transform: scale(1); filter: brightness(1.35) saturate(1.35) drop-shadow(0 0 38px var(--layer-accent, #82e6bd)); }
 .generic-layer.action-fade { opacity: .05; }
 
+.bundled-hero-scene { z-index: 0; overflow: hidden; }
+.bundled-hero-scene img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  transform: scale(1.018);
+  animation: hero-breathe 14s ease-in-out infinite alternate;
+}
+.generated-scene.hero-composed .hero-trigger-layer {
+  opacity: 0;
+  transform: none;
+  background: transparent;
+}
+.generated-scene.hero-composed .hero-trigger-layer::before {
+  inset: auto;
+  border-radius: 50%;
+  background: radial-gradient(circle, var(--layer-accent, #ff765f99), transparent 68%);
+  filter: blur(12px);
+}
+.generated-scene.hero-composed .hero-trigger-layer.layer-kind-background::before {
+  left: 0;
+  top: 0;
+  width: 100%;
+  height: 100%;
+  border-radius: 0;
+  background: linear-gradient(110deg, rgba(130,230,189,.05), rgba(255,210,125,.16));
+}
+.generated-scene.hero-composed .hero-trigger-layer.layer-kind-character::before {
+  left: 48%;
+  top: 38%;
+  width: 18%;
+  height: 30%;
+}
+.generated-scene.hero-composed .hero-trigger-layer.layer-kind-prop::before,
+.generated-scene.hero-composed .hero-trigger-layer.layer-kind-effect::before {
+  right: 1%;
+  top: 5%;
+  width: 52%;
+  height: 92%;
+  background: radial-gradient(circle, rgba(255,80,54,.48), transparent 67%);
+}
+.generated-scene.hero-composed .hero-trigger-layer.action-reveal,
+.generated-scene.hero-composed .hero-trigger-layer.action-open,
+.generated-scene.hero-composed .hero-trigger-layer.action-glow,
+.generated-scene.hero-composed .hero-trigger-layer.action-transform,
+.generated-scene.hero-composed .hero-trigger-layer.action-move { opacity: 1; }
+.generated-scene.hero-composed .hero-trigger-layer.action-move::before { animation: hero-drift 1.2s ease-out both; }
+.generated-scene.hero-composed .hero-trigger-layer.action-glow::before { animation: hero-glow 1.6s ease-in-out infinite alternate; }
+
 .paper-grain {
   z-index: 30;
   pointer-events: none;
@@ -490,6 +539,9 @@ body.calibrating .corner-handles { display: block; }
 @keyframes twinkle { to { opacity: .35; transform: rotate(45deg) scale(.65); } }
 @keyframes flutter { to { transform: scaleX(.78) rotate(5deg); } }
 @keyframes drift { to { transform: translate(55px, -70px) scale(.65); opacity: .3; } }
+@keyframes hero-breathe { to { transform: scale(1.045) translate3d(-.5%, -.35%, 0); } }
+@keyframes hero-drift { from { transform: translate3d(-7%, 3%, 0); } to { transform: translate3d(0, 0, 0); } }
+@keyframes hero-glow { from { opacity: .55; transform: scale(.94); } to { opacity: 1; transform: scale(1.05); } }
 
 @media (max-width: 650px) {
   .hud { width: 300px; }

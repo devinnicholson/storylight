@@ -5,7 +5,7 @@ const FIRED_CLASSES = ["action-reveal", "action-move", "action-transform", "acti
 const query = new URLSearchParams(window.location.search);
 const SESSION_ID = query.get("session") || "moon-gate-demo";
 const PACK_SOURCE = query.get("pack") || "fixture";
-const PRESENTATION_MODE = query.get("present") === "1";
+const PRESENTATION_MODE = query.get("debug") !== "1";
 
 if (PRESENTATION_MODE) document.body.classList.add("hud-hidden");
 
@@ -149,6 +149,14 @@ function placeholderLayout(kind, index) {
   };
 }
 
+function bundledHeroForPage(page) {
+  const source = page.source_text.trim().toLocaleLowerCase();
+  if (source === "the small moth went through the red gate.") {
+    return "/workbench-assets/assets/moon-gate-hero-v1.png";
+  }
+  return "";
+}
+
 function renderPackLayers(pack, page) {
   const fixture = pack.story_id === "moon-gate-projector-fixture";
   elements.fixtureScene.hidden = !fixture;
@@ -160,6 +168,17 @@ function renderPackLayers(pack, page) {
       .filter((asset) => asset.page_id === page.page_id && asset.state === "ready")
       .map((asset) => [asset.layer_id, asset]),
   );
+  const bundledHero = assets.size === 0 ? bundledHeroForPage(page) : "";
+  elements.generatedScene.classList.toggle("hero-composed", Boolean(bundledHero));
+  if (bundledHero) {
+    const hero = document.createElement("div");
+    hero.className = "visual-layer bundled-hero-scene";
+    const image = document.createElement("img");
+    image.src = bundledHero;
+    image.alt = "Moonlit cut-paper valley with a moth approaching a glowing red gate";
+    hero.append(image);
+    elements.generatedScene.append(hero);
+  }
   [...page.layers].sort((left, right) => left.z_index - right.z_index).forEach((layer, index) => {
     const node = document.createElement("div");
     const [start, end, accent] = layerPalette(index);
@@ -186,6 +205,8 @@ function renderPackLayers(pack, page) {
       }
       media.alt = layer.prompt;
       node.append(media);
+    } else if (bundledHero) {
+      node.classList.add("hero-trigger-layer");
     } else {
       const layout = placeholderLayout(layer.kind, index);
       node.classList.add("development-layer");
