@@ -45,7 +45,7 @@ def test_health_and_model_probe() -> None:
     assert probe.status_code == 200
     assert probe.json()["ready"] is True
     assert workbench.status_code == 200
-    assert "Speak a story into a world" in workbench.text
+    assert "Make the story react as you read" in workbench.text
     assert projector.status_code == 200
     assert "Bookforge projection stage" in projector.text
 

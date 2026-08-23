@@ -6,6 +6,7 @@ const elements = {
   micButton: document.querySelector("#micButton"),
   micButtonText: document.querySelector("#micButtonText"),
   compileButton: document.querySelector("#compileButton"),
+  projectorLink: document.querySelector("#projectorLink"),
   interim: document.querySelector("#interimText"),
   status: document.querySelector("#status"),
   empty: document.querySelector("#emptyState"),
@@ -40,11 +41,23 @@ let recordingEpoch = 0;
 let readerGeneration = null;
 let activePageText = null;
 let starting = false;
+let sceneReady = false;
 const readerSessionId = "moon-gate-demo";
 
 function setStatus(state, text) {
   elements.status.dataset.state = state;
   elements.status.lastChild.textContent = ` ${text}`;
+}
+
+function setSceneReady(ready) {
+  sceneReady = ready;
+  elements.projectorLink.classList.toggle("disabled", !ready);
+  elements.projectorLink.setAttribute("aria-disabled", String(!ready));
+  elements.projectorLink.tabIndex = ready ? 0 : -1;
+  elements.micButton.disabled = !ready || !canRecordAudio;
+  if (ready && !listening && !starting) {
+    elements.interim.textContent = "Open the projection view, then press Start reading.";
+  }
 }
 
 function safeText(value) {
@@ -89,6 +102,10 @@ function releaseMicrophone() {
 
 async function startSpeaking() {
   if (starting || listening) return;
+  if (!sceneReady) {
+    elements.interim.textContent = "Create the scene before starting the reader.";
+    return;
+  }
   if (!window.MediaRecorder || !navigator.mediaDevices?.getUserMedia) {
     elements.interim.textContent = "Audio recording is unavailable in this browser.";
     return;
@@ -123,9 +140,9 @@ async function startSpeaking() {
     listening = true;
     elements.micButton.disabled = false;
     elements.micButton.classList.add("listening");
-    elements.micButtonText.textContent = "Stop speaking";
+    elements.micButtonText.textContent = "Stop reading";
     elements.compileButton.disabled = true;
-    elements.interim.textContent = "Listening locally… Partial words will drive the live projector.";
+    elements.interim.textContent = "Listening locally—read the exact page text above.";
     partialTimer = window.setInterval(() => {
       if (!partialBusy) partialInFlight = transcribePartialRecording(epoch);
     }, 2000);
@@ -148,8 +165,8 @@ function stopSpeaking() {
   listening = false;
   elements.micButton.classList.remove("listening");
   elements.micButton.disabled = true;
-  elements.micButtonText.textContent = "Transcribing…";
-  elements.interim.textContent = "Whisper is transcribing locally…";
+  elements.micButtonText.textContent = "Finishing…";
+  elements.interim.textContent = "Finishing the local transcript…";
   window.clearInterval(partialTimer);
   partialTimer = null;
   if (mediaRecorder?.state === "recording") mediaRecorder.stop();
@@ -158,8 +175,8 @@ function stopSpeaking() {
 
 function resetMicControls() {
   elements.micButton.classList.remove("listening");
-  elements.micButton.disabled = false;
-  elements.micButtonText.textContent = "Start speaking";
+  elements.micButton.disabled = !sceneReady || !canRecordAudio;
+  elements.micButtonText.textContent = "Start reading";
   elements.compileButton.disabled = false;
   window.clearInterval(partialTimer);
   partialTimer = null;
@@ -236,11 +253,11 @@ async function transcribePartialRecording(epoch) {
   try {
     const payload = await transcribeBlob(recording, mimeType);
     if (!listening || epoch !== recordingEpoch) return;
-    elements.interim.textContent = `Live transcript · ${payload.text}`;
+    elements.interim.textContent = `Whisper hears: ${payload.text}`;
     await publishReaderTranscript(payload.text, false, generation);
   } catch (error) {
     if (listening && epoch === recordingEpoch) {
-      elements.interim.textContent = `Live transcript retrying: ${error.message}`;
+      elements.interim.textContent = `Still listening; transcript retrying: ${error.message}`;
     }
   } finally {
     partialBusy = false;
@@ -256,7 +273,7 @@ async function transcribeRecording() {
     if (recording.size < 1000) throw new Error("Recording was too short. Try speaking for a little longer.");
     const payload = await transcribeBlob(recording, mimeType);
     await publishReaderTranscript(payload.text, true, generation);
-    elements.interim.textContent = `Final transcript ready in ${(payload.total_ms / 1000).toFixed(1)} s. Review it, then compile.`;
+    elements.interim.textContent = `Finished in ${(payload.total_ms / 1000).toFixed(1)} s. Whisper heard: ${payload.text}`;
   } catch (error) {
     elements.interim.textContent = error.message;
   } finally {
@@ -269,11 +286,12 @@ async function transcribeRecording() {
 
 function renderPack(payload) {
   const pack = payload.story_pack;
+  const metrics = payload.metrics;
   localStorage.setItem("bookforge.latestStoryPack", JSON.stringify(pack));
   const page = pack.pages[0];
-  elements.model.textContent = payload.metrics.model;
-  elements.time.textContent = `${(payload.metrics.total_ms / 1000).toFixed(1)} s`;
-  elements.tokens.textContent = String(payload.metrics.output_tokens);
+  elements.model.textContent = metrics?.model || pack.compiler_model;
+  elements.time.textContent = metrics ? `${(metrics.total_ms / 1000).toFixed(1)} s` : "Saved locally";
+  elements.tokens.textContent = metrics ? `${metrics.output_tokens} tokens` : `${page.layers.length + page.triggers.length} parts`;
   elements.summary.textContent = page.scene_summary;
   elements.layerCount.textContent = `${page.layers.length} layers`;
   elements.triggerCount.textContent = `${page.triggers.length} triggers`;
@@ -301,18 +319,20 @@ function renderPack(payload) {
   elements.empty.classList.add("hidden");
   elements.error.classList.add("hidden");
   elements.results.classList.remove("hidden");
+  setSceneReady(true);
 }
 
 async function compileStory() {
   const text = elements.story.value.trim();
   if (!text) {
-    elements.interim.textContent = "Speak or type at least one sentence first.";
+    elements.interim.textContent = "Add the exact words from one book page first.";
     return;
   }
   if (listening) stopSpeaking();
   elements.compileButton.disabled = true;
+  elements.compileButton.textContent = "Gemma is creating the scene…";
   elements.error.classList.add("hidden");
-  setStatus("working", "Gemma is compiling");
+  setStatus("working", "Creating the scene");
 
   try {
     const response = await fetch("/v1/story-packs:compile", {
@@ -329,14 +349,40 @@ async function compileStory() {
     const payload = await response.json();
     if (!response.ok) throw new Error(payload.detail || `Request failed (${response.status})`);
     renderPack(payload);
-    setStatus("idle", "Compilation complete");
+    setStatus("idle", "Scene ready");
+    elements.interim.textContent = "Scene ready. Open the projection view, then press Start reading.";
   } catch (error) {
     elements.error.textContent = error.message;
     elements.error.classList.remove("hidden");
-    setStatus("error", "Compilation failed");
+    setStatus("error", "Could not create scene");
   } finally {
     elements.compileButton.disabled = false;
+    elements.compileButton.textContent = "Create this scene with Gemma";
   }
+}
+
+async function loadLatestScene() {
+  try {
+    const response = await fetch("/v1/story-packs/latest", {cache: "no-store"});
+    if (!response.ok) return;
+    const pack = await response.json();
+    const page = pack.pages[0];
+    elements.title.value = pack.title;
+    elements.level.value = String(pack.reading_level);
+    elements.style.value = pack.visual_style;
+    elements.story.value = page.source_text;
+    renderPack({story_pack: pack});
+    setStatus("idle", "Last scene restored");
+  } catch (_) {
+    // A saved scene is optional; the empty state already explains the first action.
+  }
+}
+
+function invalidateScene() {
+  if (!sceneReady || listening || starting) return;
+  setSceneReady(false);
+  setStatus("stale", "Page changed—create it again");
+  elements.interim.textContent = "The page changed. Create the scene again before reading it.";
 }
 
 elements.micButton.addEventListener("click", () => {
@@ -345,11 +391,19 @@ elements.micButton.addEventListener("click", () => {
   else startSpeaking();
 });
 elements.compileButton.addEventListener("click", compileStory);
+elements.projectorLink.addEventListener("click", (event) => {
+  if (!sceneReady) event.preventDefault();
+});
+[elements.title, elements.level, elements.style, elements.story].forEach((element) => {
+  element.addEventListener("input", invalidateScene);
+});
 
 const canRecordAudio = Boolean(window.MediaRecorder && navigator.mediaDevices?.getUserMedia);
 document.body.dataset.audioSupport = canRecordAudio ? "available" : "unavailable";
 if (!canRecordAudio) {
   elements.micButton.disabled = true;
-  elements.interim.textContent = "This embedded browser cannot capture audio. Open this URL in Chrome to speak, or type the page text here.";
-  elements.browserNote.textContent = "Local Whisper is ready, but this browser does not expose microphone recording. Chrome on localhost supports the full private audio flow.";
+  elements.interim.textContent = "This browser cannot use the microphone. Open this local page in Chrome to try reading aloud.";
+  elements.browserNote.textContent = "The scene creator still works here. Chrome on localhost supports the private local microphone flow.";
 }
+
+loadLatestScene();

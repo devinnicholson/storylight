@@ -4,147 +4,183 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <meta name="theme-color" content="#07110f" />
-    <title>Bookforge Voice Workbench</title>
-    <link rel="stylesheet" href="/workbench-assets/workbench.css?v=0.1.0-hw2" />
+    <title>Bookforge Demo</title>
+    <link rel="stylesheet" href="/workbench-assets/workbench.css?v=0.1.0-hw4" />
   </head>
   <body>
     <main class="shell">
       <header class="hero">
         <div>
-          <p class="eyebrow">Local Gemma experiment</p>
-          <h1>Speak a story into a world.</h1>
+          <p class="eyebrow">Bookforge · The book that listens back</p>
+          <h1>Make the story react as you read.</h1>
           <p class="lede">
-            Whisper transcribes your recording locally. Gemma converts the resulting text into a
-            validated projection plan on this laptop.
+            Add the exact words from one book page. Gemma designs a scene for it. Then read the
+            page aloud and watch the projected world respond to specific words.
           </p>
         </div>
-        <div class="privacy-chip"><span></span> GCP not required</div>
+        <div class="privacy-chip"><span></span> Audio stays on this device</div>
       </header>
+
+      <ol class="journey" aria-label="How the demo works">
+        <li><b>1</b><span><strong>Add a page</strong><small>Use the book's exact words</small></span></li>
+        <li><b>2</b><span><strong>Create its scene</strong><small>Gemma plans visuals and cues</small></span></li>
+        <li><b>3</b><span><strong>Read it aloud</strong><small>The projection reacts in time</small></span></li>
+      </ol>
 
       <section class="grid">
         <article class="card input-card">
           <div class="card-heading">
             <div>
-              <p class="section-label">01 · Source</p>
-              <h2>Tell the page</h2>
+              <p class="section-label">Step 1</p>
+              <h2>Add a page from the book</h2>
             </div>
-            <div class="level"><i id="micLevel"></i></div>
           </div>
 
-          <div class="fields two-up">
-            <label>
-              <span>Story title</span>
-              <input id="titleInput" value="The Moon Gate" />
-            </label>
-            <label>
-              <span>Reading level</span>
-              <select id="levelInput">
-                <option value="1">Level 1</option>
-                <option value="2" selected>Level 2</option>
-                <option value="3">Level 3</option>
-                <option value="4">Level 4</option>
-                <option value="5">Level 5</option>
-              </select>
-            </label>
-          </div>
+          <p class="instruction">
+            Copy one short page exactly as printed. The microphone will later follow these words
+            while you read—it does not create the page text.
+          </p>
 
           <label class="field-block">
-            <span>Visual direction</span>
-            <input
-              id="styleInput"
-              value="luminous cut-paper story theater in indigo, teal, cream, and coral"
-            />
+            <span>Book or story title</span>
+            <input id="titleInput" value="The Moon Gate" />
           </label>
 
-          <label class="field-block">
-            <span>Page text</span>
+          <label class="field-block page-field">
+            <span>Exact words on this page</span>
             <textarea id="storyInput" rows="7">The small moth went through the red gate.</textarea>
           </label>
 
-          <p class="interim" id="interimText">Press the microphone and speak naturally.</p>
+          <details class="options">
+            <summary>Optional scene settings</summary>
+            <div class="fields two-up">
+              <label>
+                <span>Reader level</span>
+                <select id="levelInput">
+                  <option value="1">Early reader</option>
+                  <option value="2" selected>Developing reader</option>
+                  <option value="3">Independent reader</option>
+                  <option value="4">Advanced reader</option>
+                  <option value="5">Advanced reader +</option>
+                </select>
+              </label>
+              <label>
+                <span>Art style</span>
+                <input
+                  id="styleInput"
+                  value="luminous cut-paper story theater in indigo, teal, cream, and coral"
+                />
+              </label>
+            </div>
+          </details>
 
-          <div class="actions">
-            <button class="button primary" id="micButton">
-              <span class="mic-dot"></span><span id="micButtonText">Start speaking</span>
-            </button>
-            <button class="button" id="compileButton">Compile with Gemma</button>
-            <a class="button projector-link" href="/projector?pack=latest&amp;session=moon-gate-demo" target="_blank">Open this Story Pack ↗</a>
-          </div>
-
-          <p class="browser-note" id="browserNote">
-            Audio is recorded only while the button is red, sent only to this laptop in rolling
-            partial clips, transcribed with local MLX Whisper, and then discarded.
+          <button class="button primary generate-button" id="compileButton">
+            Create this scene with Gemma
+          </button>
+          <p class="generate-note">
+            This takes about 20 seconds on this laptop. Right now, Bookforge shows animated scene
+            stand-ins; the image generator is the next connection.
           </p>
         </article>
 
         <article class="card output-card">
           <div class="card-heading">
             <div>
-              <p class="section-label">02 · Compiler</p>
-              <h2>Generated Story Pack</h2>
+              <p class="section-label">Step 2</p>
+              <h2>See what Gemma created</h2>
             </div>
-            <div class="status" id="status" data-state="idle"><span></span> Ready</div>
+            <div class="status" id="status" data-state="idle"><span></span> Waiting for a page</div>
           </div>
 
           <div class="empty-state" id="emptyState">
             <div class="orb"><span></span></div>
-            <strong>No world compiled yet</strong>
-            <p>Speak or type one page, then compile it with the local Gemma model.</p>
+            <strong>Your scene will appear here</strong>
+            <p>Click “Create this scene with Gemma” after adding the page text.</p>
           </div>
 
           <div class="results hidden" id="results">
-            <div class="metric-row">
-              <div><span>Model</span><strong id="modelMetric">—</strong></div>
-              <div><span>Total time</span><strong id="timeMetric">—</strong></div>
-              <div><span>Output tokens</span><strong id="tokenMetric">—</strong></div>
-            </div>
-
             <section class="scene-summary">
-              <p class="section-label">Scene interpretation</p>
+              <p class="section-label">The scene</p>
               <h3 id="sceneSummary"></h3>
             </section>
 
+            <div class="metric-row">
+              <div><span>Designed by</span><strong id="modelMetric">—</strong></div>
+              <div><span>Generation time</span><strong id="timeMetric">—</strong></div>
+              <div><span>Plan size</span><strong id="tokenMetric">—</strong></div>
+            </div>
+
             <section>
               <div class="result-heading">
-                <h3>Visual layers</h3><span id="layerCount"></span>
+                <h3>What appears in the projection</h3><span id="layerCount"></span>
               </div>
               <div class="layer-list" id="layerList"></div>
             </section>
 
             <section>
               <div class="result-heading">
-                <h3>Reading timeline</h3><span id="triggerCount"></span>
+                <h3>Words that make the scene react</h3><span id="triggerCount"></span>
               </div>
               <div class="timeline" id="triggerList"></div>
             </section>
 
             <section class="split-results">
               <div>
-                <h3>Literacy support</h3>
+                <h3>Help when a reader gets stuck</h3>
                 <div id="supportList"></div>
               </div>
               <div>
-                <h3>Comprehension</h3>
+                <h3>Questions after the page</h3>
                 <div id="questionList"></div>
               </div>
             </section>
 
-            <details>
-              <summary>Raw validated JSON</summary>
+            <details class="technical-details">
+              <summary>Developer details</summary>
               <pre id="rawOutput"></pre>
             </details>
           </div>
 
           <div class="error hidden" id="errorBox"></div>
+
+          <section class="try-live" id="tryLive">
+            <div>
+              <p class="section-label">Step 3</p>
+              <h3>Try reading it aloud</h3>
+              <p>
+                First open the projection view and leave it visible. Then come back here, press
+                “Start reading,” and read the exact page text above.
+              </p>
+            </div>
+            <div class="live-actions">
+              <a
+                class="button projector-link disabled"
+                id="projectorLink"
+                href="/projector?pack=latest&amp;session=moon-gate-demo"
+                target="_blank"
+                aria-disabled="true"
+              >Open projection view ↗</a>
+              <button class="button read-button" id="micButton" disabled>
+                <span class="mic-dot"></span><span id="micButtonText">Start reading</span>
+              </button>
+            </div>
+            <div class="listening-row">
+              <div class="level" aria-hidden="true"><i id="micLevel"></i></div>
+              <p class="interim" id="interimText">Create a scene before starting the reader.</p>
+            </div>
+            <p class="browser-note" id="browserNote">
+              Your microphone recording is processed by local Whisper and discarded. Raw audio is
+              not sent to Gemma or Google Cloud.
+            </p>
+          </section>
         </article>
       </section>
 
       <footer>
-        Compile first, then open the projector to play this Story Pack from local storage. Ready
-        image and video assets use the same manifest; missing assets render as clearly labeled
-        development layers until the cloud generator is connected.
+        Current prototype: Gemma creates the scene plan and reading cues; procedural stand-ins make
+        the flow testable before generated image and video assets are connected.
       </footer>
     </main>
-    <script src="/workbench-assets/workbench.js?v=0.1.0-hw2"></script>
+    <script src="/workbench-assets/workbench.js?v=0.1.0-hw4"></script>
   </body>
 </html>

@@ -89,6 +89,16 @@ def test_workbench_guards_async_start_and_keeps_page_text_immutable() -> None:
     assert "configureReaderSession" not in publish_body
 
 
+def test_workbench_explains_the_three_step_reader_flow() -> None:
+    workbench = (ROOT / "src/bookforge/static/workbench.html").read_text()
+
+    assert "Add a page" in workbench
+    assert "Create its scene" in workbench
+    assert "Read it aloud" in workbench
+    assert "it does not create the page text" in workbench
+    assert "Open projection view" in workbench
+
+
 def test_hardware_evidence_and_privacy_scripts_are_executable() -> None:
     for name in ("collect-evidence.sh", "check-privacy.sh", "check-device.sh", "warm-asr.sh"):
         path = ROOT / "deploy/jetson" / name
