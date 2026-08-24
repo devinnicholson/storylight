@@ -102,8 +102,10 @@ calibration, `B` for blackout, and `H` to hide controls. Calibration is saved lo
 
 ### Generate live scenes on Modal while GCP is pending
 
-The live Modal backend makes one finite NVIDIA L4 call for a SANA 1.5 16:9 master and Depth Anything
-V2 sidecar. The projector is already moving from its procedural draft while that call runs, then
+The authenticated warm live backend selects a budget-checked NVIDIA L40S variant for its SANA-Sprint
+16:9 master and Depth Anything V2 sidecar. The deployable base class and finite CLI remain on L4 so
+the credit-only workspace needs no payment method; optional LTX motion also remains on its accepted
+L4 path. The projector is already moving from its procedural draft while the fast call runs, then
 crossfades to depth-aware WebGL motion as soon as both checksum-addressed files are ready. In finite
 mode no GPU service is deployed. The optional warm mode uses authenticated, scale-to-zero Modal
 classes with no public web endpoint and no permanently warm container. LTX-Video is an explicit
@@ -169,7 +171,7 @@ modal app stop bookforge-fast-scene --yes
 
 The presentation window is explicit, master/depth-only, and bounded to 90–900 seconds. It changes
 Modal's idle scale-down policy rather than creating an always-on minimum container, so a crashed
-local API still scales the GPU to zero. Extended sessions reserve a conservative $0.30 ceiling
+local API still scales the GPU to zero. Extended sessions reserve a conservative $0.70 ceiling
 before starting; use the normal 90-second window outside rehearsals and stop the app after a demo.
 The workbench also exposes a **Prepare full path** control. It starts the text-free Modal prewarm and
 the loopback-only Gemma plan concurrently, then holds the privacy-gated semantic plan in bounded
@@ -257,6 +259,13 @@ seconds without reaching preview generation, versus the proven 32.514-second exp
 isolated app was stopped without retry, cost $0.01308926, and never touched the production renderer.
 BookForge therefore retains explicit prewarm plus the bounded 90-second warm window.
 
+The fast warm path uses an invocation-specific L40S variant over that L4 base. A controlled A/B cut
+generated-preview wall time 40.3% and full master/depth wall time 35.8%. The exact production provider
+then attested `gpu=L40S`, prewarmed in 27.261 seconds, and returned a checksum-valid 896×512 master
+plus depth map in 0.716 seconds. That full provider acceptance cost $0.05229226 including its bounded
+90-second window; no payment method was added. If Modal does not honor L40S, BookForge fails closed
+before presenting the output rather than silently weakening provenance or budget accounting.
+
 Repeated passages now reuse bounded, content-addressed memory and local-disk Gemma plan caches even
 when the visual style changes or the API restarts. Style is applied later during local SceneSpec
 compilation, so it no longer consumes Gemma input tokens or invalidates the private semantic plan.
@@ -272,8 +281,8 @@ jellyfish, fish-school, swarm, bloom, and constellation accents. Browser accepta
 three-layer fox and whale drafts at 30 fps with zero dropped frames and no console errors; generated
 SANA/depth artwork still replaces the draft in place when ready.
 
-Depth Anything now runs in explicit FP16 on the L4. Against the same prompt and seed, both the
-master and depth JPEGs were byte-identical to the FP32 baseline; model load improved 8.4%, depth
+Depth Anything remains in explicit FP16. On the prior L4 baseline, both the master and depth JPEGs
+were byte-identical to the FP32 baseline; model load improved 8.4%, depth
 inference improved 24.3%, and the measured cold wall improved by 726 ms. A parallel checkpoint-load
 experiment was 35.8% slower at prewarm and was reverted.
 
@@ -514,6 +523,7 @@ passes the real I/O and latency run on JetPack 7.2.1.
 - [`benchmarks/bookforge-progressive-preview-smoke-2026-08-24.json`](benchmarks/bookforge-progressive-preview-smoke-2026-08-24.json): finite cold 512×288 baseline; strong visual quality and 1.475-second inference, but 31.892-second remote wall time proves cold calls are unsuitable for the live path
 - [`benchmarks/bookforge-progressive-preview-warm-2026-08-24.json`](benchmarks/bookforge-progressive-preview-warm-2026-08-24.json): authenticated warm preview acceptance; 0.972-second generated JPEG, 0.614-second inference, $0.00701723 reconciled cost, explicit `preview_ready` replacement contract, and physical-projector validation still pending
 - [`benchmarks/bookforge-modal-gpu-snapshot-rejection-2026-08-24.json`](benchmarks/bookforge-modal-gpu-snapshot-rejection-2026-08-24.json): isolated Modal GPU-snapshot rejection; snapshot creation exceeded 210 seconds without an artifact, cost $0.01308926, and was stopped without retry or production changes
+- [`benchmarks/bookforge-modal-l40s-acceptance-2026-08-24.json`](benchmarks/bookforge-modal-l40s-acceptance-2026-08-24.json): controlled L40S acceptance for preview and master/depth; 0.580-second preview, 0.755-second full render, presentation-grade assets, and $0.01456318 reconciled A/B cost while motion remains on L4
 - [`benchmarks/bookforge-story-replay-index-2026-08-24.json`](benchmarks/bookforge-story-replay-index-2026-08-24.json): startup-built exact-replay index over 1,000 synthetic completed scenes; 64.3 ms startup, 0.134 ms mean validated hit, and 0.066 ms mean miss without repeated directory scans
 - [`benchmarks/bookforge-mac-gemma-wire-ab-2026-08-24.json`](benchmarks/bookforge-mac-gemma-wire-ab-2026-08-24.json): counterbalanced offline five-scene standard-versus-compact Gemma contract A/B plus style-independent semantic caching; compact was 10.4% faster, and an alternate style reused the local plan in 0.218 ms with zero new model tokens, but the exact Jetson acceptance remains required before enabling compact mode
 - [`benchmarks/bookforge-render-delivery-optimization-2026-08-23.json`](benchmarks/bookforge-render-delivery-optimization-2026-08-23.json): JPEG delivery, adaptive projector exposure, and measured rejections for smaller renders, compilation, and prompt changes

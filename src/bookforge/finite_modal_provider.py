@@ -97,21 +97,31 @@ class ModalStagePolicy:
         return GPU_USD_PER_SECOND[self.gpu] * self.command_timeout_seconds
 
 
+FAST_GPU = "L4"
+WARM_FAST_GPU = "L40S"
+MOTION_GPU = "L4"
+
 FAST_STAGE_POLICY = ModalStagePolicy(
-    gpu="L4",
+    gpu=FAST_GPU,
     remote_timeout_seconds=180,
     command_timeout_seconds=360,
     maximum_gpu_usd=0.08,
 )
+WARM_FAST_STAGE_POLICY = ModalStagePolicy(
+    gpu=WARM_FAST_GPU,
+    remote_timeout_seconds=180,
+    command_timeout_seconds=360,
+    maximum_gpu_usd=0.22,
+)
 MOTION_STAGE_POLICY = ModalStagePolicy(
-    gpu="L4",
+    gpu=MOTION_GPU,
     remote_timeout_seconds=300,
     command_timeout_seconds=480,
     maximum_gpu_usd=0.12,
 )
-WARM_FAST_SESSION_CEILING_USD = 0.12
-WARM_FAST_PRESENTATION_SESSION_CEILING_USD = 0.30
-WARM_FULL_SESSION_CEILING_USD = 0.25
+WARM_FAST_SESSION_CEILING_USD = 0.30
+WARM_FAST_PRESENTATION_SESSION_CEILING_USD = 0.70
+WARM_FULL_SESSION_CEILING_USD = 0.60
 WARM_SCALEDOWN_WINDOW_SECONDS = 90
 WARM_MAX_SCALEDOWN_WINDOW_SECONDS = 900
 
@@ -260,9 +270,13 @@ class ModalSdkWarmInvoker:
         *,
         app_name: str = "bookforge-fast-scene",
         environment_name: str | None = None,
+        fast_gpu: str = WARM_FAST_GPU,
     ) -> None:
+        if fast_gpu not in GPU_USD_PER_SECOND:
+            raise ValueError(f"unknown warm Modal GPU price: {fast_gpu}")
         self.app_name = app_name
         self.environment_name = environment_name
+        self.fast_gpu = fast_gpu
         self._classes: dict[str, Any] = {}
         self._objects: dict[str, Any] = {}
 
@@ -282,14 +296,23 @@ class ModalSdkWarmInvoker:
         deployed_class = self._classes.get(class_name)
         if deployed_class is None:
             modal = importlib.import_module("modal")
-            deployed_class = modal.Cls.from_name(
+            base_class = modal.Cls.from_name(
                 self.app_name,
                 class_name,
                 environment_name=self.environment_name,
             )
             # Hydration performs an authenticated metadata lookup. It verifies
             # deployment without entering a container or allocating a GPU.
-            await deployed_class.hydrate.aio()
+            await base_class.hydrate.aio()
+            deployed_class = base_class
+            if class_name == "FastSceneStudio" and self.fast_gpu != FAST_GPU:
+                deployed_class = base_class.with_options(
+                    gpu=self.fast_gpu,
+                    max_containers=1,
+                    scaledown_window=WARM_SCALEDOWN_WINDOW_SECONDS,
+                    timeout=FAST_STAGE_POLICY.remote_timeout_seconds,
+                )
+                await deployed_class.hydrate.aio()
             self._classes[class_name] = deployed_class
         return deployed_class
 
@@ -697,6 +720,7 @@ class WarmModalSceneProvider(FiniteModalSceneProvider):
         invoker: WarmModalInvoker | None = None,
         **kwargs: Any,
     ) -> None:
+        kwargs.setdefault("fast_policy", WARM_FAST_STAGE_POLICY)
         super().__init__(**kwargs)
         self.invoker = invoker or ModalSdkWarmInvoker()
         self._warm_session: _ActiveWarmSession | None = None
@@ -776,6 +800,10 @@ class WarmModalSceneProvider(FiniteModalSceneProvider):
                 else:
                     fast_seconds, fast = await timed("FastSceneStudio")
                     motion_seconds, motion = 0.0, {}
+                if fast.get("gpu") != self.fast_policy.gpu:
+                    raise FiniteModalProviderError("warm fast prewarm ran on an unexpected GPU")
+                if include_motion and motion.get("gpu") != self.motion_policy.gpu:
+                    raise FiniteModalProviderError("warm motion prewarm ran on an unexpected GPU")
             except BaseException:
                 # The cross-process reservation deliberately remains live: a
                 # cancelled SDK call may still execute and bill remotely.
@@ -980,6 +1008,7 @@ class WarmModalSceneProvider(FiniteModalSceneProvider):
                         artifact=bundle.artifacts["preview"],
                         generation_seconds=remote_seconds,
                         estimated_gpu_usd=estimated_gpu_usd,
+                        gpu=self.fast_policy.gpu,
                     )
                 except BaseException:
                     self._mark_failed(self.fast_policy)
@@ -1049,17 +1078,22 @@ class WarmModalSceneProvider(FiniteModalSceneProvider):
         if session is None or time.monotonic() < session.deadline_monotonic:
             return False
         artifact = session.scene_master or _prewarm_receipt_artifact(session.receipt_path)
-        loaded_classes = 2 if session.include_motion else 1
-        generation_seconds = (
+        fast_seconds = (
             session.fast_prewarm_seconds
-            + session.motion_prewarm_seconds
             + session.preview_scene_seconds
             + session.fast_scene_seconds
-            + loaded_classes * session.scaledown_window_seconds
+            + session.scaledown_window_seconds
         )
+        motion_seconds = (
+            session.motion_prewarm_seconds + session.scaledown_window_seconds
+            if session.include_motion
+            else 0
+        )
+        generation_seconds = fast_seconds + motion_seconds
         estimate = min(
             session.full_session_ceiling_usd,
-            generation_seconds * GPU_USD_PER_SECOND[self.fast_policy.gpu],
+            fast_seconds * GPU_USD_PER_SECOND[self.fast_policy.gpu]
+            + motion_seconds * GPU_USD_PER_SECOND[self.motion_policy.gpu],
         )
         await self._settle_warm_stage(
             reservation_id=session.reservation_id,
@@ -1076,6 +1110,7 @@ class WarmModalSceneProvider(FiniteModalSceneProvider):
             artifact=artifact,
             generation_seconds=generation_seconds,
             estimated_gpu_usd=estimate,
+            gpu=(self.motion_policy.gpu if session.include_motion else self.fast_policy.gpu),
         )
         self._warm_session = None
         return True
@@ -1209,6 +1244,7 @@ class WarmModalSceneProvider(FiniteModalSceneProvider):
                             artifact=bundle.master,
                             generation_seconds=total_seconds,
                             estimated_gpu_usd=session_estimate,
+                            gpu=self.fast_policy.gpu,
                         )
                     except BaseException:
                         self._warm_session = None
@@ -1226,6 +1262,7 @@ class WarmModalSceneProvider(FiniteModalSceneProvider):
                     artifact=bundle.master,
                     generation_seconds=remote_seconds,
                     estimated_gpu_usd=estimated_gpu_usd,
+                    gpu=self.fast_policy.gpu,
                 )
                 self._settle(bundle, stage="fast")
             return bundle
@@ -1318,17 +1355,22 @@ class WarmModalSceneProvider(FiniteModalSceneProvider):
                     self._mark_failed(self.motion_policy)
                 raise
             if session is not None:
-                total_seconds = (
+                fast_seconds = (
                     session.fast_prewarm_seconds
-                    + session.motion_prewarm_seconds
                     + session.preview_scene_seconds
                     + session.fast_scene_seconds
-                    + remote_seconds
-                    + 2 * session.scaledown_window_seconds
+                    + session.scaledown_window_seconds
                 )
+                motion_seconds = (
+                    session.motion_prewarm_seconds
+                    + remote_seconds
+                    + session.scaledown_window_seconds
+                )
+                total_seconds = fast_seconds + motion_seconds
                 session_estimate = min(
                     session.full_session_ceiling_usd,
-                    total_seconds * GPU_USD_PER_SECOND[self.motion_policy.gpu],
+                    fast_seconds * GPU_USD_PER_SECOND[self.fast_policy.gpu]
+                    + motion_seconds * GPU_USD_PER_SECOND[self.motion_policy.gpu],
                 )
                 try:
                     await self._settle_warm_stage(
@@ -1342,6 +1384,7 @@ class WarmModalSceneProvider(FiniteModalSceneProvider):
                         artifact=upgraded.motion,
                         generation_seconds=total_seconds,
                         estimated_gpu_usd=session_estimate,
+                        gpu=self.motion_policy.gpu,
                     )
                 except BaseException:
                     self._warm_session = None
@@ -1360,6 +1403,7 @@ class WarmModalSceneProvider(FiniteModalSceneProvider):
                     artifact=upgraded.motion,
                     generation_seconds=remote_seconds,
                     estimated_gpu_usd=estimated_gpu_usd,
+                    gpu=self.motion_policy.gpu,
                 )
                 self._settle(upgraded, stage="motion")
             return upgraded
@@ -1381,6 +1425,7 @@ class WarmModalSceneProvider(FiniteModalSceneProvider):
         artifact: SceneArtifact | None,
         generation_seconds: float,
         estimated_gpu_usd: float,
+        gpu: str,
     ) -> None:
         if artifact is None:
             raise FiniteModalProviderError("warm settlement requires an artifact")
@@ -1389,7 +1434,7 @@ class WarmModalSceneProvider(FiniteModalSceneProvider):
             stage=stage,
             model=model,
             model_revision=revision,
-            gpu="L4",
+            gpu=gpu,
             seed=seed,
             prompt=prompt,
             artifact_path=str(artifact.path),
@@ -2111,7 +2156,7 @@ def _live_scene_metrics(
         planning_status=planning.status,
         planning_cache_hit=planning.planning_cache_hit,
         warm_state=warm_state,
-        gpu=str(stages[0].get("gpu", "L4")),
+        gpu=str(stages[0].get("gpu", FAST_GPU)),
         estimated_gpu_usd=max(0.0, estimated_gpu_usd),
         cost_source=LiveSceneCostSource.PROVIDER_MANIFEST,
         models=models,
@@ -2141,7 +2186,7 @@ def _preview_scene_metrics(preview: _GeneratedLivePreview) -> LiveSceneMetrics:
         overhead_ms=overhead_seconds * 1_000,
         packaging_ms=float(stage.get("packaging_seconds", 0)) * 1_000,
         warm_state=warm_state,
-        gpu=str(stage.get("gpu", "L4")),
+        gpu=str(stage.get("gpu", FAST_GPU)),
         estimated_gpu_usd=float(stage.get("estimated_gpu_usd", 0)),
         cost_source=LiveSceneCostSource.PROVIDER_MANIFEST,
         models=[
@@ -2319,6 +2364,8 @@ def _write_warm_preview_bundle(
         raise FiniteModalProviderError("warm preview class returned an unsupported format")
     if result.get("negative_prompt_supported") is not False:
         raise FiniteModalProviderError("warm preview class returned ambiguous prompt provenance")
+    if result.get("gpu") != WARM_FAST_GPU:
+        raise FiniteModalProviderError("warm preview class ran on an unexpected GPU")
     if master_jpeg_quality != 95:
         raise FiniteModalProviderError("warm preview class returned unexpected JPEG quality")
     if _jpeg_dimensions(preview) != (request.width, request.height):
@@ -2349,7 +2396,7 @@ def _write_warm_preview_bundle(
             "preview": {
                 "model": FAST_MODEL,
                 "model_revision": FAST_MODEL_REVISION,
-                "gpu": "L4",
+                "gpu": WARM_FAST_GPU,
                 "finite_call": True,
                 "hard_timeout_seconds": FAST_STAGE_POLICY.remote_timeout_seconds,
                 "remote_seconds": remote_seconds,
@@ -2429,6 +2476,8 @@ def _write_warm_fast_bundle(
         raise FiniteModalProviderError("warm fast class returned ambiguous prompt provenance")
     if result.get("depth_dtype") != DEPTH_DTYPE:
         raise FiniteModalProviderError("warm fast class returned ambiguous depth precision")
+    if result.get("gpu") != WARM_FAST_GPU:
+        raise FiniteModalProviderError("warm fast class ran on an unexpected GPU")
     if master_jpeg_quality != 95 or depth_jpeg_quality != 85:
         raise FiniteModalProviderError("warm fast class returned unexpected JPEG quality")
     if _jpeg_dimensions(master) != (request.width, request.height):
@@ -2465,7 +2514,7 @@ def _write_warm_fast_bundle(
                 "additional_models": [
                     {"model": DEPTH_MODEL, "model_revision": DEPTH_MODEL_REVISION}
                 ],
-                "gpu": "L4",
+                "gpu": WARM_FAST_GPU,
                 "finite_call": True,
                 "hard_timeout_seconds": FAST_STAGE_POLICY.remote_timeout_seconds,
                 "remote_seconds": remote_seconds,
@@ -2531,6 +2580,8 @@ def _write_warm_motion_bundle(
         duration_ms = int(result["duration_ms"])
     except (KeyError, TypeError, ValueError) as error:
         raise FiniteModalProviderError("warm motion class returned invalid output") from error
+    if result.get("gpu") != MOTION_GPU:
+        raise FiniteModalProviderError("warm motion class ran on an unexpected GPU")
     expected_frames = request.generated_frames * 2 - 1
     if frames != expected_frames or fps != request.fps or duration_ms <= 0:
         raise FiniteModalProviderError("warm motion metadata does not match the request")
@@ -2541,7 +2592,7 @@ def _write_warm_motion_bundle(
         "model": MOTION_MODEL,
         "model_revision": MOTION_MODEL_REVISION,
         "source_master_sha256": source.master.sha256,
-        "gpu": "L4",
+        "gpu": MOTION_GPU,
         "finite_call": True,
         "hard_timeout_seconds": MOTION_STAGE_POLICY.remote_timeout_seconds,
         "remote_seconds": remote_seconds,
@@ -2715,9 +2766,20 @@ def load_finite_scene_bundle(manifest_path: Path) -> FiniteSceneBundle:
     stages = payload.get("stages")
     if not isinstance(stages, dict) or "fast" not in stages:
         raise FiniteModalProviderError("scene manifest requires the fast stage")
-    _verify_stage(stages["fast"], model=FAST_MODEL, revision=FAST_MODEL_REVISION)
+    _verify_stage(
+        stages["fast"],
+        model=FAST_MODEL,
+        revision=FAST_MODEL_REVISION,
+        gpu=FAST_GPU,
+        legacy_gpus={WARM_FAST_GPU},
+    )
     if "motion" in stages:
-        _verify_stage(stages["motion"], model=MOTION_MODEL, revision=MOTION_MODEL_REVISION)
+        _verify_stage(
+            stages["motion"],
+            model=MOTION_MODEL,
+            revision=MOTION_MODEL_REVISION,
+            gpu=MOTION_GPU,
+        )
         if "motion" not in artifacts:
             raise FiniteModalProviderError("motion stage has no motion artifact")
     elif "motion" in artifacts:
@@ -2730,13 +2792,21 @@ def load_finite_scene_bundle(manifest_path: Path) -> FiniteSceneBundle:
     )
 
 
-def _verify_stage(stage: object, *, model: str, revision: str) -> None:
+def _verify_stage(
+    stage: object,
+    *,
+    model: str,
+    revision: str,
+    gpu: str,
+    legacy_gpus: set[str] | None = None,
+) -> None:
     if not isinstance(stage, dict):
         raise FiniteModalProviderError("invalid scene provenance stage")
     if stage.get("model") != model or stage.get("model_revision") != revision:
         raise FiniteModalProviderError("scene provenance model revision mismatch")
-    if stage.get("gpu") != "L4" or stage.get("finite_call") is not True:
-        raise FiniteModalProviderError("scene provenance does not describe a finite L4 call")
+    accepted_gpus = {gpu, *(legacy_gpus or set())}
+    if stage.get("gpu") not in accepted_gpus or stage.get("finite_call") is not True:
+        raise FiniteModalProviderError("scene provenance does not describe a supported finite call")
     amount = stage.get("estimated_gpu_usd")
     if not isinstance(amount, (float, int)) or not math.isfinite(amount) or amount < 0:
         raise FiniteModalProviderError("scene provenance has invalid estimated cost")

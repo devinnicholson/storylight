@@ -12,12 +12,17 @@ import bookforge.finite_modal_provider as finite_modal_provider_module
 from bookforge.asset_cache import AssetCache
 from bookforge.domain import ModelMetrics
 from bookforge.finite_modal_provider import (
+    FAST_GPU,
     FAST_MODEL,
     FAST_MODEL_REVISION,
+    FAST_STAGE_POLICY,
+    MOTION_GPU,
     MOTION_MODEL,
     MOTION_MODEL_REVISION,
+    WARM_FAST_GPU,
     WARM_FAST_PRESENTATION_SESSION_CEILING_USD,
     WARM_FAST_SESSION_CEILING_USD,
+    WARM_FAST_STAGE_POLICY,
     WARM_FULL_SESSION_CEILING_USD,
     FastSceneRequest,
     FiniteModalBudgetError,
@@ -179,7 +184,11 @@ class StubWarmInvoker:
     async def invoke(self, class_name: str, method_name: str, arguments: dict) -> dict:
         self.calls.append((class_name, method_name, arguments))
         if method_name == "prewarm":
-            return {"model_load_seconds": 2.5, "container_age_seconds": 0.01}
+            return {
+                "model_load_seconds": 2.5,
+                "container_age_seconds": 0.01,
+                "gpu": "L40S" if class_name == "FastSceneStudio" else "L4",
+            }
         if method_name == "generate_preview":
             return {
                 "master": _jpeg(arguments["width"], arguments["height"]),
@@ -190,6 +199,7 @@ class StubWarmInvoker:
                 "master_jpeg_quality": 95,
                 "model_load_seconds": 2.5,
                 "container_age_seconds": 8.0,
+                "gpu": "L40S",
             }
         if class_name == "FastSceneStudio":
             return {
@@ -206,6 +216,7 @@ class StubWarmInvoker:
                 "depth_jpeg_quality": 85,
                 "model_load_seconds": 2.5,
                 "container_age_seconds": 3.4,
+                "gpu": "L40S",
             }
         return {
             "content": b"fixture-mp4",
@@ -215,6 +226,7 @@ class StubWarmInvoker:
             "duration_ms": round((arguments["generated_frames"] * 2 - 1) / arguments["fps"] * 1000),
             "model_load_seconds": 6.0,
             "container_age_seconds": 14.5,
+            "gpu": "L4",
         }
 
 
@@ -398,6 +410,12 @@ def test_artifact_path_cannot_escape_scene_directory(tmp_path: Path) -> None:
 
 
 def test_stage_policy_prices_full_command_lifetime() -> None:
+    assert FAST_GPU == "L4"
+    assert FAST_STAGE_POLICY.worst_case_gpu_usd == pytest.approx(0.07992)
+    assert WARM_FAST_GPU == "L40S"
+    assert WARM_FAST_STAGE_POLICY.worst_case_gpu_usd == pytest.approx(0.19512)
+    assert MOTION_GPU == "L4"
+
     policy = ModalStagePolicy(
         gpu="L4",
         remote_timeout_seconds=10,
@@ -1039,6 +1057,10 @@ def test_sdk_probe_hydrates_both_deployed_classes_without_invoking_gpu(
             self.class_name = class_name
             self.hydrate = SimpleNamespace(aio=hydrate)
 
+        def with_options(self, **arguments):
+            events.append(("with_options", self.class_name, arguments))
+            return Handle(self.class_name)
+
         def __call__(self):
             async def prewarm(**arguments):
                 events.append(("invoke", self.class_name, arguments))
@@ -1078,10 +1100,21 @@ def test_sdk_probe_hydrates_both_deployed_classes_without_invoking_gpu(
     assert result == {"model": "FastSceneStudio"}
     assert [event for event in events if event[0] == "hydrate"] == [
         ("hydrate", "FastSceneStudio"),
+        ("hydrate", "FastSceneStudio"),
         ("hydrate", "MotionUpgradeStudio"),
     ]
     assert len([event for event in events if event[0] == "lookup"]) == 2
     assert len([event for event in events if event[0] == "invoke"]) == 1
+    assert (
+        "with_options",
+        "FastSceneStudio",
+        {
+            "gpu": "L40S",
+            "max_containers": 1,
+            "scaledown_window": 90,
+            "timeout": 180,
+        },
+    ) in events
     assert ("autoscaler", "FastSceneStudio", {"scaledown_window": 600}) in events
 
 
@@ -1106,6 +1139,29 @@ def test_warm_readiness_fails_before_billing_when_deployment_is_missing(
     assert readiness == (False, "deployed Modal classes are unreachable: not found")
     assert not provider.ledger_path.exists()
     assert invoker.calls == []
+
+
+def test_warm_provider_fails_closed_if_modal_does_not_honor_l40s_variant(
+    tmp_path: Path,
+) -> None:
+    class WrongGpuInvoker(StubWarmInvoker):
+        async def invoke(self, class_name: str, method_name: str, arguments: dict) -> dict:
+            result = await super().invoke(class_name, method_name, arguments)
+            if class_name == "FastSceneStudio" and method_name == "prewarm":
+                result["gpu"] = "L4"
+            return result
+
+    provider = _warm_provider(tmp_path, WrongGpuInvoker())
+
+    async def run() -> None:
+        with pytest.raises(FiniteModalProviderError, match="unexpected GPU"):
+            await provider.prewarm(prewarm_id="wrong-gpu")
+
+    asyncio.run(run())
+
+    envelope, _ = budget_envelope_from_plan(provider.plan_file)
+    ledger = VisualLabLedger.read(provider.ledger_path, envelope=envelope)
+    assert len(ledger.reservations) == 1
 
 
 def test_warm_full_prewarm_is_explicit_and_settles_after_motion(tmp_path: Path) -> None:

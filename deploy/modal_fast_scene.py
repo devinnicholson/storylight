@@ -32,8 +32,10 @@ import modal
 
 APP_NAME = "bookforge-fast-scene"
 CACHE_DIR = "/cache"
-GPU = "L4"
-GPU_USD_PER_SECOND = 0.000222
+FAST_GPU = "L4"
+FAST_GPU_USD_PER_SECOND = 0.000222
+MOTION_GPU = "L4"
+MOTION_GPU_USD_PER_SECOND = 0.000222
 FAST_TIMEOUT_SECONDS = 180
 MOTION_TIMEOUT_SECONDS = 300
 SCALEDOWN_WINDOW_SECONDS = 90
@@ -115,6 +117,15 @@ def _validate_seed(seed: int) -> None:
         raise ValueError("seed must be an unsigned 32-bit integer")
 
 
+def _runtime_gpu_name() -> str:
+    name = torch.cuda.get_device_name(0).upper()
+    if "L40S" in name:
+        return "L40S"
+    if "L4" in name:
+        return "L4"
+    raise RuntimeError(f"unsupported BookForge GPU: {name}")
+
+
 def _encode_scene_assets(master: Any, depth: Any) -> tuple[bytes, bytes, float]:
     packaging_started = time.perf_counter()
 
@@ -151,7 +162,7 @@ def _encode_scene_assets(master: Any, depth: Any) -> tuple[bytes, bytes, float]:
 
 @app.cls(
     image=runtime_image,
-    gpu=GPU,
+    gpu=FAST_GPU,
     timeout=FAST_TIMEOUT_SECONDS,
     min_containers=0,
     max_containers=1,
@@ -180,6 +191,7 @@ class FastSceneStudio:
             device=0,
         )
         self.model_load_seconds = time.perf_counter() - load_started
+        self.gpu = _runtime_gpu_name()
         self.inference_warmup_seconds = 0.0
         self.inference_warmed = False
         self.loaded_at = time.monotonic()
@@ -210,6 +222,7 @@ class FastSceneStudio:
             "inference_warmup_seconds": self.inference_warmup_seconds,
             "inference_warmed": self.inference_warmed,
             "container_age_seconds": time.monotonic() - self.loaded_at,
+            "gpu": self.gpu,
         }
 
     @modal.method()
@@ -258,6 +271,7 @@ class FastSceneStudio:
             "packaging_seconds": packaging_seconds,
             "model_load_seconds": self.model_load_seconds,
             "container_age_seconds": time.monotonic() - self.loaded_at,
+            "gpu": self.gpu,
         }
 
     @modal.method()
@@ -303,6 +317,7 @@ class FastSceneStudio:
             "packaging_seconds": time.perf_counter() - packaging_started,
             "model_load_seconds": self.model_load_seconds,
             "container_age_seconds": time.monotonic() - self.loaded_at,
+            "gpu": self.gpu,
         }
 
     def _generate_master(
@@ -336,7 +351,7 @@ class FastSceneStudio:
 
 @app.cls(
     image=runtime_image,
-    gpu=GPU,
+    gpu=MOTION_GPU,
     timeout=MOTION_TIMEOUT_SECONDS,
     min_containers=0,
     max_containers=1,
@@ -353,6 +368,7 @@ class MotionUpgradeStudio:
             torch_dtype=torch.bfloat16,
         ).to("cuda")
         self.model_load_seconds = time.perf_counter() - load_started
+        self.gpu = _runtime_gpu_name()
         self.loaded_at = time.monotonic()
 
     @modal.method()
@@ -362,6 +378,7 @@ class MotionUpgradeStudio:
             "model_revision": MOTION_MODEL_REVISION,
             "model_load_seconds": self.model_load_seconds,
             "container_age_seconds": time.monotonic() - self.loaded_at,
+            "gpu": self.gpu,
         }
 
     @modal.method()
@@ -415,6 +432,7 @@ class MotionUpgradeStudio:
             "duration_ms": round(len(loop_frames) / fps * 1000),
             "model_load_seconds": self.model_load_seconds,
             "container_age_seconds": time.monotonic() - self.loaded_at,
+            "gpu": self.gpu,
         }
 
 
@@ -444,6 +462,7 @@ def _guard_and_reserve(
     experiment_id: str,
     timeout_seconds: int,
     maximum_gpu_usd: float,
+    gpu: str,
     existing_reservation_id: str = "",
 ) -> str:
     _, require_reservation, reserve_modal_budget, _ = _budget_types()
@@ -459,7 +478,7 @@ def _guard_and_reserve(
         plan_path=Path(plan_file),
         ledger_path=Path(ledger_path),
         experiment_id=experiment_id,
-        gpu=GPU,
+        gpu=gpu,
         timeout_seconds=timeout_seconds,
         maximum_gpu_usd=maximum_gpu_usd,
     )
@@ -483,6 +502,8 @@ def _record_budget(
     height: int,
     frames: int,
     fps: int,
+    gpu: str,
+    gpu_usd_per_second: float,
 ) -> None:
     GenerationRecord, _, _, settle_modal_budget = _budget_types()
     settle_modal_budget(
@@ -494,13 +515,13 @@ def _record_budget(
             stage=stage,
             model=model,
             model_revision=revision,
-            gpu=GPU,
+            gpu=gpu,
             seed=seed,
             prompt=prompt,
             artifact_path=str(artifact_path),
             sha256=sha256,
             generation_seconds=remote_seconds,
-            estimated_gpu_usd=remote_seconds * GPU_USD_PER_SECOND,
+            estimated_gpu_usd=remote_seconds * gpu_usd_per_second,
             width=width,
             height=height,
             frames=frames,
@@ -622,6 +643,7 @@ def fast_scene_cli(
         experiment_id=experiment_id,
         timeout_seconds=FAST_TIMEOUT_SECONDS,
         maximum_gpu_usd=maximum_gpu_usd,
+        gpu=FAST_GPU,
         existing_reservation_id=reservation_id,
     )
     remote_started = time.perf_counter()
@@ -643,7 +665,7 @@ def fast_scene_cli(
     if result.get("depth_dtype") != DEPTH_DTYPE:
         raise RuntimeError("fast scene returned ambiguous depth precision")
     remote_seconds = time.perf_counter() - remote_started
-    estimated_gpu_usd = remote_seconds * GPU_USD_PER_SECOND
+    estimated_gpu_usd = remote_seconds * FAST_GPU_USD_PER_SECOND
     if estimated_gpu_usd > maximum_gpu_usd + 1e-9:
         # Do not release the ledger reservation when the provider exceeds its
         # declared cap. This fails closed until billing is reconciled.
@@ -680,7 +702,7 @@ def fast_scene_cli(
                 "additional_models": [
                     {"model": DEPTH_MODEL, "model_revision": DEPTH_MODEL_REVISION}
                 ],
-                "gpu": GPU,
+                "gpu": FAST_GPU,
                 "finite_call": True,
                 "hard_timeout_seconds": FAST_TIMEOUT_SECONDS,
                 "remote_seconds": remote_seconds,
@@ -739,6 +761,8 @@ def fast_scene_cli(
         height=height,
         frames=1,
         fps=0,
+        gpu=FAST_GPU,
+        gpu_usd_per_second=FAST_GPU_USD_PER_SECOND,
     )
     print(json.dumps(payload, sort_keys=True))
 
@@ -796,6 +820,7 @@ def preview_scene_cli(
         experiment_id=experiment_id,
         timeout_seconds=FAST_TIMEOUT_SECONDS,
         maximum_gpu_usd=maximum_gpu_usd,
+        gpu=FAST_GPU,
         existing_reservation_id=reservation_id,
     )
     studio = FastSceneStudio()
@@ -819,7 +844,7 @@ def preview_scene_cli(
         raise RuntimeError("preview scene returned ambiguous prompt provenance")
     remote_seconds = time.perf_counter() - remote_started
     billable_remote_seconds = prewarm_remote_seconds + remote_seconds
-    estimated_gpu_usd = billable_remote_seconds * GPU_USD_PER_SECOND
+    estimated_gpu_usd = billable_remote_seconds * FAST_GPU_USD_PER_SECOND
     if estimated_gpu_usd > maximum_gpu_usd + 1e-9:
         raise RuntimeError(
             f"preview scene exceeded its ${maximum_gpu_usd:.6f} call cap: "
@@ -860,7 +885,7 @@ def preview_scene_cli(
             "preview": {
                 "model": FAST_MODEL,
                 "model_revision": FAST_MODEL_REVISION,
-                "gpu": GPU,
+                "gpu": FAST_GPU,
                 "finite_call": True,
                 "hard_timeout_seconds": FAST_TIMEOUT_SECONDS,
                 "remote_seconds": remote_seconds,
@@ -905,6 +930,8 @@ def preview_scene_cli(
         height=height,
         frames=1,
         fps=0,
+        gpu=FAST_GPU,
+        gpu_usd_per_second=FAST_GPU_USD_PER_SECOND,
     )
     print(json.dumps(payload, sort_keys=True))
 
@@ -972,6 +999,7 @@ def motion_upgrade_cli(
         experiment_id=experiment_id,
         timeout_seconds=MOTION_TIMEOUT_SECONDS,
         maximum_gpu_usd=maximum_gpu_usd,
+        gpu=MOTION_GPU,
         existing_reservation_id=reservation_id,
     )
     remote_started = time.perf_counter()
@@ -987,7 +1015,7 @@ def motion_upgrade_cli(
         steps=steps,
     )
     remote_seconds = time.perf_counter() - remote_started
-    estimated_gpu_usd = remote_seconds * GPU_USD_PER_SECOND
+    estimated_gpu_usd = remote_seconds * MOTION_GPU_USD_PER_SECOND
     if estimated_gpu_usd > maximum_gpu_usd + 1e-9:
         raise RuntimeError(
             f"motion upgrade exceeded its ${maximum_gpu_usd:.6f} call cap: "
@@ -999,7 +1027,7 @@ def motion_upgrade_cli(
         "model": MOTION_MODEL,
         "model_revision": MOTION_MODEL_REVISION,
         "source_master_sha256": payload["artifacts"]["master"]["sha256"],
-        "gpu": GPU,
+        "gpu": MOTION_GPU,
         "finite_call": True,
         "hard_timeout_seconds": MOTION_TIMEOUT_SECONDS,
         "remote_seconds": remote_seconds,
@@ -1044,5 +1072,7 @@ def motion_upgrade_cli(
         height=height,
         frames=result["frames"],
         fps=result["fps"],
+        gpu=MOTION_GPU,
+        gpu_usd_per_second=MOTION_GPU_USD_PER_SECOND,
     )
     print(json.dumps(payload, sort_keys=True))

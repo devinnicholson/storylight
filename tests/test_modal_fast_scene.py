@@ -14,6 +14,16 @@ def test_fast_scene_models_and_revisions_are_pinned() -> None:
     assert "revision=MOTION_MODEL_REVISION" in SOURCE
 
 
+def test_deployed_base_stays_on_l4_for_credit_only_dynamic_l40s_selection() -> None:
+    assert 'FAST_GPU = "L4"' in SOURCE
+    assert "FAST_GPU_USD_PER_SECOND = 0.000222" in SOURCE
+    assert 'MOTION_GPU = "L4"' in SOURCE
+    assert "MOTION_GPU_USD_PER_SECOND = 0.000222" in SOURCE
+    assert "gpu=FAST_GPU" in SOURCE
+    assert "gpu=MOTION_GPU" in SOURCE
+    assert '"gpu": self.gpu' in SOURCE
+
+
 def test_modal_scene_has_no_public_endpoint_and_keeps_finite_cli() -> None:
     assert "@app.local_entrypoint()" in SOURCE
     assert "@modal.method()" in SOURCE
