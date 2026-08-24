@@ -151,6 +151,35 @@ def test_plan_repairs_duplicate_placements_and_coordinate_background_as_model_ou
         )
 
 
+def test_plan_strips_embedded_labeled_coordinates_from_background_prompt() -> None:
+    payload = _plan().model_dump()
+    payload["background_prompt"] = (
+        "Dark, swirling clouds, soft blue glow, textured paper, subtle shadows, "
+        "[center_x:0, center_y:0, width:1, height:1.5], depth:0.5"
+    )
+
+    page = LiveScenePlan.model_validate(payload).to_page(
+        source_text="A book opens beneath a storm.",
+        visual_style="paper theater",
+        seed=32,
+    )
+
+    background = page.layers[0].prompt.lower()
+    assert "dark, swirling clouds" in background
+    assert "textured paper" in background
+    for leaked_coordinate in (
+        "[",
+        "]",
+        "center_x",
+        "center_y",
+        "width",
+        "height",
+        "depth",
+    ):
+        assert leaked_coordinate not in background
+    assert not any(character.isdigit() for character in background)
+
+
 def test_plan_bounds_model_phrases_before_scene_spec_compilation() -> None:
     payload = _plan().model_dump()
     payload["scene_summary"] = " ".join(["star"] * 25)

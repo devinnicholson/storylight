@@ -40,8 +40,14 @@ PlanModelRevision = Annotated[
 _PLAN_TEXT_ADAPTER = TypeAdapter(PlanText)
 _PLAN_STYLE_ADAPTER = TypeAdapter(PlanStyle)
 _PLAN_MODEL_REVISION_ADAPTER = TypeAdapter(PlanModelRevision)
-_COORDINATE_PREFIX = re.compile(
-    r"^\s*\[[^\]]*\d[^\]]*\]\s*[,;:\-]?\s*",
+_COORDINATE_BLOCK = re.compile(
+    r"\[[^\]]*(?:\d|center[\s_-]?[xy]|width|height|depth)[^\]]*\]",
+    re.IGNORECASE,
+)
+_COORDINATE_ASSIGNMENT = re.compile(
+    r"\b(?:center[\s_-]?[xy]|width|height|depth)\s*[:=]\s*"
+    r"[+-]?\d+(?:\.\d+)?\b",
+    re.IGNORECASE,
 )
 _NUMERIC_TOKEN = re.compile(r"(?<!\w)[+-]?\d+(?:\.\d+)?(?!\w)")
 _DANGLING_PARTICIPLE = re.compile(r",\s+[A-Za-z]+ing[.!?]?$")
@@ -288,16 +294,25 @@ def _normalized_background_prompt(
     art_direction: str,
     scene_summary: str,
 ) -> str:
-    match = _COORDINATE_PREFIX.match(value)
-    candidate = (
-        value
-        if match is None
-        else " ".join(part for part in (art_direction, scene_summary) if part)
-    )
+    leading_coordinates = _COORDINATE_BLOCK.match(value)
+    candidate = value
+    if leading_coordinates is not None:
+        candidate = " ".join(
+            part for part in (art_direction, scene_summary) if part
+        )
+    else:
+        candidate = _COORDINATE_BLOCK.sub(" ", candidate)
     # Coordinates are structural data, never visual language. Small local models
     # sometimes serialize an anchor into this field despite the strict schema.
+    candidate = _COORDINATE_ASSIGNMENT.sub(" ", candidate)
     candidate = _NUMERIC_TOKEN.sub("", candidate)
-    candidate = " ".join(candidate.replace("[", " ").replace("]", " ").split())
+    candidate = " ".join(
+        candidate.replace("[", " ")
+        .replace("]", " ")
+        .replace(";", " ")
+        .replace(":", " ")
+        .split()
+    ).strip(" ,-")
     return _prompt_fragment(_bounded_words(candidate, 18)) or "cinematic storybook setting"
 
 
