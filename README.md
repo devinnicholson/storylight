@@ -204,15 +204,14 @@ inventing and omitting story elements; the production choice remains the quality
 model. See the speed benchmark below for the rejected configurations, seed-variance evidence, and
 authoritative billing reconciliation.
 
-The production fast renderer is now the pinned two-step SANA-Sprint 1.6B checkpoint. Across three
-scene types, steady image inference averaged 730 ms; the exact warm production API path reached
-`master_ready` in 1.188 seconds, including depth, encoding, cache promotion, and control overhead.
-Combining that measured provider result with the last exact Jetson Gemma time projects a 5.464-second
-full path (21.6% faster), but that number remains explicitly projected until the Jetson is back
-online for the exact combined run. Six visual trials were presentation-grade, while composition
-misses in the fox and orrery prompts keep seed-level semantic validation on the backlog. SANA-Sprint
-has no separate negative-prompt channel; no-text and safety direction is carried in the positive
-visual prompt and provenance reports that boundary.
+The production fast renderer is now the pinned two-step SANA-Sprint 1.6B checkpoint. The current
+exact combined run used Jetson Gemma and the authenticated L40S renderer: a new uncached passage
+showed its generated preview at 685 ms and reached `master_ready` in 4.857 seconds; a passage whose
+private plan and renderer were prepared before reading reached the full depth-aware master in
+641 ms. A later semantic-regression scene completed in 814 ms and passed real-browser restore,
+activation, checksum, and visual review. SANA-Sprint has no separate negative-prompt channel;
+no-text and safety direction is carried in the positive visual prompt and provenance reports that
+boundary.
 
 A same-prompt, same-seed one-step experiment was rejected. Diffusers' documented non-two-step
 override reduced image inference by 17.1%, but provider end-to-end improved only 65.6 ms (5.5%) and
@@ -241,10 +240,11 @@ overlapping draft/master/motion upgrades and promotes the newest prepared scene 
 frame instead of stacking opacity transitions. Browser stress evidence held minimum combined opacity
 at 1.0, finished with one scene version at 30 fps/zero dropped frames, and never reloaded.
 
-An opt-in short-key Gemma response contract is also ready for the next Jetson session. It reduces a
-representative structured response from 272 to 226 bytes without changing the scene plan. It is
-disabled by default because output size alone does not prove lower latency or equivalent semantics;
-the production switch requires a real multi-passage edge benchmark.
+Short-key Gemma response contracts were tested and rejected on the Jetson. The tuple form was 62.9%
+faster but echoed schema placeholders in four of five outputs and missed every required
+transformation. A later object-shaped alias form was directionally 9.2% faster but also failed all
+five semantic gates. The standard named contract remains in production; its current five-passage
+GPU run averaged 2.661 seconds and stayed below 3.3 seconds while preserving each critical scene.
 
 The uncached live path now generates a labeled 512×288 provisional SANA plate while local Gemma plans
 the authoritative scene. It runs only with the authenticated warm Modal provider, never receives the

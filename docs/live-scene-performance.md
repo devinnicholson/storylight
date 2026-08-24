@@ -156,27 +156,27 @@ call, and 2.7 ms cache promotion. The selected output retained the child, open b
 origami birds. A second seed at comparable speed omitted the birds and was rejected, so seed-level
 semantic image validation remains a documented quality frontier rather than a hidden success.
 
-The subsequent SANA-Sprint production-provider acceptance reached `master_ready` in 1.188 seconds
-with a deterministic integration planner: 1.176 seconds provider time, 813 ms inference, 33 ms
-packaging, and 3.1 ms cache promotion. Reusing the last measured 4.285-second Jetson Gemma result
-projects 5.464 seconds end to end, but it is not labeled an exact combined result until the offline
-Jetson reruns the current code. Across six visual samples, the book/origami scenes preserved the
-central semantics while fox and orrery compositions showed bounded misses; seed-level semantic
-selection remains a quality frontier.
+The historical SANA-Sprint provider-only acceptance reached `master_ready` in 1.188 seconds with a
+deterministic integration planner: 1.176 seconds provider time, 813 ms inference, 33 ms packaging,
+and 3.1 ms cache promotion. That projection has since been superseded by the exact combined Jetson
+run: 4.857 seconds for an uncached passage and 641 ms for a prepared passage. Across visual samples,
+semantic and duplicate-subject misses were treated as failures even when they were fast; the final
+whale/observatory scene passed only after both the edge plan and renderer prompt were hardened.
 
-The next planner candidate replaces only the model-facing JSON property names with short aliases.
-Static contract measurement reduces a representative response by 16.9% and the schema by 31.5%
-without changing the normalized `LiveScenePlan`. It is opt-in and remains disabled until the Jetson
-can run semantic and truncation acceptance; these byte reductions are not presented as measured
-latency savings.
+The short-key planner candidates are closed. On the exact Jetson runtime, the tuple form was 62.9%
+faster but emitted placeholders in four of five cases and missed every required transformation. A
+follow-up nested object form was directionally 9.2% faster but failed all five semantic gates. Both
+remain rejected research evidence; the standard named contract averaged 2.661 seconds across the
+same five synthetic story cases and preserved each critical actor/action/transformation.
 
 The structured edge planner also keeps a 32-entry in-memory LRU keyed by a SHA-256 digest of the
 passage, model revision, and wire contract. Style is applied only while the local SceneSpec is
 compiled, so alternate styles reuse the same semantic plan. A hit bypasses model decode but
 revalidates the cached plan against the local outbound privacy gate and derives styled,
 seed-specific SceneSpec geometry.
-Metrics expose `planning_cache_hit`; no raw passage is used as a cache key, and the cache is neither
-sent off-device nor persisted across process restarts. Set
+Metrics expose `planning_cache_hit`. A bounded in-memory LRU is backed by local, privacy-gated plan
+files so a restart can restore a plan without another model call. The filename is a SHA-256 digest;
+the raw passage is not serialized into the plan-cache file or sent off-device. Set
 `BOOKFORGE_LIVE_SCENE_PLANNER_CACHE_ENTRIES=0` to disable it.
 
 Before planning completes, the immediate procedural renderer derives only local visual cues from the
@@ -185,14 +185,13 @@ without delaying `draft_ready` or transmitting text. Real-browser fox/forest/swa
 whale/ocean/fish-school checks each rendered three animated layers at 30 fps with zero dropped frames
 and no warnings or errors.
 
-The automatic-prewarm acceptance exercised a real cold deployed-class prewarm and real two-step
-generation while substituting the last measured 4.285-second Jetson planning delay because the
-board was off. API preparation took 30.744 seconds, planning took 4.288 seconds concurrently, and
-provider generation took 1.318 seconds. The critical-path metric is therefore
-`max(planning_ms, preparation_ms) + provider_ms + cache_ms`: 32.063 seconds versus 32.070 seconds
-observed wall. A serialized path would have been 36.351 seconds, so concurrency saved 4.288 seconds
-(11.8%) without sending story text during prewarm. This is cold-path concurrency evidence, not a
-replacement for the pending exact current-code Jetson run.
+The exact current-code Jetson run closes the former projected-online gap. With a renderer already
+available, edge plan preparation (3.805 seconds) and renderer readiness (1.774 seconds) ran in
+parallel; the subsequent master/depth job completed in 641 ms. A genuinely uncached live passage
+reached a generated preview at 685 ms and the authoritative master at 4.857 seconds while its
+4.085-second Jetson plan overlapped provider work. After scale-to-zero, an explicit L40S prewarm
+still takes 19-22 seconds, so the operator-facing **Prepare full path** action remains a deliberate
+rehearsal step rather than a hidden per-scene latency or an always-on GPU charge.
 
 A bounded Modal GPU-memory-snapshot experiment was rejected. Snapshot creation was still active
 after more than 210 seconds, outside the 180-second live-function budget, so the task was stopped,
@@ -200,12 +199,13 @@ the app was verified at zero tasks, and the proven non-snapshot class was redepl
 app/day billing interval increased by $0.05521155 during that experiment. Bookforge does not claim
 snapshot acceleration and does not carry the experimental snapshot flags in production.
 
-Loading the independent SANA and depth checkpoints in parallel was also rejected: it increased
-model load by 52.9% and prewarm by 35.8% on the exact L4 path, indicating resource contention.
-Serial loading remains selected. A narrower Depth Anything FP16 change passed: master and depth
-files were byte-identical to the FP32 baseline, while model load improved 8.4%, depth inference
-improved 24.3%, and observed cold wall improved 726 ms (2.26%). Manifests pin the depth precision as
-`float16` rather than leaving it implicit.
+Loading the independent SANA and depth checkpoints in parallel was also rejected. It increased
+model load by 52.9% and prewarm by 35.8% on the exact L4 path; the later production L40S retest
+likewise regressed cold prewarm from 19.485 to 24.031 seconds (23.3%). Serial loading remains
+selected. A narrower Depth Anything FP16 change passed: master and depth files were byte-identical
+to the FP32 baseline, while model load improved 8.4%, depth inference improved 24.3%, and observed
+cold wall improved 726 ms (2.26%). Manifests pin the depth precision as `float16` rather than
+leaving it implicit.
 
 Projector activation is now decomposed into media-ready, renderer-setup, first-paint, reader-sync,
 and total client timing. In the isolated no-cost browser harness, replacing the nested two-frame
