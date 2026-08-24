@@ -8,8 +8,6 @@ const PACK_SOURCE = query.get("pack") || "fixture";
 const PRESENTATION_MODE = query.get("debug") !== "1";
 const OFFLINE_REPLAY = query.get("offline") === "1";
 const LIVE_MODE = query.get("live") === "1";
-const LIVE_SCENE_STORAGE_KEY = "bookforge.liveSceneSnapshot.v1";
-const LIVE_SCENE_CHANNEL = "bookforge.live-scenes";
 const SCENE_CROSSFADE_MS = 320;
 const SCENE_RETIRE_GRACE_MS = 360;
 const DEPTH_RENDER_TARGET_FPS = 30;
@@ -88,7 +86,6 @@ const state = {
   resyncAfterCurrent: false,
   pendingReaderEvents: [],
   depthRenderer: null,
-  liveSceneChannel: null,
   liveSessionEventSource: null,
   liveSessionStreamHealthy: false,
   liveRendezvousTimer: null,
@@ -1806,29 +1803,6 @@ async function rendezvousLiveScene() {
 function setupLiveSceneTransport() {
   if (!LIVE_MODE) return;
   connectLiveSceneSessionEvents();
-  window.addEventListener("message", (event) => {
-    if (event.origin !== window.location.origin) return;
-    queueLiveSceneSnapshot(event.data);
-  });
-  if ("BroadcastChannel" in window) {
-    state.liveSceneChannel = new BroadcastChannel(LIVE_SCENE_CHANNEL);
-    state.liveSceneChannel.addEventListener("message", (event) => queueLiveSceneSnapshot(event.data));
-  }
-  window.addEventListener("storage", (event) => {
-    if (event.key !== LIVE_SCENE_STORAGE_KEY || !event.newValue) return;
-    try {
-      queueLiveSceneSnapshot(JSON.parse(event.newValue));
-    } catch (_) {
-      setEvent("scene.upgrade-error", "Ignored an invalid saved live scene update");
-    }
-  });
-  try {
-    const saved = JSON.parse(localStorage.getItem(LIVE_SCENE_STORAGE_KEY));
-    const recent = saved && Date.now() - Number(saved.sentAt || 0) < 30 * 60 * 1000;
-    if (recent) queueLiveSceneSnapshot(saved);
-  } catch (_) {
-    localStorage.removeItem(LIVE_SCENE_STORAGE_KEY);
-  }
   if (!state.liveServerInstanceId) rendezvousLiveScene();
   window.setInterval(updateLiveGenerationClock, 100);
 }
@@ -2107,7 +2081,6 @@ window.addEventListener("beforeunload", () => {
   state.liveSessionEventSource?.close();
   state.liveSessionStreamHealthy = false;
   state.depthRenderer?.destroy();
-  state.liveSceneChannel?.close();
   state.socket?.close();
   void state.screenWakeLock?.release();
 });

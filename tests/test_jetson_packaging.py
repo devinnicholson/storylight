@@ -520,7 +520,10 @@ def test_live_scene_workbench_uses_progressive_job_contract() -> None:
     )
     assert "response.status !== 202" in controller
     assert "snapshot.story_pack" in controller
-    assert "broadcastLiveSnapshot" in controller
+    assert "broadcastLiveSnapshot" not in controller
+    assert "BroadcastChannel" not in controller
+    assert "bookforge.liveSceneSnapshot.v1" not in controller
+    assert "contentWindow?.postMessage" not in controller
     assert "if (revision < lastLiveRevision) return;" in controller
     assert 'elements.compileButton.textContent = "Try generation again"' in controller
 
@@ -532,8 +535,10 @@ def test_projector_hot_swaps_generated_stages_without_reloading() -> None:
 
     assert 'id="liveGenerationBadge"' in markup
     assert 'query.get("live") === "1"' in controller
-    assert "new BroadcastChannel(LIVE_SCENE_CHANNEL)" in controller
-    assert "event.origin !== window.location.origin" in controller
+    assert "BroadcastChannel" not in controller
+    assert "bookforge.liveSceneSnapshot.v1" not in controller
+    assert 'window.addEventListener("storage"' not in controller
+    assert 'window.addEventListener("message"' not in controller
     assert (
         "async function renderPackLayers(pack, page, renderToken = null, timings = null)"
         in controller
@@ -585,8 +590,9 @@ def test_server_rendezvous_synchronizes_separate_workbench_and_kiosk_browsers() 
     assert "serverChanged || revisionAdvanced" in workbench
     assert "!serverInstanceId || !Number.isInteger(sessionRevision)" in projector
     assert "rendezvousLiveScene();" in projector
-    # BroadcastChannel remains a fast same-browser path, not the authoritative transport.
-    assert "new BroadcastChannel(LIVE_SCENE_CHANNEL)" in projector
+    # The authoritative session stream is the only live-stage delivery path.
+    assert "BroadcastChannel" not in projector
+    assert "bookforge.liveSceneSnapshot.v1" not in projector
 
 
 def test_projector_uses_session_polling_only_while_session_sse_is_unhealthy() -> None:

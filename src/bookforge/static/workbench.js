@@ -61,11 +61,6 @@ let sceneReady = false;
 const workbenchQuery = new URLSearchParams(window.location.search);
 const readerSessionId = workbenchQuery.get("session") || "bookforge-live";
 const rehearsalMode = workbenchQuery.get("rehearsal") === "1";
-const LIVE_SCENE_STORAGE_KEY = "bookforge.liveSceneSnapshot.v1";
-const LIVE_SCENE_CHANNEL = "bookforge.live-scenes";
-const liveSceneChannel = "BroadcastChannel" in window
-  ? new BroadcastChannel(LIVE_SCENE_CHANNEL)
-  : null;
 let liveSessionEventSource = null;
 let liveSessionStreamHealthy = false;
 let livePollTimer = null;
@@ -279,24 +274,6 @@ elements.projectorLink.href = `/projector?pack=latest&session=${encodeURICompone
 // Kept as the public preview hook; it initializes once and never reloads during stage upgrades.
 function reloadProjectionPreview() {
   ensureProjectionPreview();
-}
-
-function broadcastLiveSnapshot(snapshot) {
-  const envelope = {
-    type: "bookforge.live-scene",
-    sessionId: readerSessionId,
-    serverInstanceId: liveServerInstanceId,
-    sessionRevision: liveSessionRevision,
-    sentAt: Date.now(),
-    snapshot,
-  };
-  try {
-    localStorage.setItem(LIVE_SCENE_STORAGE_KEY, JSON.stringify(envelope));
-  } catch (_) {
-    // Direct messaging and BroadcastChannel still provide the live path if storage is full.
-  }
-  liveSceneChannel?.postMessage(envelope);
-  elements.projectorFrame.contentWindow?.postMessage(envelope, window.location.origin);
 }
 
 function safeText(value) {
@@ -770,7 +747,7 @@ function renderLiveSnapshot(snapshot, epoch = liveRequestEpoch) {
   renderGenerationProgress(snapshot);
   setGenerateButtonForStage(snapshot.stage);
   if (snapshot.story_pack) {
-    renderPack({story_pack: snapshot.story_pack, live_snapshot: snapshot}, {hotSwap: true});
+    renderPack({story_pack: snapshot.story_pack, live_snapshot: snapshot});
     const stageCopy = {
       draft_ready: "Animated draft live—the generation provider is preparing the master.",
       preview_ready: "Generated visual sketch live—Gemma is directing the final artwork.",
@@ -946,7 +923,7 @@ function connectLiveSceneSessionEvents() {
   });
 }
 
-function renderPack(payload, {hotSwap = false} = {}) {
+function renderPack(payload) {
   const pack = payload.story_pack;
   const metrics = payload.compile_metrics || payload.metrics;
   const generation = payload.generation_metrics;
@@ -990,7 +967,6 @@ function renderPack(payload, {hotSwap = false} = {}) {
   elements.results.classList.remove("hidden");
   setSceneReady(true);
   reloadProjectionPreview();
-  if (hotSwap) broadcastLiveSnapshot(payload.live_snapshot || {story_pack: pack, stage: "master_ready", revision: 0});
 }
 
 async function compileStory() {
@@ -1098,9 +1074,6 @@ elements.compileButton.addEventListener("click", compileStory);
 elements.prewarmButton.addEventListener("click", prewarmRenderer);
 elements.projectorLink.addEventListener("click", (event) => {
   if (!sceneReady) event.preventDefault();
-});
-elements.projectorFrame.addEventListener("load", () => {
-  if (latestLiveSnapshot?.story_pack) broadcastLiveSnapshot(latestLiveSnapshot);
 });
 [elements.style, elements.story].forEach((element) => {
   element.addEventListener("input", () => {
