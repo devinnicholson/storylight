@@ -132,13 +132,13 @@ def test_projector_adapts_dark_scenes_without_an_extra_generation_pass() -> None
     projector = (ROOT / "src/bookforge/static/projector.js").read_text()
     stylesheet = (ROOT / "src/bookforge/static/projector.css").read_text()
 
-    assert 'sample.width = 32;' in projector
-    assert 'sample.height = 18;' in projector
-    assert 'return Math.min(1.22, Math.max(1, 0.32 / Math.max(0.01, meanLuma)));' in projector
-    assert 'uniform float u_exposure;' in projector
-    assert 'gl.uniform1f(exposureLocation, projectionExposure);' in projector
-    assert 'projectionExposureForImage(masterImage).toFixed(3)' in projector
-    assert 'filter: brightness(var(--projection-exposure, 1));' in stylesheet
+    assert "sample.width = 32;" in projector
+    assert "sample.height = 18;" in projector
+    assert "return Math.min(1.22, Math.max(1, 0.32 / Math.max(0.01, meanLuma)));" in projector
+    assert "uniform float u_exposure;" in projector
+    assert "gl.uniform1f(exposureLocation, projectionExposure);" in projector
+    assert "projectionExposureForImage(masterImage).toFixed(3)" in projector
+    assert "filter: brightness(var(--projection-exposure, 1));" in stylesheet
 
 
 def test_kiosk_preserves_chromium_sandbox_and_waits_for_readiness() -> None:
@@ -443,7 +443,7 @@ def test_live_scene_workbench_uses_progressive_job_contract() -> None:
     assert 'data-stage="motion_ready"' in markup
     assert "Later: Read it aloud" in markup
     assert 'fetch("/v1/live-scenes"' in controller
-    assert 'new EventSource(`/v1/live-scenes/${encodeURIComponent(jobId)}/events`)' in controller
+    assert "new EventSource(`/v1/live-scenes/${encodeURIComponent(jobId)}/events`)" in controller
     assert 'source.addEventListener("scene.job", receive)' in controller
     assert "response.status !== 202" in controller
     assert "snapshot.story_pack" in controller
@@ -459,8 +459,8 @@ def test_projector_hot_swaps_generated_stages_without_reloading() -> None:
 
     assert 'id="liveGenerationBadge"' in markup
     assert 'query.get("live") === "1"' in controller
-    assert 'new BroadcastChannel(LIVE_SCENE_CHANNEL)' in controller
-    assert 'event.origin !== window.location.origin' in controller
+    assert "new BroadcastChannel(LIVE_SCENE_CHANNEL)" in controller
+    assert "event.origin !== window.location.origin" in controller
     assert (
         "async function renderPackLayers(pack, page, renderToken = null, timings = null)"
         in controller
@@ -477,14 +477,14 @@ def test_projector_hot_swaps_generated_stages_without_reloading() -> None:
     assert "liveCommittedRevision" in controller
     assert "liveRenderPending" in controller
     assert "liveModeSatisfiesStage" in controller
-    assert 'renderLiveGenerationBadge(snapshot, {activated: false})' in controller
+    assert "renderLiveGenerationBadge(snapshot, {activated: false})" in controller
     assert "state.liveCommittedRevision === revision" in controller
     assert 'setEvent("scene.retrying"' in controller
     assert "window.location.reload" not in controller
     assert ".scene-version.retiring" in stylesheet
     assert "@keyframes draft-camera" in stylesheet
     assert ".generated-scene.draft-composed" in stylesheet
-    assert 'dataset.terminal = String(state.liveTerminal)' in controller
+    assert "dataset.terminal = String(state.liveTerminal)" in controller
     assert '.live-generation-badge[data-terminal="true"]' in stylesheet
 
 
@@ -505,7 +505,7 @@ def test_server_rendezvous_synchronizes_separate_workbench_and_kiosk_browsers() 
     assert 'source.addEventListener("scene.session", receive)' in projector
     assert "async function rendezvousLiveScene()" in projector
     assert "connectLiveJobEvents(jobId, serverInstanceId, sessionRevision)" in projector
-    assert 'new EventSource(`/v1/live-scenes/${encodeURIComponent(jobId)}/events`)' in projector
+    assert "new EventSource(`/v1/live-scenes/${encodeURIComponent(jobId)}/events`)" in projector
     assert "sessionRevision < state.liveSessionRevision" in projector
     assert "state.liveSessionJobId !== jobId" in projector
     assert "server_instance_id" in workbench
@@ -527,8 +527,7 @@ def test_projector_uses_session_polling_only_while_session_sse_is_unhealthy() ->
     assert "state.liveSessionStreamHealthy = false;" in projector
     assert "scheduleLiveSceneRendezvous(0);" in projector
     assert (
-        "if (!LIVE_MODE || state.liveRendezvousInFlight || "
-        "liveSessionStreamIsHealthy()) return;"
+        "if (!LIVE_MODE || state.liveRendezvousInFlight || liveSessionStreamIsHealthy()) return;"
     ) in projector
     assert "scheduleLiveSceneRendezvous();" in projector
 
@@ -539,9 +538,7 @@ def test_projector_activates_initial_pack_before_subscribing_to_live_session() -
     startup = projector.split("async function startProjector()", 1)[1].split(
         'elements.previous.addEventListener("click"', 1
     )[0]
-    assert startup.index("await loadStoryPack();") < startup.index(
-        "setupLiveSceneTransport();"
-    )
+    assert startup.index("await loadStoryPack();") < startup.index("setupLiveSceneTransport();")
     assert startup.index("setupLiveSceneTransport();") < startup.index(
         "if (state.page) connectReaderSession();"
     )
@@ -601,7 +598,7 @@ def test_live_ui_displays_backend_metrics_without_a_saved_local_fallback() -> No
     assert 'metrics.planning_cache_hit ? "local cache"' in controller
     assert "renderer received only visual direction" in controller
     assert "Saved locally" not in controller
-    assert 'dataset.terminal = String(isTerminalSnapshot(snapshot))' in controller
+    assert "dataset.terminal = String(isTerminalSnapshot(snapshot))" in controller
     assert '.generation-progress:not([data-terminal="true"])' in stylesheet
     assert '.generation-progress:not([data-terminal="true"]) .stage-rail li.current i' in stylesheet
 
@@ -626,8 +623,9 @@ def test_workbench_rehearsal_prepares_edge_plan_and_text_free_renderer_concurren
     assert "const text = elements.story.value.trim();" in prewarm_source
     assert "const visualStyle = elements.style.value.trim()" in prewarm_source
     renderer_body = prewarm_source[
-        prewarm_source.index('post("/v1/live-scene-provider/prewarm"') :
-        prewarm_source.index('post("/v1/live-scene-planner/prepare"')
+        prewarm_source.index('post("/v1/live-scene-provider/prewarm"') : prewarm_source.index(
+            'post("/v1/live-scene-planner/prepare"'
+        )
     ]
     assert "text" not in renderer_body
     assert "visual_style" not in renderer_body

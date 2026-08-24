@@ -62,6 +62,7 @@ from bookforge.live_scene import (
     LiveSceneSessionStatus,
     LiveSceneWarmProviderStatus,
     build_live_scene_provider,
+    live_scene_request_seed,
 )
 from bookforge.model_client import ModelUnavailableError, build_model_client
 from bookforge.reader_runtime import (
@@ -96,6 +97,18 @@ async def lifespan(app: FastAPI):
     settings.cache_dir.chmod(0o700)
     app.state.asset_cache = AssetCache(settings.cache_dir / "assets")
     await app.state.asset_cache.initialize()
+
+    async def find_completed_live_scene(payload: LiveSceneCreateRequest) -> StoryPack | None:
+        return await app.state.story_store.find_live_scene(
+            text=payload.text,
+            visual_style=payload.visual_style,
+            seed=live_scene_request_seed(payload),
+            session_id=payload.session_id,
+        )
+
+    async def validate_completed_live_scene(pack: StoryPack) -> StoryPack:
+        return await app.state.asset_cache.install_pack(pack, Path("."))
+
     app.state.scene_foundry = SceneFoundry(
         generator=build_asset_generator(settings),
         depth_estimator=build_depth_estimator(settings),
@@ -127,6 +140,8 @@ async def lifespan(app: FastAPI):
         max_retained_jobs=settings.live_scene_max_retained_jobs,
         event_queue_size=settings.live_scene_event_queue_size,
         completed_pack_sink=app.state.story_store.save,
+        completed_pack_source=find_completed_live_scene,
+        completed_pack_validator=validate_completed_live_scene,
     )
     yield
     await app.state.live_scenes.close()
@@ -181,9 +196,7 @@ async def scene_foundry_error_handler(_: Request, error: SceneFoundryError):
 
 
 @app.exception_handler(AssetGeneratorUnavailableError)
-async def asset_generator_unavailable_handler(
-    _: Request, error: AssetGeneratorUnavailableError
-):
+async def asset_generator_unavailable_handler(_: Request, error: AssetGeneratorUnavailableError):
     return JSONResponse(status_code=503, content={"detail": str(error)})
 
 
@@ -543,13 +556,9 @@ async def live_scene_session_events(
                 while True:
                     event: LiveSceneSessionEvent = await subscription.receive()
                     job_revision = event.job.revision if event.job is not None else 0
-                    event_id = (
-                        f"{event.server_instance_id}:{event.session_revision}:{job_revision}"
-                    )
+                    event_id = f"{event.server_instance_id}:{event.session_revision}:{job_revision}"
                     yield (
-                        f"id: {event_id}\n"
-                        "event: scene.session\n"
-                        f"data: {event.model_dump_json()}\n\n"
+                        f"id: {event_id}\nevent: scene.session\ndata: {event.model_dump_json()}\n\n"
                     )
         except LiveSceneRegistryClosedError:
             return

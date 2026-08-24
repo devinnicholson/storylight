@@ -124,9 +124,7 @@ def test_story_compiler_returns_versioned_validated_pack() -> None:
     assert response.story_pack.schema_version == "2.0"
     assert response.story_pack.pages[0].scene_spec is not None
     assert response.story_pack.pages[0].page_id == "page-01"
-    assert response.story_pack.pages[0].source_text == (
-        "The small moth went through the red gate."
-    )
+    assert response.story_pack.pages[0].source_text == ("The small moth went through the red gate.")
     assert response.story_pack.pages[0].triggers[0].word == "the"
     assert response.metrics.backend == "fake"
 
@@ -307,11 +305,7 @@ def test_story_pack_rejects_trigger_for_missing_layer() -> None:
 
 def test_projector_fixture_is_a_valid_ready_story_pack() -> None:
     fixture = (
-        Path(__file__).parents[1]
-        / "src"
-        / "bookforge"
-        / "static"
-        / "moon-gate.story-pack.json"
+        Path(__file__).parents[1] / "src" / "bookforge" / "static" / "moon-gate.story-pack.json"
     )
     pack = StoryPack.model_validate_json(fixture.read_text())
 

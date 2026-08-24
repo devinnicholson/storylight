@@ -570,6 +570,10 @@ function formatBackendMs(value) {
 }
 
 function renderPlanningPrivacy(metrics) {
+  if (metrics?.scene_cache_hit) {
+    elements.planningPrivacy.textContent = "Verified local replay · This exact completed scene was restored without a new model or cloud request.";
+    return;
+  }
   const scenePlan = (metrics?.models || []).find((model) => model.role === "scene_plan");
   const planningStatus = metrics?.planning_status || "pending";
   const localGemma = planningStatus === "model"
@@ -603,8 +607,10 @@ function renderBackendMetrics(snapshot) {
   const warmState = metrics.warm_state || "unknown";
   const estimatedCost = Number(metrics.estimated_gpu_usd || 0).toFixed(4);
   const planningEvidence = metrics.planning_cache_hit ? "local cache" : (metrics.planning_status || "pending");
+  const sceneEvidence = metrics.scene_cache_hit ? "verified completed-scene cache" : "new scene";
   elements.generationMetrics.textContent = [
     `backend wall ${formatBackendMs(metrics.elapsed_ms)}`,
+    sceneEvidence,
     `edge plan ${formatBackendMs(metrics.planning_ms)} (${planningEvidence})`,
     `renderer prep ${formatBackendMs(metrics.preparation_ms)}`,
     `provider remote ${formatBackendMs(metrics.provider_ms)}`,
@@ -695,8 +701,12 @@ function finishLiveJob(snapshot) {
   }
   elements.compileButton.textContent = "Generate another moving scene";
   elements.interim.textContent = snapshot.stage === "motion_ready"
-    ? "The final moving scene is live. No projector reload occurred."
-    : "The best available scene is live; this provider returned no additional motion stage.";
+    ? (snapshot.metrics?.scene_cache_hit
+      ? "The exact moving scene was restored locally. No Gemma or cloud renderer call was needed."
+      : "The final moving scene is live. No projector reload occurred.")
+    : (snapshot.metrics?.scene_cache_hit
+      ? "The exact artwork and depth scene were restored locally with zero new GPU cost."
+      : "The best available scene is live; this provider returned no additional motion stage.");
   setStatus("idle", snapshot.stage === "motion_ready" ? "Moving scene ready" : "Scene ready");
 }
 

@@ -279,9 +279,7 @@ class StoryPack(StrictModel):
                 raise ValueError(f"Story Pack page {page.page_id!r} requires source_text")
             for trigger in page.triggers:
                 if trigger.target_layer_id not in page_layers[page.page_id]:
-                    raise ValueError(
-                        f"Trigger {trigger.trigger_id!r} references missing layer"
-                    )
+                    raise ValueError(f"Trigger {trigger.trigger_id!r} references missing layer")
         seen_asset_ids: set[str] = set()
         for asset in self.assets:
             if asset.asset_id in seen_asset_ids:

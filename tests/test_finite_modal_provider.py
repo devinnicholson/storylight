@@ -201,9 +201,7 @@ class StubWarmInvoker:
             "generation_seconds": 14.0,
             "frames": arguments["generated_frames"] * 2 - 1,
             "fps": arguments["fps"],
-            "duration_ms": round(
-                (arguments["generated_frames"] * 2 - 1) / arguments["fps"] * 1000
-            ),
+            "duration_ms": round((arguments["generated_frames"] * 2 - 1) / arguments["fps"] * 1000),
             "model_load_seconds": 6.0,
             "container_age_seconds": 14.5,
         }
@@ -468,14 +466,8 @@ def test_deployed_warm_state_uses_measured_container_reuse() -> None:
     classify = finite_modal_provider_module._deployed_warm_state
 
     assert classify({}, remote_seconds=1, uses_session=False) == "unknown"
-    assert (
-        classify({"container_age_seconds": 1.1}, remote_seconds=1, uses_session=False)
-        == "cold"
-    )
-    assert (
-        classify({"container_age_seconds": 12}, remote_seconds=1, uses_session=False)
-        == "warm"
-    )
+    assert classify({"container_age_seconds": 1.1}, remote_seconds=1, uses_session=False) == "cold"
+    assert classify({"container_age_seconds": 12}, remote_seconds=1, uses_session=False) == "warm"
     assert classify({}, remote_seconds=30, uses_session=True) == "prewarmed"
 
 
@@ -1256,10 +1248,7 @@ def test_motion_technical_gate_rejects_before_cache_promotion(tmp_path: Path) ->
     assert not any(path.suffix == ".mp4" for path in cache.root.rglob("*"))
     report = json.loads(
         (
-            tmp_path
-            / "gate-generated"
-            / "scene_000000000000000000000099"
-            / "motion.technical.json"
+            tmp_path / "gate-generated" / "scene_000000000000000000000099" / "motion.technical.json"
         ).read_text()
     )
     assert report["accepted"] is False
@@ -1509,9 +1498,7 @@ def test_live_scene_adapter_uses_model_plan_after_immediate_deterministic_draft(
         )
         iterator = adapter.generate(
             LiveSceneCreateRequest(
-                text=(
-                    "Quenlora whispers the amber-key refrain while paper birds cross the stars."
-                ),
+                text=("Quenlora whispers the amber-key refrain while paper birds cross the stars."),
                 seed=31,
             ),
             job_id="scene_000000000000000000000031",
@@ -1550,9 +1537,7 @@ def test_live_scene_adapter_uses_model_plan_after_immediate_deterministic_draft(
     assert (normalized_focus.width, normalized_focus.height) == (0.6, 0.72)
     assert (normalized_focus.center_x, normalized_focus.center_y) == (0.5, 0.5)
     assert (normalized_accent.width, normalized_accent.height) == (0.3, 0.34)
-    assert (normalized_accent.center_x, normalized_accent.center_y) == pytest.approx(
-        (0.81, 0.21)
-    )
+    assert (normalized_accent.center_x, normalized_accent.center_y) == pytest.approx((0.81, 0.21))
     assert normalized_focus.depth != normalized_accent.depth
     assert "[0.5" not in master.story_pack.pages[0].layers[0].prompt
     assert master.story_pack.pages[0].source_text.startswith("Quenlora whispers")
@@ -1560,9 +1545,7 @@ def test_live_scene_adapter_uses_model_plan_after_immediate_deterministic_draft(
     assert master.metrics.planning_status.value == "model"
     assert master.metrics.planning_ms == 8_450
     assert master.metrics.elapsed_ms == (
-        master.metrics.planning_ms
-        + master.metrics.provider_ms
-        + master.metrics.cache_ms
+        master.metrics.planning_ms + master.metrics.provider_ms + master.metrics.cache_ms
     )
     assert [(model.role, model.model, model.revision) for model in master.metrics.models] == [
         ("scene_plan", "gemma3:1b", "sha256:gemma-fixture"),

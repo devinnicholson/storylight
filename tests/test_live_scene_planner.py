@@ -69,9 +69,7 @@ def test_wire_plan_is_compact_and_normalizes_safe_geometry_and_motion() -> None:
     assert plan.scene_summary == (
         "A complete visible child in profile, holding a luminous open storybook."
     )
-    assert plan.art_direction == (
-        "clear silhouettes, projection-bright midtones, tactile depth"
-    )
+    assert plan.art_direction == ("clear silhouettes, projection-bright midtones, tactile depth")
     assert plan.focus.anchor == (0.5, 0.55, 0.4, 0.62)
     assert plan.focus.depth == 2.5
     assert plan.focus.motion == "breathe"
@@ -101,9 +99,7 @@ def test_short_key_wire_contract_preserves_semantics_with_less_decode_text() -> 
         "f",
         "m",
     }
-    assert len(compact.model_dump_json(by_alias=True)) < len(
-        _wire_plan().model_dump_json()
-    )
+    assert len(compact.model_dump_json(by_alias=True)) < len(_wire_plan().model_dump_json())
 
 
 def test_wire_plan_repairs_possessive_body_fragment_to_complete_character() -> None:
@@ -113,9 +109,7 @@ def test_wire_plan_repairs_possessive_body_fragment_to_complete_character() -> N
 
     plan = LiveSceneWirePlan.model_validate(payload).to_live_scene_plan()
 
-    assert plan.focus.prompt == (
-        "a complete visible child, opening a book beneath rising birds"
-    )
+    assert plan.focus.prompt == ("a complete visible child, opening a book beneath rising birds")
     assert "hand" not in plan.focus.prompt
 
 
@@ -166,9 +160,7 @@ def test_wire_plan_redacts_distinctive_source_phrase_without_inventing_text() ->
     source = "A turtle climbs moonlit stairs while glowing jellyfish drift between stars."
     payload = _wire_plan().model_dump()
     payload["magic"]["prompt"] = "glowing jellyfish drift between stars"
-    wire = LiveSceneWirePlan.model_validate(payload).privacy_sanitized(
-        source_text=source
-    )
+    wire = LiveSceneWirePlan.model_validate(payload).privacy_sanitized(source_text=source)
     plan = wire.to_live_scene_plan(context_text=source)
 
     assert "glowing" in plan.accent.prompt
@@ -255,9 +247,7 @@ def test_plan_preserves_projector_overscan_margin_for_animated_layers() -> None:
 
 def test_plan_repairs_duplicate_placements_and_coordinate_background_as_model_output() -> None:
     payload = _plan().model_dump()
-    payload["background_prompt"] = (
-        "[0.5, 0.5, 0.8, 0.8], cobalt sky over luminous clouds"
-    )
+    payload["background_prompt"] = "[0.5, 0.5, 0.8, 0.8], cobalt sky over luminous clouds"
     payload["focus"]["anchor"] = (0.5, 0.5, 0.8, 0.8)
     payload["accent"]["anchor"] = (0.5, 0.5, 0.8, 0.8)
     payload["focus"]["depth"] = 0.2
@@ -285,12 +275,8 @@ def test_plan_repairs_duplicate_placements_and_coordinate_background_as_model_ou
     assert focus.depth != accent.depth
     assert (accent.center_x, accent.center_y) == pytest.approx((0.81, 0.21))
     for placement in (focus, accent):
-        assert 0.04 + placement.width / 2 <= placement.center_x <= (
-            0.96 - placement.width / 2
-        )
-        assert 0.04 + placement.height / 2 <= placement.center_y <= (
-            0.96 - placement.height / 2
-        )
+        assert 0.04 + placement.width / 2 <= placement.center_x <= (0.96 - placement.width / 2)
+        assert 0.04 + placement.height / 2 <= placement.center_y <= (0.96 - placement.height / 2)
 
 
 def test_plan_strips_embedded_labeled_coordinates_from_background_prompt() -> None:
@@ -352,9 +338,7 @@ def test_plan_repairs_dangling_summary_participle_without_fallback() -> None:
         seed=2,
     )
 
-    assert page.scene_summary == (
-        "A child lifts a book of birds. The birds rise toward the moon"
-    )
+    assert page.scene_summary == ("A child lifts a book of birds. The birds rise toward the moon")
     assert "illuminating" not in page.scene_spec.master_prompt  # type: ignore[union-attr]
 
 
@@ -415,9 +399,7 @@ def test_privacy_gate_rejects_source_proper_name_candidate() -> None:
 def test_privacy_gate_accepts_visual_semantic_paraphrase() -> None:
     validate_live_scene_plan_privacy(
         _plan(),
-        source_text=(
-            "A child named Quenlora opens a silent volume; folded shapes glow above it."
-        ),
+        source_text=("A child named Quenlora opens a silent volume; folded shapes glow above it."),
     )
 
 
@@ -496,12 +478,8 @@ def test_structured_planner_uses_live_schema_and_records_model_revision() -> Non
     assert "most visually surprising transformation" in str(stub.calls[0]["prompt"])
     assert "exact visible action" in str(stub.calls[0]["prompt"])
     assert "Never invent a transformation" in str(stub.calls[0]["prompt"])
-    assert "magic.prompt must name that concrete result" in str(
-        stub.calls[0]["prompt"]
-    )
-    assert "Stop the action before a later magical transformation" in str(
-        stub.calls[0]["prompt"]
-    )
+    assert "magic.prompt must name that concrete result" in str(stub.calls[0]["prompt"])
+    assert "Stop the action before a later magical transformation" in str(stub.calls[0]["prompt"])
     assert "essential object or destination" in str(stub.calls[0]["prompt"])
 
 
@@ -524,12 +502,14 @@ def test_structured_planner_can_use_opt_in_short_key_contract() -> None:
     assert stub.calls[0]["output_type"] is LiveSceneCompactWirePlan
     assert "b=background_prompt" in str(stub.calls[0]["prompt"])
     assert result.plan.focus.prompt == (
-        _wire_plan().to_live_scene_plan(
+        _wire_plan()
+        .to_live_scene_plan(
             context_text=(
                 "A child opens a quiet book while paper birds rise. "
                 "luminous watercolor paper theater"
             )
-        ).focus.prompt
+        )
+        .focus.prompt
     )
 
 
@@ -569,9 +549,7 @@ def test_structured_planner_cache_is_bounded_and_style_specific() -> None:
 
     asyncio.run(planner.plan(text=text, visual_style="paper theater", seed=1))
     asyncio.run(planner.plan(text=text, visual_style="oil pastel", seed=1))
-    repeated = asyncio.run(
-        planner.plan(text=text, visual_style="paper theater", seed=2)
-    )
+    repeated = asyncio.run(planner.plan(text=text, visual_style="paper theater", seed=2))
 
     assert len(stub.calls) == 3
     assert repeated.cache_hit is False
@@ -632,10 +610,6 @@ def test_structured_planner_turns_timeout_and_model_failure_into_recoverable_err
     )
 
     with pytest.raises(LiveScenePlannerTimeoutError, match="exceeded"):
-        asyncio.run(
-            timeout_planner.plan(text="A book opens.", visual_style="paper art", seed=1)
-        )
+        asyncio.run(timeout_planner.plan(text="A book opens.", visual_style="paper art", seed=1))
     with pytest.raises(LiveScenePlannerError, match="bad structured output"):
-        asyncio.run(
-            broken_planner.plan(text="A book opens.", visual_style="paper art", seed=1)
-        )
+        asyncio.run(broken_planner.plan(text="A book opens.", visual_style="paper art", seed=1))

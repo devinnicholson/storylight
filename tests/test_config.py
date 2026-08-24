@@ -60,9 +60,12 @@ def test_live_scene_model_planner_has_a_bounded_independent_timeout() -> None:
     assert settings.live_scene_planner_model_revision == "sha256:gemma3-fixture"
     assert settings.live_scene_planner_compact_wire is False
     assert settings.live_scene_planner_cache_entries == 32
-    assert Settings(
-        _env_file=None, live_scene_planner_compact_wire=True
-    ).live_scene_planner_compact_wire is True
+    assert (
+        Settings(
+            _env_file=None, live_scene_planner_compact_wire=True
+        ).live_scene_planner_compact_wire
+        is True
+    )
     with pytest.raises(ValidationError):
         Settings(_env_file=None, live_scene_planner_cache_entries=257)
     assert settings.model_context_tokens == 4_096
@@ -72,9 +75,12 @@ def test_live_scene_model_planner_has_a_bounded_independent_timeout() -> None:
     assert settings.live_scene_master_steps == 2
     assert settings.live_scene_master_guidance_scale == 4.5
     assert settings.live_scene_auto_prewarm_on_submit is False
-    assert Settings(
-        _env_file=None, live_scene_auto_prewarm_on_submit=True
-    ).live_scene_auto_prewarm_on_submit is True
+    assert (
+        Settings(
+            _env_file=None, live_scene_auto_prewarm_on_submit=True
+        ).live_scene_auto_prewarm_on_submit
+        is True
+    )
     with pytest.raises(ValidationError):
         Settings(_env_file=None, live_scene_planner_timeout_seconds=61)
     with pytest.raises(ValidationError):

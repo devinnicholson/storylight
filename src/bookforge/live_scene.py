@@ -136,17 +136,19 @@ class LiveSceneMetrics(FrozenStrictModel):
     preparation_ms: Annotated[float, Field(ge=0)] = 0
     planning_status: LiveScenePlanningStatus = LiveScenePlanningStatus.PENDING
     planning_cache_hit: bool = False
+    scene_cache_hit: bool = False
     warm_state: LiveSceneWarmState = LiveSceneWarmState.UNKNOWN
-    gpu: Annotated[
-        str,
-        StringConstraints(strip_whitespace=True, min_length=1, max_length=100),
-    ] | None = None
+    gpu: (
+        Annotated[
+            str,
+            StringConstraints(strip_whitespace=True, min_length=1, max_length=100),
+        ]
+        | None
+    ) = None
     estimated_gpu_usd: Annotated[float, Field(ge=0)] = 0
     cost_source: LiveSceneCostSource = LiveSceneCostSource.UNAVAILABLE
     models: list[LiveSceneModelProvenance] = Field(default_factory=list, max_length=8)
-    milestones_ms: dict[LiveSceneStage, Annotated[float, Field(ge=0)]] = Field(
-        default_factory=dict
-    )
+    milestones_ms: dict[LiveSceneStage, Annotated[float, Field(ge=0)]] = Field(default_factory=dict)
 
     @model_validator(mode="after")
     def require_coherent_evidence(self) -> LiveSceneMetrics:
@@ -162,6 +164,10 @@ class LiveSceneMetrics(FrozenStrictModel):
             raise ValueError("pending planning metrics cannot report planning time")
         if self.cost_source is LiveSceneCostSource.UNAVAILABLE and self.estimated_gpu_usd != 0:
             raise ValueError("unavailable cost evidence cannot report a GPU estimate")
+        if self.scene_cache_hit and (
+            self.provider_ms != 0 or self.inference_ms != 0 or self.estimated_gpu_usd != 0
+        ):
+            raise ValueError("restored scenes cannot report new provider work or GPU cost")
         return self
 
 
@@ -376,13 +382,8 @@ class LiveSceneJob(FrozenStrictModel):
                 (model for model in self.metrics.models if model.role == "scene_plan"),
                 None,
             )
-            if (
-                scene_plan is not None
-                and scene_plan.model != self.story_pack.compiler_model
-            ):
-                raise ValueError(
-                    "Story Pack compiler_model must match scene-plan provenance"
-                )
+            if scene_plan is not None and scene_plan.model != self.story_pack.compiler_model:
+                raise ValueError("Story Pack compiler_model must match scene-plan provenance")
 
         if self.stage is LiveSceneStage.FAILED:
             if self.error is None:
@@ -632,6 +633,10 @@ class LiveSceneJobRegistry:
         max_retained_jobs: int = 64,
         event_queue_size: int = 8,
         completed_pack_sink: Callable[[StoryPack], Awaitable[object]] | None = None,
+        completed_pack_source: (
+            Callable[[LiveSceneCreateRequest], Awaitable[StoryPack | None]] | None
+        ) = None,
+        completed_pack_validator: (Callable[[StoryPack], Awaitable[StoryPack]] | None) = None,
     ) -> None:
         if max_active_jobs < 1:
             raise ValueError("max_active_jobs must be at least 1")
@@ -647,6 +652,8 @@ class LiveSceneJobRegistry:
         self.max_retained_jobs = max_retained_jobs
         self.event_queue_size = event_queue_size
         self.completed_pack_sink = completed_pack_sink
+        self.completed_pack_source = completed_pack_source
+        self.completed_pack_validator = completed_pack_validator
         self._jobs: OrderedDict[str, _JobRecord] = OrderedDict()
         self._session_jobs: dict[str, tuple[int, str]] = {}
         self._session_subscribers: dict[str, set[LiveSceneSessionSubscription]] = {}
@@ -690,9 +697,7 @@ class LiveSceneJobRegistry:
                         previous_task = self._tasks.get(current.job_id)
                         if previous_task is not None:
                             previous_task.cancel()
-            active_count = sum(
-                not record.snapshot.terminal for record in self._jobs.values()
-            )
+            active_count = sum(not record.snapshot.terminal for record in self._jobs.values())
             if active_count >= self.max_active_jobs:
                 raise LiveSceneCapacityError(
                     f"Live-scene capacity is full ({self.max_active_jobs} active jobs)"
@@ -710,9 +715,7 @@ class LiveSceneJobRegistry:
                 progress=0,
                 provider=self.provider.name,
                 request=request,
-                metrics=LiveSceneMetrics(
-                    milestones_ms={LiveSceneStage.QUEUED: 0}
-                ),
+                metrics=LiveSceneMetrics(milestones_ms={LiveSceneStage.QUEUED: 0}),
                 created_at=now,
                 updated_at=now,
             )
@@ -787,9 +790,7 @@ class LiveSceneJobRegistry:
     async def subscribe_session(self, session_id: str) -> LiveSceneSessionSubscription:
         """Subscribe before a job exists and follow replacements for one browser session."""
 
-        queue: asyncio.Queue[LiveSceneSessionEvent | object] = asyncio.Queue(
-            self.event_queue_size
-        )
+        queue: asyncio.Queue[LiveSceneSessionEvent | object] = asyncio.Queue(self.event_queue_size)
         subscription = LiveSceneSessionSubscription(self, session_id, queue)
         async with self._lock:
             if self._closed:
@@ -861,6 +862,8 @@ class LiveSceneJobRegistry:
         try:
             await self._transition(job_id, stage=LiveSceneStage.PLANNING, progress=0.1)
             request = (await self.get(job_id)).request
+            if await self._restore_completed_scene(job_id, request):
+                return
             emitted = False
             async for update in self.provider.generate(request, job_id=job_id):
                 emitted = True
@@ -916,6 +919,135 @@ class LiveSceneJobRegistry:
                     retryable=isinstance(error, LiveSceneProviderUnavailableError),
                 ),
             )
+
+    async def _restore_completed_scene(
+        self,
+        job_id: str,
+        request: LiveSceneCreateRequest,
+    ) -> bool:
+        """Publish a checksum-verified exact scene without invoking the provider."""
+
+        if self.completed_pack_source is None or self.completed_pack_validator is None:
+            return False
+        started = perf_counter()
+        try:
+            pack = await self.completed_pack_source(request)
+            if pack is None:
+                return False
+            pack = await self.completed_pack_validator(pack)
+            artifacts = _cached_live_scene_artifacts(pack, provider=self.provider.name)
+        except Exception:
+            # A stale/corrupt/incompatible cache is only a missed optimization.
+            return False
+
+        try:
+            cache_ms = max(0.0, (perf_counter() - started) * 1000)
+            master_artifacts = [
+                artifact
+                for artifact in artifacts
+                if artifact.kind
+                in {
+                    LiveSceneArtifactKind.MASTER,
+                    LiveSceneArtifactKind.DEPTH,
+                }
+            ]
+            master_asset_ids = {artifact.artifact_id for artifact in master_artifacts}
+            master_pack = pack.model_copy(
+                update={
+                    "assets": [
+                        asset for asset in pack.assets if asset.asset_id in master_asset_ids
+                    ]
+                }
+            )
+            draft_pack = master_pack.model_copy(update={"assets": []})
+            draft_metrics = _cached_live_scene_metrics(
+                master_pack,
+                artifacts=master_artifacts,
+                cache_ms=cache_ms,
+                include_heavy_models=False,
+            )
+            motion_artifact = next(
+                (
+                    artifact
+                    for artifact in artifacts
+                    if artifact.kind is LiveSceneArtifactKind.MOTION
+                ),
+                None,
+            )
+            master_metrics = _cached_live_scene_metrics(
+                master_pack,
+                artifacts=master_artifacts,
+                cache_ms=cache_ms,
+                include_heavy_models=True,
+            )
+            motion_metrics = (
+                _cached_live_scene_metrics(
+                    pack,
+                    artifacts=artifacts,
+                    cache_ms=cache_ms,
+                    include_heavy_models=True,
+                )
+                if motion_artifact is not None
+                else None
+            )
+            # Validate every stage before publishing the draft. An invalid cache
+            # must remain a clean miss so the provider can still run normally.
+            LiveSceneUpdate(
+                stage=LiveSceneStage.DRAFT_READY,
+                progress=0.55,
+                story_pack=draft_pack,
+                metrics=draft_metrics,
+            )
+            LiveSceneUpdate(
+                stage=LiveSceneStage.MASTER_READY,
+                progress=1 if motion_artifact is None else 0.82,
+                complete=motion_artifact is None,
+                artifacts=master_artifacts,
+                story_pack=master_pack,
+                metrics=master_metrics,
+            )
+            if motion_artifact is not None:
+                LiveSceneUpdate(
+                    stage=LiveSceneStage.MOTION_READY,
+                    progress=1,
+                    complete=True,
+                    artifacts=artifacts,
+                    story_pack=pack,
+                    metrics=motion_metrics,
+                )
+        except Exception:
+            return False
+
+        await self._transition(
+            job_id,
+            stage=LiveSceneStage.DRAFT_READY,
+            progress=0.55,
+            story_pack=draft_pack,
+            metrics=draft_metrics,
+        )
+        master_snapshot = await self._transition(
+            job_id,
+            stage=LiveSceneStage.MASTER_READY,
+            progress=1 if motion_artifact is None else 0.82,
+            complete=motion_artifact is None,
+            artifacts=master_artifacts,
+            story_pack=master_pack,
+            metrics=master_metrics,
+        )
+        if master_snapshot.terminal:
+            return True
+        assert motion_artifact is not None
+        assert motion_metrics is not None
+        await self._transition(
+            job_id,
+            stage=LiveSceneStage.MOTION_READY,
+            progress=1,
+            complete=True,
+            artifacts=artifacts,
+            story_pack=pack,
+            metrics=motion_metrics,
+        )
+        return True
 
     async def _persist_completed_pack(self, pack: StoryPack) -> None:
         if self.completed_pack_sink is None:
@@ -1013,9 +1145,7 @@ class LiveSceneJobRegistry:
             record = self._jobs.get(job_id)
             if record is None or record.snapshot.terminal:
                 if record is None:
-                    raise LiveSceneNotFoundError(
-                        f"Live-scene job {job_id!r} was not found"
-                    )
+                    raise LiveSceneNotFoundError(f"Live-scene job {job_id!r} was not found")
                 return record.snapshot
             current = record.snapshot
             snapshot = LiveSceneJob.model_validate(
@@ -1097,6 +1227,10 @@ class LiveSceneJobRegistry:
             raise LiveSceneProviderProtocolError(
                 "Live-scene planning cache evidence cannot change after planning completes"
             )
+        if current.scene_cache_hit and not update.scene_cache_hit:
+            raise LiveSceneProviderProtocolError(
+                "Live-scene completed-scene cache evidence cannot be removed"
+            )
         previous_models = {model.role: model for model in current.models}
         for model in update.models:
             previous = previous_models.get(model.role)
@@ -1146,11 +1280,7 @@ class LiveSceneJobRegistry:
     def _evict_completed_locked(self) -> None:
         while len(self._jobs) >= self.max_retained_jobs:
             completed_id = next(
-                (
-                    job_id
-                    for job_id, record in self._jobs.items()
-                    if record.snapshot.terminal
-                ),
+                (job_id for job_id, record in self._jobs.items() if record.snapshot.terminal),
                 None,
             )
             if completed_id is None:
@@ -1191,6 +1321,114 @@ class LiveSceneJobRegistry:
         if queue.full():
             queue.get_nowait()
         queue.put_nowait(event)
+
+
+def live_scene_request_seed(request: LiveSceneCreateRequest) -> int:
+    """Resolve the stable renderer seed shared by generation and exact reuse."""
+
+    if request.seed is not None:
+        return request.seed
+    payload = f"{request.text}\0{request.visual_style}\0{request.session_id or ''}".encode()
+    return int.from_bytes(hashlib.sha256(payload).digest()[:4], "big")
+
+
+def _cached_live_scene_artifacts(
+    pack: StoryPack,
+    *,
+    provider: str,
+) -> list[LiveSceneArtifact]:
+    role_settings = {
+        AssetRole.MASTER: (LiveSceneArtifactKind.MASTER, AssetKind.IMAGE),
+        AssetRole.DEPTH: (LiveSceneArtifactKind.DEPTH, AssetKind.DEPTH_MAP),
+        AssetRole.MOTION: (LiveSceneArtifactKind.MOTION, AssetKind.VIDEO_LOOP),
+    }
+    artifacts: list[LiveSceneArtifact] = []
+    observed_roles: set[AssetRole] = set()
+    for asset in pack.assets:
+        settings = role_settings.get(asset.role)
+        if settings is None or asset.kind is not settings[1]:
+            raise ValueError("stored live scene contains unsupported asset roles")
+        if asset.role in observed_roles:
+            raise ValueError("stored live scene contains duplicate asset roles")
+        observed_roles.add(asset.role)
+        if asset.provider != provider and not asset.provider.startswith(f"{provider}:"):
+            raise ValueError("stored live scene came from a different provider")
+        model = (
+            asset.provider.removeprefix(f"{provider}:")
+            if asset.provider.startswith(f"{provider}:")
+            else "stored-artifact"
+        )
+        suffix = Path(asset.local_uri).suffix.casefold()
+        media_type = {
+            ".avif": "image/avif",
+            ".jpeg": "image/jpeg",
+            ".jpg": "image/jpeg",
+            ".png": "image/png",
+            ".webp": "image/webp",
+            ".mp4": "video/mp4",
+            ".webm": "video/webm",
+        }.get(suffix)
+        if media_type is None:
+            raise ValueError("stored live scene asset has an unsupported media type")
+        artifacts.append(
+            LiveSceneArtifact(
+                artifact_id=asset.asset_id,
+                kind=settings[0],
+                uri=asset.local_uri,
+                checksum_sha256=asset.checksum_sha256,
+                media_type=media_type,
+                provider=provider,
+                model=model,
+                seed=asset.seed,
+                width=asset.width,
+                height=asset.height,
+                duration_ms=asset.duration_ms,
+            )
+        )
+    if not {AssetRole.MASTER, AssetRole.DEPTH} <= observed_roles:
+        raise ValueError("stored live scene is missing master or depth output")
+    return artifacts
+
+
+def _cached_live_scene_metrics(
+    pack: StoryPack,
+    *,
+    artifacts: list[LiveSceneArtifact],
+    cache_ms: float,
+    include_heavy_models: bool,
+) -> LiveSceneMetrics:
+    compiler = pack.compiler_model
+    if "fallback" in compiler.casefold():
+        planning_status = LiveScenePlanningStatus.FALLBACK
+    elif "deterministic" in compiler.casefold() or "fixture" in compiler.casefold():
+        planning_status = LiveScenePlanningStatus.DETERMINISTIC
+    else:
+        planning_status = LiveScenePlanningStatus.MODEL
+    models = [
+        LiveSceneModelProvenance(
+            role="scene_plan",
+            model=compiler,
+            revision="stored-story-pack-v1",
+        )
+    ]
+    if include_heavy_models:
+        for artifact in artifacts:
+            model, separator, revision = artifact.model.rpartition("@")
+            models.append(
+                LiveSceneModelProvenance(
+                    role=artifact.kind.value,
+                    model=model if separator else artifact.model,
+                    revision=revision if separator else artifact.checksum_sha256[:16],
+                )
+            )
+    return LiveSceneMetrics(
+        elapsed_ms=cache_ms,
+        cache_ms=cache_ms,
+        planning_status=planning_status,
+        planning_cache_hit=False,
+        scene_cache_hit=True,
+        models=models,
+    )
 
 
 class DisabledLiveSceneProvider:
@@ -1738,6 +1976,8 @@ def _passage_draft_theme(text: str, seed: int) -> dict[str, object]:
         "scale_delta": 0.012,
         "ambience": [AmbientEffect(kind="dust", density=0.2, speed=0.26, color=accent)],
     }
+
+
 async def _fake_asset(
     job_id: str,
     request: LiveSceneCreateRequest,
@@ -1753,7 +1993,7 @@ async def _fake_asset(
             "image/png",
             ".png",
             0,
-            1,
+            0,
             "moon-gate-hero-v1.png",
             1_672,
             941,
@@ -1764,7 +2004,7 @@ async def _fake_asset(
             "image/png",
             ".png",
             0,
-            2,
+            0,
             "moon-gate-hero-v1.png",
             1_672,
             941,
@@ -1775,7 +2015,7 @@ async def _fake_asset(
             "video/mp4",
             ".mp4",
             4_000,
-            3,
+            0,
             "silver-fox-loop-v1.mp4",
             768,
             512,

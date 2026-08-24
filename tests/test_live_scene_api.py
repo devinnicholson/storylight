@@ -66,6 +66,7 @@ def test_live_scene_api_progresses_to_resolvable_motion_scene() -> None:
             "preparation_ms",
             "planning_status",
             "planning_cache_hit",
+            "scene_cache_hit",
             "warm_state",
             "gpu",
             "estimated_gpu_usd",
@@ -73,13 +74,19 @@ def test_live_scene_api_progresses_to_resolvable_motion_scene() -> None:
             "models",
             "milestones_ms",
         }
-        assert metrics["provider_ms"] == 30
-        assert metrics["inference_ms"] == 22
-        assert metrics["planning_ms"] == 2
+        if metrics["scene_cache_hit"]:
+            assert metrics["provider_ms"] == 0
+            assert metrics["inference_ms"] == 0
+            assert metrics["planning_ms"] == 0
+            assert metrics["cost_source"] == "unavailable"
+        else:
+            assert metrics["provider_ms"] == 30
+            assert metrics["inference_ms"] == 22
+            assert metrics["planning_ms"] == 2
+            assert metrics["cost_source"] == "fixture"
         assert metrics["preparation_ms"] == 0
         assert metrics["planning_status"] == "deterministic"
         assert metrics["planning_cache_hit"] is False
-        assert metrics["cost_source"] == "fixture"
         assert metrics["milestones_ms"]["motion_ready"] == metrics["elapsed_ms"]
         assert [model["role"] for model in metrics["models"]] == [
             "scene_plan",
@@ -113,6 +120,34 @@ def test_live_scene_sse_replays_terminal_snapshot_on_reconnect() -> None:
         )
 
     assert _sse_data(replay.text) == [terminal]
+
+
+def test_live_scene_api_reuses_exact_verified_completed_scene() -> None:
+    payload = {
+        **_payload(),
+        "text": "A clockwork sparrow folds a map beneath violet stars.",
+        "seed": 771_204,
+        "session_id": "exact-replay-api-test",
+    }
+    with TestClient(app) as client:
+        generated = client.post("/v1/live-scenes", json=payload).json()
+        generated_terminal = _sse_data(
+            client.get(f"/v1/live-scenes/{generated['job_id']}/events").text
+        )[-1]
+        replay = client.post("/v1/live-scenes", json=payload).json()
+        replay_terminal = _sse_data(client.get(f"/v1/live-scenes/{replay['job_id']}/events").text)[
+            -1
+        ]
+
+    assert generated_terminal["complete"] is True
+    assert replay_terminal["complete"] is True
+    assert replay_terminal["metrics"]["scene_cache_hit"] is True
+    assert replay_terminal["metrics"]["provider_ms"] == 0
+    assert replay_terminal["metrics"]["inference_ms"] == 0
+    assert replay_terminal["metrics"]["estimated_gpu_usd"] == 0
+    assert [artifact["checksum_sha256"] for artifact in replay_terminal["artifacts"]] == [
+        artifact["checksum_sha256"] for artifact in generated_terminal["artifacts"]
+    ]
 
 
 def test_live_scene_api_rejects_raw_media_unknown_jobs_and_remote_clients() -> None:
@@ -297,9 +332,7 @@ def test_live_scene_session_endpoint_recovers_latest_job_and_advances_monotonica
     second_payload = {**_payload(), "text": "The replacement browser scene."}
     with TestClient(app) as client:
         first = client.post("/v1/live-scenes", json=first_payload).json()
-        refreshed_mid_job = client.get(
-            "/v1/live-scene-sessions/typed-scene-demo"
-        )
+        refreshed_mid_job = client.get("/v1/live-scene-sessions/typed-scene-demo")
         second = client.post("/v1/live-scenes", json=second_payload).json()
         latest = client.get("/v1/live-scene-sessions/typed-scene-demo")
 

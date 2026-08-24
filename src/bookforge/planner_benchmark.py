@@ -209,9 +209,7 @@ async def benchmark(args: argparse.Namespace) -> dict[str, object]:
         "schema_version": "1.0",
         "captured_at": datetime.now(UTC).isoformat(),
         "result": (
-            "technical_pass_human_semantic_review_required"
-            if technical_pass
-            else "technical_fail"
+            "technical_pass_human_semantic_review_required" if technical_pass else "technical_fail"
         ),
         "runtime": {
             "model": args.model,

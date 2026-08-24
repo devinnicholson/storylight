@@ -136,6 +136,8 @@ LiveSceneAnchor = Annotated[
 ]
 LiveSceneMotion = Literal["drift", "float", "breathe", "pulse", "parallax"]
 LiveSceneAmbience = Literal["dust", "fireflies", "fog", "stars", "light_rays"]
+
+
 class LiveScenePlacedLayerPlan(FrozenStrictModel):
     kind: Literal["character", "prop", "effect"]
     prompt: Annotated[
@@ -218,9 +220,7 @@ class LiveSceneWirePlan(FrozenStrictModel):
                 ),
                 "magic": self.magic.model_copy(
                     update={
-                        "prompt": _remove_distinctive_source_overlap(
-                            self.magic.prompt, source_text
-                        )
+                        "prompt": _remove_distinctive_source_overlap(self.magic.prompt, source_text)
                     }
                 ),
             }
@@ -494,9 +494,7 @@ def _normalized_background_prompt(
     leading_coordinates = _COORDINATE_BLOCK.match(value)
     candidate = value
     if leading_coordinates is not None:
-        candidate = " ".join(
-            part for part in (art_direction, scene_summary) if part
-        )
+        candidate = " ".join(part for part in (art_direction, scene_summary) if part)
     else:
         candidate = _COORDINATE_BLOCK.sub(" ", candidate)
     # Coordinates are structural data, never visual language. Small local models
@@ -504,11 +502,7 @@ def _normalized_background_prompt(
     candidate = _COORDINATE_ASSIGNMENT.sub(" ", candidate)
     candidate = _NUMERIC_TOKEN.sub("", candidate)
     candidate = " ".join(
-        candidate.replace("[", " ")
-        .replace("]", " ")
-        .replace(";", " ")
-        .replace(":", " ")
-        .split()
+        candidate.replace("[", " ").replace("]", " ").replace(";", " ").replace(":", " ").split()
     ).strip(" ,-")
     return _prompt_fragment(_bounded_words(candidate, 18)) or "cinematic storybook setting"
 
@@ -531,9 +525,7 @@ def _wire_art_direction() -> str:
 
 
 def _wire_ambience(background_prompt: str) -> list[LiveSceneAmbience]:
-    setting_tokens = {
-        token.casefold() for token in _SEMANTIC_WORD.findall(background_prompt)
-    }
+    setting_tokens = {token.casefold() for token in _SEMANTIC_WORD.findall(background_prompt)}
     if setting_tokens & {"star", "stars", "moon", "moonlit", "night", "sky"}:
         return ["stars"]
     if setting_tokens & {"ocean", "underwater", "water", "sea", "reef"}:
@@ -593,9 +585,7 @@ def _prompt_fragment(value: str) -> str:
 
 def _semantically_redundant(value: str, reference: str) -> bool:
     words = {word.casefold() for word in _SEMANTIC_WORD.findall(value)}
-    reference_words = {
-        word.casefold() for word in _SEMANTIC_WORD.findall(reference)
-    }
+    reference_words = {word.casefold() for word in _SEMANTIC_WORD.findall(reference)}
     return len(words) >= 4 and len(words & reference_words) / len(words) >= 0.8
 
 
@@ -617,9 +607,7 @@ def _normalized_placements(
         accent_width = min(accent_width, 0.3)
         accent_height = min(accent_height, 0.34)
         place_right = bool(seed & 1) if abs(focus_x - 0.5) < 0.12 else focus_x < 0.5
-        place_above = (
-            bool((seed >> 1) & 1) if abs(focus_y - 0.5) < 0.12 else focus_y > 0.5
-        )
+        place_above = bool((seed >> 1) & 1) if abs(focus_y - 0.5) < 0.12 else focus_y > 0.5
         accent_x = (
             1 - accent_width / 2 - _PLACEMENT_MARGIN
             if place_right
@@ -822,10 +810,7 @@ def validate_live_scene_plan_privacy(
             raise LiveScenePlannerPrivacyError(
                 f"local privacy gate rejected {field_name}: distinctive source phrase"
             )
-        if any(
-            _contains_token_sequence(output_tokens, candidate)
-            for candidate in proper_names
-        ):
+        if any(_contains_token_sequence(output_tokens, candidate) for candidate in proper_names):
             raise LiveScenePlannerPrivacyError(
                 f"local privacy gate rejected {field_name}: proper-name candidate"
             )
@@ -840,8 +825,7 @@ def _privacy_tokens(value: str) -> tuple[str, ...]:
 
 def _proper_name_candidates(source_text: str) -> set[tuple[str, ...]]:
     candidates = {
-        _privacy_tokens(match.group(1))
-        for match in _NAME_AFTER_MARKER.finditer(source_text)
+        _privacy_tokens(match.group(1)) for match in _NAME_AFTER_MARKER.finditer(source_text)
     }
     for match in _CAPITALIZED_WORD.finditer(source_text):
         word = match.group(0)
@@ -857,8 +841,7 @@ def _contains_token_sequence(
 ) -> bool:
     width = len(candidate)
     return width > 0 and any(
-        tokens[index : index + width] == candidate
-        for index in range(len(tokens) - width + 1)
+        tokens[index : index + width] == candidate for index in range(len(tokens) - width + 1)
     )
 
 
@@ -950,7 +933,8 @@ def live_scene_plan_prompt(
         if compact_wire
         else ""
     )
-    return """Plan one full-bleed cinematic 16:9 illustration for immediate projection.
+    return (
+        """Plan one full-bleed cinematic 16:9 illustration for immediate projection.
 
 Requirements:
 - Preserve only the subjects, setting, action, and mood present in the passage.
@@ -984,9 +968,13 @@ Requirements:
   coordinates, or measurements.
 - The scene must remain legible on a projector. Atmosphere is supplied locally from the setting.
 - Keep the entire JSON compact; omit unnecessary adjectives and explanations.
-""" + compact_key_guide + """
+"""
+        + compact_key_guide
+        + """
 Input:
-""" + json.dumps(request, ensure_ascii=False, indent=2)
+"""
+        + json.dumps(request, ensure_ascii=False, indent=2)
+    )
 
 
 class StructuredLiveScenePlanner:
@@ -1074,9 +1062,7 @@ class StructuredLiveScenePlanner:
         started = perf_counter()
         try:
             async with asyncio.timeout(self.timeout_seconds):
-                output_type = (
-                    LiveSceneCompactWirePlan if self.compact_wire else LiveSceneWirePlan
-                )
+                output_type = LiveSceneCompactWirePlan if self.compact_wire else LiveSceneWirePlan
                 plan, metrics = await self.client.generate(
                     system=LIVE_SCENE_SYSTEM_PROMPT,
                     prompt=live_scene_plan_prompt(
@@ -1105,9 +1091,7 @@ class StructuredLiveScenePlanner:
         else:
             wire_plan = LiveSceneWirePlan.model_validate(plan.model_dump())
         sanitized_wire_plan = wire_plan.privacy_sanitized(source_text=text)
-        validated = sanitized_wire_plan.to_live_scene_plan(
-            context_text=f"{text} {visual_style}"
-        )
+        validated = sanitized_wire_plan.to_live_scene_plan(context_text=f"{text} {visual_style}")
         validate_live_scene_plan_privacy(validated, source_text=text)
         if self.cache_entries:
             self._cache[cache_key] = (validated, metrics)

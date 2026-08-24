@@ -47,9 +47,7 @@ def collect(
     checks["health"] = _http_json(f"{base_url.rstrip('/')}/healthz")
     checks["readiness"] = _http_json(f"{base_url.rstrip('/')}/readyz")
     checks["runtime"] = _http_json(f"{base_url.rstrip('/')}/v1/runtime:status")
-    checks["latest_story_pack"] = _http_json(
-        f"{base_url.rstrip('/')}/v1/story-packs/latest"
-    )
+    checks["latest_story_pack"] = _http_json(f"{base_url.rstrip('/')}/v1/story-packs/latest")
     runtime_detail = checks["runtime"].get("detail")
     if checks["runtime"]["ok"] and (
         not isinstance(runtime_detail, dict) or not runtime_detail.get("ready", False)
@@ -190,9 +188,7 @@ def _require_loopback_url(value: str) -> None:
     raise ValueError("base_url must resolve explicitly to a loopback address")
 
 
-def _command(
-    command: list[str], timeout: int = 5, required: str | None = None
-) -> dict[str, Any]:
+def _command(command: list[str], timeout: int = 5, required: str | None = None) -> dict[str, Any]:
     try:
         result = subprocess.run(
             command, capture_output=True, text=True, timeout=timeout, check=False
@@ -242,8 +238,8 @@ def _thermal_check() -> dict[str, Any]:
     for zone in Path("/sys/class/thermal").glob("thermal_zone*"):
         try:
             observed[(zone / "type").read_text(encoding="ascii").strip()] = (
-                zone / "temp"
-            ).read_text(encoding="ascii").strip()
+                (zone / "temp").read_text(encoding="ascii").strip()
+            )
         except OSError:
             continue
     return {"ok": bool(observed), "detail": observed or "no readable thermal zones"}

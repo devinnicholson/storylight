@@ -4,7 +4,15 @@ from pathlib import Path
 
 import pytest
 
-from bookforge.domain import GeneratedPagePlan, StoryPack, VisualLayer
+from bookforge.domain import (
+    AssetKind,
+    AssetRecord,
+    AssetRole,
+    AssetState,
+    GeneratedPagePlan,
+    StoryPack,
+    VisualLayer,
+)
 from bookforge.story_store import StoryPackCorruptError, StoryPackNotFoundError, StoryPackStore
 
 
@@ -66,3 +74,54 @@ def test_story_pack_store_detects_corrupt_payload(tmp_path: Path) -> None:
 
     with pytest.raises(StoryPackCorruptError, match="checksum"):
         asyncio.run(store.latest())
+
+
+def test_story_pack_store_finds_only_exact_completed_live_scene(tmp_path: Path) -> None:
+    store = StoryPackStore(tmp_path / "packs")
+    pack = make_pack("reader-1-deadbeefcafe").model_copy(
+        update={
+            "visual_style": "paper theater",
+            "assets": [
+                AssetRecord(
+                    asset_id=f"scene-{role.value}",
+                    page_id="page-01",
+                    layer_id="sky",
+                    kind=kind,
+                    role=role,
+                    provider="fake",
+                    prompt="cached scene",
+                    seed=17,
+                    width=896,
+                    height=512,
+                    checksum_sha256=character * 64,
+                    local_uri=f"/v1/assets/{character * 64}/scene-{role.value}.png",
+                    state=AssetState.READY,
+                )
+                for role, kind, character in (
+                    (AssetRole.MASTER, AssetKind.IMAGE, "a"),
+                    (AssetRole.DEPTH, AssetKind.DEPTH_MAP, "b"),
+                )
+            ],
+        }
+    )
+    asyncio.run(store.save(pack))
+
+    exact = asyncio.run(
+        store.find_live_scene(
+            text="The moth found the gate.",
+            visual_style="paper theater",
+            seed=17,
+            session_id="reader-1",
+        )
+    )
+    wrong_seed = asyncio.run(
+        store.find_live_scene(
+            text="The moth found the gate.",
+            visual_style="paper theater",
+            seed=18,
+            session_id="reader-1",
+        )
+    )
+
+    assert exact == pack
+    assert wrong_seed is None

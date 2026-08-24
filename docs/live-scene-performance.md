@@ -55,6 +55,18 @@ it reduced image inference from 739.861 ms to 613.681 ms but reduced full API wa
 showcase gate. Runtime configuration therefore enforces at least two steps. The finite command keeps
 the explicit non-two-step override solely so future bounded research does not fail ambiguously.
 
+Modal regional routing was tested independently because control/transfer overhead is now comparable
+to image inference. A separately named function used `routing_region=us-west` while leaving compute
+placement unconstrained. The exact two-step master and depth files were byte-identical, but provider
+overhead increased from 363.156 ms to 495.612 ms and API wall regressed by 113.068 ms. The candidate
+was stopped and its temporary source configuration was removed; production retains default routing.
+
+Exact retries and rereads use a separate completed-scene fast path. The stored Story Pack is eligible
+only when passage, style, session, and resolved master seed all match. AssetCache then re-resolves and
+SHA-256 verifies every master/depth/motion file before the registry publishes it. Cache evidence is
+explicit (`scene_cache_hit=true`); provider, inference, and estimated GPU cost remain zero. Failed
+verification is a cache miss, never a partially trusted replay.
+
 For a rehearsal or judged presentation, the loopback-only prewarm request may explicitly extend
 the master/depth idle window from 90 seconds to at most 900 seconds. This updates the deployed
 class's scale-down window; it does not set an always-on minimum container. The GPU therefore still

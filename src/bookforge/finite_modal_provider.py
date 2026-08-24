@@ -31,6 +31,7 @@ from bookforge.live_scene import (
     LiveSceneWarmState,
     build_live_scene_story_pack,
     build_planned_live_scene_story_pack,
+    live_scene_request_seed,
 )
 from bookforge.live_scene_planner import (
     LiveScenePlanner,
@@ -373,8 +374,10 @@ class MotionTechnicalGate:
 
     def rejection_reasons(self, evidence: MotionTechnicalEvidence) -> list[str]:
         reasons: list[str] = []
-        if not self.minimum_duration_seconds <= evidence.duration_seconds <= (
-            self.maximum_duration_seconds
+        if (
+            not self.minimum_duration_seconds
+            <= evidence.duration_seconds
+            <= (self.maximum_duration_seconds)
         ):
             reasons.append(
                 f"duration {evidence.duration_seconds:.3f}s is outside "
@@ -709,10 +712,14 @@ class WarmModalSceneProvider(FiniteModalSceneProvider):
             if self._warm_session is not None:
                 raise FiniteModalProviderError("a prewarmed scene session is already active")
             experiment_id = f"warm-session:{prewarm_id}"
-            session_ceiling = WARM_FULL_SESSION_CEILING_USD if include_motion else (
-                WARM_FAST_PRESENTATION_SESSION_CEILING_USD
-                if scaledown_window_seconds > WARM_SCALEDOWN_WINDOW_SECONDS
-                else WARM_FAST_SESSION_CEILING_USD
+            session_ceiling = (
+                WARM_FULL_SESSION_CEILING_USD
+                if include_motion
+                else (
+                    WARM_FAST_PRESENTATION_SESSION_CEILING_USD
+                    if scaledown_window_seconds > WARM_SCALEDOWN_WINDOW_SECONDS
+                    else WARM_FAST_SESSION_CEILING_USD
+                )
             )
             reservation_id = await self._reserve_against_current_billing(
                 experiment_id=experiment_id,
@@ -761,9 +768,7 @@ class WarmModalSceneProvider(FiniteModalSceneProvider):
                     "fast_remote_seconds": fast_seconds,
                     "motion_remote_seconds": motion_seconds,
                     "scaledown_window_seconds": scaledown_window_seconds,
-                    "fast_inference_warmup_seconds": float(
-                        fast.get("inference_warmup_seconds", 0)
-                    ),
+                    "fast_inference_warmup_seconds": float(fast.get("inference_warmup_seconds", 0)),
                     "created_at": datetime.now(UTC).isoformat(),
                 },
             )
@@ -794,9 +799,7 @@ class WarmModalSceneProvider(FiniteModalSceneProvider):
                 motion_model_load_seconds=session.motion_model_load_seconds,
                 expires_in_seconds=scaledown_window_seconds,
                 scaledown_window_seconds=scaledown_window_seconds,
-                fast_inference_warmup_seconds=float(
-                    fast.get("inference_warmup_seconds", 0)
-                ),
+                fast_inference_warmup_seconds=float(fast.get("inference_warmup_seconds", 0)),
             )
 
     async def warm_status(self) -> WarmProviderStatus:
@@ -961,11 +964,7 @@ class WarmModalSceneProvider(FiniteModalSceneProvider):
                 )
             experiment_id = _fast_experiment_id(request)
             reservation_id = (
-                session.reservation_id
-                if session
-                else prepared.reservation_id
-                if prepared
-                else ""
+                session.reservation_id if session else prepared.reservation_id if prepared else ""
             )
             if not uses_session and prepared is None:
                 self._reserve(self.fast_policy)
@@ -1328,9 +1327,7 @@ class FiniteModalLiveSceneProvider:
                 # Async generators are commonly closed while suspended at a
                 # yielded MASTER_READY update. Always abandon any assigned warm
                 # session; a completed motion settlement makes this a no-op.
-                cleanup = asyncio.create_task(
-                    self.provider.abandon_warm_session(scene_id=job_id)
-                )
+                cleanup = asyncio.create_task(self.provider.abandon_warm_session(scene_id=job_id))
                 try:
                     await asyncio.shield(cleanup)
                 except asyncio.CancelledError:
@@ -1351,7 +1348,7 @@ class FiniteModalLiveSceneProvider:
         *,
         job_id: str,
     ) -> AsyncIterator[LiveSceneUpdate]:
-        seed = request.seed if request.seed is not None else _live_scene_seed(request)
+        seed = live_scene_request_seed(request)
         deterministic_compiler = "deterministic-live-scene-planner-v1"
         draft = build_live_scene_story_pack(
             request,
@@ -1434,9 +1431,7 @@ class FiniteModalLiveSceneProvider:
             )
         except BaseException:
             if isinstance(self.provider, WarmModalSceneProvider):
-                cleanup = asyncio.create_task(
-                    self.provider.abandon_warm_session(scene_id=job_id)
-                )
+                cleanup = asyncio.create_task(self.provider.abandon_warm_session(scene_id=job_id))
                 try:
                     await asyncio.shield(cleanup)
                 except asyncio.CancelledError:
@@ -1527,9 +1522,7 @@ class FiniteModalLiveSceneProvider:
         finally:
             if prepare_task is not None and not prepare_task.done():
                 prepare_task.cancel()
-                drain = asyncio.ensure_future(
-                    asyncio.gather(prepare_task, return_exceptions=True)
-                )
+                drain = asyncio.ensure_future(asyncio.gather(prepare_task, return_exceptions=True))
                 try:
                     await asyncio.shield(drain)
                 except asyncio.CancelledError:
@@ -1812,10 +1805,7 @@ def _live_scene_metrics(
 
 def _background_layer_id(pack: StoryPack) -> str:
     backgrounds = [
-        layer.layer_id
-        for page in pack.pages
-        for layer in page.layers
-        if layer.kind == "background"
+        layer.layer_id for page in pack.pages for layer in page.layers if layer.kind == "background"
     ]
     if len(backgrounds) != 1:
         raise FiniteModalProviderError("live-scene plan must contain exactly one background")
@@ -1823,9 +1813,7 @@ def _background_layer_id(pack: StoryPack) -> str:
 
 
 def _with_live_scene_assets(pack: StoryPack, assets: list[AssetRecord]) -> StoryPack:
-    return StoryPack.model_validate(
-        pack.model_copy(update={"assets": assets}).model_dump()
-    )
+    return StoryPack.model_validate(pack.model_copy(update={"assets": assets}).model_dump())
 
 
 def _evaluate_motion_technical(path: Path) -> MotionTechnicalEvidence:
@@ -1859,11 +1847,6 @@ def _write_motion_gate_report(
             "promotion_scope": "experimental-technical-only",
         },
     )
-
-
-def _live_scene_seed(request: LiveSceneCreateRequest) -> int:
-    payload = f"{request.text}\0{request.visual_style}\0{request.session_id or ''}".encode()
-    return int.from_bytes(hashlib.sha256(payload).digest()[:4], "big")
 
 
 def _fast_experiment_id(request: FastSceneRequest) -> str:
@@ -2184,9 +2167,7 @@ def _jpeg_dimensions(content: bytes) -> tuple[int, int]:
     }
     while offset + 3 < len(content):
         if content[offset] != 0xFF:
-            raise FiniteModalProviderError(
-                "deployed Modal class returned malformed JPEG data"
-            )
+            raise FiniteModalProviderError("deployed Modal class returned malformed JPEG data")
         while offset < len(content) and content[offset] == 0xFF:
             offset += 1
         if offset >= len(content):
@@ -2199,9 +2180,7 @@ def _jpeg_dimensions(content: bytes) -> tuple[int, int]:
             break
         segment_length = int.from_bytes(content[offset : offset + 2], "big")
         if segment_length < 2 or offset + segment_length > len(content):
-            raise FiniteModalProviderError(
-                "deployed Modal class returned malformed JPEG data"
-            )
+            raise FiniteModalProviderError("deployed Modal class returned malformed JPEG data")
         if marker in start_of_frame:
             if segment_length < 7:
                 break

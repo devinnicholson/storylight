@@ -41,9 +41,7 @@ class SceneFoundry:
             raise SceneFoundryError("Scene generation requires Story Pack schema 2.0")
         started = time.perf_counter()
         retained_assets = [
-            asset
-            for asset in pack.assets
-            if asset.role not in {AssetRole.MASTER, AssetRole.DEPTH}
+            asset for asset in pack.assets if asset.role not in {AssetRole.MASTER, AssetRole.DEPTH}
         ]
         generated_assets: list[AssetRecord] = []
         master_ms = 0.0

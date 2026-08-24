@@ -49,6 +49,30 @@ class StoryPackStore:
         async with self._lock:
             return await asyncio.to_thread(self._latest_sync)
 
+    async def find_live_scene(
+        self,
+        *,
+        text: str,
+        visual_style: str,
+        seed: int,
+        session_id: str | None,
+    ) -> StoryPack | None:
+        """Return the newest exact completed live scene, if one is stored.
+
+        Asset bytes are deliberately verified by ``AssetCache`` at the caller's
+        trust boundary. This method validates only the immutable Story Pack file
+        and exact request identity.
+        """
+
+        async with self._lock:
+            return await asyncio.to_thread(
+                self._find_live_scene_sync,
+                text=text,
+                visual_style=visual_style,
+                seed=seed,
+                session_id=session_id,
+            )
+
     def _latest_sync(self) -> StoryPack:
         pointer = self.root / "latest"
         try:
@@ -68,6 +92,49 @@ class StoryPackStore:
             return StoryPack.model_validate_json(payload)
         except ValueError as error:
             raise StoryPackCorruptError("The latest Story Pack is invalid") from error
+
+    def _find_live_scene_sync(
+        self,
+        *,
+        text: str,
+        visual_style: str,
+        seed: int,
+        session_id: str | None,
+    ) -> StoryPack | None:
+        self._initialize_sync()
+        expected_story_prefix = session_id or "live-scene"
+        candidates = sorted(
+            self.root.glob("*.story-pack.json"),
+            key=lambda path: path.stat().st_mtime_ns,
+            reverse=True,
+        )
+        for candidate in candidates:
+            try:
+                payload = candidate.read_text(encoding="utf-8")
+                digest = hashlib.sha256(payload.encode("utf-8")).hexdigest()[:12]
+                if not candidate.name.endswith(f"-{digest}.story-pack.json"):
+                    continue
+                pack = StoryPack.model_validate_json(payload)
+            except (OSError, ValueError):
+                continue
+            story_identity = re.fullmatch(r"(.+)-[a-f0-9]{12}", pack.story_id)
+            if story_identity is None or story_identity.group(1) != expected_story_prefix:
+                continue
+            if pack.visual_style != visual_style or len(pack.pages) != 1:
+                continue
+            if pack.pages[0].source_text != text:
+                continue
+            ready_assets = [asset for asset in pack.assets if asset.state.value == "ready"]
+            ready_roles = {asset.role.value for asset in ready_assets}
+            if not {"master", "depth"} <= ready_roles:
+                continue
+            if len(ready_assets) != len(pack.assets):
+                continue
+            master_assets = [asset for asset in ready_assets if asset.role.value == "master"]
+            if len(master_assets) != 1 or master_assets[0].seed != seed:
+                continue
+            return pack
+        return None
 
     @property
     def ready(self) -> bool:

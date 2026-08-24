@@ -216,6 +216,18 @@ override reduced image inference by 17.1%, but provider end-to-end improved only
 the central subject duplicated from one figure to two. Production settings therefore reject fewer
 than two steps; the finite CLI retains the explicit override only for bounded research.
 
+Modal's documented `us-west` routing gateway was also tested with a separately deployed function.
+The master and depth outputs remained byte-identical, but provider overhead increased by 132.5 ms
+and full API wall regressed by 113.1 ms. Default routing remains selected; no experimental routing
+configuration remains in production source.
+
+An exact completed-scene retry now bypasses both Gemma and Modal. Bookforge matches the normalized
+passage, visual style, full session identity, and resolved master seed, then re-hashes every local
+asset before replay. A valid hit publishes the usual draft → master → optional-motion stages in
+milliseconds with `scene_cache_hit=true`, zero provider/inference time, and zero new GPU cost. Any
+mismatch, missing file, corrupt checksum, unsupported asset, or provider change falls through to a
+normal new generation.
+
 An opt-in short-key Gemma response contract is also ready for the next Jetson session. It reduces a
 representative structured response from 272 to 226 bytes without changing the scene plan. It is
 disabled by default because output size alone does not prove lower latency or equivalent semantics;
@@ -465,6 +477,8 @@ passes the real I/O and latency run on JetPack 7.2.1.
 - [`benchmarks/bookforge-speed-optimization-2026-08-23.json`](benchmarks/bookforge-speed-optimization-2026-08-23.json): final 6.971-second Jetson Gemma → warm Modal SANA/depth acceptance, renderer sweep, rejected tiny-model/low-step configurations, seed-quality evidence, and billing reconciliation
 - [`benchmarks/bookforge-resolution-ab-2026-08-24.json`](benchmarks/bookforge-resolution-ab-2026-08-24.json): same-seed warm 896x512 versus 768x448 renderer A/B; the lower plate was rejected because a 25% pixel reduction saved only 18.8 ms and did not improve inference
 - [`benchmarks/bookforge-sana-sprint-one-step-ab-2026-08-24.json`](benchmarks/bookforge-sana-sprint-one-step-ab-2026-08-24.json): same-prompt, same-seed warm one-step versus two-step A/B; one step was rejected after a duplicate-subject regression for only 65.6 ms end-to-end gain
+- [`benchmarks/bookforge-modal-routing-ab-2026-08-24.json`](benchmarks/bookforge-modal-routing-ab-2026-08-24.json): byte-identical default versus us-west Modal routing A/B; west routing was rejected after a 113.1 ms end-to-end regression
+- [`benchmarks/bookforge-exact-scene-replay-2026-08-24.json`](benchmarks/bookforge-exact-scene-replay-2026-08-24.json): exact request replay through POST/SSE in 4.73 ms client wall with full SHA-256 asset validation and zero new provider work
 - [`benchmarks/bookforge-render-delivery-optimization-2026-08-23.json`](benchmarks/bookforge-render-delivery-optimization-2026-08-23.json): JPEG delivery, adaptive projector exposure, and measured rejections for smaller renders, compilation, and prompt changes
 - [`benchmarks/bookforge-packaging-optimization-2026-08-24.json`](benchmarks/bookforge-packaging-optimization-2026-08-24.json): parallel packaging telemetry, depth-JPEG quality/transfer evidence, single-decode projector delivery, and reconciled spend
 - [`benchmarks/bookforge-sana-sprint-optimization-2026-08-24.json`](benchmarks/bookforge-sana-sprint-optimization-2026-08-24.json): six-image SANA-Sprint quality/speed sweep, exact 1.188-second production API acceptance, honest projected full-path boundary, and billing reconciliation

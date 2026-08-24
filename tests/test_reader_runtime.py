@@ -80,9 +80,7 @@ def test_reconfiguring_identical_page_preserves_progress_but_new_text_resets() -
         configured = await registry.configure("session", request)
         await registry.ingest(
             "session",
-            TranscriptUpdateRequest(
-                source="typed", text="Moon", generation=configured.generation
-            ),
+            TranscriptUpdateRequest(source="typed", text="Moon", generation=configured.generation),
         )
 
         preserved = await registry.configure("session", request)

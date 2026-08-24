@@ -200,7 +200,7 @@ class FakeModelClient(StructuredModelClient):
             data = json.loads(prompt.split("Book input:\n", 1)[1])
             pages = []
             for page in data["pages"]:
-                first_word = page["text"].split()[0].strip(".,!?\"").lower()
+                first_word = page["text"].split()[0].strip('.,!?"').lower()
                 pages.append(
                     GeneratedPagePlan(
                         page_id=page["page_id"],

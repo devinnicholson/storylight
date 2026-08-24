@@ -127,9 +127,7 @@ def authorize_and_reserve_modal_budget(
         settled_floor = max(reported_phase, recorded, existing_settled)
         ledger.prior_estimated_usd = settled_floor - recorded
         projected_workspace = (
-            envelope.usage_before_lab_usd
-            + ledger.estimated_usage_usd
-            + full_call_ceiling_usd
+            envelope.usage_before_lab_usd + ledger.estimated_usage_usd + full_call_ceiling_usd
         )
         if projected_workspace > hard_stop + 1e-9:
             raise ValueError(
@@ -151,9 +149,7 @@ def require_modal_budget_reservation(
 ) -> None:
     expected_reservation_id = f"reservation:{expected_experiment_id}"
     if reservation_id != expected_reservation_id:
-        raise ValueError(
-            "reservation_id does not belong to the expected generation experiment"
-        )
+        raise ValueError("reservation_id does not belong to the expected generation experiment")
     with locked_modal_budget_ledger(plan_path=plan_path, ledger_path=ledger_path) as ledger:
         if reservation_id not in ledger.reservations:
             raise ValueError(f"unknown reservation_id: {reservation_id}")

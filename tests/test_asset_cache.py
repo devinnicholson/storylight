@@ -150,9 +150,7 @@ def test_offline_pack_installer_revalidates_cached_asset_uris(tmp_path: Path) ->
     checksum = "0" * 64
     cache = AssetCache(tmp_path / "cache")
     pack = make_pack(checksum)
-    cached = pack.assets[0].model_copy(
-        update={"local_uri": f"/v1/assets/{checksum}/sky.png"}
-    )
+    cached = pack.assets[0].model_copy(update={"local_uri": f"/v1/assets/{checksum}/sky.png"})
 
     with pytest.raises(AssetCacheError, match="not found"):
         asyncio.run(cache.install_pack(pack.model_copy(update={"assets": [cached]}), tmp_path))

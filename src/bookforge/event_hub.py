@@ -41,9 +41,7 @@ class ReaderEventPublishRequest(StrictEventModel):
     def validate_payload_for_type(self) -> ReaderEventPublishRequest:
         if self.type == "transcript.partial":
             if self.transcript is None or self.page_id is None or self.generation is None:
-                raise ValueError(
-                    "transcript.partial requires transcript, page_id, and generation"
-                )
+                raise ValueError("transcript.partial requires transcript, page_id, and generation")
             if self.index is not None or self.word is not None:
                 raise ValueError("transcript.partial does not accept index or word")
         elif (

@@ -1352,6 +1352,7 @@ function renderLiveGenerationBadge(snapshot, {activated = true, fallbackMode = n
       : !activated && snapshot.story_pack ? "media retrying" : null;
   const evidence = [
     detail,
+    snapshot.metrics?.scene_cache_hit ? "verified local replay · no new GPU work" : null,
     hardware,
     Number.isFinite(state.liveActivationMs)
       ? `client activate ${Math.round(state.liveActivationMs)} ms`

@@ -5,19 +5,13 @@ SOURCE = (ROOT / "deploy/modal_fast_scene.py").read_text()
 
 
 def test_fast_scene_models_and_revisions_are_pinned() -> None:
-    assert (
-        'FAST_MODEL_REVISION = "19683c58b7ea290e55cedd8950ae1d86ada7ef96"' in SOURCE
-    )
-    assert (
-        'DEPTH_MODEL_REVISION = "b4769fd619394250528294b658587285526fab1c"' in SOURCE
-    )
+    assert 'FAST_MODEL_REVISION = "19683c58b7ea290e55cedd8950ae1d86ada7ef96"' in SOURCE
+    assert 'DEPTH_MODEL_REVISION = "b4769fd619394250528294b658587285526fab1c"' in SOURCE
     assert 'DEPTH_DTYPE = "float16"' in SOURCE
-    assert (
-        'MOTION_MODEL_REVISION = "a6d59ee37c13c58261aa79027d3e41cd41960925"' in SOURCE
-    )
-    assert 'revision=FAST_MODEL_REVISION' in SOURCE
-    assert 'revision=DEPTH_MODEL_REVISION' in SOURCE
-    assert 'revision=MOTION_MODEL_REVISION' in SOURCE
+    assert 'MOTION_MODEL_REVISION = "a6d59ee37c13c58261aa79027d3e41cd41960925"' in SOURCE
+    assert "revision=FAST_MODEL_REVISION" in SOURCE
+    assert "revision=DEPTH_MODEL_REVISION" in SOURCE
+    assert "revision=MOTION_MODEL_REVISION" in SOURCE
 
 
 def test_modal_scene_has_no_public_endpoint_and_keeps_finite_cli() -> None:
@@ -39,9 +33,7 @@ def test_deployed_classes_scale_to_zero_and_require_explicit_prewarm() -> None:
 
 
 def test_fast_scene_uses_low_latency_projection_quality_packaging() -> None:
-    fast = SOURCE.split("class FastSceneStudio:", 1)[1].split(
-        "class MotionUpgradeStudio:", 1
-    )[0]
+    fast = SOURCE.split("class FastSceneStudio:", 1)[1].split("class MotionUpgradeStudio:", 1)[0]
     packaging = SOURCE.split("def _encode_scene_assets", 1)[1].split("@app.cls", 1)[0]
 
     assert 'format="JPEG"' in packaging
@@ -65,9 +57,7 @@ def test_fast_scene_uses_low_latency_projection_quality_packaging() -> None:
 
 
 def test_sana_sprint_is_the_pinned_production_fast_renderer() -> None:
-    fast = SOURCE.split("class FastSceneStudio:", 1)[1].split(
-        "class MotionUpgradeStudio:", 1
-    )[0]
+    fast = SOURCE.split("class FastSceneStudio:", 1)[1].split("class MotionUpgradeStudio:", 1)[0]
 
     assert 'FAST_MODEL = "Efficient-Large-Model/Sana_Sprint_1.6B_1024px_diffusers"' in SOURCE
     assert "diffusers.SanaSprintPipeline.from_pretrained(" in fast
@@ -80,9 +70,7 @@ def test_sana_sprint_is_the_pinned_production_fast_renderer() -> None:
 
 
 def test_fast_prewarm_executes_shape_matched_cuda_and_depth_work() -> None:
-    fast = SOURCE.split("class FastSceneStudio:", 1)[1].split(
-        "class MotionUpgradeStudio:", 1
-    )[0]
+    fast = SOURCE.split("class FastSceneStudio:", 1)[1].split("class MotionUpgradeStudio:", 1)[0]
 
     assert "FAST_PREWARM_WIDTH = 896" in SOURCE
     assert "FAST_PREWARM_HEIGHT = 512" in SOURCE
@@ -94,15 +82,13 @@ def test_fast_prewarm_executes_shape_matched_cuda_and_depth_work() -> None:
 
 
 def test_motion_is_projection_native_and_exactly_seamless() -> None:
-    motion = SOURCE.split("class MotionUpgradeStudio:", 1)[1].split(
-        "def _budget_types", 1
-    )[0]
+    motion = SOURCE.split("class MotionUpgradeStudio:", 1)[1].split("def _budget_types", 1)[0]
 
     assert "result + list(reversed(result[:-1]))" in motion
-    assert 'width: int = 800' in SOURCE
-    assert 'height: int = 448' in SOURCE
-    assert 'generated_frames: int = 41' in SOURCE
-    assert 'fps: int = 24' in SOURCE
+    assert "width: int = 800" in SOURCE
+    assert "height: int = 448" in SOURCE
+    assert "generated_frames: int = 41" in SOURCE
+    assert "fps: int = 24" in SOURCE
 
 
 def test_each_stage_reserves_budget_before_gpu_call_and_fails_closed() -> None:
@@ -114,8 +100,8 @@ def test_each_stage_reserves_budget_before_gpu_call_and_fails_closed() -> None:
         "MotionUpgradeStudio().generate.remote("
     )
     assert "Do not release the ledger reservation" in fast
-    assert 'FAST_TIMEOUT_SECONDS = 180' in SOURCE
-    assert 'MOTION_TIMEOUT_SECONDS = 300' in SOURCE
+    assert "FAST_TIMEOUT_SECONDS = 180" in SOURCE
+    assert "MOTION_TIMEOUT_SECONDS = 300" in SOURCE
     assert "expected_experiment_id=experiment_id" in SOURCE
 
 

@@ -200,9 +200,7 @@ def test_fake_provider_is_deterministic_for_the_same_request() -> None:
     first = asyncio.run(collect(DeterministicFakeLiveSceneProvider(), request))
     second = asyncio.run(collect(DeterministicFakeLiveSceneProvider(), request))
 
-    assert [update.model_dump() for update in first] == [
-        update.model_dump() for update in second
-    ]
+    assert [update.model_dump() for update in first] == [update.model_dump() for update in second]
 
 
 @pytest.mark.parametrize(
@@ -364,6 +362,135 @@ def test_persistence_failure_never_discards_a_completed_live_scene() -> None:
     assert terminal.stage is LiveSceneStage.MASTER_READY
     assert terminal.complete is True
     assert terminal.error is None
+
+
+def test_exact_completed_scene_reuse_skips_provider_and_revalidates_assets(
+    tmp_path: Path,
+) -> None:
+    class ProviderMustNotRun:
+        name = "fake"
+
+        async def generate(self, request, *, job_id):
+            del request, job_id
+            raise AssertionError("exact completed scene should bypass provider")
+            yield  # pragma: no cover
+
+    async def exercise():
+        request = LiveSceneCreateRequest(
+            text="A paper moon rises from an open book.",
+            visual_style="luminous paper theater",
+            seed=73,
+            session_id="reader-replay",
+        )
+        cache = AssetCache(tmp_path / "cache")
+        await cache.initialize()
+        store = StoryPackStore(tmp_path / "story-packs")
+        await store.initialize()
+        first_registry = LiveSceneJobRegistry(
+            DeterministicFakeLiveSceneProvider(cache=cache),
+            completed_pack_sink=store.save,
+        )
+        first = await first_registry.submit(request)
+        generated = await first_registry.wait(first.job_id)
+        await first_registry.close()
+
+        async def source(payload):
+            return await store.find_live_scene(
+                text=payload.text,
+                visual_style=payload.visual_style,
+                seed=payload.seed,
+                session_id=payload.session_id,
+            )
+
+        async def validator(pack):
+            return await cache.install_pack(pack, tmp_path)
+
+        replay_registry = LiveSceneJobRegistry(
+            ProviderMustNotRun(),
+            completed_pack_source=source,
+            completed_pack_validator=validator,
+        )
+        replay = await replay_registry.submit(request)
+        restored = await replay_registry.wait(replay.job_id)
+        await replay_registry.close()
+        return generated, restored
+
+    generated, restored = asyncio.run(exercise())
+
+    assert restored.stage is LiveSceneStage.MOTION_READY, restored.error
+    assert restored.complete is True
+    assert restored.metrics.scene_cache_hit is True
+    assert restored.metrics.provider_ms == 0
+    assert restored.metrics.inference_ms == 0
+    assert restored.metrics.estimated_gpu_usd == 0
+    assert [artifact.checksum_sha256 for artifact in restored.artifacts] == [
+        artifact.checksum_sha256 for artifact in generated.artifacts
+    ]
+
+
+def test_corrupt_completed_scene_asset_falls_through_to_provider(tmp_path: Path) -> None:
+    class CountingProvider(DeterministicFakeLiveSceneProvider):
+        calls = 0
+
+        async def generate(self, request, *, job_id):
+            self.calls += 1
+            async for update in super().generate(request, job_id=job_id):
+                yield update
+
+    async def exercise():
+        request = LiveSceneCreateRequest(
+            text="A lantern fish reads beside a coral clock.",
+            visual_style="luminous paper theater",
+            seed=81,
+            session_id="reader-corrupt-replay",
+        )
+        cache = AssetCache(tmp_path / "cache")
+        await cache.initialize()
+        store = StoryPackStore(tmp_path / "story-packs")
+        await store.initialize()
+        first_registry = LiveSceneJobRegistry(
+            DeterministicFakeLiveSceneProvider(cache=cache),
+            completed_pack_sink=store.save,
+        )
+        first = await first_registry.submit(request)
+        generated = await first_registry.wait(first.job_id)
+        await first_registry.close()
+        master = next(
+            artifact for artifact in generated.artifacts if artifact.kind.value == "master"
+        )
+        master_path = cache.resolve(
+            master.checksum_sha256,
+            master.uri.rsplit("/", 1)[1],
+        )
+        master_path.write_bytes(b"corrupt")
+
+        async def source(payload):
+            return await store.find_live_scene(
+                text=payload.text,
+                visual_style=payload.visual_style,
+                seed=payload.seed,
+                session_id=payload.session_id,
+            )
+
+        async def validator(pack):
+            return await cache.install_pack(pack, tmp_path)
+
+        provider = CountingProvider(cache=cache)
+        registry = LiveSceneJobRegistry(
+            provider,
+            completed_pack_source=source,
+            completed_pack_validator=validator,
+        )
+        created = await registry.submit(request)
+        terminal = await registry.wait(created.job_id)
+        await registry.close()
+        return provider.calls, terminal
+
+    provider_calls, terminal = asyncio.run(exercise())
+
+    assert provider_calls == 1
+    assert terminal.complete is True
+    assert terminal.metrics.scene_cache_hit is False
 
 
 class _FailBeforeMasterProvider:

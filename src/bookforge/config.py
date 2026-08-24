@@ -35,9 +35,7 @@ class Settings(BaseSettings):
     asset_quantize: Literal[3, 4, 5, 6, 8] = 4
     asset_timeout_seconds: float = 1_800.0
     asset_low_ram: bool = True
-    live_scene_backend: Literal[
-        "auto", "disabled", "fake", "modal", "modal_warm"
-    ] = "auto"
+    live_scene_backend: Literal["auto", "disabled", "fake", "modal", "modal_warm"] = "auto"
     live_scene_planner: Literal["deterministic", "model"] = "deterministic"
     live_scene_planner_timeout_seconds: Annotated[float, Field(gt=0, le=60)] = 12.0
     live_scene_planner_model_revision: Annotated[
