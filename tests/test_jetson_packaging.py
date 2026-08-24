@@ -634,6 +634,24 @@ def test_projector_activates_initial_pack_before_subscribing_to_live_session() -
     assert "void startProjector();" in projector
 
 
+def test_projector_reuses_reader_session_for_visual_only_scene_upgrades() -> None:
+    projector = (ROOT / "src/bookforge/static/projector.js").read_text()
+
+    assert "const readerSessionReusable = Boolean(" in projector
+    assert "state.readerConfiguredPageId === nextPage.page_id" in projector
+    assert "state.readerConfiguredPageText === nextPage.source_text" in projector
+    assert "state.readerConfiguredPageId = state.page.page_id" in projector
+    assert "state.readerConfiguredPageText = state.page.source_text" in projector
+    assert "readerConfiguredPageId: null" in projector
+    assert "readerConfiguredPageText: null" in projector
+    assert "state.readerConfiguredPageId = null" in projector
+    assert "state.readerConfiguredPageText = null" in projector
+    assert "readerSessionReused: readerSessionReusable" in projector
+    assert "if (readerSessionReusable) {\n    rebuildScene();" in projector
+    assert "if (!readerSessionReusable) goToWord(readerCursor);" in projector
+    assert "dataset.readerSessionReused" in projector
+
+
 def test_projector_never_reveals_an_undrawn_or_lost_webgl_canvas() -> None:
     projector = (ROOT / "src/bookforge/static/projector.js").read_text()
 

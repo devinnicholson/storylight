@@ -81,6 +81,8 @@ const state = {
   reconnectTimer: null,
   reconnectAttempt: 0,
   generation: null,
+  readerConfiguredPageId: null,
+  readerConfiguredPageText: null,
   lastReaderSequence: null,
   readerSync: null,
   resyncAfterCurrent: false,
@@ -1278,6 +1280,8 @@ async function configureReaderSession() {
   }
   const status = await response.json();
   state.generation = status.generation;
+  state.readerConfiguredPageId = state.page.page_id;
+  state.readerConfiguredPageText = state.page.source_text;
   return status;
 }
 
@@ -1305,12 +1309,20 @@ function updatePageControls() {
 async function activatePage(nextIndex, renderToken = null) {
   if (!state.pack || nextIndex < 0 || nextIndex >= state.pack.pages.length) return false;
   if (!liveRenderTokenIsCurrent(renderToken)) return false;
+  const nextPage = state.pack.pages[nextIndex];
+  const readerSessionReusable = Boolean(
+    state.generation !== null
+    && state.readerConfiguredPageId === nextPage.page_id
+    && state.readerConfiguredPageText === nextPage.source_text
+  );
   state.pageIndex = nextIndex;
-  state.page = state.pack.pages[nextIndex];
-  state.pendingReaderEvents = [];
+  state.page = nextPage;
+  if (!readerSessionReusable) {
+    state.pendingReaderEvents = [];
+    state.cursor = -1;
+  }
   state.tokens = tokenize(state.page.source_text);
   state.triggerIndices = indexTriggers(state.page);
-  state.cursor = -1;
   clearLayerState();
   renderTimeline();
   updatePageControls();
@@ -1323,6 +1335,7 @@ async function activatePage(nextIndex, renderToken = null) {
     readerSyncMs: 0,
     visualReadyMs: 0,
     totalMs: 0,
+    readerSessionReused: readerSessionReusable,
   };
   const renderedMode = await renderPackLayers(state.pack, state.page, renderToken, timings);
   if (!renderedMode || !liveRenderTokenIsCurrent(renderToken)) return false;
@@ -1333,13 +1346,19 @@ async function activatePage(nextIndex, renderToken = null) {
   if (!liveRenderTokenIsCurrent(renderToken)) return false;
   timings.visualReadyMs = performance.now() - activationStartedAt;
   timings.firstPaintMs = Math.max(0, firstPaintAt - (committedPaint?.committedAt || firstPaintAt));
-  const readerSyncStartedAt = performance.now();
-  const session = await configureReaderSession();
-  timings.readerSyncMs = performance.now() - readerSyncStartedAt;
+  let readerCursor = state.cursor;
+  if (readerSessionReusable) {
+    rebuildScene();
+  } else {
+    const readerSyncStartedAt = performance.now();
+    const session = await configureReaderSession();
+    timings.readerSyncMs = performance.now() - readerSyncStartedAt;
+    readerCursor = session.last_reached_index ?? -1;
+  }
   timings.totalMs = performance.now() - activationStartedAt;
   if (!liveRenderTokenIsCurrent(renderToken)) return false;
   state.liveActivationBreakdown = timings;
-  goToWord(session.last_reached_index ?? -1);
+  if (!readerSessionReusable) goToWord(readerCursor);
   const currentUrl = new URL(window.location.href);
   currentUrl.searchParams.set("page", String(nextIndex + 1));
   window.history.replaceState({}, "", currentUrl);
@@ -1470,11 +1489,15 @@ function renderLiveGenerationBadge(snapshot, {activated = true, fallbackMode = n
       elements.liveGenerationBadge.dataset.rendererSetupMs = breakdown.rendererSetupMs.toFixed(3);
       elements.liveGenerationBadge.dataset.firstPaintMs = breakdown.firstPaintMs.toFixed(3);
       elements.liveGenerationBadge.dataset.readerSyncMs = breakdown.readerSyncMs.toFixed(3);
+      elements.liveGenerationBadge.dataset.readerSessionReused = String(
+        Boolean(breakdown.readerSessionReused)
+      );
     } else {
       delete elements.liveGenerationBadge.dataset.mediaReadyMs;
       delete elements.liveGenerationBadge.dataset.rendererSetupMs;
       delete elements.liveGenerationBadge.dataset.firstPaintMs;
       delete elements.liveGenerationBadge.dataset.readerSyncMs;
+      delete elements.liveGenerationBadge.dataset.readerSessionReused;
     }
   } else {
     delete elements.liveGenerationBadge.dataset.activationMs;
@@ -1482,6 +1505,7 @@ function renderLiveGenerationBadge(snapshot, {activated = true, fallbackMode = n
     delete elements.liveGenerationBadge.dataset.rendererSetupMs;
     delete elements.liveGenerationBadge.dataset.firstPaintMs;
     delete elements.liveGenerationBadge.dataset.readerSyncMs;
+    delete elements.liveGenerationBadge.dataset.readerSessionReused;
   }
   elements.liveGenerationBadge.classList.toggle("has-warning", Boolean(warning));
   updateLiveGenerationClock();
@@ -1681,6 +1705,9 @@ function acceptLiveSceneSessionPointer(payload) {
     state.liveCommittedRevision = -1;
     state.liveRenderPending = false;
     state.liveAssetFingerprint = null;
+    state.generation = null;
+    state.readerConfiguredPageId = null;
+    state.readerConfiguredPageText = null;
     state.liveRenderEpoch += 1;
   }
   if (!snapshot) return true;
