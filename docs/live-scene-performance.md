@@ -145,6 +145,12 @@ Metrics expose `planning_cache_hit`; no raw passage is used as a cache key, and 
 sent off-device nor persisted across process restarts. Set
 `BOOKFORGE_LIVE_SCENE_PLANNER_CACHE_ENTRIES=0` to disable it.
 
+Before planning completes, the immediate procedural renderer derives only local visual cues from the
+passage. Five background themes and bounded focus/effect motifs make the draft visibly story-specific
+without delaying `draft_ready` or transmitting text. Real-browser fox/forest/swarm and
+whale/ocean/fish-school checks each rendered three animated layers at 30 fps with zero dropped frames
+and no warnings or errors.
+
 The automatic-prewarm acceptance exercised a real cold deployed-class prewarm and real two-step
 generation while substituting the last measured 4.285-second Jetson planning delay because the
 board was off. API preparation took 30.744 seconds, planning took 4.288 seconds concurrently, and

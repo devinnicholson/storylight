@@ -295,9 +295,25 @@ function passageDraftTheme(page) {
       ["#20183d", "#102b3c", "#7cbff688"],
     ],
   };
+  const focusMotif = [
+    ["whale", /\bwhale\b/u],
+    ["fox", /\bfox\b/u],
+    ["turtle", /\bturtle\b/u],
+    ["reader", /\b(child|student|reader|person|teacher)\b/u],
+  ].find(([, pattern]) => pattern.test(text))?.[0] || "story-subject";
+  const effectMotif = [
+    ["flock", /\b(origami|paper bird|birds?)\b/u],
+    ["jellyfish", /\bjellyfish\b/u],
+    ["school", /\b(fish|school of fish)\b/u],
+    ["swarm", /\b(moths?|butterfl(?:y|ies)|fireflies)\b/u],
+    ["bloom", /\b(flowers?|garden|blooms?)\b/u],
+    ["constellation", /\b(constellations?|stars?|galaxy)\b/u],
+  ].find(([, pattern]) => pattern.test(text))?.[0] || "story-magic";
   return {
     ...selected,
     paletteOffset: hash % selected.palettes.length,
+    focusMotif,
+    effectMotif,
   };
 }
 
@@ -826,6 +842,8 @@ async function renderPackLayers(pack, page, renderToken = null, timings = null) 
   const version = createSceneVersion();
   const draftTheme = passageDraftTheme(page);
   version.dataset.passageTheme = draftTheme.name;
+  version.dataset.draftFocus = draftTheme.focusMotif;
+  version.dataset.draftEffect = draftTheme.effectMotif;
   version.style.setProperty("--passage-theme-name", draftTheme.name);
   if (bundledHero) {
     const hero = document.createElement("div");

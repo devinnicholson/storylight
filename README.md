@@ -217,6 +217,12 @@ wire-contract changes, and still applies a new seed when the final SceneSpec is 
 rereads, and alternate-seed retries therefore skip the measured ~4.3-second edge decode; first-time
 passages remain genuinely generated on the spot. The workbench labels cache hits explicitly.
 
+The sub-100ms procedural draft is passage-aware rather than a generic loader. Local keyword cues
+select five environmental treatments plus reader, fox, whale, and turtle silhouettes and flock,
+jellyfish, fish-school, swarm, bloom, and constellation accents. Browser acceptance exercised
+three-layer fox and whale drafts at 30 fps with zero dropped frames and no console errors; generated
+SANA/depth artwork still replaces the draft in place when ready.
+
 Depth Anything now runs in explicit FP16 on the L4. Against the same prompt and seed, both the
 master and depth JPEGs were byte-identical to the FP32 baseline; model load improved 8.4%, depth
 inference improved 24.3%, and the measured cold wall improved by 726 ms. A parallel checkpoint-load

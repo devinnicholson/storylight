@@ -333,6 +333,14 @@ def test_generated_pack_placeholders_use_separate_storyboard_positions() -> None
     assert "passageDraftTheme(page)" in projector
     assert "sceneCompositionLayout(page.scene_spec, layer, index)" in projector
     assert "version.dataset.passageTheme = draftTheme.name" in projector
+    assert "version.dataset.draftFocus = draftTheme.focusMotif" in projector
+    assert "version.dataset.draftEffect = draftTheme.effectMotif" in projector
+    for motif in ("reader", "fox", "whale", "turtle"):
+        assert f'data-draft-focus="{motif}"' in stylesheet
+    for motif in ("flock", "jellyfish", "school", "swarm", "bloom", "constellation"):
+        assert f'data-draft-effect="{motif}"' in stylesheet
+    for theme in ("space", "ocean", "forest", "storm", "literacy"):
+        assert f'data-passage-theme="{theme}"' in stylesheet
     assert 'node.classList.add("development-layer")' in projector
     assert "--placeholder-x" in stylesheet
     assert ".generic-layer.development-layer::before" in stylesheet
