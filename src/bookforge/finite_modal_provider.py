@@ -1724,6 +1724,8 @@ class FiniteModalLiveSceneProvider:
             or self.planner is None
         ):
             return False
+        if not await self.provider.is_renderer_likely_warm():
+            return False
         cache_probe = getattr(self.planner, "has_cached_plan", None)
         if not callable(cache_probe):
             return False

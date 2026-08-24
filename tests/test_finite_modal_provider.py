@@ -750,6 +750,10 @@ def test_uncached_model_plan_emits_privacy_safe_preview_before_final_master(
     async def run() -> list[LiveSceneUpdate]:
         cache = AssetCache(tmp_path / "preview-cache")
         await cache.initialize()
+        await warm.prewarm(
+            prewarm_id="preview-integration-prewarm",
+            include_motion=False,
+        )
         adapter = FiniteModalLiveSceneProvider(
             warm,
             cache=cache,
@@ -798,22 +802,24 @@ def test_uncached_model_plan_emits_privacy_safe_preview_before_final_master(
     ]
     methods = [(class_name, method) for class_name, method, _ in invoker.calls]
     assert methods == [
+        ("FastSceneStudio", "prewarm"),
         ("FastSceneStudio", "generate_preview"),
         ("FastSceneStudio", "generate"),
     ]
     envelope, _ = budget_envelope_from_plan(warm.plan_file)
     ledger = VisualLabLedger.read(warm.ledger_path, envelope=envelope)
     assert ledger.reservations == {}
-    assert [record.stage for record in ledger.records] == [
-        "warm-preview-scene",
-        "warm-fast-scene",
-    ]
+    assert [record.stage for record in ledger.records] == ["warm-prewarm-master"]
 
 
-@pytest.mark.parametrize("preview_failure", [False, True])
+@pytest.mark.parametrize(
+    ("preview_failure", "cached_plan"),
+    [(False, True), (False, False), (True, False)],
+)
 def test_cached_or_failed_preview_never_blocks_final_master(
     tmp_path: Path,
     preview_failure: bool,
+    cached_plan: bool,
 ) -> None:
     class PreviewInvoker(StubWarmInvoker):
         async def invoke(self, class_name: str, method_name: str, arguments: dict) -> dict:
@@ -824,7 +830,7 @@ def test_cached_or_failed_preview_never_blocks_final_master(
 
     class Planner:
         async def has_cached_plan(self, *, text: str) -> bool:
-            return not preview_failure
+            return cached_plan
 
         async def plan(self, **kwargs) -> LiveScenePlanningResult:
             return LiveScenePlanningResult(
@@ -846,6 +852,11 @@ def test_cached_or_failed_preview_never_blocks_final_master(
     async def run() -> list[LiveSceneUpdate]:
         cache = AssetCache(tmp_path / "optional-preview-cache")
         await cache.initialize()
+        if preview_failure:
+            await warm.prewarm(
+                prewarm_id="failed-preview-prewarm",
+                include_motion=False,
+            )
         adapter = FiniteModalLiveSceneProvider(
             warm,
             cache=cache,
