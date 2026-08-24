@@ -451,6 +451,14 @@ class _ModelStub:
             await asyncio.sleep(self.delay_seconds)
         if self.failure is not None:
             raise self.failure
+        if output_type.__name__ == "_LiveScenePlannerWarmupOutput":
+            return output_type.model_validate({"ready": True}), ModelMetrics(
+                backend="ollama",
+                model="gemma3:1b",
+                total_ms=4.5,
+                input_tokens=24,
+                output_tokens=5,
+            )
         plan = _wire_plan()
         if output_type is LiveSceneCompactWirePlan:
             result = LiveSceneCompactWirePlan.model_validate(
@@ -541,6 +549,28 @@ def test_structured_planner_can_use_opt_in_short_key_contract() -> None:
         )
         .focus.prompt
     )
+
+
+def test_structured_planner_coalesces_text_free_local_warmup() -> None:
+    stub = _ModelStub(delay_seconds=0.01)
+    planner = StructuredLiveScenePlanner(
+        stub,  # type: ignore[arg-type]
+        timeout_seconds=1,
+    )
+
+    async def run_warmups():
+        return await asyncio.gather(planner.warmup(), planner.warmup())
+
+    first, second = asyncio.run(run_warmups())
+
+    assert first == second
+    assert first.metrics.model == "gemma3:1b"
+    assert first.metrics.output_tokens == 5
+    assert len(stub.calls) == 1
+    assert stub.calls[0]["output_type"].__name__ == "_LiveScenePlannerWarmupOutput"
+    assert "passage" not in str(stub.calls[0]["prompt"]).casefold()
+    assert "story" not in str(stub.calls[0]["prompt"]).casefold()
+    assert '{"ready":true}' in str(stub.calls[0]["prompt"])
 
 
 def test_structured_planner_reuses_privacy_gated_semantics_for_new_seed_and_style() -> None:

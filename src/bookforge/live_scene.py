@@ -229,6 +229,19 @@ class LiveScenePlannerPrepareResponse(FrozenStrictModel):
     output_tokens: Annotated[int, Field(ge=0)]
 
 
+class LiveScenePlannerWarmupResponse(FrozenStrictModel):
+    """Result of a fixed, text-free local model warmup."""
+
+    ready: bool
+    warmup_ms: Annotated[float, Field(ge=0)] = 0
+    model: Annotated[
+        str,
+        StringConstraints(strip_whitespace=True, min_length=1, max_length=200),
+    ] | None = None
+    input_tokens: Annotated[int, Field(ge=0)] = 0
+    output_tokens: Annotated[int, Field(ge=0)] = 0
+
+
 class LiveSceneWarmProviderStatus(FrozenStrictModel):
     ready: bool
     detail: Annotated[

@@ -170,6 +170,20 @@ async function inspectRendererReadiness() {
   }
 }
 
+async function warmEdgePlanner() {
+  try {
+    // Fixed synthetic input only. This can load the private Jetson model while
+    // the reader types, but never transmits or stores the story textarea.
+    await fetch("/v1/live-scene-planner/warmup", {
+      method: "POST",
+      cache: "no-store",
+    });
+  } catch (_) {
+    // Warmup is latency hiding, not a prerequisite. Generate retains its
+    // normal bounded planner call and deterministic fallback.
+  }
+}
+
 async function prewarmRenderer() {
   if (rendererPrewarming) return;
   const text = elements.story.value.trim();
@@ -1078,6 +1092,7 @@ if (!canRecordAudio) {
 
 connectLiveSceneSessionEvents();
 restoreInitialScene();
+void warmEdgePlanner();
 if (rehearsalMode) prewarmRenderer();
 else inspectRendererReadiness();
 window.addEventListener("beforeunload", () => {

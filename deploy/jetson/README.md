@@ -231,13 +231,15 @@ BOOKFORGE_MODEL_BACKEND=ollama
 BOOKFORGE_MODEL_NAME=gemma3:1b-it-q4_K_M
 BOOKFORGE_MODEL_BASE_URL=http://127.0.0.1:11434
 BOOKFORGE_MODEL_TIMEOUT_SECONDS=20
-BOOKFORGE_MODEL_KEEP_ALIVE=10m
+BOOKFORGE_MODEL_KEEP_ALIVE=30m
 BOOKFORGE_MODEL_CONTEXT_TOKENS=4096
 BOOKFORGE_MODEL_MAX_OUTPUT_TOKENS=180
 BOOKFORGE_LIVE_SCENE_PLANNER=model
 BOOKFORGE_LIVE_SCENE_PLANNER_TIMEOUT_SECONDS=12
 BOOKFORGE_LIVE_SCENE_PLANNER_MODEL_REVISION=ollama-manifest-sha256:8648f39daa8fbf5b18c7b4e6a8fb4990c692751d49917417b8842ca5758e7ffc
 BOOKFORGE_LIVE_SCENE_AUTO_PREWARM_ON_SUBMIT=true
+# Enable only after the text-free warmup passes the exact Jetson latency/memory gate.
+BOOKFORGE_LIVE_SCENE_PLANNER_AUTO_WARMUP=true
 ```
 
 An experimental short-key wire contract is available with
@@ -254,6 +256,12 @@ a lower ceiling never truncates valid JSON. The 12-second planner deadline passe
 prewarmed model; keep the independent
 20-second model-client timeout for
 diagnostics and ensure the prewarm completes before a live reading.
+
+The optional workbench warmup sends only a fixed `{"ready":true}` readiness task to the local
+model while the user types. It never includes the textarea, visual style, audio, or a renderer call.
+The Mac A/B converted a 12-second cold planner timeout into a 3.53-second uncached plan after a
+6.39-second background warmup. Keep it opt-in until the same unload/warmup/plan sequence passes on
+Jetson with the projector browser running and the service memory limits enforced.
 
 The live planner keeps up to 32 privacy-gated semantic plans in memory. Identical-passage rereads,
 visual-style auditions, and alternate-seed retries skip Gemma decode while still deriving a new

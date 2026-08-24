@@ -769,6 +769,15 @@ class LiveScenePlanningResult(FrozenStrictModel):
     cache_hit: bool = False
 
 
+class LiveScenePlannerWarmupResult(FrozenStrictModel):
+    metrics: ModelMetrics
+    wall_ms: Annotated[float, Field(ge=0)]
+
+
+class _LiveScenePlannerWarmupOutput(FrozenStrictModel):
+    ready: Literal[True]
+
+
 class LiveScenePlannerError(RuntimeError):
     """A recoverable local planning failure; callers may use a deterministic plan."""
 
@@ -1019,6 +1028,55 @@ class StructuredLiveScenePlanner:
         self.persistent_cache_dir = persistent_cache_dir
         self._cache: OrderedDict[str, tuple[LiveScenePlan, ModelMetrics]] = OrderedDict()
         self._inflight: dict[str, asyncio.Task[LiveScenePlanningResult]] = {}
+        self._warmup_task: asyncio.Task[LiveScenePlannerWarmupResult] | None = None
+
+    async def warmup(self) -> LiveScenePlannerWarmupResult:
+        """Load the local model with fixed synthetic input and no story text."""
+
+        task = self._warmup_task
+        if task is None:
+            task = asyncio.create_task(
+                self._warmup_uncached(),
+                name="bookforge-live-planner-warmup",
+            )
+            self._warmup_task = task
+            task.add_done_callback(self._discard_warmup)
+        return await asyncio.shield(task)
+
+    async def _warmup_uncached(self) -> LiveScenePlannerWarmupResult:
+        started = perf_counter()
+        try:
+            async with asyncio.timeout(self.timeout_seconds):
+                output, metrics = await self.client.generate(
+                    system="Return only the supplied local readiness JSON schema.",
+                    prompt=(
+                        "This is a local model-load warmup with fixed synthetic input. "
+                        'Return {"ready":true}.'
+                    ),
+                    output_type=_LiveScenePlannerWarmupOutput,
+                )
+        except TimeoutError as error:
+            raise LiveScenePlannerTimeoutError(
+                f"local planner warmup exceeded {self.timeout_seconds:g} seconds"
+            ) from error
+        except asyncio.CancelledError:
+            raise
+        except Exception as error:
+            detail = (str(error) or error.__class__.__name__)[:300]
+            raise LiveScenePlannerError(f"local planner warmup failed: {detail}") from error
+        if output.ready is not True:
+            raise LiveScenePlannerError("local planner warmup returned an invalid readiness value")
+        return LiveScenePlannerWarmupResult(
+            metrics=metrics,
+            wall_ms=(perf_counter() - started) * 1_000,
+        )
+
+    def _discard_warmup(
+        self,
+        task: asyncio.Task[LiveScenePlannerWarmupResult],
+    ) -> None:
+        if self._warmup_task is task:
+            self._warmup_task = None
 
     async def plan(
         self,

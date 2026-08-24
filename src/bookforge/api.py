@@ -55,6 +55,7 @@ from bookforge.live_scene import (
     LiveSceneNotFoundError,
     LiveScenePlannerPrepareRequest,
     LiveScenePlannerPrepareResponse,
+    LiveScenePlannerWarmupResponse,
     LiveScenePrewarmRequest,
     LiveScenePrewarmResponse,
     LiveSceneRegistryClosedError,
@@ -498,6 +499,36 @@ async def prepare_live_scene_planner(
         cache_hit=result.cache_hit,
         model=result.metrics.model,
         revision=result.model_revision,
+        input_tokens=result.metrics.input_tokens,
+        output_tokens=result.metrics.output_tokens,
+    )
+
+
+@app.post(
+    "/v1/live-scene-planner/warmup",
+    response_model=LiveScenePlannerWarmupResponse,
+)
+async def warmup_live_scene_planner(request: Request) -> LiveScenePlannerWarmupResponse:
+    """Hide local Ollama model load using fixed synthetic input and no story text."""
+
+    if not _is_local_connection(request):
+        raise HTTPException(status_code=403, detail="Live-scene planning is local-only")
+    settings = request.app.state.settings
+    if not settings.live_scene_planner_auto_warmup:
+        return LiveScenePlannerWarmupResponse(ready=False)
+    registry: LiveSceneJobRegistry = request.app.state.live_scenes
+    planner = getattr(registry.provider, "planner", None)
+    warmup = getattr(planner, "warmup", None)
+    if not callable(warmup):
+        return LiveScenePlannerWarmupResponse(ready=False)
+    try:
+        result = await warmup()
+    except RuntimeError as error:
+        raise HTTPException(status_code=503, detail=str(error)) from error
+    return LiveScenePlannerWarmupResponse(
+        ready=True,
+        warmup_ms=result.wall_ms,
+        model=result.metrics.model,
         input_tokens=result.metrics.input_tokens,
         output_tokens=result.metrics.output_tokens,
     )

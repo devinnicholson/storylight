@@ -704,6 +704,18 @@ def test_workbench_rehearsal_prepares_edge_plan_and_text_free_renderer_concurren
     assert "visual-style auditions reuse the private semantic plan" in controller
 
 
+def test_workbench_starts_only_text_free_edge_warmup_in_background() -> None:
+    controller = (ROOT / "src/bookforge/static/workbench.js").read_text()
+
+    assert 'fetch("/v1/live-scene-planner/warmup"' in controller
+    assert "void warmEdgePlanner();" in controller
+    warmup = controller.split("async function warmEdgePlanner()", 1)[1].split(
+        "async function", 1
+    )[0]
+    assert "elements.story" not in warmup
+    assert "JSON.stringify" not in warmup
+
+
 def test_hardware_evidence_and_privacy_scripts_are_executable() -> None:
     for name in (
         "collect-evidence.sh",

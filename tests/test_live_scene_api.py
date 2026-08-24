@@ -170,6 +170,7 @@ def test_live_scene_api_rejects_raw_media_unknown_jobs_and_remote_clients() -> N
             "/v1/live-scene-planner/prepare",
             json={"text": "A fox waits.", "visual_style": "paper theater"},
         )
+        disabled_planner_warmup = client.post("/v1/live-scene-planner/warmup")
     with TestClient(app, client=("203.0.113.8", 50000)) as remote:
         remote_create = remote.post("/v1/live-scenes", json=_payload())
         remote_status = remote.get(f"/v1/live-scenes/{unknown_id}")
@@ -184,6 +185,7 @@ def test_live_scene_api_rejects_raw_media_unknown_jobs_and_remote_clients() -> N
             "/v1/live-scene-planner/prepare",
             json={"text": "A fox waits.", "visual_style": "paper theater"},
         )
+        remote_planner_warmup = remote.post("/v1/live-scene-planner/warmup")
 
     assert raw_media.status_code == 422
     assert missing.status_code == 404
@@ -192,6 +194,14 @@ def test_live_scene_api_rejects_raw_media_unknown_jobs_and_remote_clients() -> N
     assert fake_warm_status.status_code == 409
     assert fake_prewarm.status_code == 409
     assert fake_planner_prepare.status_code == 409
+    assert disabled_planner_warmup.status_code == 200
+    assert disabled_planner_warmup.json() == {
+        "ready": False,
+        "warmup_ms": 0.0,
+        "model": None,
+        "input_tokens": 0,
+        "output_tokens": 0,
+    }
     assert remote_create.status_code == 403
     assert remote_status.status_code == 403
     assert remote_events.status_code == 403
@@ -199,6 +209,7 @@ def test_live_scene_api_rejects_raw_media_unknown_jobs_and_remote_clients() -> N
     assert remote_session_events.status_code == 403
     assert remote_prewarm.status_code == 403
     assert remote_planner_prepare.status_code == 403
+    assert remote_planner_warmup.status_code == 403
 
 
 def test_live_scene_planner_prepare_primes_only_the_local_planner() -> None:
@@ -245,6 +256,39 @@ def test_live_scene_planner_prepare_primes_only_the_local_planner() -> None:
             "seed": 0,
         }
     ]
+
+
+def test_live_scene_planner_warmup_uses_no_request_body_or_story_text() -> None:
+    calls = 0
+
+    class StubPlanner:
+        async def warmup(self):
+            nonlocal calls
+            calls += 1
+            return SimpleNamespace(
+                wall_ms=4_410.5,
+                metrics=SimpleNamespace(
+                    model="gemma3:1b-it-q4_K_M",
+                    input_tokens=24,
+                    output_tokens=5,
+                ),
+            )
+
+    with TestClient(app) as client:
+        client.app.state.settings.live_scene_planner_auto_warmup = True
+        client.app.state.live_scenes.provider = SimpleNamespace(planner=StubPlanner())
+        response = client.post("/v1/live-scene-planner/warmup")
+        client.app.state.settings.live_scene_planner_auto_warmup = False
+
+    assert response.status_code == 200
+    assert response.json() == {
+        "ready": True,
+        "warmup_ms": 4_410.5,
+        "model": "gemma3:1b-it-q4_K_M",
+        "input_tokens": 24,
+        "output_tokens": 5,
+    }
+    assert calls == 1
 
 
 def test_explicit_warm_provider_routes_are_strict_by_default() -> None:
