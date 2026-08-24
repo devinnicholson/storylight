@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import hashlib
+import json
 import os
 import re
 import tempfile
@@ -22,9 +23,15 @@ class StoryPackStore:
     def __init__(self, root: Path) -> None:
         self.root = root
         self._lock = asyncio.Lock()
+        self._live_scene_index: dict[str, Path] = {}
+        self._live_scene_index_ready = False
 
     async def initialize(self) -> None:
-        await asyncio.to_thread(self._initialize_sync)
+        await asyncio.to_thread(self._initialize_and_index_sync)
+
+    def _initialize_and_index_sync(self) -> None:
+        self._initialize_sync()
+        self._rebuild_live_scene_index_sync()
 
     def _initialize_sync(self) -> None:
         self.root.mkdir(parents=True, exist_ok=True, mode=0o700)
@@ -43,6 +50,9 @@ class StoryPackStore:
         destination = self.root / filename
         self._atomic_write(destination, payload)
         self._atomic_write(self.root / "latest", f"{filename}\n".encode())
+        index_key = self._stored_live_scene_key(pack)
+        if index_key is not None:
+            self._live_scene_index[index_key] = destination
         return destination
 
     async def latest(self) -> StoryPack:
@@ -102,39 +112,95 @@ class StoryPackStore:
         session_id: str | None,
     ) -> StoryPack | None:
         self._initialize_sync()
-        expected_story_prefix = session_id or "live-scene"
-        candidates = sorted(
-            self.root.glob("*.story-pack.json"),
-            key=lambda path: path.stat().st_mtime_ns,
-            reverse=True,
+        if not self._live_scene_index_ready:
+            self._rebuild_live_scene_index_sync()
+        cache_key = self._live_scene_request_key(
+            text=text,
+            visual_style=visual_style,
+            seed=seed,
+            story_prefix=session_id or "live-scene",
         )
+        candidate = self._live_scene_index.get(cache_key)
+        if candidate is None:
+            return None
+        pack = self._read_verified_pack(candidate)
+        if pack is None or self._stored_live_scene_key(pack) != cache_key:
+            self._live_scene_index.pop(cache_key, None)
+            return None
+        return pack
+
+    def _rebuild_live_scene_index_sync(self) -> None:
+        index: dict[str, Path] = {}
+        try:
+            candidates = sorted(
+                self.root.glob("*.story-pack.json"),
+                key=lambda path: path.stat().st_mtime_ns,
+                reverse=True,
+            )
+        except OSError:
+            candidates = []
         for candidate in candidates:
-            try:
-                payload = candidate.read_text(encoding="utf-8")
-                digest = hashlib.sha256(payload.encode("utf-8")).hexdigest()[:12]
-                if not candidate.name.endswith(f"-{digest}.story-pack.json"):
-                    continue
-                pack = StoryPack.model_validate_json(payload)
-            except (OSError, ValueError):
+            pack = self._read_verified_pack(candidate)
+            if pack is None:
                 continue
-            story_identity = re.fullmatch(r"(.+)-[a-f0-9]{12}", pack.story_id)
-            if story_identity is None or story_identity.group(1) != expected_story_prefix:
-                continue
-            if pack.visual_style != visual_style or len(pack.pages) != 1:
-                continue
-            if pack.pages[0].source_text != text:
-                continue
-            ready_assets = [asset for asset in pack.assets if asset.state.value == "ready"]
-            ready_roles = {asset.role.value for asset in ready_assets}
-            if not {"master", "depth"} <= ready_roles:
-                continue
-            if len(ready_assets) != len(pack.assets):
-                continue
-            master_assets = [asset for asset in ready_assets if asset.role.value == "master"]
-            if len(master_assets) != 1 or master_assets[0].seed != seed:
-                continue
-            return pack
-        return None
+            cache_key = self._stored_live_scene_key(pack)
+            if cache_key is not None:
+                index.setdefault(cache_key, candidate)
+        self._live_scene_index = index
+        self._live_scene_index_ready = True
+
+    @staticmethod
+    def _read_verified_pack(candidate: Path) -> StoryPack | None:
+        try:
+            payload = candidate.read_text(encoding="utf-8")
+            digest = hashlib.sha256(payload.encode("utf-8")).hexdigest()[:12]
+            if not candidate.name.endswith(f"-{digest}.story-pack.json"):
+                return None
+            return StoryPack.model_validate_json(payload)
+        except (OSError, ValueError):
+            return None
+
+    @classmethod
+    def _stored_live_scene_key(cls, pack: StoryPack) -> str | None:
+        story_identity = re.fullmatch(r"(.+)-[a-f0-9]{12}", pack.story_id)
+        if story_identity is None or len(pack.pages) != 1:
+            return None
+        ready_assets = [asset for asset in pack.assets if asset.state.value == "ready"]
+        if len(ready_assets) != len(pack.assets):
+            return None
+        ready_roles = {asset.role.value for asset in ready_assets}
+        if not {"master", "depth"} <= ready_roles:
+            return None
+        master_assets = [asset for asset in ready_assets if asset.role.value == "master"]
+        if len(master_assets) != 1:
+            return None
+        return cls._live_scene_request_key(
+            text=pack.pages[0].source_text,
+            visual_style=pack.visual_style,
+            seed=master_assets[0].seed,
+            story_prefix=story_identity.group(1),
+        )
+
+    @staticmethod
+    def _live_scene_request_key(
+        *,
+        text: str,
+        visual_style: str,
+        seed: int,
+        story_prefix: str,
+    ) -> str:
+        payload = json.dumps(
+            {
+                "text": text,
+                "visual_style": visual_style,
+                "seed": seed,
+                "story_prefix": story_prefix,
+            },
+            ensure_ascii=False,
+            sort_keys=True,
+            separators=(",", ":"),
+        ).encode()
+        return hashlib.sha256(payload).hexdigest()
 
     @property
     def ready(self) -> bool:

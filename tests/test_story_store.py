@@ -105,9 +105,11 @@ def test_story_pack_store_finds_only_exact_completed_live_scene(tmp_path: Path) 
         }
     )
     asyncio.run(store.save(pack))
+    restarted = StoryPackStore(store.root)
+    asyncio.run(restarted.initialize())
 
     exact = asyncio.run(
-        store.find_live_scene(
+        restarted.find_live_scene(
             text="The moth found the gate.",
             visual_style="paper theater",
             seed=17,
@@ -115,7 +117,7 @@ def test_story_pack_store_finds_only_exact_completed_live_scene(tmp_path: Path) 
         )
     )
     wrong_seed = asyncio.run(
-        store.find_live_scene(
+        restarted.find_live_scene(
             text="The moth found the gate.",
             visual_style="paper theater",
             seed=18,
@@ -125,3 +127,46 @@ def test_story_pack_store_finds_only_exact_completed_live_scene(tmp_path: Path) 
 
     assert exact == pack
     assert wrong_seed is None
+    assert all("The moth found the gate." not in key for key in restarted._live_scene_index)  # noqa: SLF001
+
+
+def test_story_pack_store_invalidates_a_corrupt_indexed_live_scene(tmp_path: Path) -> None:
+    store = StoryPackStore(tmp_path / "packs")
+    pack = make_pack("reader-2-feedfacecafe").model_copy(
+        update={
+            "assets": [
+                AssetRecord(
+                    asset_id=f"scene-{role.value}",
+                    page_id="page-01",
+                    layer_id="sky",
+                    kind=kind,
+                    role=role,
+                    provider="fake",
+                    prompt="cached scene",
+                    seed=29,
+                    width=896,
+                    height=512,
+                    checksum_sha256=character * 64,
+                    local_uri=f"/v1/assets/{character * 64}/scene-{role.value}.png",
+                    state=AssetState.READY,
+                )
+                for role, kind, character in (
+                    (AssetRole.MASTER, AssetKind.IMAGE, "c"),
+                    (AssetRole.DEPTH, AssetKind.DEPTH_MAP, "d"),
+                )
+            ]
+        }
+    )
+    destination = asyncio.run(store.save(pack))
+    destination.write_text("{}", encoding="utf-8")
+
+    restored = asyncio.run(
+        store.find_live_scene(
+            text="The moth found the gate.",
+            visual_style="paper theater",
+            seed=29,
+            session_id="reader-2",
+        )
+    )
+
+    assert restored is None
