@@ -137,6 +137,58 @@ def test_wire_privacy_sanitizer_preserves_primary_subject_head_noun() -> None:
     assert "silver whale swims" not in sanitized.focus.subject
 
 
+@pytest.mark.parametrize(
+    ("source", "action", "expected"),
+    [
+        (
+            "A student lifts one folded butterfly from a desk, and flowers bloom.",
+            "lifts",
+            "lifts folded butterfly",
+        ),
+        (
+            "A silver whale swims through a flooded library while books open.",
+            "swims",
+            "swims through flooded library",
+        ),
+        (
+            "A turtle climbs a staircase made of clouds while jellyfish drift.",
+            "climbs",
+            "climbs staircase",
+        ),
+    ],
+)
+def test_wire_privacy_sanitizer_recovers_missing_action_object_locally(
+    source: str,
+    action: str,
+    expected: str,
+) -> None:
+    payload = _wire_plan().model_dump()
+    payload["focus"]["action"] = action
+
+    sanitized = LiveSceneWirePlan.model_validate(payload).privacy_sanitized(source_text=source)
+    plan = sanitized.to_live_scene_plan(context_text=source)
+
+    assert sanitized.focus.action == expected
+    assert (
+        expected.replace("lifts", "lifting")
+        .replace("swims", "swimming")
+        .replace("climbs", "climbing")
+        in plan.focus.prompt
+    )
+    validate_live_scene_plan_privacy(plan, source_text=source)
+
+
+def test_wire_privacy_sanitizer_does_not_rewrite_complete_action() -> None:
+    payload = _wire_plan().model_dump()
+    payload["focus"]["action"] = "lifts folded butterfly"
+
+    sanitized = LiveSceneWirePlan.model_validate(payload).privacy_sanitized(
+        source_text="A student lifts one folded butterfly from a desk."
+    )
+
+    assert sanitized.focus.action == "lifts folded butterfly"
+
+
 def test_wire_plan_repairs_possessive_body_fragment_to_complete_character() -> None:
     payload = _wire_plan().model_dump()
     payload["focus"]["subject"] = "child's hand"
@@ -234,9 +286,7 @@ def test_compact_plan_normalizes_to_canonical_scene_spec_and_layers() -> None:
     assert "Show the background, subject, and supporting visual simultaneously" in (
         page.scene_spec.master_prompt
     )
-    assert "exactly one main actor performing the action once" in (
-        page.scene_spec.master_prompt
-    )
+    assert "exactly one main actor performing the action once" in (page.scene_spec.master_prompt)
     assert "duplicate person" in page.scene_spec.negative_prompt
     assert "main subject at left" in page.scene_spec.master_prompt
     assert "supporting detail at upper right" in page.scene_spec.master_prompt
@@ -271,9 +321,29 @@ def test_background_drops_repeated_foreground_actor_or_tool() -> None:
     )
 
     assert page.layers[0].prompt == "moonlit observatory, starry open dome"
-    assert "Background: moonlit observatory, starry open dome." in (
-        page.scene_spec.master_prompt
+    assert "Background: moonlit observatory, starry open dome." in (page.scene_spec.master_prompt)
+
+
+def test_background_drops_body_fragment_and_dangling_article() -> None:
+    plan = _plan().model_copy(
+        update={
+            "background_prompt": (
+                "A student's hand gently holding a butterfly, desk, classroom ceiling, a"
+            ),
+            "focus": _plan().focus.model_copy(
+                update={"prompt": "a complete visible student lifting folded butterfly"}
+            ),
+        }
     )
+
+    page = plan.to_page(
+        source_text="A learner raises folded wings as flowers appear overhead.",
+        visual_style="luminous paper theater",
+        seed=17,
+    )
+
+    assert page.layers[0].prompt == "desk, classroom ceiling"
+    assert "student's hand" not in page.scene_spec.master_prompt
 
 
 def test_plan_normalizes_raw_anchor_inside_projection_canvas() -> None:

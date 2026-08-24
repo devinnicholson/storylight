@@ -57,6 +57,7 @@ _COORDINATE_ASSIGNMENT = re.compile(
 )
 _NUMERIC_TOKEN = re.compile(r"(?<!\w)[+-]?\d+(?:\.\d+)?(?!\w)")
 _DANGLING_PARTICIPLE = re.compile(r",\s+[A-Za-z]+ing[.!?]?$")
+_DANGLING_ARTICLE = re.compile(r"(?:,\s*|\s+)(?:a|an|the)$", re.IGNORECASE)
 _POSSESSIVE_BODY_FRAGMENT = re.compile(
     r"^(?:a\s+|the\s+)?([A-Za-z][A-Za-z'-]*)['’]s\s+"
     r"(?:hand|hands|face|eyes?|gaze|head)\b",
@@ -66,7 +67,7 @@ _LEADING_ARTICLE = re.compile(r"^(?:a|an|the)\s+", re.IGNORECASE)
 _SEMANTIC_WORD = re.compile(r"[A-Za-z][A-Za-z'-]*")
 _PLACEMENT_MARGIN = 0.04
 _PLAN_CACHE_SCHEMA_VERSION = "1"
-_PLAN_CACHE_CONTRACT_REVISION = "semantic-v2-clause-faithful-privacy-gated"
+_PLAN_CACHE_CONTRACT_REVISION = "semantic-v3-action-object-repair-privacy-gated"
 _EMAIL = re.compile(r"\b[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}\b", re.IGNORECASE)
 _PHONE = re.compile(r"(?<!\w)(?:\+?\d[\d\s()./-]{6,}\d)(?!\w)")
 _URL = re.compile(r"\b(?:https?://|www\.)\S+", re.IGNORECASE)
@@ -209,6 +210,10 @@ class LiveSceneWirePlan(FrozenStrictModel):
     magic: LiveSceneWireMagic
 
     def privacy_sanitized(self, *, source_text: str) -> LiveSceneWirePlan:
+        recovered_action = _recover_missing_action_object(
+            self.focus.action,
+            source_text=source_text,
+        )
         return self.model_copy(
             update={
                 "background_prompt": _remove_distinctive_source_overlap(
@@ -221,9 +226,7 @@ class LiveSceneWirePlan(FrozenStrictModel):
                             source_text,
                             preserve_subject=True,
                         ),
-                        "action": _remove_distinctive_source_overlap(
-                            self.focus.action, source_text
-                        ),
+                        "action": _remove_distinctive_source_overlap(recovered_action, source_text),
                     }
                 ),
                 "magic": self.magic.model_copy(
@@ -509,7 +512,8 @@ def _normalized_background_prompt(
         candidate.replace("[", " ").replace("]", " ").replace(";", " ").replace(":", " ").split()
     ).strip(" ,-")
     candidate = _remove_foreground_terms(candidate, foreground_prompt)
-    return _prompt_fragment(_bounded_words(candidate, 18)) or "cinematic storybook setting"
+    candidate = _DANGLING_ARTICLE.sub("", _bounded_words(candidate, 18)).strip(" ,-")
+    return _prompt_fragment(candidate) or "cinematic storybook setting"
 
 
 def _remove_foreground_terms(background: str, foreground: str) -> str:
@@ -531,6 +535,8 @@ def _remove_foreground_terms(background: str, foreground: str) -> str:
         return background
     parts = []
     for part in background.split(","):
+        if _POSSESSIVE_BODY_FRAGMENT.match(part.strip()):
+            continue
         words = _SEMANTIC_WORD.findall(part)
         meaningful = [word for word in words if word.casefold() not in _PHRASE_STOPWORDS]
         if meaningful and all(word.casefold() in blocked for word in meaningful):
@@ -579,6 +585,42 @@ def _normalized_wire_focus(layer: LiveSceneWireFocus) -> str:
     subject = _POSSESSIVE_BODY_FRAGMENT.sub(r"\1", subject, count=1)
     subject = _LEADING_ARTICLE.sub("", subject).strip(" ,")
     return f"a complete visible {subject}, {action}".strip(" ,")
+
+
+def _recover_missing_action_object(action: str, *, source_text: str) -> str:
+    """Repair a one-word action with a short ordinary object phrase from local text."""
+
+    action_words = _SEMANTIC_WORD.findall(action)
+    if len(action_words) != 1:
+        return action
+    verb = action_words[0]
+    match = re.search(
+        rf"\b{re.escape(verb)}\b(?P<tail>[^,.;!?]{{0,64}})",
+        source_text,
+        flags=re.IGNORECASE,
+    )
+    if match is None:
+        return action
+    tail = [word for word in _SEMANTIC_WORD.findall(match.group("tail"))]
+    while tail and tail[0].casefold() in {"a", "an", "one", "the"}:
+        tail.pop(0)
+    if not tail:
+        return action
+
+    directional = {"across", "down", "into", "over", "through", "toward", "towards", "under", "up"}
+    stop = {"and", "as", "at", "by", "for", "from", "made", "of", "on", "when", "while", "with"}
+    detail: list[str] = []
+    if tail[0].casefold() in directional:
+        detail.append(tail.pop(0))
+        while tail and tail[0].casefold() in {"a", "an", "one", "the"}:
+            tail.pop(0)
+    for word in tail:
+        if word.casefold() in stop:
+            break
+        detail.append(word)
+        if len(detail) >= (3 if detail and detail[0].casefold() in directional else 2):
+            break
+    return " ".join([action, *detail]) if detail else action
 
 
 def _normalized_action(value: str) -> str:
