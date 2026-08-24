@@ -663,6 +663,19 @@ def test_projector_restores_session_or_fallback_before_subscribing() -> None:
     assert "void startProjector();" in projector
 
 
+def test_new_live_session_skips_unrelated_latest_story_pack() -> None:
+    projector = (ROOT / "src/bookforge/static/projector.js").read_text()
+    startup = projector.split("async function startProjector()", 1)[1].split(
+        'elements.previous.addEventListener("click"', 1
+    )[0]
+
+    assert "if (LIVE_MODE) prepareLiveWaitingStage();" in startup
+    assert "else await loadStoryPack();" in startup
+    assert 'elements.scene.classList.add("live-waiting")' in projector
+    assert 'elements.scene.classList.remove("live-waiting")' in projector
+    assert 'elements.fixtureScene.hidden = true' in projector
+
+
 def test_embedded_visual_preview_defers_reader_transport() -> None:
     workbench = (ROOT / "src/bookforge/static/workbench.js").read_text()
     projector = (ROOT / "src/bookforge/static/projector.js").read_text()

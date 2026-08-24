@@ -745,6 +745,7 @@ function commitSceneVersion(nextVersion, mode, nextRenderer = null, renderToken 
   );
   const previousRenderer = state.depthRenderer;
   state.depthRenderer = nextRenderer;
+  elements.scene.classList.remove("live-waiting");
   elements.generatedScene.classList.remove(
     "depth-composed",
     "hero-composed",
@@ -789,6 +790,20 @@ function commitSceneVersion(nextVersion, mode, nextRenderer = null, renderToken 
   // authoring tab's entire lifetime.
   resetFrameSampling({resetDropped: true});
   return true;
+}
+
+function prepareLiveWaitingStage() {
+  // A new live session has no story yet. Showing the process-global latest pack
+  // is both misleading and wasteful: it decodes unrelated assets only to
+  // replace them as soon as the first draft arrives. Keep a lightweight,
+  // explicitly non-semantic field on screen until the authoritative session
+  // stream delivers this session's first visual.
+  elements.fixtureScene.hidden = true;
+  elements.generatedScene.replaceChildren();
+  elements.generatedScene.className = "generated-scene";
+  elements.scene.classList.add("live-waiting");
+  elements.packLabel.textContent = "Ready for a new live scene";
+  setEvent("scene.waiting", "Submit a passage to generate this projection");
 }
 
 async function renderPackLayers(pack, page, renderToken = null, timings = null) {
@@ -2031,10 +2046,14 @@ async function restoreAuthoritativeLiveSession() {
 
 async function startProjector() {
   try {
-    // Restore an already-generated session directly. If it has no usable pack,
-    // activate the device fallback before SSE is allowed to replace state.pack.
+    // Restore an already-generated session directly. A brand-new live session
+    // starts on the lightweight waiting field instead of fetching and decoding
+    // an unrelated process-global latest pack.
     // The stream replays its current pointer, so a job created during startup cannot be missed.
-    if (!await restoreAuthoritativeLiveSession()) await loadStoryPack();
+    if (!await restoreAuthoritativeLiveSession()) {
+      if (LIVE_MODE) prepareLiveWaitingStage();
+      else await loadStoryPack();
+    }
   } finally {
     setupLiveSceneTransport();
     if (READER_MODE && state.page) connectReaderSession();
