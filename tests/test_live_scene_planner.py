@@ -533,6 +533,66 @@ def test_structured_planner_can_use_opt_in_short_key_contract() -> None:
     )
 
 
+def test_structured_planner_reuses_privacy_gated_semantics_for_new_seed() -> None:
+    stub = _ModelStub()
+    planner = StructuredLiveScenePlanner(
+        stub,  # type: ignore[arg-type]
+        timeout_seconds=1,
+        cache_entries=2,
+    )
+    request = {
+        "text": "A child opens a quiet book while paper birds rise.",
+        "visual_style": "luminous watercolor paper theater",
+    }
+
+    first = asyncio.run(planner.plan(**request, seed=23))
+    second = asyncio.run(planner.plan(**request, seed=24))
+
+    assert len(stub.calls) == 1
+    assert first.cache_hit is False
+    assert second.cache_hit is True
+    assert second.plan == first.plan
+    assert second.metrics.model == first.metrics.model
+    assert second.metrics.total_ms == 0
+    assert second.metrics.input_tokens == 0
+    assert second.metrics.output_tokens == 0
+
+
+def test_structured_planner_cache_is_bounded_and_style_specific() -> None:
+    stub = _ModelStub()
+    planner = StructuredLiveScenePlanner(
+        stub,  # type: ignore[arg-type]
+        timeout_seconds=1,
+        cache_entries=1,
+    )
+    text = "A child opens a quiet book while paper birds rise."
+
+    asyncio.run(planner.plan(text=text, visual_style="paper theater", seed=1))
+    asyncio.run(planner.plan(text=text, visual_style="oil pastel", seed=1))
+    repeated = asyncio.run(
+        planner.plan(text=text, visual_style="paper theater", seed=2)
+    )
+
+    assert len(stub.calls) == 3
+    assert repeated.cache_hit is False
+
+
+def test_structured_planner_cache_can_be_disabled() -> None:
+    stub = _ModelStub()
+    planner = StructuredLiveScenePlanner(
+        stub,  # type: ignore[arg-type]
+        timeout_seconds=1,
+        cache_entries=0,
+    )
+
+    for seed in (1, 2):
+        result = asyncio.run(
+            planner.plan(text="A book opens.", visual_style="paper art", seed=seed)
+        )
+        assert result.cache_hit is False
+    assert len(stub.calls) == 2
+
+
 def test_structured_planner_turns_timeout_and_model_failure_into_recoverable_errors() -> None:
     timeout_planner = StructuredLiveScenePlanner(
         _ModelStub(delay_seconds=0.05),  # type: ignore[arg-type]

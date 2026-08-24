@@ -252,6 +252,11 @@ prewarmed model; keep the independent
 20-second model-client timeout for
 diagnostics and ensure the prewarm completes before a live reading.
 
+The live planner keeps up to 32 privacy-gated semantic plans in memory. Identical passage/style
+rereads and alternate-seed retries skip Gemma decode while still deriving a new seeded SceneSpec;
+the workbench reports `local cache` instead of presenting that path as fresh inference. The digest
+also binds the model revision and wire contract, and nothing is persisted or sent off-device.
+
 The final speed acceptance kept Gemma 1B after rejecting the 270M model for invented settings and
 missing transformations. The prior 896x512, 8-step SANA 1.5 renderer produced the last exact full
 path: `master_ready` in 6.971 seconds, with 4.285 seconds planning, 2.673 seconds provider time, and

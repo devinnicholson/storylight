@@ -3,9 +3,11 @@
 from __future__ import annotations
 
 import asyncio
+import hashlib
 import json
 import re
 import unicodedata
+from collections import OrderedDict
 from time import perf_counter
 from typing import Annotated, Literal, Protocol
 
@@ -775,6 +777,7 @@ class LiveScenePlanningResult(FrozenStrictModel):
     metrics: ModelMetrics
     model_revision: PlanModelRevision
     wall_ms: Annotated[float, Field(ge=0)]
+    cache_hit: bool = False
 
 
 class LiveScenePlannerError(RuntimeError):
@@ -996,6 +999,7 @@ class StructuredLiveScenePlanner:
         timeout_seconds: float,
         model_revision: str = "configured-local-model",
         compact_wire: bool = False,
+        cache_entries: int = 32,
     ) -> None:
         if timeout_seconds <= 0:
             raise ValueError("live-scene planner timeout must be positive")
@@ -1003,6 +1007,10 @@ class StructuredLiveScenePlanner:
         self.timeout_seconds = timeout_seconds
         self.model_revision = _PLAN_MODEL_REVISION_ADAPTER.validate_python(model_revision)
         self.compact_wire = compact_wire
+        if not 0 <= cache_entries <= 256:
+            raise ValueError("live-scene planner cache entries must be between 0 and 256")
+        self.cache_entries = cache_entries
+        self._cache: OrderedDict[str, tuple[LiveScenePlan, ModelMetrics]] = OrderedDict()
 
     async def plan(
         self,
@@ -1016,6 +1024,26 @@ class StructuredLiveScenePlanner:
         if not 0 <= seed <= 2**32 - 1:
             raise ValueError("live-scene seed is outside uint32 range")
         started = perf_counter()
+        cache_key = self._cache_key(text=text, visual_style=visual_style)
+        cached = self._cache.pop(cache_key, None)
+        if cached is not None:
+            plan, source_metrics = cached
+            self._cache[cache_key] = cached
+            validate_live_scene_plan_privacy(plan, source_text=text)
+            return LiveScenePlanningResult(
+                plan=plan,
+                metrics=source_metrics.model_copy(
+                    update={
+                        "total_ms": 0,
+                        "load_ms": 0,
+                        "input_tokens": 0,
+                        "output_tokens": 0,
+                    }
+                ),
+                model_revision=self.model_revision,
+                wall_ms=(perf_counter() - started) * 1_000,
+                cache_hit=True,
+            )
         try:
             async with asyncio.timeout(self.timeout_seconds):
                 output_type = (
@@ -1053,9 +1081,28 @@ class StructuredLiveScenePlanner:
             context_text=f"{text} {visual_style}"
         )
         validate_live_scene_plan_privacy(validated, source_text=text)
+        if self.cache_entries:
+            self._cache[cache_key] = (validated, metrics)
+            self._cache.move_to_end(cache_key)
+            while len(self._cache) > self.cache_entries:
+                self._cache.popitem(last=False)
         return LiveScenePlanningResult(
             plan=validated,
             metrics=metrics,
             model_revision=self.model_revision,
             wall_ms=(perf_counter() - started) * 1_000,
         )
+
+    def _cache_key(self, *, text: str, visual_style: str) -> str:
+        payload = json.dumps(
+            {
+                "text": text,
+                "visual_style": visual_style,
+                "model_revision": self.model_revision,
+                "compact_wire": self.compact_wire,
+            },
+            ensure_ascii=False,
+            sort_keys=True,
+            separators=(",", ":"),
+        ).encode()
+        return hashlib.sha256(payload).hexdigest()

@@ -59,9 +59,12 @@ def test_live_scene_model_planner_has_a_bounded_independent_timeout() -> None:
     assert settings.live_scene_planner_timeout_seconds == 12
     assert settings.live_scene_planner_model_revision == "sha256:gemma3-fixture"
     assert settings.live_scene_planner_compact_wire is False
+    assert settings.live_scene_planner_cache_entries == 32
     assert Settings(
         _env_file=None, live_scene_planner_compact_wire=True
     ).live_scene_planner_compact_wire is True
+    with pytest.raises(ValidationError):
+        Settings(_env_file=None, live_scene_planner_cache_entries=257)
     assert settings.model_context_tokens == 4_096
     assert settings.model_max_output_tokens == 320
     assert settings.live_scene_master_width == 896

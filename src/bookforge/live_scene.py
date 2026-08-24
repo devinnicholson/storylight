@@ -135,6 +135,7 @@ class LiveSceneMetrics(FrozenStrictModel):
     planning_ms: Annotated[float, Field(ge=0)] = 0
     preparation_ms: Annotated[float, Field(ge=0)] = 0
     planning_status: LiveScenePlanningStatus = LiveScenePlanningStatus.PENDING
+    planning_cache_hit: bool = False
     warm_state: LiveSceneWarmState = LiveSceneWarmState.UNKNOWN
     gpu: Annotated[
         str,
@@ -1065,6 +1066,13 @@ class LiveSceneJobRegistry:
             raise LiveSceneProviderProtocolError(
                 "Live-scene planning status cannot change after planning completes"
             )
+        if (
+            current.planning_status is not LiveScenePlanningStatus.PENDING
+            and update.planning_cache_hit is not current.planning_cache_hit
+        ):
+            raise LiveSceneProviderProtocolError(
+                "Live-scene planning cache evidence cannot change after planning completes"
+            )
         previous_models = {model.role: model for model in current.models}
         for model in update.models:
             previous = previous_models.get(model.role)
@@ -1289,6 +1297,7 @@ def build_live_scene_provider(
     planner_timeout_seconds: float = 12.0,
     planner_model_revision: str = "configured-local-model",
     planner_compact_wire: bool = False,
+    planner_cache_entries: int = 32,
     master_width: int = 896,
     master_height: int = 512,
     master_steps: int = 2,
@@ -1306,6 +1315,7 @@ def build_live_scene_provider(
             timeout_seconds=planner_timeout_seconds,
             model_revision=planner_model_revision,
             compact_wire=planner_compact_wire,
+            cache_entries=planner_cache_entries,
         )
     elif planner_mode != "deterministic":
         raise ValueError(f"unknown live-scene planner mode {planner_mode!r}")

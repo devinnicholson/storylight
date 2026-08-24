@@ -65,6 +65,7 @@ def test_live_scene_api_progresses_to_resolvable_motion_scene() -> None:
             "planning_ms",
             "preparation_ms",
             "planning_status",
+            "planning_cache_hit",
             "warm_state",
             "gpu",
             "estimated_gpu_usd",
@@ -77,6 +78,7 @@ def test_live_scene_api_progresses_to_resolvable_motion_scene() -> None:
         assert metrics["planning_ms"] == 2
         assert metrics["preparation_ms"] == 0
         assert metrics["planning_status"] == "deterministic"
+        assert metrics["planning_cache_hit"] is False
         assert metrics["cost_source"] == "fixture"
         assert metrics["milestones_ms"]["motion_ready"] == metrics["elapsed_ms"]
         assert [model["role"] for model in metrics["models"]] == [

@@ -211,6 +211,12 @@ representative structured response from 272 to 226 bytes without changing the sc
 disabled by default because output size alone does not prove lower latency or equivalent semantics;
 the production switch requires a real multi-passage edge benchmark.
 
+Repeated passage/style pairs now reuse a bounded, content-addressed in-memory Gemma plan cache.
+The cache stores only the locally privacy-gated semantic plan, is invalidated by model revision or
+wire-contract changes, and still applies a new seed when the final SceneSpec is built. Rehearsals,
+rereads, and alternate-seed retries therefore skip the measured ~4.3-second edge decode; first-time
+passages remain genuinely generated on the spot. The workbench labels cache hits explicitly.
+
 Depth Anything now runs in explicit FP16 on the L4. Against the same prompt and seed, both the
 master and depth JPEGs were byte-identical to the FP32 baseline; model load improved 8.4%, depth
 inference improved 24.3%, and the measured cold wall improved by 726 ms. A parallel checkpoint-load

@@ -527,7 +527,8 @@ function renderPlanningPrivacy(metrics) {
     && /gemma/i.test(scenePlan?.model || "")
     && /^ollama(?:-|$)/i.test(scenePlan?.revision || "");
   if (localGemma) {
-    elements.planningPrivacy.textContent = "Local Gemma plan · Gemma planned this scene locally; the renderer received only visual direction.";
+    const source = metrics?.planning_cache_hit ? "Cached local Gemma plan" : "Local Gemma plan";
+    elements.planningPrivacy.textContent = `${source} · Gemma planned this scene locally; the renderer received only visual direction.`;
   } else if (planningStatus === "model") {
     elements.planningPrivacy.textContent = "Model scene plan · The renderer received only visual direction, not the source passage.";
   } else if (planningStatus === "fallback") {
@@ -552,9 +553,10 @@ function renderBackendMetrics(snapshot) {
   const gpu = metrics.gpu || "GPU not reported";
   const warmState = metrics.warm_state || "unknown";
   const estimatedCost = Number(metrics.estimated_gpu_usd || 0).toFixed(4);
+  const planningEvidence = metrics.planning_cache_hit ? "local cache" : (metrics.planning_status || "pending");
   elements.generationMetrics.textContent = [
     `backend wall ${formatBackendMs(metrics.elapsed_ms)}`,
-    `edge plan ${formatBackendMs(metrics.planning_ms)} (${metrics.planning_status || "pending"})`,
+    `edge plan ${formatBackendMs(metrics.planning_ms)} (${planningEvidence})`,
     `renderer prep ${formatBackendMs(metrics.preparation_ms)}`,
     `provider remote ${formatBackendMs(metrics.provider_ms)}`,
     `inference ${formatBackendMs(metrics.inference_ms)}`,

@@ -589,6 +589,8 @@ def test_live_ui_displays_backend_metrics_without_a_saved_local_fallback() -> No
     assert "estimated_gpu_usd" in controller
     assert "metrics.models" in controller
     assert "Local Gemma plan" in controller
+    assert "Cached local Gemma plan" in controller
+    assert 'metrics.planning_cache_hit ? "local cache"' in controller
     assert "renderer received only visual direction" in controller
     assert "Saved locally" not in controller
     assert 'dataset.terminal = String(isTerminalSnapshot(snapshot))' in controller

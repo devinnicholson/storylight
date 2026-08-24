@@ -138,6 +138,13 @@ without changing the normalized `LiveScenePlan`. It is opt-in and remains disabl
 can run semantic and truncation acceptance; these byte reductions are not presented as measured
 latency savings.
 
+The structured edge planner also keeps a 32-entry in-memory LRU keyed by a SHA-256 digest of the
+passage, style, model revision, and wire contract. A hit bypasses model decode but revalidates the
+cached plan against the local outbound privacy gate and derives seed-specific SceneSpec geometry.
+Metrics expose `planning_cache_hit`; no raw passage is used as a cache key, and the cache is neither
+sent off-device nor persisted across process restarts. Set
+`BOOKFORGE_LIVE_SCENE_PLANNER_CACHE_ENTRIES=0` to disable it.
+
 The automatic-prewarm acceptance exercised a real cold deployed-class prewarm and real two-step
 generation while substituting the last measured 4.285-second Jetson planning delay because the
 board was off. API preparation took 30.744 seconds, planning took 4.288 seconds concurrently, and

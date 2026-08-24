@@ -1264,6 +1264,7 @@ class _ResolvedLiveScenePlan:
     status: LiveScenePlanningStatus
     provenance: LiveSceneModelProvenance
     preparation_ms: float = 0
+    planning_cache_hit: bool = False
 
 
 class FiniteModalLiveSceneProvider:
@@ -1626,6 +1627,7 @@ class FiniteModalLiveSceneProvider:
                 model=result.metrics.model,
                 revision=result.model_revision,
             ),
+            planning_cache_hit=result.cache_hit,
         )
 
     async def _promote_artifact(
@@ -1799,6 +1801,7 @@ def _live_scene_metrics(
         planning_ms=planning_ms,
         preparation_ms=preparation_ms,
         planning_status=planning.status,
+        planning_cache_hit=planning.planning_cache_hit,
         warm_state=warm_state,
         gpu=str(stages[0].get("gpu", "L4")),
         estimated_gpu_usd=max(0.0, estimated_gpu_usd),
