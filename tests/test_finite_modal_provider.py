@@ -10,6 +10,7 @@ import pytest
 
 import bookforge.finite_modal_provider as finite_modal_provider_module
 from bookforge.asset_cache import AssetCache
+from bookforge.domain import ModelMetrics
 from bookforge.finite_modal_provider import (
     FAST_MODEL,
     FAST_MODEL_REVISION,
@@ -37,6 +38,13 @@ from bookforge.live_scene import (
     LiveSceneCreateRequest,
     LiveSceneStage,
     LiveSceneWarmState,
+    build_live_scene_story_pack,
+)
+from bookforge.live_scene_planner import (
+    LiveScenePlacedLayerPlan,
+    LiveScenePlan,
+    LiveScenePlannerError,
+    LiveScenePlanningResult,
 )
 from bookforge.modal_budget import budget_envelope_from_plan
 from bookforge.visual_lab import VisualLabLedger
@@ -77,6 +85,33 @@ def _png(width: int, height: int, *, value: int = 96) -> bytes:
         + chunk(b"IHDR", struct.pack(">IIBBBBB", width, height, 8, 6, 0, 0, 0))
         + chunk(b"IDAT", zlib.compress(pixels, level=1))
         + chunk(b"IEND", b"")
+    )
+
+
+def _gemma_live_plan() -> LiveScenePlan:
+    return LiveScenePlan(
+        scene_summary="A moonlit reader releases a bridge of paper birds.",
+        art_direction=(
+            "Gemma-authored low-angle composition, cyan paper birds sweeping through indigo "
+            "clouds, warm book light, watercolor fibers"
+        ),
+        camera_motion="float",
+        background_prompt="[0.5, 0.5, 0.8, 0.8], cobalt sky over luminous clouds",
+        focus=LiveScenePlacedLayerPlan(
+            kind="character",
+            prompt="A child holding a luminous open book",
+            anchor=(0.5, 0.5, 0.8, 0.8),
+            depth=0.2,
+            motion="float",
+        ),
+        accent=LiveScenePlacedLayerPlan(
+            kind="effect",
+            prompt="Cyan paper birds sweeping toward the floating school",
+            anchor=(0.5, 0.5, 0.8, 0.8),
+            depth=0.2,
+            motion="float",
+        ),
+        ambience=["stars"],
     )
 
 
@@ -863,6 +898,8 @@ def test_motion_gate_thresholds_cover_loop_mechanics_and_projection() -> None:
 def test_live_scene_adapter_emits_progressive_checksum_cached_story_packs(
     tmp_path: Path,
 ) -> None:
+    cloud_prompts: list[str] = []
+
     class StubFiniteProvider:
         async def generate_fast(
             self,
@@ -870,6 +907,7 @@ def test_live_scene_adapter_emits_progressive_checksum_cached_story_packs(
             *,
             output_dir: Path,
         ) -> FiniteSceneBundle:
+            cloud_prompts.append(request.prompt)
             output_dir.mkdir(parents=True)
             master = _artifact(output_dir / "master.png", b"master", "image/png")
             depth = _artifact(output_dir / "depth.png", b"depth", "image/png")
@@ -903,6 +941,7 @@ def test_live_scene_adapter_emits_progressive_checksum_cached_story_packs(
             bundle: FiniteSceneBundle,
             request: MotionUpgradeRequest,
         ) -> FiniteSceneBundle:
+            cloud_prompts.append(request.prompt)
             payload = json.loads(bundle.manifest_path.read_text())
             motion = _artifact(
                 bundle.manifest_path.parent / "motion.mp4",
@@ -964,25 +1003,35 @@ def test_live_scene_adapter_emits_progressive_checksum_cached_story_packs(
         LiveSceneStage.MOTION_READY,
     ]
     assert updates[-1].complete is True
+    assert len(cloud_prompts) == 2
+    assert all("A winged library rises into the stars." not in prompt for prompt in cloud_prompts)
+    assert all("luminous watercolor paper theater" in prompt for prompt in cloud_prompts)
     assert [artifact.kind for artifact in updates[-1].artifacts] == [
         LiveSceneArtifactKind.MASTER,
         LiveSceneArtifactKind.DEPTH,
         LiveSceneArtifactKind.MOTION,
     ]
     assert len(updates[-1].story_pack.assets) == 3
-    assert updates[-1].story_pack.compiler_model == f"{FAST_MODEL}@{FAST_MODEL_REVISION}"
+    assert updates[-1].story_pack.compiler_model == "deterministic-live-scene-planner-v1"
     assert updates[1].metrics is not None
     assert updates[1].metrics.provider_ms == 5_000
     assert updates[1].metrics.inference_ms == 4_500
     assert updates[1].metrics.overhead_ms == 500
     assert updates[1].metrics.warm_state is LiveSceneWarmState.COLD
     assert updates[1].metrics.cost_source is LiveSceneCostSource.PROVIDER_MANIFEST
-    assert [model.role for model in updates[1].metrics.models] == ["master", "depth"]
+    assert updates[1].metrics.planning_status.value == "deterministic"
+    assert updates[1].metrics.planning_ms == 0
+    assert [model.role for model in updates[1].metrics.models] == [
+        "scene_plan",
+        "master",
+        "depth",
+    ]
     assert updates[-1].metrics is not None
     assert updates[-1].metrics.provider_ms == 25_000
     assert updates[-1].metrics.inference_ms == 22_500
     assert updates[-1].metrics.estimated_gpu_usd == pytest.approx(0.03)
     assert [model.role for model in updates[-1].metrics.models] == [
+        "scene_plan",
         "master",
         "depth",
         "motion",
@@ -991,3 +1040,280 @@ def test_live_scene_adapter_emits_progressive_checksum_cached_story_packs(
         filename = artifact.uri.rsplit("/", 1)[-1]
         cached = cache.resolve(artifact.checksum_sha256, filename)
         assert hashlib.sha256(cached.read_bytes()).hexdigest() == artifact.checksum_sha256
+
+
+def test_live_scene_adapter_uses_model_plan_after_immediate_deterministic_draft(
+    tmp_path: Path,
+) -> None:
+    class PlannerStub:
+        def __init__(self) -> None:
+            self.calls = 0
+
+        async def plan(self, **kwargs) -> LiveScenePlanningResult:
+            assert kwargs["text"] == (
+                "Quenlora whispers the amber-key refrain while paper birds cross the stars."
+            )
+            self.calls += 1
+            return LiveScenePlanningResult(
+                plan=_gemma_live_plan(),
+                metrics=ModelMetrics(
+                    backend="ollama",
+                    model="gemma3:1b",
+                    total_ms=8_400,
+                    input_tokens=224,
+                    output_tokens=168,
+                ),
+                model_revision="sha256:gemma-fixture",
+                wall_ms=8_450,
+            )
+
+    class CapturingProvider:
+        def __init__(self) -> None:
+            self.request: FastSceneRequest | None = None
+
+        async def generate_fast(
+            self,
+            request: FastSceneRequest,
+            *,
+            output_dir: Path,
+        ) -> FiniteSceneBundle:
+            self.request = request
+            output_dir.mkdir(parents=True)
+            master = _artifact(output_dir / "master.png", b"planned-master", "image/png")
+            depth = _artifact(output_dir / "depth.png", b"planned-depth", "image/png")
+            payload = {
+                "schema_version": "1.0",
+                "provider": "modal-finite",
+                "scene_id": request.scene_id,
+                "stages": {
+                    "fast": {
+                        "model": FAST_MODEL,
+                        "model_revision": FAST_MODEL_REVISION,
+                        "gpu": "L4",
+                        "finite_call": True,
+                        "estimated_gpu_usd": 0.01,
+                        "remote_seconds": 4.0,
+                        "inference_seconds": 3.5,
+                        "provider_overhead_seconds": 0.5,
+                        "warm_state": "warm",
+                    }
+                },
+                "artifacts": {"master": master, "depth": depth},
+            }
+            manifest = output_dir / "scene.manifest.json"
+            manifest.write_text(json.dumps(payload))
+            return load_finite_scene_bundle(manifest)
+
+    async def run():
+        cache = AssetCache(tmp_path / "model-plan-cache")
+        await cache.initialize()
+        planner = PlannerStub()
+        finite = CapturingProvider()
+        adapter = FiniteModalLiveSceneProvider(
+            finite,  # type: ignore[arg-type]
+            cache=cache,
+            output_root=tmp_path / "model-plan-output",
+            planner=planner,
+        )
+        iterator = adapter.generate(
+            LiveSceneCreateRequest(
+                text=(
+                    "Quenlora whispers the amber-key refrain while paper birds cross the stars."
+                ),
+                seed=31,
+            ),
+            job_id="scene_000000000000000000000031",
+        )
+        draft = await anext(iterator)
+        assert planner.calls == 0
+        master = await anext(iterator)
+        with pytest.raises(StopAsyncIteration):
+            await anext(iterator)
+        return draft, master, planner, finite
+
+    draft, master, planner, finite = asyncio.run(run())
+
+    assert draft.stage is LiveSceneStage.DRAFT_READY
+    assert draft.story_pack.compiler_model == "deterministic-live-scene-planner-v1"
+    assert planner.calls == 1
+    assert finite.request is not None
+    assert _gemma_live_plan().art_direction in finite.request.prompt
+    assert "luminous watercolor paper theater" in finite.request.prompt
+    assert ".." not in finite.request.prompt
+    assert "Quenlora" not in finite.request.prompt
+    assert "amber-key refrain" not in finite.request.prompt
+    assert master.complete is True
+    assert master.story_pack.compiler_model == "gemma3:1b"
+    assert master.story_pack.pages[0].scene_summary == _gemma_live_plan().scene_summary
+    assert [layer.layer_id for layer in master.story_pack.pages[0].layers] == [
+        "scene-background",
+        "scene-focus",
+        "scene-accent",
+    ]
+    assert {asset.layer_id for asset in master.story_pack.assets} == {"scene-background"}
+    scene_spec = master.story_pack.pages[0].scene_spec
+    assert scene_spec is not None
+    normalized_focus = scene_spec.composition[1]
+    normalized_accent = scene_spec.composition[2]
+    assert (normalized_focus.width, normalized_focus.height) == (0.6, 0.72)
+    assert (normalized_focus.center_x, normalized_focus.center_y) == (0.5, 0.5)
+    assert (normalized_accent.width, normalized_accent.height) == (0.3, 0.34)
+    assert (normalized_accent.center_x, normalized_accent.center_y) == pytest.approx(
+        (0.81, 0.21)
+    )
+    assert normalized_focus.depth != normalized_accent.depth
+    assert "[0.5" not in master.story_pack.pages[0].layers[0].prompt
+    assert master.story_pack.pages[0].source_text.startswith("Quenlora whispers")
+    assert master.metrics is not None
+    assert master.metrics.planning_status.value == "model"
+    assert master.metrics.planning_ms == 8_450
+    assert master.metrics.elapsed_ms == (
+        master.metrics.planning_ms
+        + master.metrics.provider_ms
+        + master.metrics.cache_ms
+    )
+    assert [(model.role, model.model, model.revision) for model in master.metrics.models] == [
+        ("scene_plan", "gemma3:1b", "sha256:gemma-fixture"),
+        ("master", FAST_MODEL, FAST_MODEL_REVISION),
+        (
+            "depth",
+            finite_modal_provider_module.DEPTH_MODEL,
+            finite_modal_provider_module.DEPTH_MODEL_REVISION,
+        ),
+    ]
+
+
+def test_live_scene_adapter_explicitly_reports_deterministic_planner_fallback(
+    tmp_path: Path,
+) -> None:
+    class FailingPlanner:
+        async def plan(self, **kwargs):
+            del kwargs
+            raise LiveScenePlannerError("Jetson planner unavailable")
+
+    class CapturingProvider:
+        def __init__(self) -> None:
+            self.request: FastSceneRequest | None = None
+
+        async def generate_fast(
+            self,
+            request: FastSceneRequest,
+            *,
+            output_dir: Path,
+        ) -> FiniteSceneBundle:
+            self.request = request
+            output_dir.mkdir(parents=True)
+            master = _artifact(output_dir / "master.png", b"fallback-master", "image/png")
+            depth = _artifact(output_dir / "depth.png", b"fallback-depth", "image/png")
+            payload = {
+                "schema_version": "1.0",
+                "provider": "modal-finite",
+                "scene_id": request.scene_id,
+                "stages": {
+                    "fast": {
+                        "model": FAST_MODEL,
+                        "model_revision": FAST_MODEL_REVISION,
+                        "gpu": "L4",
+                        "finite_call": True,
+                        "estimated_gpu_usd": 0.01,
+                        "remote_seconds": 4.0,
+                        "inference_seconds": 3.5,
+                        "provider_overhead_seconds": 0.5,
+                    }
+                },
+                "artifacts": {"master": master, "depth": depth},
+            }
+            manifest = output_dir / "scene.manifest.json"
+            manifest.write_text(json.dumps(payload))
+            return load_finite_scene_bundle(manifest)
+
+    async def run():
+        cache = AssetCache(tmp_path / "fallback-cache")
+        await cache.initialize()
+        finite = CapturingProvider()
+        adapter = FiniteModalLiveSceneProvider(
+            finite,  # type: ignore[arg-type]
+            cache=cache,
+            output_root=tmp_path / "fallback-output",
+            planner=FailingPlanner(),  # type: ignore[arg-type]
+        )
+        updates = [
+            update
+            async for update in adapter.generate(
+                LiveSceneCreateRequest(text="A whale carries a library over the ocean.", seed=9),
+                job_id="scene_000000000000000000000009",
+            )
+        ]
+        return updates, finite
+
+    updates, finite = asyncio.run(run())
+    master = updates[-1]
+
+    assert master.stage is LiveSceneStage.MASTER_READY
+    assert master.complete is True
+    assert finite.request is not None
+    assert "A whale carries a library over the ocean" not in finite.request.prompt
+    assert "Layered teal water and caustic aqua light" in finite.request.prompt
+    assert master.story_pack.compiler_model == "deterministic-live-scene-planner-v1"
+    assert master.metrics is not None
+    assert master.metrics.planning_status.value == "fallback"
+    assert master.metrics.planning_ms >= 0
+    assert master.metrics.models[0].role == "scene_plan"
+    assert master.metrics.models[0].model == "deterministic-live-scene-planner-v1"
+    assert master.metrics.models[0].revision == "v1-fallback"
+
+
+def test_live_scene_adapter_fails_closed_to_safe_fallback_for_unsafe_model_plan(
+    tmp_path: Path,
+) -> None:
+    class UnsafePlanner:
+        async def plan(self, **kwargs) -> LiveScenePlanningResult:
+            assert "Quenlora" in kwargs["text"]
+            payload = _gemma_live_plan().model_dump()
+            payload["focus"]["prompt"] = "Quenlora opens the secret amber gate"
+            return LiveScenePlanningResult(
+                plan=LiveScenePlan.model_validate(payload),
+                metrics=ModelMetrics(
+                    backend="ollama",
+                    model="gemma3:1b",
+                    total_ms=500,
+                    input_tokens=100,
+                    output_tokens=100,
+                ),
+                model_revision="ollama-manifest-sha256:unsafe-fixture",
+                wall_ms=550,
+            )
+
+    async def run():
+        request = LiveSceneCreateRequest(
+            text="A child named Quenlora opens the secret amber gate.",
+            seed=41,
+        )
+        draft = build_live_scene_story_pack(
+            request,
+            job_id="scene_000000000000000000000041",
+            seed=41,
+            assets=[],
+            compiler_model="deterministic-live-scene-planner-v1",
+        )
+        adapter = FiniteModalLiveSceneProvider(
+            object(),  # type: ignore[arg-type]
+            cache=AssetCache(tmp_path / "privacy-fallback-cache"),
+            planner=UnsafePlanner(),  # type: ignore[arg-type]
+        )
+        return request, await adapter._resolve_plan(
+            request,
+            job_id="scene_000000000000000000000041",
+            seed=41,
+            draft=draft,
+        )
+
+    request, resolved = asyncio.run(run())
+    page = resolved.pack.pages[0]
+
+    assert resolved.status.value == "fallback"
+    assert resolved.provenance.model == "deterministic-live-scene-planner-v1"
+    assert page.source_text == request.text
+    assert page.scene_spec is not None
+    assert "Quenlora" not in page.scene_spec.master_prompt
+    assert "secret amber gate" not in page.scene_spec.master_prompt

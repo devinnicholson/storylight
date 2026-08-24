@@ -35,6 +35,7 @@ const elements = {
   generationJob: document.querySelector("#generationJob"),
   generationRevision: document.querySelector("#generationRevision"),
   generationMetrics: document.querySelector("#generationMetrics"),
+  planningPrivacy: document.querySelector("#planningPrivacy"),
   generationWarning: document.querySelector("#generationWarning"),
 };
 
@@ -425,10 +426,30 @@ function formatBackendMs(value) {
   return Number.isFinite(value) ? `${Math.round(value)} ms` : "pending";
 }
 
+function renderPlanningPrivacy(metrics) {
+  const scenePlan = (metrics?.models || []).find((model) => model.role === "scene_plan");
+  const planningStatus = metrics?.planning_status || "pending";
+  const localGemma = planningStatus === "model"
+    && /gemma/i.test(scenePlan?.model || "")
+    && /^ollama(?:-|$)/i.test(scenePlan?.revision || "");
+  if (localGemma) {
+    elements.planningPrivacy.textContent = "Local Gemma plan · Gemma planned this scene locally; the renderer received only visual direction.";
+  } else if (planningStatus === "model") {
+    elements.planningPrivacy.textContent = "Model scene plan · The renderer received only visual direction, not the source passage.";
+  } else if (planningStatus === "fallback") {
+    elements.planningPrivacy.textContent = "Local fallback plan · The renderer received only visual direction, not the source passage.";
+  } else if (planningStatus === "deterministic") {
+    elements.planningPrivacy.textContent = "Local deterministic plan · The renderer received only visual direction, not the source passage.";
+  } else {
+    elements.planningPrivacy.textContent = "Private visual handoff pending.";
+  }
+}
+
 function renderBackendMetrics(snapshot) {
   const metrics = snapshot?.metrics;
   if (!metrics) {
     elements.generationMetrics.textContent = "Backend metrics pending";
+    renderPlanningPrivacy(null);
     return;
   }
   const modelEvidence = (metrics.models || [])
@@ -439,6 +460,7 @@ function renderBackendMetrics(snapshot) {
   const estimatedCost = Number(metrics.estimated_gpu_usd || 0).toFixed(4);
   elements.generationMetrics.textContent = [
     `backend wall ${formatBackendMs(metrics.elapsed_ms)}`,
+    `edge plan ${formatBackendMs(metrics.planning_ms)} (${metrics.planning_status || "pending"})`,
     `provider remote ${formatBackendMs(metrics.provider_ms)}`,
     `inference ${formatBackendMs(metrics.inference_ms)}`,
     `cache promotion ${formatBackendMs(metrics.cache_ms)}`,
@@ -447,6 +469,7 @@ function renderBackendMetrics(snapshot) {
     `est. GPU $${estimatedCost} (${metrics.cost_source || "unavailable"})`,
     modelEvidence,
   ].join(" · ");
+  renderPlanningPrivacy(metrics);
 }
 
 function renderGenerationProgress(snapshot) {

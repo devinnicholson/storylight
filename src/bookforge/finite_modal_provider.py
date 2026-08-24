@@ -16,7 +16,7 @@ from pathlib import Path
 from typing import Any, Protocol
 
 from bookforge.asset_cache import AssetCache
-from bookforge.domain import AssetKind, AssetRecord, AssetRole, AssetState
+from bookforge.domain import AssetKind, AssetRecord, AssetRole, AssetState, StoryPack
 from bookforge.live_scene import (
     LiveSceneArtifact,
     LiveSceneArtifactKind,
@@ -24,11 +24,17 @@ from bookforge.live_scene import (
     LiveSceneCreateRequest,
     LiveSceneMetrics,
     LiveSceneModelProvenance,
+    LiveScenePlanningStatus,
     LiveSceneProviderUnavailableError,
     LiveSceneStage,
     LiveSceneUpdate,
     LiveSceneWarmState,
     build_live_scene_story_pack,
+    build_planned_live_scene_story_pack,
+)
+from bookforge.live_scene_planner import (
+    LiveScenePlanner,
+    LiveScenePlannerError,
 )
 from bookforge.modal_budget import authorize_and_reserve_modal_budget, settle_modal_budget
 from bookforge.visual_evaluation import MediaEvaluation, evaluate_media
@@ -1094,6 +1100,14 @@ class WarmModalSceneProvider(FiniteModalSceneProvider):
         )
 
 
+@dataclass(frozen=True, slots=True)
+class _ResolvedLiveScenePlan:
+    pack: StoryPack
+    planning_ms: float
+    status: LiveScenePlanningStatus
+    provenance: LiveSceneModelProvenance
+
+
 class FiniteModalLiveSceneProvider:
     """Adapter from finite Modal artifacts to the progressive live-scene contract."""
 
@@ -1104,6 +1118,7 @@ class FiniteModalLiveSceneProvider:
         cache: AssetCache,
         output_root: Path = Path("artifacts/live-scenes/generated"),
         enable_motion: bool = False,
+        planner: LiveScenePlanner | None = None,
         motion_gate: MotionTechnicalGate | None = None,
         motion_evaluator: MotionEvaluator | None = None,
     ) -> None:
@@ -1111,6 +1126,7 @@ class FiniteModalLiveSceneProvider:
         self.cache = cache
         self.output_root = output_root
         self.enable_motion = enable_motion
+        self.planner = planner
         self.motion_gate = motion_gate or MotionTechnicalGate()
         self.motion_evaluator = motion_evaluator or _evaluate_motion_technical
 
@@ -1148,13 +1164,13 @@ class FiniteModalLiveSceneProvider:
         job_id: str,
     ) -> AsyncIterator[LiveSceneUpdate]:
         seed = request.seed if request.seed is not None else _live_scene_seed(request)
-        compiler_model = f"{FAST_MODEL}@{FAST_MODEL_REVISION}"
+        deterministic_compiler = "deterministic-live-scene-planner-v1"
         draft = build_live_scene_story_pack(
             request,
             job_id=job_id,
             seed=seed,
             assets=[],
-            compiler_model=compiler_model,
+            compiler_model=deterministic_compiler,
         )
         yield LiveSceneUpdate(
             stage=LiveSceneStage.DRAFT_READY,
@@ -1162,9 +1178,16 @@ class FiniteModalLiveSceneProvider:
             story_pack=draft,
         )
 
-        page = draft.pages[0]
+        resolved = await self._resolve_plan(
+            request,
+            job_id=job_id,
+            seed=seed,
+            draft=draft,
+        )
+        page = resolved.pack.pages[0]
         if page.scene_spec is None:
             raise FiniteModalProviderError("live-scene draft has no SceneSpec")
+        background_layer_id = _background_layer_id(resolved.pack)
         fast_request = FastSceneRequest(
             scene_id=job_id,
             prompt=_bounded_prompt(
@@ -1192,6 +1215,7 @@ class FiniteModalLiveSceneProvider:
                 job_id=job_id,
                 seed=seed,
                 prompt=fast_request.prompt,
+                layer_id=background_layer_id,
             )
             depth_record, depth_artifact, depth_cache_ms = await self._promote_artifact(
                 bundle=fast_bundle,
@@ -1199,16 +1223,11 @@ class FiniteModalLiveSceneProvider:
                 job_id=job_id,
                 seed=seed,
                 prompt=f"Depth estimate for {job_id}-master",
+                layer_id=background_layer_id,
             )
             assets = [master_record, depth_record]
             artifacts = [master_artifact, depth_artifact]
-            master_pack = build_live_scene_story_pack(
-                request,
-                job_id=job_id,
-                seed=seed,
-                assets=assets,
-                compiler_model=compiler_model,
-            )
+            master_pack = _with_live_scene_assets(resolved.pack, assets)
             yield LiveSceneUpdate(
                 stage=LiveSceneStage.MASTER_READY,
                 progress=1 if not self.enable_motion else 0.7,
@@ -1218,6 +1237,7 @@ class FiniteModalLiveSceneProvider:
                 metrics=_live_scene_metrics(
                     fast_bundle,
                     cache_ms=master_cache_ms + depth_cache_ms,
+                    planning=resolved,
                 ),
             )
         except BaseException:
@@ -1237,7 +1257,7 @@ class FiniteModalLiveSceneProvider:
         motion_seed = (seed + 1) % (2**32)
         motion_request = MotionUpgradeRequest(
             prompt=_bounded_prompt(
-                request.text,
+                page.scene_spec.master_prompt,
                 "Locked storybook camera. Preserve exact identity, composition, objects, colors, "
                 "and silhouettes. Add only gentle character "
                 "breathing, blinking, drifting paper motes, and warm breathing light. No new "
@@ -1268,14 +1288,9 @@ class FiniteModalLiveSceneProvider:
             job_id=job_id,
             seed=motion_seed,
             prompt=motion_request.prompt,
+            layer_id=background_layer_id,
         )
-        motion_pack = build_live_scene_story_pack(
-            request,
-            job_id=job_id,
-            seed=seed,
-            assets=[*assets, motion_record],
-            compiler_model=compiler_model,
-        )
+        motion_pack = _with_live_scene_assets(resolved.pack, [*assets, motion_record])
         yield LiveSceneUpdate(
             stage=LiveSceneStage.MOTION_READY,
             progress=1,
@@ -1286,6 +1301,85 @@ class FiniteModalLiveSceneProvider:
                 upgraded,
                 cache_ms=master_cache_ms + depth_cache_ms + motion_cache_ms,
                 include_motion=True,
+                planning=resolved,
+            ),
+        )
+
+    async def _resolve_plan(
+        self,
+        request: LiveSceneCreateRequest,
+        *,
+        job_id: str,
+        seed: int,
+        draft: StoryPack,
+    ) -> _ResolvedLiveScenePlan:
+        if self.planner is None:
+            cloud_safe_pack = build_live_scene_story_pack(
+                request,
+                job_id=job_id,
+                seed=seed,
+                assets=[],
+                compiler_model=draft.compiler_model,
+                cloud_safe_prompts=True,
+            )
+            return _ResolvedLiveScenePlan(
+                pack=cloud_safe_pack,
+                planning_ms=0,
+                status=LiveScenePlanningStatus.DETERMINISTIC,
+                provenance=LiveSceneModelProvenance(
+                    role="scene_plan",
+                    model=draft.compiler_model,
+                    revision="v1",
+                ),
+            )
+
+        started = time.perf_counter()
+        try:
+            result = await self.planner.plan(
+                text=request.text,
+                visual_style=request.visual_style,
+                seed=seed,
+            )
+            planned_page = result.plan.to_page(
+                source_text=request.text,
+                visual_style=request.visual_style,
+                seed=seed,
+            )
+        except LiveScenePlannerError:
+            cloud_safe_pack = build_live_scene_story_pack(
+                request,
+                job_id=job_id,
+                seed=seed,
+                assets=[],
+                compiler_model=draft.compiler_model,
+                cloud_safe_prompts=True,
+            )
+            return _ResolvedLiveScenePlan(
+                pack=cloud_safe_pack,
+                planning_ms=(time.perf_counter() - started) * 1_000,
+                status=LiveScenePlanningStatus.FALLBACK,
+                provenance=LiveSceneModelProvenance(
+                    role="scene_plan",
+                    model=draft.compiler_model,
+                    revision="v1-fallback",
+                ),
+            )
+
+        pack = build_planned_live_scene_story_pack(
+            request,
+            job_id=job_id,
+            page=planned_page,
+            assets=[],
+            compiler_model=result.metrics.model,
+        )
+        return _ResolvedLiveScenePlan(
+            pack=pack,
+            planning_ms=result.wall_ms,
+            status=LiveScenePlanningStatus.MODEL,
+            provenance=LiveSceneModelProvenance(
+                role="scene_plan",
+                model=result.metrics.model,
+                revision=result.model_revision,
             ),
         )
 
@@ -1297,6 +1391,7 @@ class FiniteModalLiveSceneProvider:
         job_id: str,
         seed: int,
         prompt: str,
+        layer_id: str,
     ) -> tuple[AssetRecord, LiveSceneArtifact, float]:
         promotion_started = time.perf_counter()
         source = bundle.artifacts[role]
@@ -1349,7 +1444,7 @@ class FiniteModalLiveSceneProvider:
         record = AssetRecord(
             asset_id=artifact_id,
             page_id="page-01",
-            layer_id="scene-background",
+            layer_id=layer_id,
             kind=asset_kind,
             role=asset_role,
             provider=provider_label,
@@ -1384,6 +1479,7 @@ def _live_scene_metrics(
     *,
     cache_ms: float,
     include_motion: bool = False,
+    planning: _ResolvedLiveScenePlan,
 ) -> LiveSceneMetrics:
     stage_names = ["fast", *(("motion",) if include_motion else ())]
     stages = [bundle.manifest["stages"][stage_name] for stage_name in stage_names]
@@ -1415,6 +1511,7 @@ def _live_scene_metrics(
     else:
         warm_state = LiveSceneWarmState.UNKNOWN
     models = [
+        planning.provenance,
         LiveSceneModelProvenance(
             role="master",
             model=FAST_MODEL,
@@ -1437,17 +1534,38 @@ def _live_scene_metrics(
     estimated_gpu_usd = sum(float(stage["estimated_gpu_usd"]) for stage in stages)
     cache_ms = max(0.0, cache_ms)
     provider_ms = max(0.0, provider_seconds * 1000)
+    planning_ms = max(0.0, planning.planning_ms)
     return LiveSceneMetrics(
-        elapsed_ms=provider_ms + cache_ms,
+        elapsed_ms=planning_ms + provider_ms + cache_ms,
         provider_ms=provider_ms,
         inference_ms=max(0.0, inference_seconds * 1000),
         cache_ms=cache_ms,
         overhead_ms=max(0.0, overhead_seconds * 1000),
+        planning_ms=planning_ms,
+        planning_status=planning.status,
         warm_state=warm_state,
         gpu=str(stages[0].get("gpu", "L4")),
         estimated_gpu_usd=max(0.0, estimated_gpu_usd),
         cost_source=LiveSceneCostSource.PROVIDER_MANIFEST,
         models=models,
+    )
+
+
+def _background_layer_id(pack: StoryPack) -> str:
+    backgrounds = [
+        layer.layer_id
+        for page in pack.pages
+        for layer in page.layers
+        if layer.kind == "background"
+    ]
+    if len(backgrounds) != 1:
+        raise FiniteModalProviderError("live-scene plan must contain exactly one background")
+    return backgrounds[0]
+
+
+def _with_live_scene_assets(pack: StoryPack, assets: list[AssetRecord]) -> StoryPack:
+    return StoryPack.model_validate(
+        pack.model_copy(update={"assets": assets}).model_dump()
     )
 
 
@@ -1537,7 +1655,8 @@ def _bounded_prompt(subject: str, direction: str) -> str:
     available = 4_000 - len(separator) - len(direction)
     if available < 1:
         raise ValueError("generation direction is too long")
-    return f"{subject[:available]}{separator}{direction}"
+    bounded_subject = subject[:available].rstrip(" \t\r\n.,;:!?")
+    return f"{bounded_subject}{separator}{direction}"
 
 
 def _write_warm_fast_bundle(

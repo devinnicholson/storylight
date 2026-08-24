@@ -61,6 +61,8 @@ def test_live_scene_api_progresses_to_resolvable_motion_scene() -> None:
             "inference_ms",
             "cache_ms",
             "overhead_ms",
+            "planning_ms",
+            "planning_status",
             "warm_state",
             "gpu",
             "estimated_gpu_usd",
@@ -70,6 +72,8 @@ def test_live_scene_api_progresses_to_resolvable_motion_scene() -> None:
         }
         assert metrics["provider_ms"] == 30
         assert metrics["inference_ms"] == 22
+        assert metrics["planning_ms"] == 2
+        assert metrics["planning_status"] == "deterministic"
         assert metrics["cost_source"] == "fixture"
         assert metrics["milestones_ms"]["motion_ready"] == metrics["elapsed_ms"]
         assert [model["role"] for model in metrics["models"]] == [

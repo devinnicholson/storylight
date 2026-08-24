@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <meta name="theme-color" content="#07110f" />
     <title>Bookforge Live Scene Foundry</title>
-    <link rel="stylesheet" href="/workbench-assets/workbench.css?v=0.2.0-live3" />
+    <link rel="stylesheet" href="/workbench-assets/workbench.css?v=0.2.0-live4" />
   </head>
   <body>
     <main class="shell">
@@ -38,8 +38,9 @@
           </div>
 
           <p class="instruction">
-            Use a sentence or short paragraph. Bookforge uses these exact words to plan the visual
-            world; it does not create the page text or rewrite it.
+            Use a sentence or short paragraph. Bookforge keeps the source passage out of the
+            rendering request; the renderer receives visual direction instead of the original text,
+            and it does not create the page text or rewrite it.
           </p>
 
           <label class="field-block page-field">
@@ -105,6 +106,9 @@
               <span id="generationRevision">revision 0</span>
             </div>
             <p class="generation-metrics" id="generationMetrics">Backend metrics pending</p>
+            <p class="planning-privacy" id="planningPrivacy">
+              Private visual handoff pending.
+            </p>
             <p class="generation-warning hidden" id="generationWarning"></p>
           </section>
 
@@ -220,6 +224,6 @@
         separate local-only milestone after the live generation path is proven.
       </footer>
     </main>
-    <script src="/workbench-assets/workbench.js?v=0.2.0-live3"></script>
+    <script src="/workbench-assets/workbench.js?v=0.2.0-live4"></script>
   </body>
 </html>

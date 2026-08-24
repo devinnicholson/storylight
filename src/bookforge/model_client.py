@@ -76,7 +76,11 @@ class OllamaClient(StructuredModelClient):
                     "think": False,
                     "format": output_type.model_json_schema(),
                     "keep_alive": self.settings.model_keep_alive,
-                    "options": {"temperature": 0, "num_ctx": 8192},
+                    "options": {
+                        "temperature": 0,
+                        "num_ctx": self.settings.model_context_tokens,
+                        "num_predict": self.settings.model_max_output_tokens,
+                    },
                 },
             )
             response.raise_for_status()
@@ -143,7 +147,7 @@ class OpenAICompatibleClient(StructuredModelClient):
                         {"role": "user", "content": prompt},
                     ],
                     "temperature": 0,
-                    "max_tokens": 4096,
+                    "max_tokens": self.settings.model_max_output_tokens,
                     "response_format": {
                         "type": "json_schema",
                         "json_schema": {"name": output_type.__name__, "schema": schema},

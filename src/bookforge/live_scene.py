@@ -16,7 +16,7 @@ from datetime import UTC, datetime
 from enum import StrEnum
 from pathlib import Path
 from time import perf_counter
-from typing import Annotated, Protocol
+from typing import TYPE_CHECKING, Annotated, Protocol
 from uuid import uuid4
 
 from pydantic import BaseModel, ConfigDict, Field, StringConstraints, model_validator
@@ -38,6 +38,9 @@ from bookforge.domain import (
     VisualLayer,
 )
 from bookforge.event_hub import SessionId
+
+if TYPE_CHECKING:
+    from bookforge.model_client import StructuredModelClient
 
 LiveSceneJobId = Annotated[
     str,
@@ -98,6 +101,13 @@ class LiveSceneCostSource(StrEnum):
     UNAVAILABLE = "unavailable"
 
 
+class LiveScenePlanningStatus(StrEnum):
+    PENDING = "pending"
+    DETERMINISTIC = "deterministic"
+    MODEL = "model"
+    FALLBACK = "fallback"
+
+
 class LiveSceneModelProvenance(FrozenStrictModel):
     role: Annotated[
         str,
@@ -121,6 +131,8 @@ class LiveSceneMetrics(FrozenStrictModel):
     inference_ms: Annotated[float, Field(ge=0)] = 0
     cache_ms: Annotated[float, Field(ge=0)] = 0
     overhead_ms: Annotated[float, Field(ge=0)] = 0
+    planning_ms: Annotated[float, Field(ge=0)] = 0
+    planning_status: LiveScenePlanningStatus = LiveScenePlanningStatus.PENDING
     warm_state: LiveSceneWarmState = LiveSceneWarmState.UNKNOWN
     gpu: Annotated[
         str,
@@ -138,6 +150,13 @@ class LiveSceneMetrics(FrozenStrictModel):
         roles = [model.role for model in self.models]
         if len(roles) != len(set(roles)):
             raise ValueError("metric model roles must be unique")
+        if (
+            self.planning_status is not LiveScenePlanningStatus.PENDING
+            and "scene_plan" not in roles
+        ):
+            raise ValueError("completed planning metrics require scene-plan provenance")
+        if self.planning_status is LiveScenePlanningStatus.PENDING and self.planning_ms != 0:
+            raise ValueError("pending planning metrics cannot report planning time")
         if self.cost_source is LiveSceneCostSource.UNAVAILABLE and self.estimated_gpu_usd != 0:
             raise ValueError("unavailable cost evidence cannot report a GPU estimate")
         return self
@@ -322,11 +341,17 @@ class LiveSceneJob(FrozenStrictModel):
                     raise ValueError(
                         f"artifact {artifact.artifact_id!r} provider provenance is inconsistent"
                     )
-                if (
-                    artifact.kind is LiveSceneArtifactKind.MASTER
-                    and artifact.model != self.story_pack.compiler_model
-                ):
-                    raise ValueError("master artifact model must match Story Pack compiler_model")
+            scene_plan = next(
+                (model for model in self.metrics.models if model.role == "scene_plan"),
+                None,
+            )
+            if (
+                scene_plan is not None
+                and scene_plan.model != self.story_pack.compiler_model
+            ):
+                raise ValueError(
+                    "Story Pack compiler_model must match scene-plan provenance"
+                )
 
         if self.stage is LiveSceneStage.FAILED:
             if self.error is None:
@@ -999,6 +1024,7 @@ class LiveSceneJobRegistry:
             "inference_ms",
             "cache_ms",
             "overhead_ms",
+            "planning_ms",
             "estimated_gpu_usd",
         )
         for field_name in cumulative_fields:
@@ -1006,6 +1032,13 @@ class LiveSceneJobRegistry:
                 raise LiveSceneProviderProtocolError(
                     f"Live-scene metric {field_name} cannot move backwards"
                 )
+        if (
+            current.planning_status is not LiveScenePlanningStatus.PENDING
+            and update.planning_status is not current.planning_status
+        ):
+            raise LiveSceneProviderProtocolError(
+                "Live-scene planning status cannot change after planning completes"
+            )
         previous_models = {model.role: model for model in current.models}
         for model in update.models:
             previous = previous_models.get(model.role)
@@ -1225,7 +1258,25 @@ def build_live_scene_provider(
     output_root: Path = Path("artifacts/live-scenes/generated"),
     enable_motion: bool = False,
     modal_session_gpu_cap_usd: float = 1.0,
+    planner_mode: str = "deterministic",
+    model_client: StructuredModelClient | None = None,
+    planner_timeout_seconds: float = 12.0,
+    planner_model_revision: str = "configured-local-model",
 ) -> LiveSceneProvider:
+    planner = None
+    if planner_mode == "model":
+        if model_client is None:
+            raise ValueError("model live-scene planning requires a structured model client")
+        from bookforge.live_scene_planner import StructuredLiveScenePlanner
+
+        planner = StructuredLiveScenePlanner(
+            model_client,
+            timeout_seconds=planner_timeout_seconds,
+            model_revision=planner_model_revision,
+        )
+    elif planner_mode != "deterministic":
+        raise ValueError(f"unknown live-scene planner mode {planner_mode!r}")
+
     selected = asset_backend if live_scene_backend == "auto" else live_scene_backend
     if selected == "fake":
         # A small delay makes each progressive stage observable in local UI smoke tests.
@@ -1244,6 +1295,7 @@ def build_live_scene_provider(
             cache=cache,
             output_root=output_root,
             enable_motion=enable_motion,
+            planner=planner,
         )
     if selected == "modal_warm":
         if cache is None:
@@ -1258,6 +1310,7 @@ def build_live_scene_provider(
             cache=cache,
             output_root=output_root,
             enable_motion=enable_motion,
+            planner=planner,
         )
     return DisabledLiveSceneProvider(
         f"No live-scene provider is configured for backend {selected!r}"
@@ -1295,13 +1348,15 @@ def _fake_live_scene_metrics(stage: LiveSceneStage) -> LiveSceneMetrics:
         inference_ms=inference_ms,
         cache_ms=cache_ms,
         overhead_ms=overhead_ms,
+        planning_ms=2,
+        planning_status=LiveScenePlanningStatus.DETERMINISTIC,
         warm_state=LiveSceneWarmState.UNKNOWN,
         estimated_gpu_usd=0,
         cost_source=LiveSceneCostSource.FIXTURE,
         models=[
             LiveSceneModelProvenance(
                 role=role,
-                model="deterministic-live-scene-fixture",
+                model="deterministic-live-scene-fixture-v1",
                 revision="v1",
             )
             for role in roles
@@ -1320,6 +1375,7 @@ def build_live_scene_story_pack(
     seed: int,
     assets: list[AssetRecord],
     compiler_model: str,
+    cloud_safe_prompts: bool = False,
 ) -> StoryPack:
     page_id = "page-01"
     background_id = "scene-background"
@@ -1330,30 +1386,43 @@ def build_live_scene_story_pack(
     focus_y = 0.52 + ((seed >> 12) & 0xFF) / 255 * 0.12
     accent_x = 0.76 if focus_x < 0.5 else 0.24
     accent_y = 0.32 + ((seed >> 20) & 0xFF) / 255 * 0.28
-    prompt = (
-        f"{request.visual_style}. {theme['prompt']}. "
-        "A cinematic, projection-ready illustration of: "
-        f"{request.text}"
-    )
+    if cloud_safe_prompts:
+        prompt = (
+            f"{request.visual_style}. {theme['prompt']}. "
+            "One cohesive cinematic storybook moment with a clear central subject, "
+            "projection-ready silhouettes, layered depth, and no readable text."
+        )
+        background_prompt = str(theme["prompt"])
+        focus_prompt = "Clear central storytelling subject and action"
+        accent_prompt = str(theme["accent"])
+    else:
+        prompt = (
+            f"{request.visual_style}. {theme['prompt']}. "
+            "A cinematic, projection-ready illustration of: "
+            f"{request.text}"
+        )
+        background_prompt = f"Environment and atmosphere for {request.text}"
+        focus_prompt = f"Clear central storytelling subject from {request.text}"
+        accent_prompt = f"{theme['accent']} inspired by {request.text}"
     layers = [
         VisualLayer(
             layer_id=background_id,
             kind="background",
-            prompt=f"Environment and atmosphere for {request.text}",
+            prompt=background_prompt,
             z_index=0,
             motion="subtle parallax drift",
         ),
         VisualLayer(
             layer_id=focus_id,
             kind="character",
-            prompt=f"Clear central storytelling subject from {request.text}",
+            prompt=focus_prompt,
             z_index=5,
             motion="gentle breathing and cloth movement",
         ),
         VisualLayer(
             layer_id=accent_id,
             kind=theme["layer_kind"],
-            prompt=f"{theme['accent']} inspired by {request.text}",
+            prompt=accent_prompt,
             z_index=8,
             motion=theme["motion"],
         ),
@@ -1418,6 +1487,34 @@ def build_live_scene_story_pack(
         literacy_support=[],
         comprehension=[],
     )
+    title_words = request.text.rstrip(".!?").split()[:8]
+    title = " ".join(title_words) or "Live Scene"
+    story_prefix = request.session_id or "live-scene"
+    return StoryPack(
+        schema_version="2.0",
+        story_id=f"{story_prefix}-{job_id[-12:]}",
+        title=title,
+        reading_level=2,
+        visual_style=request.visual_style,
+        compiler_model=compiler_model,
+        pages=[page],
+        assets=assets,
+    )
+
+
+def build_planned_live_scene_story_pack(
+    request: LiveSceneCreateRequest,
+    *,
+    job_id: str,
+    page: GeneratedPagePlan,
+    assets: list[AssetRecord],
+    compiler_model: str,
+) -> StoryPack:
+    """Wrap one validated model-authored page without recomputing its SceneSpec."""
+
+    if page.page_id != "page-01":
+        raise ValueError("live-scene model plans must use page-01")
+    page = page.model_copy(update={"source_text": request.text})
     title_words = request.text.rstrip(".!?").split()[:8]
     title = " ".join(title_words) or "Live Scene"
     story_prefix = request.session_id or "live-scene"

@@ -20,6 +20,8 @@ class Settings(BaseSettings):
     model_api_key: str = ""
     model_timeout_seconds: float = 180.0
     model_keep_alive: str = "10m"
+    model_context_tokens: Annotated[int, Field(ge=2_048, le=32_768)] = 8_192
+    model_max_output_tokens: Annotated[int, Field(ge=64, le=8_192)] = 4_096
     asset_backend: Literal["disabled", "modal", "mflux", "fake"] = "disabled"
     asset_model: str = "z-image-turbo"
     asset_command: str = "mflux-generate-z-image-turbo"
@@ -36,6 +38,12 @@ class Settings(BaseSettings):
     live_scene_backend: Literal[
         "auto", "disabled", "fake", "modal", "modal_warm"
     ] = "auto"
+    live_scene_planner: Literal["deterministic", "model"] = "deterministic"
+    live_scene_planner_timeout_seconds: Annotated[float, Field(gt=0, le=60)] = 12.0
+    live_scene_planner_model_revision: Annotated[
+        str,
+        Field(min_length=1, max_length=200),
+    ] = "configured-local-model"
     live_scene_enable_motion: bool = False
     live_scene_output_dir: Path = Path("artifacts/live-scenes/generated")
     live_scene_modal_session_gpu_cap_usd: Annotated[float, Field(gt=0, le=10)] = 1.0

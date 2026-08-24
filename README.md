@@ -6,7 +6,7 @@ publisher-supplied book pages into validated, projection-ready Story Packs.
 
 This repository now contains working model-facing services rather than only a visual mockup:
 
-- a structured Gemma client for Ollama on the development Mac;
+- a structured Gemma client verified on both the development Mac and an NVIDIA Jetson Orin Nano;
 - the same client contract for vLLM or NVIDIA NIM-compatible cloud endpoints;
 - a deterministic sub-900 ms intervention fast path;
 - schema-constrained Gemma intervention decisions;
@@ -72,6 +72,12 @@ text becoming the exact moving projector output in progressive stages: an immedi
 draft, generated artwork with depth-aware WebGL movement, and an optional cinematic loop. Stage,
 revision, provider, latency, and artifact provenance remain visible throughout. The microphone is
 intentionally a later, collapsed milestone; GCP is not required to exercise the typed-text flow.
+
+The accepted edge path runs a real 1B Gemma 3 instruction model on the Orin Nano, emits a strict
+semantic SceneSpec, and sends only that visual direction to the remote image renderer. The first
+integrated acceptance planned on Jetson in 9.165 seconds and reached moving master-plus-depth output
+in 15.005 seconds total. A local outbound gate now rejects source-text echoes, obvious contact data,
+and source proper names before any rendering request; rejected plans use the cloud-safe fallback.
 
 Run the complete interface without model weights or cloud spend:
 
@@ -331,10 +337,10 @@ explicit installation option is supplied. System and graphical-user service temp
 loopback API and Chromium-first projector kiosk with a Firefox fallback, respectively.
 
 See [`deploy/jetson/README.md`](deploy/jetson/README.md) for the guarded setup, interactive smoke
-test, systemd installation, kiosk configuration, WhisperTRT activation, privacy audit, and hardware
-acceptance commands. Jetson speech recognition remains disabled for first boot; the adapter is
-implemented, but it does not become accepted until the exact board passes the real I/O and latency
-run on JetPack 7.2.1.
+test, local Gemma service, systemd installation, kiosk configuration, WhisperTRT activation,
+privacy audit, and hardware acceptance commands. Jetson speech recognition remains disabled for
+first boot; the adapter is implemented, but it does not become accepted until the exact board
+passes the real I/O and latency run on JetPack 7.2.1.
 
 ## Design documents
 
@@ -352,3 +358,4 @@ run on JetPack 7.2.1.
 - [`benchmarks/winged-library-modal-live-scene-2026-08-23.json`](benchmarks/winged-library-modal-live-scene-2026-08-23.json): pinned cold SANA/depth/LTX smoke, loop quality, checksums, guardrails, and authoritative billing evidence
 - [`benchmarks/winged-library-modal-warm-acceptance-2026-08-23.json`](benchmarks/winged-library-modal-warm-acceptance-2026-08-23.json): authenticated scale-to-zero prewarm, 5.256-second live master, cache/StoryPack validation, and $0.01350024 authoritative cost
 - [`benchmarks/jetson-projector-live-scene-2026-08-23.json`](benchmarks/jetson-projector-live-scene-2026-08-23.json): physical-Jetson cross-device generation and asset-delivery pass, with the projector display gate explicitly pending an unlocked screenshot or video
+- [`benchmarks/jetson-gemma3-ollama-2026-08-23.json`](benchmarks/jetson-gemma3-ollama-2026-08-23.json): pinned Jetson Gemma runtime, GPU/memory/privacy evidence, exact planning latency, and the complete Gemma-to-SANA-to-depth acceptance

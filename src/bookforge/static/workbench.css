@@ -116,7 +116,8 @@ textarea { resize: vertical; min-height: 154px; line-height: 1.6; }
 .artifact-strip span.ready::before { content: "\2713"; margin-right: 4px; }
 .provenance-line { display: flex; align-items: center; gap: 8px 12px; flex-wrap: wrap; margin-top: 11px; color: #788c83; font-size: 9px; }
 .provenance-line code { max-width: 270px; overflow: hidden; color: #a5b8ae; text-overflow: ellipsis; white-space: nowrap; }
-.generation-metrics { margin: 8px 0 0; color: #91a69c; font: 650 9px/1.55 ui-monospace, SFMono-Regular, Menlo, monospace; }
+.generation-metrics { margin: 8px 0 0; overflow-wrap: anywhere; color: #91a69c; font: 650 9px/1.55 ui-monospace, SFMono-Regular, Menlo, monospace; }
+.planning-privacy { margin: 10px 0 0; padding: 8px 10px; border: 1px solid rgba(141,240,174,.18); border-radius: 9px; color: #b9d7c8; background: rgba(141,240,174,.045); font-size: 10px; line-height: 1.45; }
 .generation-warning { margin: 11px 0 0; padding: 8px 10px; border: 1px solid rgba(244,210,125,.24); border-radius: 9px; color: #dccb9f; background: rgba(244,210,125,.055); font-size: 10px; line-height: 1.45; }
 .generation-progress[data-stage="failed"] { border-color: rgba(255,131,107,.4); }
 .scene-details { margin-top: 15px; border: 1px solid var(--line); border-radius: 14px; background: rgba(0, 0, 0, .1); }

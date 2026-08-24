@@ -21,6 +21,7 @@ from bookforge.live_scene import (
     build_live_scene_provider,
     build_live_scene_story_pack,
 )
+from bookforge.model_client import FakeModelClient
 
 
 def test_live_scene_request_is_strict_text_only() -> None:
@@ -224,6 +225,23 @@ def test_live_scene_update_rejects_forged_artifact_asset_metadata(
     payload["artifacts"][0][field] = forged_value
 
     with pytest.raises(ValidationError, match=message):
+        LiveSceneUpdate.model_validate(payload)
+
+
+def test_live_scene_update_binds_compiler_to_scene_planner_not_master_generator() -> None:
+    async def master_update() -> LiveSceneUpdate:
+        async for update in DeterministicFakeLiveSceneProvider().generate(
+            LiveSceneCreateRequest(text="A fox reads a map."),
+            job_id="scene_0123456789abcdef01234567",
+        ):
+            if update.stage is LiveSceneStage.MASTER_READY:
+                return update
+        raise AssertionError("fake provider did not emit master_ready")
+
+    payload = asyncio.run(master_update()).model_dump(mode="json")
+    payload["story_pack"]["compiler_model"] = "unreported-compiler"
+
+    with pytest.raises(ValidationError, match="scene-plan provenance"):
         LiveSceneUpdate.model_validate(payload)
 
 
@@ -431,17 +449,35 @@ def test_provider_factory_selects_fake_and_finite_modal_without_persistent_servi
         asset_backend="disabled",
         cache=cache,
     )
+    model_planned = build_live_scene_provider(
+        "modal",
+        asset_backend="disabled",
+        cache=cache,
+        output_root=tmp_path / "model-planned",
+        planner_mode="model",
+        model_client=FakeModelClient(),
+        planner_timeout_seconds=12,
+        planner_model_revision="sha256:fixture",
+    )
 
     assert fake.name == "fake"
     assert explicit_fake.name == "fake"
     assert modal.name == "modal-finite"
     assert modal_warm.name == "modal-finite"
+    assert model_planned.planner.__class__.__name__ == "StructuredLiveScenePlanner"  # type: ignore[attr-defined]
     assert modal_warm.provider.__class__.__name__ == "WarmModalSceneProvider"  # type: ignore[attr-defined]
     assert modal.enable_motion is False  # type: ignore[attr-defined]
     assert modal.output_root == tmp_path / "generated"  # type: ignore[attr-defined]
     assert LiveSceneJobRegistry(modal, max_active_jobs=8).max_active_jobs == 1
     assert LiveSceneJobRegistry(modal_warm, max_active_jobs=8).max_active_jobs == 1
     assert LiveSceneJobRegistry(fake, max_active_jobs=8).max_active_jobs == 8
+    with pytest.raises(ValueError, match="structured model client"):
+        build_live_scene_provider(
+            "modal",
+            asset_backend="disabled",
+            cache=cache,
+            planner_mode="model",
+        )
 
 
 def test_session_rendezvous_is_monotonic_and_never_reverts_to_an_older_job() -> None:

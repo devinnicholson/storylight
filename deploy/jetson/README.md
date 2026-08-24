@@ -25,6 +25,8 @@ explicit device-administration task that must follow NVIDIA's documentation.
 - `warm-asr.sh`: supervised-service-safe Whisper checkpoint and TensorRT engine warmup.
 - `systemd/bookforge@.service`: system API service parameterized by the Linux user.
 - `systemd/bookforge-kiosk.service`: graphical-session user service for the projector browser.
+- `systemd/bookforge-gemma.service`: loopback-only, user-scoped Ollama service for the local Gemma
+  scene planner.
 - `kiosk.env.example`: kiosk URL/browser overrides.
 
 ## 1. Inspect the device
@@ -115,6 +117,217 @@ engine beneath `/var/cache/bookforge`, then the acceptance run measures warm inf
 holds GPU serialization through cancellation, so a cancelled request cannot start a second build
 against the same engine. JetPack 7.2.1 compatibility remains a physical-device acceptance gate
 because the upstream repository does not currently state a JetPack 7 support matrix.
+
+### Install the local Gemma planner without sudo
+
+The accepted Orin Nano configuration uses Ollama `0.32.15` and
+`gemma3:1b-it-q4_K_M`. The model is an actual 999.89M-parameter Gemma 3 instruction
+model, not a fake backend. Its 815 MB Q4_K_M weights leave enough unified memory for the
+projector desktop on an 8 GB board. Do not substitute Gemma 4 E2B or another model larger than
+1B without a separate memory and latency acceptance run; this device has no swap.
+
+Download the pinned official ARM64 archive into a versioned, user-owned directory. Verify the
+release digest before extracting it; do not pipe an unverified installer into a shell:
+
+```bash
+BOOKFORGE_OLLAMA_VERSION=0.32.15
+BOOKFORGE_OLLAMA_ROOT="$HOME/.local/opt/ollama-v${BOOKFORGE_OLLAMA_VERSION}"
+BOOKFORGE_OLLAMA_ARCHIVE="$HOME/.cache/bookforge/downloads/ollama-linux-arm64-v${BOOKFORGE_OLLAMA_VERSION}.tar.zst"
+
+test ! -e "$BOOKFORGE_OLLAMA_ROOT"
+install -d -m 0700 \
+  "$HOME/.cache/bookforge/downloads" \
+  "$BOOKFORGE_OLLAMA_ROOT" \
+  "$HOME/.local/share/bookforge/ollama/models" \
+  "$HOME/.config/systemd/user"
+curl --fail --location --retry 3 \
+  --output "$BOOKFORGE_OLLAMA_ARCHIVE" \
+  "https://github.com/ollama/ollama/releases/download/v${BOOKFORGE_OLLAMA_VERSION}/ollama-linux-arm64.tar.zst"
+printf '%s  %s\n' \
+  c898270b1690eab0f51aa9e9197686b7b4c6a7d88b83967763818f3127e477e9 \
+  "$BOOKFORGE_OLLAMA_ARCHIVE" | sha256sum --check --strict
+zstd --test "$BOOKFORGE_OLLAMA_ARCHIVE"
+zstd -dc "$BOOKFORGE_OLLAMA_ARCHIVE" | tar -xf - -C "$BOOKFORGE_OLLAMA_ROOT"
+chmod 0755 "$BOOKFORGE_OLLAMA_ROOT/bin/ollama"
+sha256sum "$BOOKFORGE_OLLAMA_ROOT/bin/ollama"
+```
+
+The accepted binary SHA-256 is
+`db3793652a24aaf4bbfcab4460a4539e413e50193322a224bd5fb521930292e0`.
+Install and start the user service; it binds only to `127.0.0.1`, permits one loaded model and one
+request at a time, defaults to a 4096-token context, keeps history off, and disables Ollama cloud:
+
+```bash
+install -m 0644 deploy/jetson/systemd/bookforge-gemma.service \
+  "$HOME/.config/systemd/user/bookforge-gemma.service"
+systemd-analyze --user verify "$HOME/.config/systemd/user/bookforge-gemma.service"
+systemctl --user daemon-reload
+systemctl --user enable --now bookforge-gemma.service
+curl -fsS http://127.0.0.1:11434/api/version
+ss -ltnp | grep ':11434\b'
+loginctl show-user "$USER" -p Linger
+```
+
+The accepted device reports `Linger=no`, so this user service starts with the normal Jetson login
+session rather than before login. That matches the projector demo, which also requires the user's
+graphical session. Enabling linger is an optional administrator change and was deliberately not
+performed by this no-sudo install.
+
+Pull and verify only the accepted 1B model:
+
+```bash
+OLLAMA_HOST=http://127.0.0.1:11434 \
+  "$BOOKFORGE_OLLAMA_ROOT/bin/ollama" pull gemma3:1b-it-q4_K_M
+curl -fsS http://127.0.0.1:11434/api/tags | python3 -c '
+import json, sys
+model = json.load(sys.stdin)["models"][0]
+assert model["name"] == "gemma3:1b-it-q4_K_M"
+assert model["digest"] == "8648f39daa8fbf5b18c7b4e6a8fb4990c692751d49917417b8842ca5758e7ffc"
+assert model["details"]["parameter_size"] == "999.89M"
+assert model["details"]["quantization_level"] == "Q4_K_M"
+print(model["digest"])
+'
+sha256sum \
+  "$HOME/.local/share/bookforge/ollama/models/blobs/sha256-7cd4618c1faf8b7233c6c906dac1694b6a47684b37b8895d470ac688520b9c01"
+```
+
+The final command must print the model-layer digest encoded in its filename. The Ollama manifest
+digest is `8648f39daa8fbf5b18c7b4e6a8fb4990c692751d49917417b8842ca5758e7ffc`; the
+815,310,432-byte model layer is
+`7cd4618c1faf8b7233c6c906dac1694b6a47684b37b8895d470ac688520b9c01`.
+
+Run one long-timeout strict-schema request to populate the CUDA kernel cache, then repeat it under
+the steady-state acceptance deadline before connecting Bookforge:
+
+```bash
+curl --fail --silent --show-error --max-time 240 \
+  --header 'Content-Type: application/json' \
+  --data-binary @benchmarks/jetson-gemma3-schema-request.json \
+  http://127.0.0.1:11434/api/chat | python3 -m json.tool
+curl --fail --silent --show-error --max-time 20 \
+  --header 'Content-Type: application/json' \
+  --data-binary @benchmarks/jetson-gemma3-schema-request.json \
+  http://127.0.0.1:11434/api/chat | python3 -m json.tool
+OLLAMA_HOST=http://127.0.0.1:11434 \
+  "$BOOKFORGE_OLLAMA_ROOT/bin/ollama" ps
+```
+
+`ollama ps` must report `100% GPU`. The accepted repeatable cold reload was 10.40 seconds and the
+warm new-passage request was 4.57 seconds at roughly 27-29 generated tokens per second. The very
+first request took about 152 seconds while CUDA compiled and cached kernels; always prewarm before
+a live reading. Full evidence is in
+`benchmarks/jetson-gemma3-ollama-2026-08-23.json`. The request fixture now contains the actual
+compact `LiveScenePlan` contract from `src/bookforge/live_scene_planner.py`, not the earlier
+six-string toy schema. Its canonical JSON Schema SHA-256 is
+`a2b099807ac2f80c54b8243189652e73af2bb1e5a59e7baf575706882589f1ac`.
+
+For Bookforge on the same Jetson, use these settings after the independent probe passes:
+
+```dotenv
+BOOKFORGE_MODEL_BACKEND=ollama
+BOOKFORGE_MODEL_NAME=gemma3:1b-it-q4_K_M
+BOOKFORGE_MODEL_BASE_URL=http://127.0.0.1:11434
+BOOKFORGE_MODEL_TIMEOUT_SECONDS=20
+BOOKFORGE_MODEL_KEEP_ALIVE=10m
+BOOKFORGE_MODEL_CONTEXT_TOKENS=4096
+BOOKFORGE_MODEL_MAX_OUTPUT_TOKENS=320
+BOOKFORGE_LIVE_SCENE_PLANNER=model
+BOOKFORGE_LIVE_SCENE_PLANNER_TIMEOUT_SECONDS=12
+BOOKFORGE_LIVE_SCENE_PLANNER_MODEL_REVISION=ollama-manifest-sha256:8648f39daa8fbf5b18c7b4e6a8fb4990c692751d49917417b8842ca5758e7ffc
+```
+
+`BOOKFORGE_MODEL_MAX_OUTPUT_TOKENS` is a hard decode ceiling, not a target. The integrated acceptance
+used 283 of 320 tokens without truncation. Keep the 320 ceiling until a multi-passage benchmark
+proves that 256 never truncates valid JSON. The 12-second planner deadline passed with 2.84 seconds
+of headroom, but only on a prewarmed model; keep the independent 20-second model-client timeout for
+diagnostics and ensure the prewarm completes before a live reading.
+
+Keep the model endpoint on loopback. When a Mac control plane needs it during development, use an
+explicit SSH local forward rather than changing `OLLAMA_HOST` to a LAN address.
+
+#### Integrated Gemma-to-scene acceptance
+
+Job `scene_7ad76946940540f4b2f8878e` completed on August 23, 2026 with
+`planning_status=model`, no fallback, no warning, and no error. The path was:
+
+```text
+local passage -> Jetson Gemma LiveScenePlan -> normalized SceneSpec v2
+              -> finite Modal SANA master + Depth Anything map -> projector assets
+```
+
+The warm Gemma call processed 537 prompt tokens and generated 283 tokens in 9.03 seconds. The
+application's validated planning stage took 9.165 seconds, below its 12-second deadline. Ollama
+reported 32.48 generated tokens per second and confirmed that the response was not truncated. The
+complete job reached `master_ready` in 15.005 seconds: 9.165 seconds planning, 5.807 seconds in the
+finite provider call, 4 milliseconds of cache work, and 30 milliseconds of remaining orchestration.
+Inside the provider call, SANA took 3.826 seconds and Depth Anything took 115 milliseconds. The
+provider manifest estimated `$0.001289` of L4 GPU cost for the 5.807-second generation RPC alone.
+The conservative ledger entry for the complete warm session is `$0.012836`: 22.013 seconds of
+prewarm, 5.807 seconds of generation, and a 30-second scale-down allowance at `$0.000222/second`.
+These are not the same scope. A read-only Modal billing report at 14:48:52 PDT showed `$0.05987830`
+for the current `bookforge-fast-scene` app/day interval since the 13:46:13 baseline; that wider
+interval may include deployment, prewarm, generation, and billing lag, so it is not a job-only
+price. At that capture the workspace total was `$13.95606460`, leaving `$16.04393540` of the
+monthly credit and `$15.04393540` before the project's `$29` hard-stop threshold.
+
+All three model revisions were captured:
+
+- Gemma scene planner: manifest
+  `8648f39daa8fbf5b18c7b4e6a8fb4990c692751d49917417b8842ca5758e7ffc`
+- SANA 1.5 1.6B: revision `caa51e5ea874be07d3a9c7c2d0fd800570b18440`
+- Depth Anything V2 Small: revision `b4769fd619394250528294b658587285526fab1c`
+
+The accepted 1024x576 RGB master is 621,636 bytes with SHA-256
+`dbcd5d176857656aa4c7a41c848e36626a8fd77bd5a8223df1f3212e3fc3e049`. The accepted 1024x576
+grayscale depth map is 73,142 bytes with SHA-256
+`bf9b4a185b272a083ad95efbd3953b43b931ec7376a85726b4e26ad45890e5c8`. Both generated-file
+hashes independently matched their content-addressed cache copies. The provider manifest is
+`artifacts/live-scenes/generated/scene_7ad76946940540f4b2f8878e/scene.manifest.json`, SHA-256
+`567eac7b1a50ab05696854bfe75f67a4beb526b831b96fcd828f005eb4babce1`.
+
+The privacy boundary is explicit: the raw passage was processed by the local Bookforge/Jetson
+path, while the model-authored semantic visual prompt was sent to Modal for image generation. The
+exact source passage and local session ID are absent from the provider manifest request. The
+manifest confirms a finite authenticated call and no persistent endpoint; this is semantic-data
+minimization, not a claim that cloud image generation sees no story information. This is also a
+job-specific observation, not a code-enforced guarantee for that accepted run: at the time of the
+job, the path had no post-Gemma source-overlap or PII gate, so another model response that echoed
+private input could have reached Modal.
+
+After this job, the planner prompt gained grammar and trailing-punctuation guidance. Its JSON
+Schema did not change, and no additional inference was run merely to validate that wording-only
+edit. The current request fixture is byte-for-byte checked against the current Python contract;
+the integrated job and this distinction are recorded in
+`benchmarks/jetson-gemma3-ollama-2026-08-23.json`.
+
+#### Update and rollback
+
+Treat runtime updates like deploys. Download the new official release into a different versioned
+directory, verify the digest published with that release, and preserve the known-good directory and
+service file. Change only `ExecStart` in a reviewed copy of `bookforge-gemma.service`, run
+`systemd-analyze --user verify`, then restart and repeat the schema, GPU, memory, latency, and
+loopback checks. Do not update the runtime and model in the same acceptance run.
+
+Before switching versions, save the known-good unit:
+
+```bash
+cp "$HOME/.config/systemd/user/bookforge-gemma.service" \
+  "$HOME/.config/systemd/user/bookforge-gemma.service.known-good"
+```
+
+Rollback is a unit-file restore; the old versioned runtime and model remain intact:
+
+```bash
+install -m 0644 "$HOME/.config/systemd/user/bookforge-gemma.service.known-good" \
+  "$HOME/.config/systemd/user/bookforge-gemma.service"
+systemctl --user daemon-reload
+systemctl --user restart bookforge-gemma.service
+curl -fsS http://127.0.0.1:11434/api/version
+curl -fsS http://127.0.0.1:11434/api/tags
+```
+
+Ollama may create a private identity key under `$HOME/.ollama`. It is runtime state: never copy it
+into the repository, benchmark evidence, logs, or a demo package.
 
 ## 4. Install the API service
 

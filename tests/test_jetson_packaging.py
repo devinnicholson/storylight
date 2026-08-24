@@ -523,12 +523,15 @@ def test_live_ui_displays_backend_metrics_without_a_saved_local_fallback() -> No
     stylesheet = (ROOT / "src/bookforge/static/workbench.css").read_text()
 
     assert 'id="generationMetrics"' in markup
+    assert 'id="planningPrivacy"' in markup
     assert "backend wall" in controller
     assert "provider remote" in controller
     assert "inference" in controller
     assert "cache promotion" in controller
     assert "estimated_gpu_usd" in controller
     assert "metrics.models" in controller
+    assert "Local Gemma plan" in controller
+    assert "renderer received only visual direction" in controller
     assert "Saved locally" not in controller
     assert 'dataset.terminal = String(isTerminalSnapshot(snapshot))' in controller
     assert '.generation-progress:not([data-terminal="true"])' in stylesheet
