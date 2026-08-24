@@ -7,6 +7,7 @@ import pytest
 from bookforge.modal_budget import (
     authorize_and_reserve_modal_budget,
     budget_envelope_from_plan,
+    release_modal_budget_reservation,
     require_modal_budget_reservation,
     reserve_modal_budget,
     settle_modal_budget,
@@ -217,3 +218,37 @@ def test_external_reservation_is_bound_to_its_exact_experiment(tmp_path: Path) -
             reservation_id=reservation_id,
             expected_experiment_id="scene-b",
         )
+
+
+def test_unused_authorization_can_be_released_before_any_remote_call(tmp_path: Path) -> None:
+    plan = tmp_path / "plan.json"
+    ledger_path = tmp_path / "ledger.json"
+    plan.write_text(
+        json.dumps(
+            {
+                "monthly_credit_usd": 30.0,
+                "workspace_usage_before_live_scenes_usd": 10.0,
+                "billing_delay_reserve_usd": 1.0,
+                "hard_stop_workspace_total_usd": 29.0,
+                "maximum_new_spend_usd": 19.0,
+            }
+        )
+    )
+    reservation_id = authorize_and_reserve_modal_budget(
+        plan_path=plan,
+        ledger_path=ledger_path,
+        authoritative_workspace_usd=10.0,
+        experiment_id="prepared-scene",
+        full_call_ceiling_usd=0.08,
+    )
+
+    release_modal_budget_reservation(
+        plan_path=plan,
+        ledger_path=ledger_path,
+        reservation_id=reservation_id,
+    )
+
+    envelope, _ = budget_envelope_from_plan(plan)
+    ledger = VisualLabLedger.read(ledger_path, envelope=envelope)
+    assert ledger.reservations == {}
+    assert ledger.records == []

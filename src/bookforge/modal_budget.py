@@ -159,6 +159,18 @@ def require_modal_budget_reservation(
             raise ValueError(f"unknown reservation_id: {reservation_id}")
 
 
+def release_modal_budget_reservation(
+    *,
+    plan_path: Path,
+    ledger_path: Path,
+    reservation_id: str,
+) -> None:
+    """Release an authorization only when no remote paid call was started."""
+
+    with locked_modal_budget_ledger(plan_path=plan_path, ledger_path=ledger_path) as ledger:
+        ledger.release(reservation_id)
+
+
 def settle_modal_budget(
     *,
     plan_path: Path,

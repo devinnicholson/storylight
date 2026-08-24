@@ -36,7 +36,11 @@ from bookforge.live_scene_planner import (
     LiveScenePlanner,
     LiveScenePlannerError,
 )
-from bookforge.modal_budget import authorize_and_reserve_modal_budget, settle_modal_budget
+from bookforge.modal_budget import (
+    authorize_and_reserve_modal_budget,
+    release_modal_budget_reservation,
+    settle_modal_budget,
+)
 from bookforge.visual_evaluation import MediaEvaluation, evaluate_media
 from bookforge.visual_lab import GPU_USD_PER_SECOND, GenerationRecord
 
@@ -338,6 +342,12 @@ class _ActiveWarmSession:
     fast_scene_seconds: float = 0
     scene_id: str | None = None
     scene_master: SceneArtifact | None = None
+
+
+@dataclass(frozen=True, slots=True)
+class _PreparedFastAuthorization:
+    scene_id: str
+    reservation_id: str
 
 
 @dataclass(frozen=True, slots=True)
@@ -664,8 +674,10 @@ class WarmModalSceneProvider(FiniteModalSceneProvider):
         super().__init__(**kwargs)
         self.invoker = invoker or ModalSdkWarmInvoker()
         self._warm_session: _ActiveWarmSession | None = None
+        self._prepared_fast_authorizations: dict[str, _PreparedFastAuthorization] = {}
         self._operation_lock = asyncio.Lock()
         self._configured_scaledown_window_seconds = WARM_SCALEDOWN_WINDOW_SECONDS
+        self._remote_warm_deadline_monotonic = 0.0
 
     async def probe(self) -> tuple[bool, str]:
         ready, detail = await super().probe()
@@ -770,6 +782,7 @@ class WarmModalSceneProvider(FiniteModalSceneProvider):
                 scaledown_window_seconds=scaledown_window_seconds,
             )
             self._warm_session = session
+            self._remote_warm_deadline_monotonic = session.deadline_monotonic
             return WarmPrewarmReport(
                 prewarm_id=prewarm_id,
                 reservation_id=reservation_id,
@@ -817,6 +830,56 @@ class WarmModalSceneProvider(FiniteModalSceneProvider):
         async with self._operation_lock:
             await self._expire_warm_session_locked()
             return self._warm_session is not None
+
+    async def is_renderer_likely_warm(self) -> bool:
+        """Return a same-process hint; authorization is still required per scene."""
+
+        async with self._operation_lock:
+            await self._expire_warm_session_locked()
+            return self._warm_session is not None or (
+                time.monotonic() < self._remote_warm_deadline_monotonic
+            )
+
+    async def prepare_fast_authorization(self, *, scene_id: str) -> None:
+        """Authorize one exact scene while local planning runs; no GPU RPC starts here."""
+
+        _validate_identifier(scene_id)
+        await self._require_ready()
+        async with self._operation_lock:
+            if self._warm_session is not None:
+                return
+            if scene_id in self._prepared_fast_authorizations:
+                return
+            self._reserve(self.fast_policy)
+            experiment_id = f"fast-authorization:{scene_id}"
+            try:
+                reservation_id = await self._reserve_against_current_billing(
+                    experiment_id=experiment_id,
+                    full_call_ceiling_usd=self.fast_policy.worst_case_gpu_usd,
+                )
+            except BaseException:
+                self._active_reservations_gpu_usd -= self.fast_policy.worst_case_gpu_usd
+                raise
+            self._prepared_fast_authorizations[scene_id] = _PreparedFastAuthorization(
+                scene_id=scene_id,
+                reservation_id=reservation_id,
+            )
+
+    async def abandon_prepared_fast_authorization(self, *, scene_id: str) -> None:
+        """Release a prepared reservation only if generation never consumed it."""
+
+        async with self._operation_lock:
+            prepared = self._prepared_fast_authorizations.get(scene_id)
+            if prepared is None:
+                return
+            await asyncio.to_thread(
+                release_modal_budget_reservation,
+                plan_path=self.plan_file,
+                ledger_path=self.ledger_path,
+                reservation_id=prepared.reservation_id,
+            )
+            self._prepared_fast_authorizations.pop(scene_id, None)
+            self._active_reservations_gpu_usd -= self.fast_policy.worst_case_gpu_usd
 
     async def abandon_warm_session(
         self,
@@ -885,13 +948,26 @@ class WarmModalSceneProvider(FiniteModalSceneProvider):
                 )
             session = self._warm_session
             uses_session = session is not None
+            prepared = self._prepared_fast_authorizations.get(request.scene_id)
+            if session is not None and prepared is not None:
+                raise FiniteModalProviderError(
+                    "scene cannot use both a prewarm session and a prepared authorization"
+                )
+            if session is None and prepared is not None:
+                self._prepared_fast_authorizations.pop(request.scene_id, None)
             if session is not None and session.scene_id is not None:
                 raise FiniteModalProviderError(
                     "the active prewarm reservation already belongs to another scene"
                 )
             experiment_id = _fast_experiment_id(request)
-            reservation_id = session.reservation_id if session else ""
-            if not uses_session:
+            reservation_id = (
+                session.reservation_id
+                if session
+                else prepared.reservation_id
+                if prepared
+                else ""
+            )
+            if not uses_session and prepared is None:
                 self._reserve(self.fast_policy)
                 try:
                     reservation_id = await self._authorize_with_current_billing(
@@ -925,6 +1001,9 @@ class WarmModalSceneProvider(FiniteModalSceneProvider):
                     self._mark_failed(self.fast_policy)
                 raise
             remote_seconds = time.perf_counter() - started
+            self._remote_warm_deadline_monotonic = (
+                time.monotonic() + self._configured_scaledown_window_seconds
+            )
             estimated_gpu_usd = remote_seconds * GPU_USD_PER_SECOND[self.fast_policy.gpu]
             if estimated_gpu_usd > self.fast_policy.maximum_gpu_usd + 1e-9:
                 if uses_session:
@@ -1256,6 +1335,14 @@ class FiniteModalLiveSceneProvider:
                 except asyncio.CancelledError:
                     await cleanup
                     raise
+                authorization_cleanup = asyncio.create_task(
+                    self.provider.abandon_prepared_fast_authorization(scene_id=job_id)
+                )
+                try:
+                    await asyncio.shield(authorization_cleanup)
+                except asyncio.CancelledError:
+                    await authorization_cleanup
+                    raise
 
     async def _generate_unprotected(
         self,
@@ -1418,12 +1505,10 @@ class FiniteModalLiveSceneProvider:
         draft: StoryPack,
     ) -> _ResolvedLiveScenePlan:
         prepare_task: asyncio.Task[float] | None = None
-        if self.auto_prewarm_on_submit and isinstance(
-            self.provider, WarmModalSceneProvider
-        ):
+        if isinstance(self.provider, WarmModalSceneProvider):
             prepare_task = asyncio.create_task(
                 self._prepare_warm_renderer(job_id=job_id),
-                name=f"bookforge-prewarm-{job_id}",
+                name=f"bookforge-renderer-preparation-{job_id}",
             )
         try:
             resolved = await self._resolve_plan(
@@ -1456,10 +1541,13 @@ class FiniteModalLiveSceneProvider:
         if await self.provider.is_prewarmed():
             return 0
         started = time.perf_counter()
-        await self.provider.prewarm(
-            prewarm_id=f"auto-{job_id}",
-            include_motion=self.enable_motion,
-        )
+        if self.auto_prewarm_on_submit and not await self.provider.is_renderer_likely_warm():
+            await self.provider.prewarm(
+                prewarm_id=f"auto-{job_id}",
+                include_motion=self.enable_motion,
+            )
+        else:
+            await self.provider.prepare_fast_authorization(scene_id=job_id)
         return (time.perf_counter() - started) * 1_000
 
     async def _resolve_plan(

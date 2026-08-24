@@ -175,6 +175,11 @@ measurements, not a pricing guarantee; the provider still checks current billing
 full ceiling before prewarm. On a Mac that must retain local microphone support, sync both optional
 groups with `uv sync --extra modal-authoring --extra mac-asr`.
 
+For later warm scenes, Bookforge performs the same fresh authoritative billing check and creates an
+independent one-scene reservation, but overlaps that work with local Gemma planning. A real acceptance
+hid 850.856 ms of billing latency under planning and reduced projected warm end-to-end time from
+6.194 seconds to 5.350 seconds. This is latency overlap, not a cached or weakened spend guard.
+
 The prior full-device speed pass coupled the real Jetson Gemma planner to an 896x512, 8-step warm
 SANA 1.5 renderer. Its exact-code accepted scene reached `master_ready` in **6.971 seconds**: 4.285
 seconds for local Gemma,

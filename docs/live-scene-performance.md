@@ -56,11 +56,20 @@ $0.30 conservative ceiling before launch and do not support the optional LTX cla
 
 An exact 180-second rehearsal-window acceptance prewarmed in 29.869 seconds. Its first scene used
 1.363 seconds of provider time; a second independently authorized scene reused the live container
-and used 1.050 seconds, 23.0% faster. The second backend wall remained 2.035 seconds because its
-authoritative billing preflight added about 983 ms. A follow-up attempt to share one reservation
+and used 1.050 seconds, 23.0% faster. A follow-up attempt to share one reservation
 across multiple scenes was rejected after two production replays cleared the local session after
 scene one despite isolated tests passing. That code was removed, both uncertain reservations remain
 fail-closed, the remote window was restored to 90 seconds, and the app reached zero tasks.
+
+The accepted replacement overlaps a fresh, one-scene billing authorization with local planning.
+It never caches authoritative spend and does not start a GPU request until both operations finish.
+In the real acceptance, the billing read took 850.856 ms while the planning surrogate took 4.285
+seconds; combined preparation took 4.291 seconds. The warm generation then took 1.058 seconds wall
+(1.051 seconds provider), producing a 5.350-second total instead of the 6.194-second serialized
+projection—a measured 844.576 ms or 13.6% reduction. Cancellation before any remote call releases
+the unused reservation; once a remote call might exist, the reservation remains fail-closed. The
+authoritative current-app and workspace interval delta was $0.03089237. The app was explicitly
+stopped after the proof and reached zero tasks.
 
 When `BOOKFORGE_LIVE_SCENE_AUTO_PREWARM_ON_SUBMIT=true`, the deployed class prewarm begins at the
 same time as local Gemma planning. The prewarm request contains no story text or visual prompt;
