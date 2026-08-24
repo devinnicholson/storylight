@@ -180,6 +180,7 @@ class StubWarmInvoker:
                 "master_media_type": "image/jpeg",
                 "depth": _jpeg(arguments["width"], arguments["height"]),
                 "depth_media_type": "image/jpeg",
+                "depth_dtype": "float16",
                 "negative_prompt_supported": False,
                 "image_seconds": 3.0,
                 "depth_seconds": 0.2,

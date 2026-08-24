@@ -11,6 +11,7 @@ def test_fast_scene_models_and_revisions_are_pinned() -> None:
     assert (
         'DEPTH_MODEL_REVISION = "b4769fd619394250528294b658587285526fab1c"' in SOURCE
     )
+    assert 'DEPTH_DTYPE = "float16"' in SOURCE
     assert (
         'MOTION_MODEL_REVISION = "a6d59ee37c13c58261aa79027d3e41cd41960925"' in SOURCE
     )
@@ -53,6 +54,7 @@ def test_fast_scene_uses_low_latency_projection_quality_packaging() -> None:
     assert '"packaging_seconds": packaging_seconds' in fast
     assert '"master_media_type": "image/jpeg"' in fast
     assert '"depth_media_type": "image/jpeg"' in fast
+    assert '"depth_dtype": DEPTH_DTYPE' in fast
     assert '"negative_prompt_supported": False' in fast
     assert 'result.get("master_media_type") != "image/jpeg"' in SOURCE
     assert 'result.get("depth_media_type") != "image/jpeg"' in SOURCE
@@ -85,6 +87,7 @@ def test_fast_prewarm_executes_shape_matched_cuda_and_depth_work() -> None:
     assert "if not self.inference_warmed:" in fast
     assert "num_inference_steps=2" in fast
     assert "self.depth_pipe(warmup_master)" in fast
+    assert "dtype=torch.float16" in fast
     assert '"inference_warmup_seconds"' in fast
 
 

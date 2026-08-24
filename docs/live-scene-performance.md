@@ -108,6 +108,19 @@ observed wall. A serialized path would have been 36.351 seconds, so concurrency 
 (11.8%) without sending story text during prewarm. This is cold-path concurrency evidence, not a
 replacement for the pending exact current-code Jetson run.
 
+A bounded Modal GPU-memory-snapshot experiment was rejected. Snapshot creation was still active
+after more than 210 seconds, outside the 180-second live-function budget, so the task was stopped,
+the app was verified at zero tasks, and the proven non-snapshot class was redeployed. The provider
+app/day billing interval increased by $0.05521155 during that experiment. Bookforge does not claim
+snapshot acceleration and does not carry the experimental snapshot flags in production.
+
+Loading the independent SANA and depth checkpoints in parallel was also rejected: it increased
+model load by 52.9% and prewarm by 35.8% on the exact L4 path, indicating resource contention.
+Serial loading remains selected. A narrower Depth Anything FP16 change passed: master and depth
+files were byte-identical to the FP32 baseline, while model load improved 8.4%, depth inference
+improved 24.3%, and observed cold wall improved 726 ms (2.26%). Manifests pin the depth precision as
+`float16` rather than leaving it implicit.
+
 SANA-Sprint does not expose a separate negative-prompt input. Bookforge therefore carries no-text,
 no-logo, and projection constraints in the positive semantic visual direction and records
 `negative_prompt_supported=false` in the provider manifest instead of implying that a discarded

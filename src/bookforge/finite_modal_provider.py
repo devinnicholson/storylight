@@ -44,6 +44,7 @@ FAST_MODEL = "Efficient-Large-Model/Sana_Sprint_1.6B_1024px_diffusers"
 FAST_MODEL_REVISION = "19683c58b7ea290e55cedd8950ae1d86ada7ef96"
 DEPTH_MODEL = "depth-anything/Depth-Anything-V2-Small-hf"
 DEPTH_MODEL_REVISION = "b4769fd619394250528294b658587285526fab1c"
+DEPTH_DTYPE = "float16"
 MOTION_MODEL = "Lightricks/LTX-Video"
 MOTION_MODEL_REVISION = "a6d59ee37c13c58261aa79027d3e41cd41960925"
 PROVIDER_NAME = "modal-finite"
@@ -1794,6 +1795,8 @@ def _write_warm_fast_bundle(
         raise FiniteModalProviderError("warm fast class returned an unsupported depth format")
     if result.get("negative_prompt_supported") is not False:
         raise FiniteModalProviderError("warm fast class returned ambiguous prompt provenance")
+    if result.get("depth_dtype") != DEPTH_DTYPE:
+        raise FiniteModalProviderError("warm fast class returned ambiguous depth precision")
     if master_jpeg_quality != 95 or depth_jpeg_quality != 85:
         raise FiniteModalProviderError("warm fast class returned unexpected JPEG quality")
     if _jpeg_dimensions(master) != (request.width, request.height):
@@ -1841,6 +1844,7 @@ def _write_warm_fast_bundle(
                 "packaging_seconds": packaging_seconds,
                 "master_jpeg_quality": master_jpeg_quality,
                 "depth_jpeg_quality": depth_jpeg_quality,
+                "depth_dtype": DEPTH_DTYPE,
                 "negative_prompt_supported": False,
                 "model_load_seconds": float(result.get("model_load_seconds", 0)),
                 "container_age_seconds": float(result.get("container_age_seconds", 0)),

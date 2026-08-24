@@ -45,6 +45,7 @@ FAST_MODEL = "Efficient-Large-Model/Sana_Sprint_1.6B_1024px_diffusers"
 FAST_MODEL_REVISION = "19683c58b7ea290e55cedd8950ae1d86ada7ef96"
 DEPTH_MODEL = "depth-anything/Depth-Anything-V2-Small-hf"
 DEPTH_MODEL_REVISION = "b4769fd619394250528294b658587285526fab1c"
+DEPTH_DTYPE = "float16"
 MOTION_MODEL = "Lightricks/LTX-Video"
 MOTION_MODEL_REVISION = "a6d59ee37c13c58261aa79027d3e41cd41960925"
 PROVIDER_NAME = "modal-finite"
@@ -175,6 +176,7 @@ class FastSceneStudio:
             task="depth-estimation",
             model=DEPTH_MODEL,
             revision=DEPTH_MODEL_REVISION,
+            dtype=torch.float16,
             device=0,
         )
         self.model_load_seconds = time.perf_counter() - load_started
@@ -203,6 +205,7 @@ class FastSceneStudio:
             "model_revision": FAST_MODEL_REVISION,
             "depth_model": DEPTH_MODEL,
             "depth_model_revision": DEPTH_MODEL_REVISION,
+            "depth_dtype": DEPTH_DTYPE,
             "model_load_seconds": self.model_load_seconds,
             "inference_warmup_seconds": self.inference_warmup_seconds,
             "inference_warmed": self.inference_warmed,
@@ -249,6 +252,7 @@ class FastSceneStudio:
             "master_media_type": "image/jpeg",
             "depth": depth_bytes,
             "depth_media_type": "image/jpeg",
+            "depth_dtype": DEPTH_DTYPE,
             "negative_prompt_supported": False,
             "master_jpeg_quality": MASTER_JPEG_QUALITY,
             "depth_jpeg_quality": DEPTH_JPEG_QUALITY,
@@ -566,6 +570,8 @@ def fast_scene_cli(
         raise RuntimeError("fast scene returned an unsupported depth format")
     if result.get("negative_prompt_supported") is not False:
         raise RuntimeError("fast scene returned ambiguous negative-prompt provenance")
+    if result.get("depth_dtype") != DEPTH_DTYPE:
+        raise RuntimeError("fast scene returned ambiguous depth precision")
     remote_seconds = time.perf_counter() - remote_started
     estimated_gpu_usd = remote_seconds * GPU_USD_PER_SECOND
     if estimated_gpu_usd > maximum_gpu_usd + 1e-9:
@@ -618,6 +624,7 @@ def fast_scene_cli(
                 "packaging_seconds": result["packaging_seconds"],
                 "master_jpeg_quality": result["master_jpeg_quality"],
                 "depth_jpeg_quality": result["depth_jpeg_quality"],
+                "depth_dtype": DEPTH_DTYPE,
                 "negative_prompt_supported": False,
                 "model_load_seconds": result.get("model_load_seconds", 0),
                 "container_age_seconds": result.get("container_age_seconds", 0),

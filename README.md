@@ -184,6 +184,11 @@ misses in the fox and orrery prompts keep seed-level semantic validation on the 
 has no separate negative-prompt channel; no-text and safety direction is carried in the positive
 visual prompt and provenance reports that boundary.
 
+Depth Anything now runs in explicit FP16 on the L4. Against the same prompt and seed, both the
+master and depth JPEGs were byte-identical to the FP32 baseline; model load improved 8.4%, depth
+inference improved 24.3%, and the measured cold wall improved by 726 ms. A parallel checkpoint-load
+experiment was 35.8% slower at prewarm and was reverted.
+
 The automatic-prewarm acceptance then measured the cold scale-to-zero case honestly. A real Modal
 prewarm took 30.744 seconds at the API boundary while the 4.288-second last-measured Jetson planning
 delay ran inside that window; the subsequent two-step master/depth call took 1.318 seconds. The
