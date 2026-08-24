@@ -1398,22 +1398,28 @@ class FiniteModalLiveSceneProvider:
         except FiniteModalUnavailableError as error:
             raise LiveSceneProviderUnavailableError(str(error)) from error
         try:
-            master_record, master_artifact, master_cache_ms = await self._promote_artifact(
-                bundle=fast_bundle,
-                role="master",
-                job_id=job_id,
-                seed=seed,
-                prompt=fast_request.prompt,
-                layer_id=background_layer_id,
+            promotion_started = time.perf_counter()
+            master_result, depth_result = await asyncio.gather(
+                self._promote_artifact(
+                    bundle=fast_bundle,
+                    role="master",
+                    job_id=job_id,
+                    seed=seed,
+                    prompt=fast_request.prompt,
+                    layer_id=background_layer_id,
+                ),
+                self._promote_artifact(
+                    bundle=fast_bundle,
+                    role="depth",
+                    job_id=job_id,
+                    seed=seed,
+                    prompt=f"Depth estimate for {job_id}-master",
+                    layer_id=background_layer_id,
+                ),
             )
-            depth_record, depth_artifact, depth_cache_ms = await self._promote_artifact(
-                bundle=fast_bundle,
-                role="depth",
-                job_id=job_id,
-                seed=seed,
-                prompt=f"Depth estimate for {job_id}-master",
-                layer_id=background_layer_id,
-            )
+            master_record, master_artifact, _master_cache_ms = master_result
+            depth_record, depth_artifact, _depth_cache_ms = depth_result
+            fast_cache_ms = (time.perf_counter() - promotion_started) * 1_000
             assets = [master_record, depth_record]
             artifacts = [master_artifact, depth_artifact]
             master_pack = _with_live_scene_assets(resolved.pack, assets)
@@ -1425,7 +1431,7 @@ class FiniteModalLiveSceneProvider:
                 artifacts=artifacts,
                 metrics=_live_scene_metrics(
                     fast_bundle,
-                    cache_ms=master_cache_ms + depth_cache_ms,
+                    cache_ms=fast_cache_ms,
                     planning=resolved,
                 ),
             )
@@ -1486,7 +1492,7 @@ class FiniteModalLiveSceneProvider:
             artifacts=[*artifacts, motion_artifact],
             metrics=_live_scene_metrics(
                 upgraded,
-                cache_ms=master_cache_ms + depth_cache_ms + motion_cache_ms,
+                cache_ms=fast_cache_ms + motion_cache_ms,
                 include_motion=True,
                 planning=resolved,
             ),

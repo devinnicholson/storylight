@@ -172,9 +172,10 @@ Modal's idle scale-down policy rather than creating an always-on minimum contain
 local API still scales the GPU to zero. Extended sessions reserve a conservative $0.30 ceiling
 before starting; use the normal 90-second window outside rehearsals and stop the app after a demo.
 The workbench also exposes a **Prepare full path** control. It starts the text-free Modal prewarm and
-the loopback-only Gemma plan concurrently, then holds the privacy-gated semantic plan in a bounded
-memory cache. An unchanged passage can therefore skip Gemma inference when **Generate** is pressed;
-editing the passage or style invalidates the prepared state. Concurrent duplicate preparations are
+the loopback-only Gemma plan concurrently, then holds the privacy-gated semantic plan in bounded
+memory and permission-restricted local caches. An unchanged passage can therefore skip Gemma inference
+when **Generate** is pressed—even after a local API restart; only editing the passage invalidates the
+prepared semantics, while style auditions reuse them. Concurrent duplicate preparations are
 coalesced into one Jetson inference. Automatic page-load preparation occurs only when the operator
 adds `rehearsal=1`; ordinary workbench visits never allocate a GPU or run Gemma.
 
@@ -239,13 +240,14 @@ representative structured response from 272 to 226 bytes without changing the sc
 disabled by default because output size alone does not prove lower latency or equivalent semantics;
 the production switch requires a real multi-passage edge benchmark.
 
-Repeated passages now reuse a bounded, content-addressed in-memory Gemma plan cache even when the
-visual style changes. Style is applied later during local SceneSpec compilation, so it no longer
-consumes Gemma input tokens or invalidates the private semantic plan.
-The cache stores only the locally privacy-gated semantic plan, is invalidated by model revision or
-wire-contract changes, and still applies a new seed when the final SceneSpec is built. Rehearsals,
-rereads, and alternate-seed retries therefore skip the measured ~4.3-second edge decode; first-time
-passages remain genuinely generated on the spot. The workbench labels cache hits explicitly.
+Repeated passages now reuse bounded, content-addressed memory and local-disk Gemma plan caches even
+when the visual style changes or the API restarts. Style is applied later during local SceneSpec
+compilation, so it no longer consumes Gemma input tokens or invalidates the private semantic plan.
+The disk record stores no source passage, uses a SHA-256 key plus model/contract revisions, is written
+atomically under `0700`/`0600` permissions, and is revalidated through the current source privacy gate
+on every restore. A local restart test restored a plan in 0.541 ms with zero model calls. A new seed is
+still applied when the final SceneSpec is built; first-time passages remain genuinely generated on the
+spot. The workbench labels cache hits explicitly.
 
 The sub-100ms procedural draft is passage-aware rather than a generic loader. Local keyword cues
 select five environmental treatments plus reader, fox, whale, and turtle silhouettes and flock,
@@ -491,6 +493,7 @@ passes the real I/O and latency run on JetPack 7.2.1.
 - [`benchmarks/bookforge-projector-tone-mapping-2026-08-24.json`](benchmarks/bookforge-projector-tone-mapping-2026-08-24.json): zero-generation-cost adaptive gamma for dark masters; real WebGL browser pass at 31 fps with zero dropped frames, while physical-projector validation remains explicit
 - [`benchmarks/bookforge-projector-native-resolution-2026-08-24.json`](benchmarks/bookforge-projector-native-resolution-2026-08-24.json): source-resolution WebGL rendering with full-size display compositing; browser pass at 30 fps/zero drops and 4.52× fewer render pixels for the 896×512 production plate, with Jetson power/FPS measurement pending
 - [`benchmarks/bookforge-projector-frame-pacing-2026-08-24.json`](benchmarks/bookforge-projector-frame-pacing-2026-08-24.json): 30 Hz pacing for only the continuous WebGL depth pass, retaining native-refresh CSS/video/compositing; browser validation measured 29.2 depth draws/sec with zero drops, while the expected 50% draw reduction on Jetson's 60 Hz output remains pending physical measurement
+- [`benchmarks/bookforge-persistent-edge-plan-cache-2026-08-24.json`](benchmarks/bookforge-persistent-edge-plan-cache-2026-08-24.json): restart-safe, privacy-gated semantic plan caching; a fresh planner instance restored the synthetic plan in 0.541 ms with zero model calls, while the exact Jetson restart acceptance remains pending
 - [`benchmarks/bookforge-mac-gemma-wire-ab-2026-08-24.json`](benchmarks/bookforge-mac-gemma-wire-ab-2026-08-24.json): counterbalanced offline five-scene standard-versus-compact Gemma contract A/B plus style-independent semantic caching; compact was 10.4% faster, and an alternate style reused the local plan in 0.218 ms with zero new model tokens, but the exact Jetson acceptance remains required before enabling compact mode
 - [`benchmarks/bookforge-render-delivery-optimization-2026-08-23.json`](benchmarks/bookforge-render-delivery-optimization-2026-08-23.json): JPEG delivery, adaptive projector exposure, and measured rejections for smaller renders, compilation, and prompt changes
 - [`benchmarks/bookforge-packaging-optimization-2026-08-24.json`](benchmarks/bookforge-packaging-optimization-2026-08-24.json): parallel packaging telemetry, depth-JPEG quality/transfer evidence, single-decode projector delivery, and reconciled spend

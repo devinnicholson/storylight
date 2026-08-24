@@ -1,4 +1,5 @@
 import asyncio
+from pathlib import Path
 
 import pytest
 
@@ -623,6 +624,67 @@ def test_structured_planner_cache_can_be_disabled() -> None:
         )
         assert result.cache_hit is False
     assert len(stub.calls) == 2
+
+
+def test_private_persistent_plan_cache_survives_restart_without_storing_source(
+    tmp_path: Path,
+) -> None:
+    text = "A child opens a quiet book while paper birds rise above a floating school."
+    cache_dir = tmp_path / "private-plans"
+    first_stub = _ModelStub()
+    first_planner = StructuredLiveScenePlanner(
+        first_stub,  # type: ignore[arg-type]
+        timeout_seconds=1,
+        model_revision="sha256:persistent-fixture",
+        cache_entries=2,
+        persistent_cache_dir=cache_dir,
+    )
+
+    first = asyncio.run(
+        first_planner.plan(text=text, visual_style="paper theater", seed=1)
+    )
+    cached_files = list(cache_dir.glob("*.json"))
+
+    assert first.cache_hit is False
+    assert len(first_stub.calls) == 1
+    assert len(cached_files) == 1
+    assert text.encode() not in cached_files[0].read_bytes()
+    assert cache_dir.stat().st_mode & 0o777 == 0o700
+    assert cached_files[0].stat().st_mode & 0o777 == 0o600
+
+    restarted_stub = _ModelStub(failure=AssertionError("model must not run"))
+    restarted_planner = StructuredLiveScenePlanner(
+        restarted_stub,  # type: ignore[arg-type]
+        timeout_seconds=1,
+        model_revision="sha256:persistent-fixture",
+        cache_entries=2,
+        persistent_cache_dir=cache_dir,
+    )
+    restored = asyncio.run(
+        restarted_planner.plan(text=text, visual_style="bright clay", seed=2)
+    )
+
+    assert restored.cache_hit is True
+    assert restored.plan == first.plan
+    assert restored.metrics.total_ms == 0
+    assert restored.metrics.input_tokens == 0
+    assert restored.metrics.output_tokens == 0
+    assert restarted_stub.calls == []
+
+    changed_revision_stub = _ModelStub()
+    changed_revision_planner = StructuredLiveScenePlanner(
+        changed_revision_stub,  # type: ignore[arg-type]
+        timeout_seconds=1,
+        model_revision="sha256:new-model-revision",
+        cache_entries=2,
+        persistent_cache_dir=cache_dir,
+    )
+    changed = asyncio.run(
+        changed_revision_planner.plan(text=text, visual_style="paper theater", seed=3)
+    )
+
+    assert changed.cache_hit is False
+    assert len(changed_revision_stub.calls) == 1
 
 
 def test_planner_coalesces_inflight_requests_and_survives_waiter_cancel() -> None:

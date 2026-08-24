@@ -1362,6 +1362,23 @@ def test_live_scene_adapter_emits_progressive_checksum_cached_story_packs(
                 projection_legibility=0.7,
             ),
         )
+        active_promotions = 0
+        peak_promotions = 0
+        original_promote = provider._promote_artifact  # noqa: SLF001
+
+        async def observed_promote(**kwargs):
+            nonlocal active_promotions, peak_promotions
+            if kwargs["role"] in {"master", "depth"}:
+                active_promotions += 1
+                peak_promotions = max(peak_promotions, active_promotions)
+                try:
+                    await asyncio.sleep(0.01)
+                    return await original_promote(**kwargs)
+                finally:
+                    active_promotions -= 1
+            return await original_promote(**kwargs)
+
+        provider._promote_artifact = observed_promote  # type: ignore[method-assign]  # noqa: SLF001
         request = LiveSceneCreateRequest(
             text="A winged library rises into the stars.",
             seed=7,
@@ -1373,9 +1390,9 @@ def test_live_scene_adapter_emits_progressive_checksum_cached_story_packs(
                 job_id="scene_000000000000000000000001",
             )
         ]
-        return cache, updates
+        return cache, updates, peak_promotions
 
-    cache, updates = asyncio.run(run())
+    cache, updates, peak_promotions = asyncio.run(run())
 
     assert [update.stage for update in updates] == [
         LiveSceneStage.DRAFT_READY,
@@ -1392,6 +1409,7 @@ def test_live_scene_adapter_emits_progressive_checksum_cached_story_packs(
         LiveSceneArtifactKind.MOTION,
     ]
     assert len(updates[-1].story_pack.assets) == 3
+    assert peak_promotions == 2
     assert updates[-1].story_pack.compiler_model == "deterministic-live-scene-planner-v1"
     assert updates[1].metrics is not None
     assert updates[1].metrics.provider_ms == 5_000

@@ -1565,6 +1565,7 @@ def build_live_scene_provider(
     planner_model_revision: str = "configured-local-model",
     planner_compact_wire: bool = False,
     planner_cache_entries: int = 32,
+    planner_cache_dir: Path | None = None,
     master_width: int = 896,
     master_height: int = 512,
     master_steps: int = 2,
@@ -1583,6 +1584,7 @@ def build_live_scene_provider(
             model_revision=planner_model_revision,
             compact_wire=planner_compact_wire,
             cache_entries=planner_cache_entries,
+            persistent_cache_dir=planner_cache_dir,
         )
     elif planner_mode != "deterministic":
         raise ValueError(f"unknown live-scene planner mode {planner_mode!r}")

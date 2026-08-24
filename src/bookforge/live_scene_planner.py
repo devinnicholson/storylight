@@ -5,9 +5,13 @@ from __future__ import annotations
 import asyncio
 import hashlib
 import json
+import os
 import re
+import tempfile
 import unicodedata
 from collections import OrderedDict
+from contextlib import suppress
+from pathlib import Path
 from time import perf_counter
 from typing import Annotated, Literal, Protocol
 
@@ -61,6 +65,8 @@ _POSSESSIVE_BODY_FRAGMENT = re.compile(
 _LEADING_ARTICLE = re.compile(r"^(?:a|an|the)\s+", re.IGNORECASE)
 _SEMANTIC_WORD = re.compile(r"[A-Za-z][A-Za-z'-]*")
 _PLACEMENT_MARGIN = 0.04
+_PLAN_CACHE_SCHEMA_VERSION = "1"
+_PLAN_CACHE_CONTRACT_REVISION = "semantic-v1-style-independent-privacy-gated"
 _EMAIL = re.compile(r"\b[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}\b", re.IGNORECASE)
 _PHONE = re.compile(r"(?<!\w)(?:\+?\d[\d\s()./-]{6,}\d)(?!\w)")
 _URL = re.compile(r"\b(?:https?://|www\.)\S+", re.IGNORECASE)
@@ -1022,6 +1028,7 @@ class StructuredLiveScenePlanner:
         model_revision: str = "configured-local-model",
         compact_wire: bool = False,
         cache_entries: int = 32,
+        persistent_cache_dir: Path | None = None,
     ) -> None:
         if timeout_seconds <= 0:
             raise ValueError("live-scene planner timeout must be positive")
@@ -1032,6 +1039,7 @@ class StructuredLiveScenePlanner:
         if not 0 <= cache_entries <= 256:
             raise ValueError("live-scene planner cache entries must be between 0 and 256")
         self.cache_entries = cache_entries
+        self.persistent_cache_dir = persistent_cache_dir
         self._cache: OrderedDict[str, tuple[LiveScenePlan, ModelMetrics]] = OrderedDict()
         self._inflight: dict[str, asyncio.Task[LiveScenePlanningResult]] = {}
 
@@ -1048,10 +1056,12 @@ class StructuredLiveScenePlanner:
             raise ValueError("live-scene seed is outside uint32 range")
         cache_key = self._cache_key(text=text)
         cached = self._cache.pop(cache_key, None)
+        if cached is None and self.cache_entries and self.persistent_cache_dir is not None:
+            cached = await asyncio.to_thread(self._load_persistent_cache, cache_key)
         if cached is not None:
             started = perf_counter()
             plan, source_metrics = cached
-            self._cache[cache_key] = cached
+            self._remember(cache_key, cached)
             validate_live_scene_plan_privacy(plan, source_text=text)
             return LiveScenePlanningResult(
                 plan=plan,
@@ -1128,10 +1138,15 @@ class StructuredLiveScenePlanner:
         validated = sanitized_wire_plan.to_live_scene_plan(context_text=text)
         validate_live_scene_plan_privacy(validated, source_text=text)
         if self.cache_entries:
-            self._cache[cache_key] = (validated, metrics)
-            self._cache.move_to_end(cache_key)
-            while len(self._cache) > self.cache_entries:
-                self._cache.popitem(last=False)
+            cached = (validated, metrics)
+            self._remember(cache_key, cached)
+            if self.persistent_cache_dir is not None:
+                await asyncio.to_thread(
+                    self._store_persistent_cache,
+                    cache_key,
+                    validated,
+                    metrics,
+                )
         return LiveScenePlanningResult(
             plan=validated,
             metrics=metrics,
@@ -1153,9 +1168,91 @@ class StructuredLiveScenePlanner:
                 "text": text,
                 "model_revision": self.model_revision,
                 "compact_wire": self.compact_wire,
+                "contract_revision": _PLAN_CACHE_CONTRACT_REVISION,
             },
             ensure_ascii=False,
             sort_keys=True,
             separators=(",", ":"),
         ).encode()
         return hashlib.sha256(payload).hexdigest()
+
+    def _remember(
+        self,
+        cache_key: str,
+        cached: tuple[LiveScenePlan, ModelMetrics],
+    ) -> None:
+        self._cache[cache_key] = cached
+        self._cache.move_to_end(cache_key)
+        while len(self._cache) > self.cache_entries:
+            self._cache.popitem(last=False)
+
+    def _load_persistent_cache(
+        self,
+        cache_key: str,
+    ) -> tuple[LiveScenePlan, ModelMetrics] | None:
+        assert self.persistent_cache_dir is not None
+        path = self.persistent_cache_dir / f"{cache_key}.json"
+        try:
+            payload = json.loads(path.read_text(encoding="utf-8"))
+            if (
+                payload.get("schema_version") != _PLAN_CACHE_SCHEMA_VERSION
+                or payload.get("cache_key") != cache_key
+            ):
+                return None
+            return (
+                LiveScenePlan.model_validate(payload["plan"]),
+                ModelMetrics.model_validate(payload["metrics"]),
+            )
+        except (OSError, TypeError, ValueError, KeyError, json.JSONDecodeError):
+            return None
+
+    def _store_persistent_cache(
+        self,
+        cache_key: str,
+        plan: LiveScenePlan,
+        metrics: ModelMetrics,
+    ) -> None:
+        assert self.persistent_cache_dir is not None
+        try:
+            self.persistent_cache_dir.mkdir(parents=True, exist_ok=True, mode=0o700)
+            self.persistent_cache_dir.chmod(0o700)
+            encoded = json.dumps(
+                {
+                    "schema_version": _PLAN_CACHE_SCHEMA_VERSION,
+                    "cache_key": cache_key,
+                    "plan": plan.model_dump(mode="json"),
+                    "metrics": metrics.model_dump(mode="json"),
+                },
+                ensure_ascii=False,
+                sort_keys=True,
+                separators=(",", ":"),
+            ).encode()
+            descriptor, temporary_name = tempfile.mkstemp(
+                prefix=f".{cache_key}.",
+                suffix=".tmp",
+                dir=self.persistent_cache_dir,
+            )
+            try:
+                os.fchmod(descriptor, 0o600)
+                with os.fdopen(descriptor, "wb") as stream:
+                    descriptor = -1
+                    stream.write(encoded)
+                    stream.flush()
+                    os.fsync(stream.fileno())
+                os.replace(temporary_name, self.persistent_cache_dir / f"{cache_key}.json")
+            finally:
+                if descriptor >= 0:
+                    os.close(descriptor)
+                with suppress(FileNotFoundError):
+                    Path(temporary_name).unlink()
+            entries = sorted(
+                self.persistent_cache_dir.glob("*.json"),
+                key=lambda item: item.stat().st_mtime_ns,
+                reverse=True,
+            )
+            for stale in entries[self.cache_entries :]:
+                stale.unlink(missing_ok=True)
+        except OSError:
+            # A performance cache must never turn a valid private model result
+            # into a failed scene. The in-memory cache remains available.
+            return

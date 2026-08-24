@@ -130,6 +130,7 @@ async def lifespan(app: FastAPI):
             planner_model_revision=settings.live_scene_planner_model_revision,
             planner_compact_wire=settings.live_scene_planner_compact_wire,
             planner_cache_entries=settings.live_scene_planner_cache_entries,
+            planner_cache_dir=settings.cache_dir / "live-scene-plans",
             master_width=settings.live_scene_master_width,
             master_height=settings.live_scene_master_height,
             master_steps=settings.live_scene_master_steps,
@@ -472,7 +473,7 @@ async def prepare_live_scene_planner(
     payload: LiveScenePlannerPrepareRequest,
     request: Request,
 ) -> LiveScenePlannerPrepareResponse:
-    """Prime the in-memory edge-plan cache without starting a paid render."""
+    """Prime the private local edge-plan cache without starting a paid render."""
 
     if not _is_local_connection(request):
         raise HTTPException(status_code=403, detail="Live-scene planning is local-only")
