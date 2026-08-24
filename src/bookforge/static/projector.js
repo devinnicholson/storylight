@@ -2117,4 +2117,9 @@ bindCalibrationHandles();
 updateProjection();
 setupProjectorWakeLock();
 void startProjector();
-requestAnimationFrame(monitorFrames);
+if (PRESENTATION_MODE) {
+  document.body.dataset.frameMonitor = "disabled";
+} else {
+  document.body.dataset.frameMonitor = "active";
+  requestAnimationFrame(monitorFrames);
+}

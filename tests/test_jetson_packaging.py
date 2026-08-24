@@ -690,6 +690,19 @@ def test_projector_elapsed_clock_stops_after_terminal_scene() -> None:
     assert "setInterval(updateLiveGenerationClock" not in setup
 
 
+def test_presentation_projector_disables_hidden_frame_diagnostics() -> None:
+    projector = (ROOT / "src/bookforge/static/projector.js").read_text()
+
+    startup = projector.rsplit("setupProjectorWakeLock();", 1)[1]
+    assert 'if (PRESENTATION_MODE) {' in startup
+    assert 'document.body.dataset.frameMonitor = "disabled";' in startup
+    assert 'document.body.dataset.frameMonitor = "active";' in startup
+    assert "requestAnimationFrame(monitorFrames);" in startup
+    assert startup.index('frameMonitor = "disabled"') < startup.index(
+        "requestAnimationFrame(monitorFrames);"
+    )
+
+
 def test_projector_reuses_reader_session_for_visual_only_scene_upgrades() -> None:
     projector = (ROOT / "src/bookforge/static/projector.js").read_text()
 
