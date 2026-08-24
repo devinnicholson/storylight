@@ -526,6 +526,16 @@ def test_live_scene_workbench_uses_progressive_job_contract() -> None:
     assert "contentWindow?.postMessage" not in controller
     assert "if (revision < lastLiveRevision) return;" in controller
     assert 'elements.compileButton.textContent = "Try generation again"' in controller
+    assert "const shouldPersist = !liveSnapshot || isTerminalSnapshot(liveSnapshot);" in controller
+    assert "if (shouldPersist)" in controller
+    assert (
+        "const semanticsChanged = semanticFingerprint !== lastRenderedSemanticFingerprint;"
+        in controller
+    )
+    assert "if (semanticsChanged)" in controller
+    assert "the session SSE remains authoritative" in controller
+    assert "dataset.storyPackPersistCount" in controller
+    assert "dataset.semanticRenderCount" in controller
 
 
 def test_projector_hot_swaps_generated_stages_without_reloading() -> None:

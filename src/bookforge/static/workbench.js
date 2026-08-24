@@ -73,6 +73,9 @@ let liveRequestEpoch = 0;
 let activeLiveJobId = null;
 let latestLiveSnapshot = null;
 let lastLiveRevision = -1;
+let lastRenderedSemanticFingerprint = null;
+let storyPackPersistCount = 0;
+let semanticRenderCount = 0;
 let liveSessionRevision = 0;
 let liveServerInstanceId = null;
 let rendererPrewarming = false;
@@ -927,9 +930,31 @@ function renderPack(payload) {
   const pack = payload.story_pack;
   const metrics = payload.compile_metrics || payload.metrics;
   const generation = payload.generation_metrics;
-  const liveMetrics = payload.live_snapshot?.metrics;
-  localStorage.setItem("bookforge.latestStoryPack", JSON.stringify(pack));
+  const liveSnapshot = payload.live_snapshot;
+  const liveMetrics = liveSnapshot?.metrics;
   const page = pack.pages[0];
+  const semanticFingerprint = JSON.stringify([
+    pack.compiler_model,
+    page.page_id,
+    page.scene_summary,
+    page.scene_spec,
+    page.layers,
+    page.triggers,
+    page.literacy_support,
+    page.comprehension,
+  ]);
+  const semanticsChanged = semanticFingerprint !== lastRenderedSemanticFingerprint;
+  const shouldPersist = !liveSnapshot || isTerminalSnapshot(liveSnapshot);
+  if (shouldPersist) {
+    try {
+      localStorage.setItem("bookforge.latestStoryPack", JSON.stringify(pack));
+      storyPackPersistCount += 1;
+      document.body.dataset.storyPackPersistCount = String(storyPackPersistCount);
+    } catch (_) {
+      // Browser storage is a convenience fallback; the session SSE remains authoritative.
+    }
+    elements.raw.textContent = JSON.stringify(pack, null, 2);
+  }
   elements.model.textContent = liveMetrics?.models?.length
     ? liveMetrics.models.map((model) => `${model.model}@${model.revision}`).join(" + ")
     : metrics?.model || pack.compiler_model;
@@ -938,30 +963,34 @@ function renderPack(payload) {
     ? `${(liveMetrics.elapsed_ms / 1000).toFixed(1)} s backend wall`
     : totalMs ? `${(totalMs / 1000).toFixed(1)} s` : "Not measured";
   elements.tokens.textContent = metrics ? `${metrics.output_tokens} tokens` : `${page.layers.length + page.triggers.length} parts`;
-  elements.summary.textContent = page.scene_summary;
-  elements.layerCount.textContent = `${page.layers.length} layers`;
-  elements.triggerCount.textContent = `${page.triggers.length} triggers`;
-  elements.layers.innerHTML = page.layers.map((layer) => `
-    <article class="layer">
-      <div class="layer-top"><b>${safeText(layer.kind)}</b><small>z ${layer.z_index}</small></div>
-      <p>${safeText(layer.prompt)}</p>
-      <em>${safeText(layer.motion)}</em>
-    </article>
-  `).join("");
-  elements.triggers.innerHTML = page.triggers.length ? page.triggers.map((trigger) => `
-    <div class="trigger">
-      <b>“${safeText(trigger.word)}”</b>
-      <span>${safeText(trigger.action)} → ${safeText(trigger.target_layer_id)}</span>
-      <small>${trigger.duration_ms} ms</small>
-    </div>
-  `).join("") : '<div class="trigger"><span>No word triggers generated.</span></div>';
-  elements.supports.innerHTML = page.literacy_support.length ? page.literacy_support.map((support) => `
-    <div class="support"><b>${safeText(support.word)}</b><span>${support.hint_ladder.map(safeText).join(" → ")}</span></div>
-  `).join("") : '<div class="support">No scaffolds generated.</div>';
-  elements.questions.innerHTML = page.comprehension.length ? page.comprehension.map((item) => `
-    <div class="question">${safeText(item.question)}<span>${item.expected_concepts.map(safeText).join(", ")}</span></div>
-  `).join("") : '<div class="question">No questions generated.</div>';
-  elements.raw.textContent = JSON.stringify(pack, null, 2);
+  if (semanticsChanged) {
+    semanticRenderCount += 1;
+    document.body.dataset.semanticRenderCount = String(semanticRenderCount);
+    elements.summary.textContent = page.scene_summary;
+    elements.layerCount.textContent = `${page.layers.length} layers`;
+    elements.triggerCount.textContent = `${page.triggers.length} triggers`;
+    elements.layers.innerHTML = page.layers.map((layer) => `
+      <article class="layer">
+        <div class="layer-top"><b>${safeText(layer.kind)}</b><small>z ${layer.z_index}</small></div>
+        <p>${safeText(layer.prompt)}</p>
+        <em>${safeText(layer.motion)}</em>
+      </article>
+    `).join("");
+    elements.triggers.innerHTML = page.triggers.length ? page.triggers.map((trigger) => `
+      <div class="trigger">
+        <b>“${safeText(trigger.word)}”</b>
+        <span>${safeText(trigger.action)} → ${safeText(trigger.target_layer_id)}</span>
+        <small>${trigger.duration_ms} ms</small>
+      </div>
+    `).join("") : '<div class="trigger"><span>No word triggers generated.</span></div>';
+    elements.supports.innerHTML = page.literacy_support.length ? page.literacy_support.map((support) => `
+      <div class="support"><b>${safeText(support.word)}</b><span>${support.hint_ladder.map(safeText).join(" → ")}</span></div>
+    `).join("") : '<div class="support">No scaffolds generated.</div>';
+    elements.questions.innerHTML = page.comprehension.length ? page.comprehension.map((item) => `
+      <div class="question">${safeText(item.question)}<span>${item.expected_concepts.map(safeText).join(", ")}</span></div>
+    `).join("") : '<div class="question">No questions generated.</div>';
+    lastRenderedSemanticFingerprint = semanticFingerprint;
+  }
   elements.empty.classList.add("hidden");
   elements.error.classList.add("hidden");
   elements.results.classList.remove("hidden");
