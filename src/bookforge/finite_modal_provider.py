@@ -1595,27 +1595,48 @@ class FiniteModalLiveSceneProvider:
                 job_id=job_id,
                 seed=seed,
                 draft=draft,
+                prepare_renderer=preview_task is None,
             ),
             name=f"bookforge-live-plan-and-renderer-{job_id}",
         )
         try:
             if preview_task is not None:
-                try:
-                    preview = await preview_task
-                except Exception:
-                    # The preview is a latency optimization, never a dependency
-                    # of the authoritative Gemma/SANA scene. Fail open to the
-                    # final render while preserving cancellation semantics.
-                    preview = None
-                if preview is not None:
-                    yield LiveSceneUpdate(
-                        stage=LiveSceneStage.PREVIEW_READY,
-                        progress=0.58,
-                        story_pack=preview.pack,
-                        artifacts=[preview.artifact],
-                        metrics=_preview_scene_metrics(preview),
+                done, _ = await asyncio.wait(
+                    {preview_task, resolved_task},
+                    return_when=asyncio.FIRST_COMPLETED,
+                )
+                if preview_task in done:
+                    try:
+                        preview = preview_task.result()
+                    except Exception:
+                        # The preview is a latency optimization, never a dependency
+                        # of the authoritative Gemma/SANA scene. Fail open to the
+                        # final render while preserving cancellation semantics.
+                        preview = None
+                    if preview is not None:
+                        yield LiveSceneUpdate(
+                            stage=LiveSceneStage.PREVIEW_READY,
+                            progress=0.58,
+                            story_pack=preview.pack,
+                            artifacts=[preview.artifact],
+                            metrics=_preview_scene_metrics(preview),
+                        )
+                    resolved = await resolved_task
+                else:
+                    # A provisional preview has no value once the authoritative
+                    # plan is ready. Never put it on the final-render critical path.
+                    resolved = resolved_task.result()
+                    preview_task.cancel()
+                    preview_drain = asyncio.ensure_future(
+                        asyncio.gather(preview_task, return_exceptions=True)
                     )
-            resolved = await resolved_task
+                    try:
+                        await asyncio.shield(preview_drain)
+                    except asyncio.CancelledError:
+                        await preview_drain
+                        raise
+            else:
+                resolved = await resolved_task
         finally:
             pending = [
                 task
@@ -1838,9 +1859,10 @@ class FiniteModalLiveSceneProvider:
         job_id: str,
         seed: int,
         draft: StoryPack,
+        prepare_renderer: bool = True,
     ) -> _ResolvedLiveScenePlan:
         prepare_task: asyncio.Task[float] | None = None
-        if isinstance(self.provider, WarmModalSceneProvider):
+        if prepare_renderer and isinstance(self.provider, WarmModalSceneProvider):
             prepare_task = asyncio.create_task(
                 self._prepare_warm_renderer(job_id=job_id),
                 name=f"bookforge-renderer-preparation-{job_id}",

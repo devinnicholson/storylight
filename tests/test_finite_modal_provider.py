@@ -902,6 +902,85 @@ def test_cached_or_failed_preview_never_blocks_final_master(
     assert ("generate_preview" in methods) is preview_failure
 
 
+def test_completed_planner_preempts_blocked_optional_preview(tmp_path: Path) -> None:
+    class BlockingPreviewInvoker(StubWarmInvoker):
+        def __init__(self) -> None:
+            super().__init__()
+            self.preview_started = asyncio.Event()
+            self.preview_cancelled = asyncio.Event()
+
+        async def invoke(self, class_name: str, method_name: str, arguments: dict) -> dict:
+            if method_name == "generate_preview":
+                self.calls.append((class_name, method_name, arguments))
+                self.preview_started.set()
+                try:
+                    await asyncio.Event().wait()
+                except asyncio.CancelledError:
+                    self.preview_cancelled.set()
+                    raise
+            return await super().invoke(class_name, method_name, arguments)
+
+    class ImmediatePlanner:
+        async def has_cached_plan(self, *, text: str) -> bool:
+            return False
+
+        async def plan(self, **kwargs) -> LiveScenePlanningResult:
+            await asyncio.sleep(0)
+            return LiveScenePlanningResult(
+                plan=_gemma_live_plan(),
+                metrics=ModelMetrics(
+                    backend="ollama",
+                    model="gemma3:1b",
+                    total_ms=5,
+                    input_tokens=100,
+                    output_tokens=80,
+                ),
+                model_revision="sha256:gemma-fixture",
+                wall_ms=5,
+            )
+
+    invoker = BlockingPreviewInvoker()
+    warm = _warm_provider(tmp_path, invoker)
+
+    async def run() -> list[LiveSceneUpdate]:
+        cache = AssetCache(tmp_path / "blocked-preview-cache")
+        await cache.initialize()
+        await warm.prewarm(
+            prewarm_id="blocked-preview-prewarm",
+            include_motion=False,
+        )
+        adapter = FiniteModalLiveSceneProvider(
+            warm,
+            cache=cache,
+            output_root=tmp_path / "blocked-preview-output",
+            planner=ImmediatePlanner(),
+            enable_preview=True,
+        )
+        async def collect() -> list[LiveSceneUpdate]:
+            return [
+                update
+                async for update in adapter.generate(
+                    LiveSceneCreateRequest(text="A whale crosses a paper sea.", seed=54),
+                    job_id="scene_000000000000000000000054",
+                )
+            ]
+
+        updates = await asyncio.wait_for(collect(), timeout=1)
+        await asyncio.wait_for(invoker.preview_started.wait(), timeout=1)
+        await asyncio.wait_for(invoker.preview_cancelled.wait(), timeout=1)
+        return updates
+
+    updates = asyncio.run(run())
+
+    assert [update.stage for update in updates] == [
+        LiveSceneStage.DRAFT_READY,
+        LiveSceneStage.MASTER_READY,
+    ]
+    assert updates[-1].complete is True
+    methods = [method for _, method, _ in invoker.calls]
+    assert methods == ["prewarm", "generate_preview", "generate"]
+
+
 def test_auto_prewarm_reuses_recent_remote_container_without_second_prewarm(
     tmp_path: Path,
 ) -> None:
