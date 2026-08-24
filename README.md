@@ -159,7 +159,8 @@ curl -sS -X POST http://127.0.0.1:8080/v1/live-scene-provider/prewarm \
   -H 'content-type: application/json' \
   -d '{"prewarm_id":"bookforge-showcase","include_motion":false,"scaledown_window_seconds":600}'
 
-# Or open the operator workbench in explicit rehearsal mode. It performs the same text-free prewarm.
+# Or open the operator workbench in explicit rehearsal mode. It prepares the renderer and the
+# private local Gemma plan concurrently; only the local planner request contains the passage.
 # http://127.0.0.1:8080/workbench?session=bookforge-live&rehearsal=1
 
 # Explicit teardown after the demo; this terminates any remaining containers.
@@ -170,8 +171,12 @@ The presentation window is explicit, master/depth-only, and bounded to 90–900 
 Modal's idle scale-down policy rather than creating an always-on minimum container, so a crashed
 local API still scales the GPU to zero. Extended sessions reserve a conservative $0.30 ceiling
 before starting; use the normal 90-second window outside rehearsals and stop the app after a demo.
-The workbench also exposes a **Prepare renderer** control. Automatic page-load preparation occurs
-only when the operator adds `rehearsal=1`; ordinary workbench visits never allocate a GPU.
+The workbench also exposes a **Prepare full path** control. It starts the text-free Modal prewarm and
+the loopback-only Gemma plan concurrently, then holds the privacy-gated semantic plan in a bounded
+memory cache. An unchanged passage can therefore skip Gemma inference when **Generate** is pressed;
+editing the passage or style invalidates the prepared state. Concurrent duplicate preparations are
+coalesced into one Jetson inference. Automatic page-load preparation occurs only when the operator
+adds `rehearsal=1`; ordinary workbench visits never allocate a GPU or run Gemma.
 
 On the August 23 acceptance, fast-only prewarm took 28.459 seconds and the following master/depth
 job completed in 5.256 seconds end to end (3.528 seconds inference and 2.87 ms cache promotion).
@@ -388,6 +393,7 @@ frame-streaming Jetson ASR engine—and the typed/manual paths remain the determ
 | `GET /v1/live-scene-sessions/{session_id}/events` | No | Stream the server epoch, current job, revisions, and same-session replacements |
 | `GET /v1/live-scene-provider/warm-status` | No | Inspect explicit Modal warm-provider readiness without allocating a GPU |
 | `POST /v1/live-scene-provider/prewarm` | Modal warm provider | Budget-check and intentionally prewarm the selected Modal classes |
+| `POST /v1/live-scene-planner/prepare` | Local Gemma | Privacy-gate and cache one passage/style semantic plan without starting a cloud render |
 | `PUT /v1/reader-sessions/{id}` | No | Configure trusted page text for local alignment |
 | `GET /v1/reader-sessions/{id}` | No | Recover the current generation and aligned position after reconnect |
 | `POST /v1/reader-sessions/{id}:reset` | No | Rewind the aligner and every connected projector for another reading |

@@ -1011,6 +1011,7 @@ class StructuredLiveScenePlanner:
             raise ValueError("live-scene planner cache entries must be between 0 and 256")
         self.cache_entries = cache_entries
         self._cache: OrderedDict[str, tuple[LiveScenePlan, ModelMetrics]] = OrderedDict()
+        self._inflight: dict[str, asyncio.Task[LiveScenePlanningResult]] = {}
 
     async def plan(
         self,
@@ -1023,10 +1024,10 @@ class StructuredLiveScenePlanner:
         visual_style = _PLAN_STYLE_ADAPTER.validate_python(visual_style)
         if not 0 <= seed <= 2**32 - 1:
             raise ValueError("live-scene seed is outside uint32 range")
-        started = perf_counter()
         cache_key = self._cache_key(text=text, visual_style=visual_style)
         cached = self._cache.pop(cache_key, None)
         if cached is not None:
+            started = perf_counter()
             plan, source_metrics = cached
             self._cache[cache_key] = cached
             validate_live_scene_plan_privacy(plan, source_text=text)
@@ -1044,6 +1045,33 @@ class StructuredLiveScenePlanner:
                 wall_ms=(perf_counter() - started) * 1_000,
                 cache_hit=True,
             )
+
+        task = self._inflight.get(cache_key)
+        if task is None:
+            task = asyncio.create_task(
+                self._plan_uncached(
+                    text=text,
+                    visual_style=visual_style,
+                    seed=seed,
+                    cache_key=cache_key,
+                ),
+                name=f"bookforge-live-plan-{cache_key[:12]}",
+            )
+            self._inflight[cache_key] = task
+            task.add_done_callback(
+                lambda finished, key=cache_key: self._discard_inflight(key, finished)
+            )
+        return await asyncio.shield(task)
+
+    async def _plan_uncached(
+        self,
+        *,
+        text: str,
+        visual_style: str,
+        seed: int,
+        cache_key: str,
+    ) -> LiveScenePlanningResult:
+        started = perf_counter()
         try:
             async with asyncio.timeout(self.timeout_seconds):
                 output_type = (
@@ -1092,6 +1120,14 @@ class StructuredLiveScenePlanner:
             model_revision=self.model_revision,
             wall_ms=(perf_counter() - started) * 1_000,
         )
+
+    def _discard_inflight(
+        self,
+        cache_key: str,
+        task: asyncio.Task[LiveScenePlanningResult],
+    ) -> None:
+        if self._inflight.get(cache_key) is task:
+            self._inflight.pop(cache_key, None)
 
     def _cache_key(self, *, text: str, visual_style: str) -> str:
         payload = json.dumps(

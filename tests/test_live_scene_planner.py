@@ -593,6 +593,34 @@ def test_structured_planner_cache_can_be_disabled() -> None:
     assert len(stub.calls) == 2
 
 
+def test_planner_coalesces_inflight_requests_and_survives_waiter_cancel() -> None:
+    stub = _ModelStub(delay_seconds=0.03)
+    planner = StructuredLiveScenePlanner(
+        stub,  # type: ignore[arg-type]
+        timeout_seconds=1,
+    )
+    request = {
+        "text": "A child opens a quiet book while paper birds rise.",
+        "visual_style": "luminous watercolor paper theater",
+        "seed": 23,
+    }
+
+    async def exercise():
+        cancelled_waiter = asyncio.create_task(planner.plan(**request))
+        await asyncio.sleep(0)
+        surviving_waiter = asyncio.create_task(planner.plan(**request))
+        cancelled_waiter.cancel()
+        with pytest.raises(asyncio.CancelledError):
+            await cancelled_waiter
+        return await surviving_waiter
+
+    result = asyncio.run(exercise())
+
+    assert result.plan.focus.prompt
+    assert len(stub.calls) == 1
+    assert planner._inflight == {}  # noqa: SLF001
+
+
 def test_structured_planner_turns_timeout_and_model_failure_into_recoverable_errors() -> None:
     timeout_planner = StructuredLiveScenePlanner(
         _ModelStub(delay_seconds=0.05),  # type: ignore[arg-type]

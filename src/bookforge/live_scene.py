@@ -197,6 +197,30 @@ class LiveScenePrewarmResponse(FrozenStrictModel):
     fast_inference_warmup_seconds: Annotated[float, Field(ge=0)] = 0
 
 
+class LiveScenePlannerPrepareRequest(FrozenStrictModel):
+    """Prime only the private local planner; this request never reaches a renderer."""
+
+    text: SceneText
+    visual_style: VisualStyle = "luminous watercolor paper theater"
+    seed: Annotated[int, Field(ge=0, le=2**32 - 1)] = 0
+
+
+class LiveScenePlannerPrepareResponse(FrozenStrictModel):
+    ready: bool = True
+    planning_ms: Annotated[float, Field(ge=0)]
+    cache_hit: bool
+    model: Annotated[
+        str,
+        StringConstraints(strip_whitespace=True, min_length=1, max_length=200),
+    ]
+    revision: Annotated[
+        str,
+        StringConstraints(strip_whitespace=True, min_length=1, max_length=200),
+    ]
+    input_tokens: Annotated[int, Field(ge=0)]
+    output_tokens: Annotated[int, Field(ge=0)]
+
+
 class LiveSceneWarmProviderStatus(FrozenStrictModel):
     ready: bool
     detail: Annotated[

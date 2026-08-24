@@ -53,6 +53,8 @@ from bookforge.live_scene import (
     LiveSceneJobId,
     LiveSceneJobRegistry,
     LiveSceneNotFoundError,
+    LiveScenePlannerPrepareRequest,
+    LiveScenePlannerPrepareResponse,
     LiveScenePrewarmRequest,
     LiveScenePrewarmResponse,
     LiveSceneRegistryClosedError,
@@ -447,6 +449,43 @@ async def prewarm_live_scene_provider(
     except RuntimeError as error:
         raise HTTPException(status_code=409, detail=str(error)) from error
     return LiveScenePrewarmResponse.model_validate(asdict(report))
+
+
+@app.post(
+    "/v1/live-scene-planner/prepare",
+    response_model=LiveScenePlannerPrepareResponse,
+)
+async def prepare_live_scene_planner(
+    payload: LiveScenePlannerPrepareRequest,
+    request: Request,
+) -> LiveScenePlannerPrepareResponse:
+    """Prime the in-memory edge-plan cache without starting a paid render."""
+
+    if not _is_local_connection(request):
+        raise HTTPException(status_code=403, detail="Live-scene planning is local-only")
+    registry: LiveSceneJobRegistry = request.app.state.live_scenes
+    planner = getattr(registry.provider, "planner", None)
+    if planner is None or not callable(getattr(planner, "plan", None)):
+        raise HTTPException(
+            status_code=409,
+            detail="BOOKFORGE_LIVE_SCENE_PLANNER is not configured as model",
+        )
+    try:
+        result = await planner.plan(
+            text=payload.text,
+            visual_style=payload.visual_style,
+            seed=payload.seed,
+        )
+    except RuntimeError as error:
+        raise HTTPException(status_code=503, detail=str(error)) from error
+    return LiveScenePlannerPrepareResponse(
+        planning_ms=result.wall_ms,
+        cache_hit=result.cache_hit,
+        model=result.metrics.model,
+        revision=result.model_revision,
+        input_tokens=result.metrics.input_tokens,
+        output_tokens=result.metrics.output_tokens,
+    )
 
 
 @app.get("/v1/live-scenes/{job_id}", response_model=LiveSceneJob)

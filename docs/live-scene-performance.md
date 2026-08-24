@@ -53,10 +53,14 @@ the master/depth idle window from 90 seconds to at most 900 seconds. This update
 class's scale-down window; it does not set an always-on minimum container. The GPU therefore still
 returns to zero if the local API crashes or the operator walks away. Extended sessions reserve a
 $0.30 conservative ceiling before launch and do not support the optional LTX class.
-The workbench provides the same operation as **Prepare renderer**. Appending `rehearsal=1` to its
-URL is the explicit operator opt-in that starts preparation on page load, allowing the 30–50 second
-cold start to happen while the demo is being introduced. The request contains only a generated
-prewarm ID, the motion flag, and the bounded window—never story text, style, audio, or imagery.
+The workbench provides **Prepare full path**. Appending `rehearsal=1` to its URL is the explicit
+operator opt-in that starts preparation on page load, allowing the 30–50 second cold start and local
+Gemma planning to happen concurrently while the demo is being introduced. These remain two separate
+loopback requests: the Modal prewarm contains only a generated prewarm ID, motion flag, and bounded
+window; the passage and style go only to the local planner. The privacy-gated semantic result is held
+in a bounded in-memory LRU, so the unchanged Generate request records a near-zero-time planning cache
+hit. Duplicate preparations for the same passage/style are coalesced into one model inference, and a
+cancelled browser waiter does not cancel work still needed by another local client.
 
 An exact 180-second rehearsal-window acceptance prewarmed in 29.869 seconds. Its first scene used
 1.363 seconds of provider time; a second independently authorized scene reused the live container

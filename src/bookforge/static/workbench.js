@@ -82,6 +82,8 @@ let liveSessionRevision = 0;
 let liveServerInstanceId = null;
 let rendererPrewarming = false;
 let rendererWarmExpiryTimer = null;
+let rendererWarmUntil = 0;
+let preparedPlanKey = null;
 
 const LIVE_STAGES = ["queued", "planning", "draft_ready", "master_ready", "motion_ready"];
 const STAGE_LABELS = {
@@ -105,23 +107,33 @@ function setRendererReadiness(state, title, detail, {buttonDisabled = false} = {
   elements.prewarmButton.disabled = buttonDisabled;
 }
 
-function markRendererReady(expiresInSeconds) {
+function currentPlanKey() {
+  return `${elements.story.value.trim()}\u0000${elements.style.value.trim() || "luminous paper theater"}`;
+}
+
+function markRendererReady(expiresInSeconds, planner = null, preparedKey = null) {
   window.clearTimeout(rendererWarmExpiryTimer);
   const boundedSeconds = Math.max(0, Number(expiresInSeconds) || 0);
+  rendererWarmUntil = Date.now() + boundedSeconds * 1000;
   const minutes = Math.max(1, Math.ceil(boundedSeconds / 60));
-  elements.prewarmButton.textContent = "Renderer ready";
+  const planIsCurrent = planner && preparedKey === currentPlanKey();
+  if (planIsCurrent) preparedPlanKey = preparedKey;
+  elements.prewarmButton.textContent = planIsCurrent ? "Full path ready" : "Prepare edge plan";
   setRendererReadiness(
     "ready",
-    `Cloud renderer ready for about ${minutes} min`,
-    "Submit a story now to avoid cold-start delay.",
-    {buttonDisabled: true},
+    planIsCurrent ? `Gemma + renderer ready for about ${minutes} min` : `Cloud renderer ready for about ${minutes} min`,
+    planIsCurrent
+      ? `Private edge plan cached in ${(planner.planning_ms / 1000).toFixed(1)} s; Generate can skip that wait.`
+      : "Submit a story now to avoid cold-start delay.",
+    {buttonDisabled: Boolean(planIsCurrent)},
   );
   rendererWarmExpiryTimer = window.setTimeout(() => {
-    elements.prewarmButton.textContent = "Prepare renderer";
+    rendererWarmUntil = 0;
+    elements.prewarmButton.textContent = "Prepare full path";
     setRendererReadiness(
       "idle",
-      "Renderer may be asleep",
-      "Prepare it before a judged run; no story text is sent.",
+      preparedPlanKey === currentPlanKey() ? "Edge plan cached; renderer may be asleep" : "Renderer may be asleep",
+      "Prepare again before a judged run. Story text stays on the local edge planner.",
     );
   }, boundedSeconds * 1000);
 }
@@ -138,7 +150,7 @@ async function inspectRendererReadiness() {
     setRendererReadiness(
       "idle",
       "Renderer sleeps between scenes",
-      "Prepare it before a judged run; no story text is sent.",
+      "Prepare the full path before a judged run.",
     );
   } catch (error) {
     setRendererReadiness(
@@ -152,37 +164,74 @@ async function inspectRendererReadiness() {
 
 async function prewarmRenderer() {
   if (rendererPrewarming) return;
+  const text = elements.story.value.trim();
+  const visualStyle = elements.style.value.trim() || "luminous paper theater";
+  if (text.length < 3) {
+    setRendererReadiness("error", "Add a story moment first", "The edge planner needs at least three characters.");
+    return;
+  }
+  const preparedKey = `${text}\u0000${visualStyle}`;
   rendererPrewarming = true;
   elements.prewarmButton.textContent = "Preparing…";
   setRendererReadiness(
     "warming",
-    "Preparing the cloud renderer…",
-    "This can take about 30–50 seconds from sleep; no story text is sent.",
+    "Preparing Gemma and the cloud renderer…",
+    "They run concurrently. Story text goes only to the private local planner.",
     {buttonDisabled: true},
   );
   try {
-    const response = await fetch("/v1/live-scene-provider/prewarm", {
-      method: "POST",
-      headers: {"Content-Type": "application/json"},
-      body: JSON.stringify({
-        prewarm_id: `rehearsal-${Date.now().toString(36)}`,
-        include_motion: false,
-        scaledown_window_seconds: 600,
-      }),
-    });
-    const payload = await response.json().catch(() => ({}));
-    if (!response.ok) throw new Error(payload.detail || `Prewarm failed (${response.status})`);
-    markRendererReady(payload.expires_in_seconds);
+    const post = async (url, body) => {
+      const response = await fetch(url, {
+        method: "POST",
+        headers: {"Content-Type": "application/json"},
+        body: JSON.stringify(body),
+      });
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(payload.detail || `Preparation failed (${response.status})`);
+      return payload;
+    };
+    const remainingWarmSeconds = Math.max(0, (rendererWarmUntil - Date.now()) / 1000);
+    const rendererPreparation = remainingWarmSeconds > 0
+      ? Promise.resolve({expires_in_seconds: remainingWarmSeconds})
+      : post("/v1/live-scene-provider/prewarm", {
+          prewarm_id: `rehearsal-${Date.now().toString(36)}`,
+          include_motion: false,
+          scaledown_window_seconds: 600,
+        });
+    const [rendererResult, plannerResult] = await Promise.allSettled([
+      rendererPreparation,
+      post("/v1/live-scene-planner/prepare", {text, visual_style: visualStyle}),
+    ]);
+    const renderer = rendererResult.status === "fulfilled" ? rendererResult.value : null;
+    const planner = plannerResult.status === "fulfilled" ? plannerResult.value : null;
+    if (renderer) markRendererReady(renderer.expires_in_seconds, planner, preparedKey);
+    if (planner && preparedKey === currentPlanKey()) preparedPlanKey = preparedKey;
+    if (renderer && !planner) {
+      elements.prewarmButton.textContent = "Retry edge plan";
+      setRendererReadiness("ready", "Renderer ready; edge plan unavailable", plannerResult.reason.message);
+    } else if (!renderer && planner) {
+      elements.prewarmButton.textContent = "Retry renderer";
+      setRendererReadiness("error", "Edge plan cached; renderer preparation failed", rendererResult.reason.message);
+    } else if (!renderer && !planner) {
+      throw new Error(`${plannerResult.reason.message}; ${rendererResult.reason.message}`);
+    }
   } catch (error) {
     elements.prewarmButton.textContent = "Retry preparation";
-    setRendererReadiness(
-      "error",
-      "Renderer preparation failed",
-      error.message,
-    );
+    setRendererReadiness("error", "Full-path preparation failed", error.message);
   } finally {
     rendererPrewarming = false;
   }
+}
+
+function invalidatePreparation() {
+  if (!preparedPlanKey || preparedPlanKey === currentPlanKey()) return;
+  preparedPlanKey = null;
+  elements.prewarmButton.textContent = "Prepare full path";
+  setRendererReadiness(
+    Date.now() < rendererWarmUntil ? "ready" : "idle",
+    Date.now() < rendererWarmUntil ? "Renderer ready; edge plan changed" : "Scene preparation changed",
+    "Prepare again to cache Gemma's private plan for this exact passage and style.",
+  );
 }
 
 function setSceneReady(ready) {
@@ -992,7 +1041,10 @@ elements.projectorFrame.addEventListener("load", () => {
   if (latestLiveSnapshot?.story_pack) broadcastLiveSnapshot(latestLiveSnapshot);
 });
 [elements.style, elements.story].forEach((element) => {
-  element.addEventListener("input", invalidateScene);
+  element.addEventListener("input", () => {
+    invalidatePreparation();
+    invalidateScene();
+  });
 });
 
 const canRecordAudio = Boolean(window.MediaRecorder && navigator.mediaDevices?.getUserMedia);

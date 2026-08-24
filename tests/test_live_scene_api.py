@@ -131,6 +131,10 @@ def test_live_scene_api_rejects_raw_media_unknown_jobs_and_remote_clients() -> N
             "/v1/live-scene-provider/prewarm",
             json={"prewarm_id": "demo-prewarm", "include_motion": False},
         )
+        fake_planner_prepare = client.post(
+            "/v1/live-scene-planner/prepare",
+            json={"text": "A fox waits.", "visual_style": "paper theater"},
+        )
     with TestClient(app, client=("203.0.113.8", 50000)) as remote:
         remote_create = remote.post("/v1/live-scenes", json=_payload())
         remote_status = remote.get(f"/v1/live-scenes/{unknown_id}")
@@ -141,6 +145,10 @@ def test_live_scene_api_rejects_raw_media_unknown_jobs_and_remote_clients() -> N
             "/v1/live-scene-provider/prewarm",
             json={"prewarm_id": "demo-prewarm", "include_motion": False},
         )
+        remote_planner_prepare = remote.post(
+            "/v1/live-scene-planner/prepare",
+            json={"text": "A fox waits.", "visual_style": "paper theater"},
+        )
 
     assert raw_media.status_code == 422
     assert missing.status_code == 404
@@ -148,12 +156,60 @@ def test_live_scene_api_rejects_raw_media_unknown_jobs_and_remote_clients() -> N
     assert invalid_cursor.status_code == 400
     assert fake_warm_status.status_code == 409
     assert fake_prewarm.status_code == 409
+    assert fake_planner_prepare.status_code == 409
     assert remote_create.status_code == 403
     assert remote_status.status_code == 403
     assert remote_events.status_code == 403
     assert remote_session.status_code == 403
     assert remote_session_events.status_code == 403
     assert remote_prewarm.status_code == 403
+    assert remote_planner_prepare.status_code == 403
+
+
+def test_live_scene_planner_prepare_primes_only_the_local_planner() -> None:
+    calls: list[dict[str, object]] = []
+
+    class StubPlanner:
+        async def plan(self, *, text: str, visual_style: str, seed: int):
+            calls.append({"text": text, "visual_style": visual_style, "seed": seed})
+            return SimpleNamespace(
+                wall_ms=8_750.5,
+                cache_hit=False,
+                model_revision="ollama-manifest-sha256:test",
+                metrics=SimpleNamespace(
+                    model="gemma3:1b-it-q4_K_M",
+                    input_tokens=537,
+                    output_tokens=172,
+                ),
+            )
+
+    with TestClient(app) as client:
+        client.app.state.live_scenes.provider = SimpleNamespace(planner=StubPlanner())
+        response = client.post(
+            "/v1/live-scene-planner/prepare",
+            json={
+                "text": "A silver fox waits below the cedar trees.",
+                "visual_style": "luminous paper theater",
+            },
+        )
+
+    assert response.status_code == 200
+    assert response.json() == {
+        "ready": True,
+        "planning_ms": 8_750.5,
+        "cache_hit": False,
+        "model": "gemma3:1b-it-q4_K_M",
+        "revision": "ollama-manifest-sha256:test",
+        "input_tokens": 537,
+        "output_tokens": 172,
+    }
+    assert calls == [
+        {
+            "text": "A silver fox waits below the cedar trees.",
+            "visual_style": "luminous paper theater",
+            "seed": 0,
+        }
+    ]
 
 
 def test_explicit_warm_provider_routes_are_strict_by_default() -> None:
