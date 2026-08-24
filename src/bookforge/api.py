@@ -10,6 +10,7 @@ from fastapi import (
     HTTPException,
     Query,
     Request,
+    Response,
     WebSocket,
     WebSocketDisconnect,
     status,
@@ -398,12 +399,18 @@ async def cached_asset(checksum: str, filename: str, request: Request) -> FileRe
 async def create_live_scene(
     payload: LiveSceneCreateRequest,
     request: Request,
+    response: Response,
 ) -> LiveSceneJob:
     if not _is_local_connection(request):
         raise HTTPException(status_code=403, detail="Live-scene generation is local-only")
     registry: LiveSceneJobRegistry = request.app.state.live_scenes
     try:
-        return await registry.submit(payload)
+        job = await registry.submit(payload)
+        if payload.session_id is not None:
+            pointer = await registry.get_session(payload.session_id)
+            response.headers["X-Bookforge-Server-Instance-Id"] = pointer.server_instance_id
+            response.headers["X-Bookforge-Session-Revision"] = str(pointer.session_revision)
+        return job
     except LiveSceneCapacityError as error:
         raise HTTPException(status_code=429, detail=str(error)) from error
     except LiveSceneRegistryClosedError as error:

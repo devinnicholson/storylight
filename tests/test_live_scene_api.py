@@ -39,6 +39,8 @@ def test_live_scene_api_progresses_to_resolvable_motion_scene() -> None:
     with TestClient(app) as client:
         created = client.post("/v1/live-scenes", json=_payload())
         assert created.status_code == 202
+        assert created.headers["x-bookforge-server-instance-id"]
+        assert int(created.headers["x-bookforge-session-revision"]) >= 1
         job_id = created.json()["job_id"]
 
         events = client.get(f"/v1/live-scenes/{job_id}/events")

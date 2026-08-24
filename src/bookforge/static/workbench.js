@@ -67,6 +67,7 @@ const liveSceneChannel = "BroadcastChannel" in window
   ? new BroadcastChannel(LIVE_SCENE_CHANNEL)
   : null;
 let liveSessionEventSource = null;
+let liveSessionStreamHealthy = false;
 let livePollTimer = null;
 let liveElapsedTimer = null;
 let liveStartedAt = 0;
@@ -701,6 +702,22 @@ function stopLiveJobTransport() {
   liveElapsedTimer = null;
 }
 
+function liveSessionStreamIsHealthy() {
+  return Boolean(
+    liveSessionStreamHealthy
+    && liveSessionEventSource
+    && liveSessionEventSource.readyState === EventSource.OPEN
+  );
+}
+
+function startLivePollingFallback() {
+  if (!activeLiveJobId || livePollTimer !== null) return;
+  livePollTimer = window.setTimeout(() => {
+    livePollTimer = null;
+    pollLiveScene(activeLiveJobId, liveRequestEpoch);
+  }, 0);
+}
+
 function setSceneInputsDisabled(disabled) {
   elements.story.disabled = disabled;
   elements.style.disabled = disabled;
@@ -781,6 +798,23 @@ async function fetchLiveSceneSession() {
   return payload;
 }
 
+function acceptedLiveScenePointer(response, snapshot) {
+  const serverInstanceId = response.headers.get("X-Bookforge-Server-Instance-Id");
+  const sessionRevision = Number(response.headers.get("X-Bookforge-Session-Revision"));
+  if (
+    !serverInstanceId
+    || !Number.isInteger(sessionRevision)
+    || sessionRevision < 1
+    || !snapshot?.job_id
+  ) return null;
+  return {
+    session_id: readerSessionId,
+    server_instance_id: serverInstanceId,
+    session_revision: sessionRevision,
+    job: snapshot,
+  };
+}
+
 function trackLiveSceneSession(pointer, {restoreInputs = false} = {}) {
   const serverInstanceId = pointer?.server_instance_id;
   const sessionRevision = Number(pointer?.session_revision);
@@ -830,13 +864,15 @@ function trackLiveSceneSession(pointer, {restoreInputs = false} = {}) {
   renderLiveSnapshot(snapshot, epoch);
   if (!isTerminalSnapshot(snapshot)) {
     liveElapsedTimer = window.setInterval(updateElapsedClock, 100);
-    pollLiveScene(snapshot.job_id, epoch);
+    if (!liveSessionStreamIsHealthy()) pollLiveScene(snapshot.job_id, epoch);
   }
   return true;
 }
 
 async function pollLiveScene(jobId, epoch) {
+  livePollTimer = null;
   if (epoch !== liveRequestEpoch || !activeLiveJobId) return;
+  if (liveSessionStreamIsHealthy()) return;
   try {
     const pointer = await fetchLiveSceneSession();
     if (pointer && handleLiveSceneSessionPointer(pointer, {restoreInputs: true})) return;
@@ -844,7 +880,11 @@ async function pollLiveScene(jobId, epoch) {
   } catch (error) {
     if (epoch === liveRequestEpoch) elements.interim.textContent = `Scene is still rendering; status retrying: ${error.message}`;
   }
-  if (epoch === liveRequestEpoch && activeLiveJobId) {
+  if (
+    epoch === liveRequestEpoch
+    && activeLiveJobId
+    && !liveSessionStreamIsHealthy()
+  ) {
     livePollTimer = window.setTimeout(() => pollLiveScene(jobId, epoch), 2500);
   }
 }
@@ -877,6 +917,7 @@ function handleLiveSceneSessionPointer(pointer, {restoreInputs = false} = {}) {
 
 function connectLiveSceneSessionEvents() {
   liveSessionEventSource?.close();
+  liveSessionStreamHealthy = false;
   const source = new EventSource(
     `/v1/live-scene-sessions/${encodeURIComponent(readerSessionId)}/events`,
   );
@@ -884,14 +925,24 @@ function connectLiveSceneSessionEvents() {
   const receive = (event) => {
     try {
       handleLiveSceneSessionPointer(JSON.parse(event.data), {restoreInputs: true});
+      if (source === liveSessionEventSource) {
+        liveSessionStreamHealthy = true;
+        window.clearTimeout(livePollTimer);
+        livePollTimer = null;
+      }
     } catch (_) {
+      liveSessionStreamHealthy = false;
       elements.interim.textContent = "Ignored an invalid session update; polling remains active.";
+      startLivePollingFallback();
     }
   };
   source.addEventListener("scene.session", receive);
   source.addEventListener("message", receive);
   source.addEventListener("error", () => {
+    if (source !== liveSessionEventSource) return;
+    liveSessionStreamHealthy = false;
     elements.interim.textContent = "Session updates reconnecting; status polling remains available.";
+    startLivePollingFallback();
   });
 }
 
@@ -979,8 +1030,11 @@ async function compileStory() {
     const snapshot = await response.json();
     if (response.status !== 202) throw new Error(snapshot.detail || `Request failed (${response.status})`);
     if (!snapshot.job_id) throw new Error("Generation service returned no job ID.");
-    const pointer = await fetchLiveSceneSession();
-    if (!pointer || !trackLiveSceneSession(pointer)) {
+    const pointer = acceptedLiveScenePointer(response, snapshot) || await fetchLiveSceneSession();
+    if (!pointer) throw new Error("Generation session did not retain the accepted job.");
+    handleLiveSceneSessionPointer(pointer);
+    const retainedJobId = activeLiveJobId || latestLiveSnapshot?.job_id;
+    if (retainedJobId !== snapshot.job_id) {
       throw new Error("Generation session did not retain the accepted job.");
     }
     elements.interim.textContent = "Generation job accepted. The projector will upgrade itself as each stage arrives.";

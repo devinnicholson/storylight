@@ -505,6 +505,13 @@ def test_live_scene_workbench_uses_progressive_job_contract() -> None:
     assert 'data-stage="motion_ready"' in markup
     assert "Later: Read it aloud" in markup
     assert 'fetch("/v1/live-scenes"' in controller
+    assert "function acceptedLiveScenePointer(response, snapshot)" in controller
+    assert 'response.headers.get("X-Bookforge-Server-Instance-Id")' in controller
+    assert 'response.headers.get("X-Bookforge-Session-Revision")' in controller
+    assert (
+        "acceptedLiveScenePointer(response, snapshot) || await fetchLiveSceneSession()"
+        in controller
+    )
     assert "/v1/live-scene-sessions/${encodeURIComponent(readerSessionId)}/events" in controller
     assert 'source.addEventListener("scene.session", receive)' in controller
     assert (
@@ -596,6 +603,20 @@ def test_projector_uses_session_polling_only_while_session_sse_is_unhealthy() ->
         "if (!LIVE_MODE || state.liveRendezvousInFlight || liveSessionStreamIsHealthy()) return;"
     ) in projector
     assert "scheduleLiveSceneRendezvous();" in projector
+
+
+def test_workbench_uses_session_polling_only_while_session_sse_is_unhealthy() -> None:
+    workbench = (ROOT / "src/bookforge/static/workbench.js").read_text()
+
+    assert "let liveSessionStreamHealthy = false" in workbench
+    assert "function liveSessionStreamIsHealthy()" in workbench
+    assert "if (!liveSessionStreamIsHealthy()) pollLiveScene" in workbench
+    assert "if (liveSessionStreamIsHealthy()) return" in workbench
+    assert "liveSessionStreamHealthy = true" in workbench
+    assert "liveSessionStreamHealthy = false" in workbench
+    assert "function startLivePollingFallback()" in workbench
+    assert workbench.count("startLivePollingFallback();") == 2
+    assert "pollLiveScene(activeLiveJobId, liveRequestEpoch)" in workbench
 
 
 def test_projector_activates_initial_pack_before_subscribing_to_live_session() -> None:
