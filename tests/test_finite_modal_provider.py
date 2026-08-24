@@ -180,6 +180,17 @@ class StubWarmInvoker:
         self.calls.append((class_name, method_name, arguments))
         if method_name == "prewarm":
             return {"model_load_seconds": 2.5, "container_age_seconds": 0.01}
+        if method_name == "generate_preview":
+            return {
+                "master": _jpeg(arguments["width"], arguments["height"]),
+                "master_media_type": "image/jpeg",
+                "negative_prompt_supported": False,
+                "image_seconds": 0.61,
+                "packaging_seconds": 0.02,
+                "master_jpeg_quality": 95,
+                "model_load_seconds": 2.5,
+                "container_age_seconds": 8.0,
+            }
         if class_name == "FastSceneStudio":
             return {
                 "master": _jpeg(arguments["width"], arguments["height"]),
@@ -707,6 +718,159 @@ def test_billing_authorization_overlaps_planning_without_starting_gpu_early(
     ledger = VisualLabLedger.read(warm.ledger_path, envelope=envelope)
     assert ledger.reservations == {}
     assert [record.stage for record in ledger.records] == ["warm-fast-scene"]
+
+
+def test_uncached_model_plan_emits_privacy_safe_preview_before_final_master(
+    tmp_path: Path,
+) -> None:
+    invoker = StubWarmInvoker()
+    warm = _warm_provider(tmp_path, invoker)
+
+    class UncachedPlanner:
+        async def has_cached_plan(self, *, text: str) -> bool:
+            assert "Quenlora" in text
+            return False
+
+        async def plan(self, **kwargs) -> LiveScenePlanningResult:
+            assert "Quenlora" in kwargs["text"]
+            await asyncio.sleep(0.01)
+            return LiveScenePlanningResult(
+                plan=_gemma_live_plan(),
+                metrics=ModelMetrics(
+                    backend="ollama",
+                    model="gemma3:1b",
+                    total_ms=4_000,
+                    input_tokens=300,
+                    output_tokens=108,
+                ),
+                model_revision="sha256:gemma-fixture",
+                wall_ms=4_050,
+            )
+
+    async def run() -> list[LiveSceneUpdate]:
+        cache = AssetCache(tmp_path / "preview-cache")
+        await cache.initialize()
+        adapter = FiniteModalLiveSceneProvider(
+            warm,
+            cache=cache,
+            output_root=tmp_path / "preview-output",
+            planner=UncachedPlanner(),
+            enable_preview=True,
+        )
+        return [
+            update
+            async for update in adapter.generate(
+                LiveSceneCreateRequest(
+                    text=(
+                        "Quenlora watches a silver whale cross a flooded library "
+                        "while folded books become fish."
+                    ),
+                    seed=52,
+                ),
+                job_id="scene_000000000000000000000052",
+            )
+        ]
+
+    updates = asyncio.run(run())
+
+    assert [update.stage for update in updates] == [
+        LiveSceneStage.DRAFT_READY,
+        LiveSceneStage.PREVIEW_READY,
+        LiveSceneStage.MASTER_READY,
+    ]
+    preview, master = updates[1:]
+    assert preview.complete is False
+    assert [artifact.kind for artifact in preview.artifacts] == [
+        LiveSceneArtifactKind.PREVIEW
+    ]
+    assert [asset.role.value for asset in preview.story_pack.assets] == ["preview"]
+    assert "Quenlora" not in preview.story_pack.assets[0].prompt
+    assert "silver whale cross" not in preview.story_pack.assets[0].prompt
+    assert "one graceful storybook whale" in preview.story_pack.assets[0].prompt
+    assert preview.metrics.models[0].role == "preview"
+    assert master.complete is True
+    assert master.metrics.provider_ms > preview.metrics.provider_ms
+    assert [model.role for model in master.metrics.models] == [
+        "scene_plan",
+        "preview",
+        "master",
+        "depth",
+    ]
+    methods = [(class_name, method) for class_name, method, _ in invoker.calls]
+    assert methods == [
+        ("FastSceneStudio", "generate_preview"),
+        ("FastSceneStudio", "generate"),
+    ]
+    envelope, _ = budget_envelope_from_plan(warm.plan_file)
+    ledger = VisualLabLedger.read(warm.ledger_path, envelope=envelope)
+    assert ledger.reservations == {}
+    assert [record.stage for record in ledger.records] == [
+        "warm-preview-scene",
+        "warm-fast-scene",
+    ]
+
+
+@pytest.mark.parametrize("preview_failure", [False, True])
+def test_cached_or_failed_preview_never_blocks_final_master(
+    tmp_path: Path,
+    preview_failure: bool,
+) -> None:
+    class PreviewInvoker(StubWarmInvoker):
+        async def invoke(self, class_name: str, method_name: str, arguments: dict) -> dict:
+            if preview_failure and method_name == "generate_preview":
+                self.calls.append((class_name, method_name, arguments))
+                raise RuntimeError("optional preview fixture failed")
+            return await super().invoke(class_name, method_name, arguments)
+
+    class Planner:
+        async def has_cached_plan(self, *, text: str) -> bool:
+            return not preview_failure
+
+        async def plan(self, **kwargs) -> LiveScenePlanningResult:
+            return LiveScenePlanningResult(
+                plan=_gemma_live_plan(),
+                metrics=ModelMetrics(
+                    backend="ollama",
+                    model="gemma3:1b",
+                    total_ms=500,
+                    input_tokens=100,
+                    output_tokens=80,
+                ),
+                model_revision="sha256:gemma-fixture",
+                wall_ms=510,
+            )
+
+    invoker = PreviewInvoker()
+    warm = _warm_provider(tmp_path, invoker)
+
+    async def run() -> list[LiveSceneUpdate]:
+        cache = AssetCache(tmp_path / "optional-preview-cache")
+        await cache.initialize()
+        adapter = FiniteModalLiveSceneProvider(
+            warm,
+            cache=cache,
+            output_root=tmp_path / "optional-preview-output",
+            planner=Planner(),
+            enable_preview=True,
+        )
+        return [
+            update
+            async for update in adapter.generate(
+                LiveSceneCreateRequest(text="A whale crosses a paper sea.", seed=53),
+                job_id="scene_000000000000000000000053",
+            )
+        ]
+
+    updates = asyncio.run(run())
+
+    assert [update.stage for update in updates] == [
+        LiveSceneStage.DRAFT_READY,
+        LiveSceneStage.MASTER_READY,
+    ]
+    assert updates[-1].complete is True
+    methods = [method for _, method, _ in invoker.calls]
+    assert methods[-1] == "generate"
+    assert ("generate_preview" in methods) is preview_failure
 
 
 def test_auto_prewarm_reuses_recent_remote_container_without_second_prewarm(

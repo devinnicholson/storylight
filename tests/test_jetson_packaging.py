@@ -169,6 +169,20 @@ def test_projector_caps_only_the_continuous_depth_draw_pass_at_30_fps() -> None:
     assert "targetFps: DEPTH_RENDER_TARGET_FPS" in projector
 
 
+def test_projector_promotes_provisional_preview_without_calling_it_final() -> None:
+    projector = (ROOT / "src/bookforge/static/projector.js").read_text()
+    stylesheet = (ROOT / "src/bookforge/static/projector.css").read_text()
+    workbench = (ROOT / "src/bookforge/static/workbench.js").read_text()
+
+    assert 'asset.role === "preview" && asset.kind === "image"' in projector
+    assert 'commitSceneVersion(version, "preview-composed"' in projector
+    assert 'preview_ready: "Generated visual sketch live"' in projector
+    assert 'stage === "preview_ready"' in projector
+    assert ".preview-scene-image" in stylesheet
+    assert 'preview_ready: "Generated visual sketch is live"' in workbench
+    assert "Gemma is directing the final artwork" in workbench
+
+
 def test_kiosk_preserves_chromium_sandbox_and_waits_for_readiness() -> None:
     unit = (ROOT / "deploy/jetson/systemd/bookforge-kiosk.service").read_text()
     launcher = KIOSK_LAUNCHER.read_text()

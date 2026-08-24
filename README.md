@@ -244,13 +244,13 @@ representative structured response from 272 to 226 bytes without changing the sc
 disabled by default because output size alone does not prove lower latency or equivalent semantics;
 the production switch requires a real multi-passage edge benchmark.
 
-An experimental finite `preview_scene_cli` can now measure a provisional 512×288, one-step SANA
-plate without running depth or motion. It accepts semantic visual direction only and marks its
-manifest `provisional_preview_only`; it is not part of the live job path yet. The first cold smoke
-produced a visually strong paper-theater plate in 1.475 seconds of image inference, but cold remote
-wall time was 31.892 seconds and immediate provider billing had not reconciled. The feature remains
-off until a deployed-class warm measurement, explicit preview job stage, and combined preview/final
-reservation are proven.
+The uncached live path now generates a labeled 512×288 provisional SANA plate while local Gemma plans
+the authoritative scene. It runs only with the authenticated warm Modal provider, never receives the
+source passage, and is skipped for cached/prepared plans. A warm acceptance returned the generated
+JPEG in 0.972 seconds (0.614 seconds of image inference) and reconciled to $0.00701723. The projector
+then replaces `preview_ready` with the Gemma-authored SANA/depth master; any preview failure is
+non-fatal. The finite cold baseline remains honest at 31.892 seconds, so explicit prewarm is still a
+showcase requirement. Physical Jetson-to-projector transition timing remains pending.
 
 Repeated passages now reuse bounded, content-addressed memory and local-disk Gemma plan caches even
 when the visual style changes or the API restarts. Style is applied later during local SceneSpec
@@ -506,7 +506,8 @@ passes the real I/O and latency run on JetPack 7.2.1.
 - [`benchmarks/bookforge-projector-native-resolution-2026-08-24.json`](benchmarks/bookforge-projector-native-resolution-2026-08-24.json): source-resolution WebGL rendering with full-size display compositing; browser pass at 30 fps/zero drops and 4.52× fewer render pixels for the 896×512 production plate, with Jetson power/FPS measurement pending
 - [`benchmarks/bookforge-projector-frame-pacing-2026-08-24.json`](benchmarks/bookforge-projector-frame-pacing-2026-08-24.json): 30 Hz pacing for only the continuous WebGL depth pass, retaining native-refresh CSS/video/compositing; browser validation measured 29.2 depth draws/sec with zero drops, while the expected 50% draw reduction on Jetson's 60 Hz output remains pending physical measurement
 - [`benchmarks/bookforge-persistent-edge-plan-cache-2026-08-24.json`](benchmarks/bookforge-persistent-edge-plan-cache-2026-08-24.json): restart-safe, privacy-gated semantic plan caching; a fresh planner instance restored the synthetic plan in 0.541 ms with zero model calls, while the exact Jetson restart acceptance remains pending
-- [`benchmarks/bookforge-progressive-preview-smoke-2026-08-24.json`](benchmarks/bookforge-progressive-preview-smoke-2026-08-24.json): one finite 512×288 provisional-plate smoke; strong visual quality and 1.475-second inference, but 31.892-second cold wall time and delayed billing mean the warm live path remains explicitly unproven and disabled
+- [`benchmarks/bookforge-progressive-preview-smoke-2026-08-24.json`](benchmarks/bookforge-progressive-preview-smoke-2026-08-24.json): finite cold 512×288 baseline; strong visual quality and 1.475-second inference, but 31.892-second remote wall time proves cold calls are unsuitable for the live path
+- [`benchmarks/bookforge-progressive-preview-warm-2026-08-24.json`](benchmarks/bookforge-progressive-preview-warm-2026-08-24.json): authenticated warm preview acceptance; 0.972-second generated JPEG, 0.614-second inference, $0.00701723 reconciled cost, explicit `preview_ready` replacement contract, and physical-projector validation still pending
 - [`benchmarks/bookforge-story-replay-index-2026-08-24.json`](benchmarks/bookforge-story-replay-index-2026-08-24.json): startup-built exact-replay index over 1,000 synthetic completed scenes; 64.3 ms startup, 0.134 ms mean validated hit, and 0.066 ms mean miss without repeated directory scans
 - [`benchmarks/bookforge-mac-gemma-wire-ab-2026-08-24.json`](benchmarks/bookforge-mac-gemma-wire-ab-2026-08-24.json): counterbalanced offline five-scene standard-versus-compact Gemma contract A/B plus style-independent semantic caching; compact was 10.4% faster, and an alternate style reused the local plan in 0.218 ms with zero new model tokens, but the exact Jetson acceptance remains required before enabling compact mode
 - [`benchmarks/bookforge-render-delivery-optimization-2026-08-23.json`](benchmarks/bookforge-render-delivery-optimization-2026-08-23.json): JPEG delivery, adaptive projector exposure, and measured rejections for smaller renders, compilation, and prompt changes

@@ -6,6 +6,7 @@ import importlib
 import json
 import math
 import os
+import re
 import shutil
 import signal
 import time
@@ -137,6 +138,26 @@ class FastSceneRequest:
         _validate_dimensions(self.width, self.height, minimum=512)
         if not 1 <= self.steps <= 4:
             raise ValueError("fast-scene steps must be between 1 and 4")
+        if not math.isfinite(self.guidance_scale) or not 0 <= self.guidance_scale <= 12:
+            raise ValueError("guidance_scale must be between 0 and 12")
+
+
+@dataclass(frozen=True, slots=True)
+class FastPreviewRequest:
+    scene_id: str
+    prompt: str
+    seed: int = 42
+    width: int = 512
+    height: int = 288
+    guidance_scale: float = 4.5
+
+    def __post_init__(self) -> None:
+        _validate_identifier(self.scene_id)
+        _validate_prompt(self.prompt, name="prompt")
+        _validate_seed(self.seed)
+        _validate_dimensions(self.width, self.height, minimum=256)
+        if self.width > 640 or self.height > 384:
+            raise ValueError("preview dimensions cannot exceed 640x384")
         if not math.isfinite(self.guidance_scale) or not 0 <= self.guidance_scale <= 12:
             raise ValueError("guidance_scale must be between 0 and 12")
 
@@ -341,6 +362,8 @@ class _ActiveWarmSession:
     deadline_monotonic: float
     scaledown_window_seconds: int = WARM_SCALEDOWN_WINDOW_SECONDS
     fast_scene_seconds: float = 0
+    preview_scene_seconds: float = 0
+    preview_scene_id: str | None = None
     scene_id: str | None = None
     scene_master: SceneArtifact | None = None
 
@@ -843,6 +866,128 @@ class WarmModalSceneProvider(FiniteModalSceneProvider):
                 time.monotonic() < self._remote_warm_deadline_monotonic
             )
 
+    async def generate_preview(
+        self,
+        request: FastPreviewRequest,
+        *,
+        output_dir: Path,
+    ) -> FiniteSceneBundle:
+        """Generate one provisional plate under its own or the active session reservation."""
+
+        await self._require_ready()
+        destination = output_dir.resolve()
+        manifest_path = destination / "preview.manifest.json"
+        self._require_new_output(manifest_path)
+        async with self._operation_lock:
+            if await self._expire_warm_session_locked():
+                raise FiniteModalProviderError(
+                    "explicit Modal prewarm expired; prewarm again before preview"
+                )
+            session = self._warm_session
+            uses_session = session is not None
+            prepared = self._prepared_fast_authorizations.get(request.scene_id)
+            if session is not None and prepared is not None:
+                raise FiniteModalProviderError(
+                    "preview cannot use both a prewarm session and a prepared authorization"
+                )
+            if session is None and prepared is not None:
+                self._prepared_fast_authorizations.pop(request.scene_id, None)
+            if session is not None and session.preview_scene_id is not None:
+                raise FiniteModalProviderError(
+                    "the active prewarm session already produced a preview"
+                )
+            experiment_id = (
+                session.experiment_id
+                if session is not None
+                else f"fast-authorization:{request.scene_id}"
+            )
+            reservation_id = (
+                session.reservation_id if session else prepared.reservation_id if prepared else ""
+            )
+            if not uses_session and prepared is None:
+                self._reserve(self.fast_policy)
+                try:
+                    reservation_id = await self._authorize_with_current_billing(
+                        self.fast_policy,
+                        experiment_id=experiment_id,
+                    )
+                except BaseException:
+                    self._active_reservations_gpu_usd -= self.fast_policy.worst_case_gpu_usd
+                    raise
+            started = time.perf_counter()
+            try:
+                result = await self.invoker.invoke(
+                    "FastSceneStudio",
+                    "generate_preview",
+                    {
+                        "prompt": request.prompt,
+                        "seed": request.seed,
+                        "width": request.width,
+                        "height": request.height,
+                        "guidance_scale": request.guidance_scale,
+                    },
+                )
+            except BaseException:
+                if uses_session:
+                    self._warm_session = None
+                else:
+                    self._mark_failed(self.fast_policy)
+                raise
+            remote_seconds = time.perf_counter() - started
+            self._remote_warm_deadline_monotonic = (
+                time.monotonic() + self._configured_scaledown_window_seconds
+            )
+            estimated_gpu_usd = remote_seconds * GPU_USD_PER_SECOND[self.fast_policy.gpu]
+            if estimated_gpu_usd > self.fast_policy.maximum_gpu_usd + 1e-9:
+                if uses_session:
+                    self._warm_session = None
+                else:
+                    self._mark_failed(self.fast_policy)
+                raise FiniteModalBudgetError("warm preview exceeded its stage cap")
+            try:
+                bundle = _write_warm_preview_bundle(
+                    request=request,
+                    result=result,
+                    destination=destination,
+                    remote_seconds=remote_seconds,
+                    estimated_gpu_usd=estimated_gpu_usd,
+                    warm_state=_deployed_warm_state(
+                        result,
+                        remote_seconds=remote_seconds,
+                        uses_session=uses_session,
+                    ),
+                    reservation_id=reservation_id,
+                )
+            except BaseException:
+                if uses_session:
+                    self._warm_session = None
+                else:
+                    self._mark_failed(self.fast_policy)
+                raise
+            if session is not None:
+                session.preview_scene_seconds = remote_seconds
+                session.preview_scene_id = request.scene_id
+            else:
+                try:
+                    await self._settle_warm_stage(
+                        reservation_id=reservation_id,
+                        experiment_id=experiment_id,
+                        stage="warm-preview-scene",
+                        model=FAST_MODEL,
+                        revision=FAST_MODEL_REVISION,
+                        seed=request.seed,
+                        prompt=request.prompt,
+                        artifact=bundle.artifacts["preview"],
+                        generation_seconds=remote_seconds,
+                        estimated_gpu_usd=estimated_gpu_usd,
+                    )
+                except BaseException:
+                    self._mark_failed(self.fast_policy)
+                    raise
+                self._active_reservations_gpu_usd -= self.fast_policy.worst_case_gpu_usd
+                self._session_estimated_gpu_usd += estimated_gpu_usd
+            return bundle
+
     async def prepare_fast_authorization(self, *, scene_id: str) -> None:
         """Authorize one exact scene while local planning runs; no GPU RPC starts here."""
 
@@ -908,6 +1053,7 @@ class WarmModalSceneProvider(FiniteModalSceneProvider):
         generation_seconds = (
             session.fast_prewarm_seconds
             + session.motion_prewarm_seconds
+            + session.preview_scene_seconds
             + session.fast_scene_seconds
             + loaded_classes * session.scaledown_window_seconds
         )
@@ -962,6 +1108,12 @@ class WarmModalSceneProvider(FiniteModalSceneProvider):
                 raise FiniteModalProviderError(
                     "the active prewarm reservation already belongs to another scene"
                 )
+            if (
+                session is not None
+                and session.preview_scene_id is not None
+                and session.preview_scene_id != f"{request.scene_id}-preview"
+            ):
+                raise FiniteModalProviderError("preview does not match the final scene request")
             experiment_id = _fast_experiment_id(request)
             reservation_id = (
                 session.reservation_id if session else prepared.reservation_id if prepared else ""
@@ -1037,6 +1189,7 @@ class WarmModalSceneProvider(FiniteModalSceneProvider):
                 if not session.include_motion:
                     total_seconds = (
                         session.fast_prewarm_seconds
+                        + session.preview_scene_seconds
                         + remote_seconds
                         + session.scaledown_window_seconds
                     )
@@ -1168,6 +1321,7 @@ class WarmModalSceneProvider(FiniteModalSceneProvider):
                 total_seconds = (
                     session.fast_prewarm_seconds
                     + session.motion_prewarm_seconds
+                    + session.preview_scene_seconds
                     + session.fast_scene_seconds
                     + remote_seconds
                     + 2 * session.scaledown_window_seconds
@@ -1266,6 +1420,14 @@ class _ResolvedLiveScenePlan:
     planning_cache_hit: bool = False
 
 
+@dataclass(frozen=True, slots=True)
+class _GeneratedLivePreview:
+    bundle: FiniteSceneBundle
+    pack: StoryPack
+    artifact: LiveSceneArtifact
+    cache_ms: float
+
+
 class FiniteModalLiveSceneProvider:
     """Adapter from finite Modal artifacts to the progressive live-scene contract."""
 
@@ -1276,6 +1438,7 @@ class FiniteModalLiveSceneProvider:
         cache: AssetCache,
         output_root: Path = Path("artifacts/live-scenes/generated"),
         enable_motion: bool = False,
+        enable_preview: bool = True,
         planner: LiveScenePlanner | None = None,
         motion_gate: MotionTechnicalGate | None = None,
         motion_evaluator: MotionEvaluator | None = None,
@@ -1289,6 +1452,7 @@ class FiniteModalLiveSceneProvider:
         self.cache = cache
         self.output_root = output_root
         self.enable_motion = enable_motion
+        self.enable_preview = enable_preview
         self.planner = planner
         self.motion_gate = motion_gate or MotionTechnicalGate()
         self.motion_evaluator = motion_evaluator or _evaluate_motion_technical
@@ -1341,6 +1505,16 @@ class FiniteModalLiveSceneProvider:
                 except asyncio.CancelledError:
                     await authorization_cleanup
                     raise
+                preview_authorization_cleanup = asyncio.create_task(
+                    self.provider.abandon_prepared_fast_authorization(
+                        scene_id=f"{job_id}-preview"
+                    )
+                )
+                try:
+                    await asyncio.shield(preview_authorization_cleanup)
+                except asyncio.CancelledError:
+                    await preview_authorization_cleanup
+                    raise
 
     async def _generate_unprotected(
         self,
@@ -1363,12 +1537,55 @@ class FiniteModalLiveSceneProvider:
             story_pack=draft,
         )
 
-        resolved = await self._resolve_plan_while_preparing_renderer(
-            request,
-            job_id=job_id,
-            seed=seed,
-            draft=draft,
+        preview: _GeneratedLivePreview | None = None
+        preview_task: asyncio.Task[_GeneratedLivePreview] | None = None
+        if await self._should_generate_preview(request):
+            preview_task = asyncio.create_task(
+                self._generate_preview(request, job_id=job_id, seed=seed),
+                name=f"bookforge-live-preview-{job_id}",
+            )
+        resolved_task = asyncio.create_task(
+            self._resolve_plan_while_preparing_renderer(
+                request,
+                job_id=job_id,
+                seed=seed,
+                draft=draft,
+            ),
+            name=f"bookforge-live-plan-and-renderer-{job_id}",
         )
+        try:
+            if preview_task is not None:
+                try:
+                    preview = await preview_task
+                except Exception:
+                    # The preview is a latency optimization, never a dependency
+                    # of the authoritative Gemma/SANA scene. Fail open to the
+                    # final render while preserving cancellation semantics.
+                    preview = None
+                if preview is not None:
+                    yield LiveSceneUpdate(
+                        stage=LiveSceneStage.PREVIEW_READY,
+                        progress=0.58,
+                        story_pack=preview.pack,
+                        artifacts=[preview.artifact],
+                        metrics=_preview_scene_metrics(preview),
+                    )
+            resolved = await resolved_task
+        finally:
+            pending = [
+                task
+                for task in (preview_task, resolved_task)
+                if task is not None and not task.done()
+            ]
+            for task in pending:
+                task.cancel()
+            if pending:
+                drain = asyncio.ensure_future(asyncio.gather(*pending, return_exceptions=True))
+                try:
+                    await asyncio.shield(drain)
+                except asyncio.CancelledError:
+                    await drain
+                    raise
         page = resolved.pack.pages[0]
         if page.scene_spec is None:
             raise FiniteModalProviderError("live-scene draft has no SceneSpec")
@@ -1431,8 +1648,9 @@ class FiniteModalLiveSceneProvider:
                 artifacts=artifacts,
                 metrics=_live_scene_metrics(
                     fast_bundle,
-                    cache_ms=fast_cache_ms,
+                    cache_ms=fast_cache_ms + (preview.cache_ms if preview else 0),
                     planning=resolved,
+                    preview=preview,
                 ),
             )
         except BaseException:
@@ -1492,10 +1710,78 @@ class FiniteModalLiveSceneProvider:
             artifacts=[*artifacts, motion_artifact],
             metrics=_live_scene_metrics(
                 upgraded,
-                cache_ms=fast_cache_ms + motion_cache_ms,
+                cache_ms=(preview.cache_ms if preview else 0) + fast_cache_ms + motion_cache_ms,
                 include_motion=True,
                 planning=resolved,
+                preview=preview,
             ),
+        )
+
+    async def _should_generate_preview(self, request: LiveSceneCreateRequest) -> bool:
+        if (
+            not self.enable_preview
+            or not isinstance(self.provider, WarmModalSceneProvider)
+            or self.planner is None
+        ):
+            return False
+        cache_probe = getattr(self.planner, "has_cached_plan", None)
+        if not callable(cache_probe):
+            return False
+        try:
+            return not await cache_probe(text=request.text)
+        except Exception:
+            return False
+
+    async def _generate_preview(
+        self,
+        request: LiveSceneCreateRequest,
+        *,
+        job_id: str,
+        seed: int,
+    ) -> _GeneratedLivePreview:
+        if not isinstance(self.provider, WarmModalSceneProvider):
+            raise FiniteModalProviderError("live preview requires the warm Modal provider")
+        preview_id = f"{job_id}-preview"
+        await self.provider.prepare_fast_authorization(scene_id=preview_id)
+        cloud_safe_pack = build_live_scene_story_pack(
+            request,
+            job_id=job_id,
+            seed=seed,
+            assets=[],
+            compiler_model="deterministic-live-scene-planner-v1",
+            cloud_safe_prompts=True,
+        )
+        page = cloud_safe_pack.pages[0]
+        if page.scene_spec is None:
+            raise FiniteModalProviderError("live preview has no privacy-safe SceneSpec")
+        background_layer_id = _background_layer_id(cloud_safe_pack)
+        preview_request = FastPreviewRequest(
+            scene_id=preview_id,
+            prompt=_bounded_prompt(
+                page.scene_spec.master_prompt,
+                "Provisional visual sketch with "
+                f"{_safe_preview_subject(request.text)}. One cohesive full-bleed 16:9 scene, "
+                "crisp complete silhouette, tactile paper depth, no text, no border.",
+            ),
+            seed=seed,
+        )
+        bundle = await self.provider.generate_preview(
+            preview_request,
+            output_dir=self.output_root / job_id / "preview",
+        )
+        record, artifact, cache_ms = await self._promote_artifact(
+            bundle=bundle,
+            role="preview",
+            job_id=job_id,
+            seed=seed,
+            prompt=preview_request.prompt,
+            layer_id=background_layer_id,
+        )
+        return _GeneratedLivePreview(
+            bundle=bundle,
+            pack=_with_live_scene_assets(cloud_safe_pack, [record]),
+            artifact=artifact,
+            cache_ms=cache_ms,
         )
 
     async def _resolve_plan_while_preparing_renderer(
@@ -1642,6 +1928,13 @@ class FiniteModalLiveSceneProvider:
         promotion_started = time.perf_counter()
         source = bundle.artifacts[role]
         settings = {
+            "preview": (
+                AssetKind.IMAGE,
+                AssetRole.PREVIEW,
+                LiveSceneArtifactKind.PREVIEW,
+                FAST_MODEL,
+                FAST_MODEL_REVISION,
+            ),
             "master": (
                 AssetKind.IMAGE,
                 AssetRole.MASTER,
@@ -1684,7 +1977,7 @@ class FiniteModalLiveSceneProvider:
         )
         if digest != source.sha256:
             raise FiniteModalProviderError(f"cached {role} checksum changed during promotion")
-        stage_name = "motion" if role == "motion" else "fast"
+        stage_name = role if role in {"preview", "motion"} else "fast"
         stage = bundle.manifest["stages"][stage_name]
         if role == "master":
             generation_ms = float(stage.get("image_seconds", 0)) * 1000
@@ -1732,9 +2025,12 @@ def _live_scene_metrics(
     cache_ms: float,
     include_motion: bool = False,
     planning: _ResolvedLiveScenePlan,
+    preview: _GeneratedLivePreview | None = None,
 ) -> LiveSceneMetrics:
     stage_names = ["fast", *(("motion",) if include_motion else ())]
     stages = [bundle.manifest["stages"][stage_name] for stage_name in stage_names]
+    if preview is not None:
+        stages.insert(0, preview.bundle.manifest["stages"]["preview"])
     provider_seconds = 0.0
     inference_seconds = 0.0
     overhead_seconds = 0.0
@@ -1766,6 +2062,17 @@ def _live_scene_metrics(
         warm_state = LiveSceneWarmState.UNKNOWN
     models = [
         planning.provenance,
+        *(
+            [
+                LiveSceneModelProvenance(
+                    role="preview",
+                    model=FAST_MODEL,
+                    revision=FAST_MODEL_REVISION,
+                )
+            ]
+            if preview is not None
+            else []
+        ),
         LiveSceneModelProvenance(
             role="master",
             model=FAST_MODEL,
@@ -1807,6 +2114,67 @@ def _live_scene_metrics(
         cost_source=LiveSceneCostSource.PROVIDER_MANIFEST,
         models=models,
     )
+
+
+def _preview_scene_metrics(preview: _GeneratedLivePreview) -> LiveSceneMetrics:
+    stage = preview.bundle.manifest["stages"]["preview"]
+    inference_seconds = float(stage.get("inference_seconds", stage.get("image_seconds", 0)))
+    remote_seconds = float(stage.get("remote_seconds", inference_seconds))
+    overhead_seconds = float(
+        stage.get("provider_overhead_seconds", max(0.0, remote_seconds - inference_seconds))
+    )
+    raw_warm_state = str(stage.get("warm_state", "unknown")).lower()
+    warm_state = (
+        LiveSceneWarmState.WARM
+        if raw_warm_state in {"warm", "prewarmed"}
+        else LiveSceneWarmState.COLD
+        if raw_warm_state == "cold"
+        else LiveSceneWarmState.UNKNOWN
+    )
+    return LiveSceneMetrics(
+        elapsed_ms=remote_seconds * 1_000 + preview.cache_ms,
+        provider_ms=remote_seconds * 1_000,
+        inference_ms=inference_seconds * 1_000,
+        cache_ms=preview.cache_ms,
+        overhead_ms=overhead_seconds * 1_000,
+        packaging_ms=float(stage.get("packaging_seconds", 0)) * 1_000,
+        warm_state=warm_state,
+        gpu=str(stage.get("gpu", "L4")),
+        estimated_gpu_usd=float(stage.get("estimated_gpu_usd", 0)),
+        cost_source=LiveSceneCostSource.PROVIDER_MANIFEST,
+        models=[
+            LiveSceneModelProvenance(
+                role="preview",
+                model=FAST_MODEL,
+                revision=FAST_MODEL_REVISION,
+            )
+        ],
+    )
+
+
+def _safe_preview_subject(text: str) -> str:
+    """Map private text to one fixed, non-verbatim visual category."""
+
+    lowered = text.casefold()
+    categories = (
+        (("fox",), "one elegant storybook fox"),
+        (("whale",), "one graceful storybook whale"),
+        (("turtle",), "one gentle storybook turtle"),
+        (("moth", "butterfly"), "one luminous winged creature"),
+        (("rabbit", "bunny"), "one curious storybook rabbit"),
+        (("bear",), "one gentle storybook bear"),
+        (("deer",), "one elegant storybook deer"),
+        (("dragon",), "one friendly storybook dragon"),
+        (("robot",), "one friendly storybook robot"),
+        (("astronaut",), "one complete storybook astronaut"),
+        (("bird",), "one graceful storybook bird"),
+        (("fish",), "one luminous storybook fish"),
+        (("child", "girl", "boy", "reader"), "one complete child silhouette"),
+    )
+    for tokens, description in categories:
+        if any(re.search(rf"\b{re.escape(token)}\b", lowered) for token in tokens):
+            return description
+    return "one clear central storybook subject"
 
 
 def _background_layer_id(pack: StoryPack) -> str:
@@ -1922,6 +2290,108 @@ def _deployed_warm_state(
     # loaded_at is recorded after the model is resident. A container older than
     # this RPC was necessarily reused; a cold RPC includes startup outside age.
     return "warm" if container_age_seconds >= remote_seconds + 0.25 else "cold"
+
+
+def _write_warm_preview_bundle(
+    *,
+    request: FastPreviewRequest,
+    result: Mapping[str, Any],
+    destination: Path,
+    remote_seconds: float,
+    estimated_gpu_usd: float,
+    warm_state: str,
+    reservation_id: str,
+) -> FiniteSceneBundle:
+    preview_path = destination / "preview.jpg"
+    manifest_path = destination / "preview.manifest.json"
+    if preview_path.exists() or manifest_path.exists():
+        raise FiniteModalProviderError(f"preview output already exists: {destination}")
+    try:
+        preview = bytes(result["master"])
+        image_seconds = float(result["image_seconds"])
+        packaging_seconds = float(result["packaging_seconds"])
+        master_jpeg_quality = int(result["master_jpeg_quality"])
+    except (KeyError, TypeError, ValueError) as error:
+        raise FiniteModalProviderError("warm preview class returned invalid output") from error
+    if result.get("master_media_type") != "image/jpeg":
+        raise FiniteModalProviderError("warm preview class returned an unsupported format")
+    if result.get("negative_prompt_supported") is not False:
+        raise FiniteModalProviderError("warm preview class returned ambiguous prompt provenance")
+    if master_jpeg_quality != 95:
+        raise FiniteModalProviderError("warm preview class returned unexpected JPEG quality")
+    if _jpeg_dimensions(preview) != (request.width, request.height):
+        raise FiniteModalProviderError("warm preview dimensions do not match the request")
+    _atomic_write(preview_path, preview)
+    now = datetime.now(UTC).isoformat()
+    payload = {
+        "schema_version": "1.0",
+        "provider": PROVIDER_NAME,
+        "scene_id": request.scene_id,
+        "created_at": now,
+        "updated_at": now,
+        "request": {
+            "prompt": request.prompt,
+            "seed": request.seed,
+            "width": request.width,
+            "height": request.height,
+        },
+        "policy": {
+            "finite_calls_only": True,
+            "persistent_endpoint": False,
+            "provider_mode": "authenticated-deployed-class",
+            "provisional_preview_only": True,
+            "source_text_allowed": False,
+            "billing_reservation_id": reservation_id,
+        },
+        "stages": {
+            "preview": {
+                "model": FAST_MODEL,
+                "model_revision": FAST_MODEL_REVISION,
+                "gpu": "L4",
+                "finite_call": True,
+                "hard_timeout_seconds": FAST_STAGE_POLICY.remote_timeout_seconds,
+                "remote_seconds": remote_seconds,
+                "inference_seconds": image_seconds,
+                "provider_overhead_seconds": max(0.0, remote_seconds - image_seconds),
+                "image_seconds": image_seconds,
+                "packaging_seconds": packaging_seconds,
+                "master_jpeg_quality": master_jpeg_quality,
+                "negative_prompt_supported": False,
+                "model_load_seconds": float(result.get("model_load_seconds", 0)),
+                "container_age_seconds": float(result.get("container_age_seconds", 0)),
+                "warm_state": warm_state,
+                "estimated_gpu_usd": estimated_gpu_usd,
+                "steps": 1,
+                "guidance_scale": request.guidance_scale,
+            }
+        },
+        "artifacts": {
+            "preview": _local_artifact_payload(
+                preview_path,
+                root=destination,
+                mime_type="image/jpeg",
+                width=request.width,
+                height=request.height,
+            )
+        },
+    }
+    _atomic_write_json(manifest_path, payload)
+    artifact_payload = payload["artifacts"]["preview"]
+    return FiniteSceneBundle(
+        manifest_path=manifest_path,
+        scene_id=request.scene_id,
+        artifacts={
+            "preview": SceneArtifact(
+                role="preview",
+                path=preview_path,
+                sha256=str(artifact_payload["sha256"]),
+                mime_type="image/jpeg",
+                width=request.width,
+                height=request.height,
+            )
+        },
+        manifest=payload,
+    )
 
 
 def _write_warm_fast_bundle(

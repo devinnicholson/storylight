@@ -755,6 +755,7 @@ def preview_scene_cli(
     plan_file: str = "experiments/live-scenes/modal-plan.json",
     ledger_path: str = "artifacts/live-scenes/modal-ledger.json",
     maximum_gpu_usd: float = 0.08,
+    prewarm_first: bool = False,
     experiment_id: str = "",
     reservation_id: str = "",
 ) -> None:
@@ -780,6 +781,7 @@ def preview_scene_cli(
                 "width": width,
                 "height": height,
                 "guidance_scale": guidance_scale,
+                "prewarm_first": prewarm_first,
             },
             sort_keys=True,
         ).encode()
@@ -796,8 +798,15 @@ def preview_scene_cli(
         maximum_gpu_usd=maximum_gpu_usd,
         existing_reservation_id=reservation_id,
     )
+    studio = FastSceneStudio()
+    prewarm_remote_seconds = 0.0
+    prewarm_receipt: dict[str, Any] = {}
+    if prewarm_first:
+        prewarm_started = time.perf_counter()
+        prewarm_receipt = studio.prewarm.remote()
+        prewarm_remote_seconds = time.perf_counter() - prewarm_started
     remote_started = time.perf_counter()
-    result = FastSceneStudio().generate_preview.remote(
+    result = studio.generate_preview.remote(
         prompt=prompt,
         seed=seed,
         width=width,
@@ -809,7 +818,8 @@ def preview_scene_cli(
     if result.get("negative_prompt_supported") is not False:
         raise RuntimeError("preview scene returned ambiguous prompt provenance")
     remote_seconds = time.perf_counter() - remote_started
-    estimated_gpu_usd = remote_seconds * GPU_USD_PER_SECOND
+    billable_remote_seconds = prewarm_remote_seconds + remote_seconds
+    estimated_gpu_usd = billable_remote_seconds * GPU_USD_PER_SECOND
     if estimated_gpu_usd > maximum_gpu_usd + 1e-9:
         raise RuntimeError(
             f"preview scene exceeded its ${maximum_gpu_usd:.6f} call cap: "
@@ -834,10 +844,19 @@ def preview_scene_cli(
             "persistent_endpoint": False,
             "provisional_preview_only": True,
             "source_text_allowed": False,
+            "prewarm_first": prewarm_first,
             "budget_plan": plan_file,
             "budget_ledger": ledger_path,
         },
         "stages": {
+            "prewarm": {
+                "enabled": prewarm_first,
+                "remote_seconds": prewarm_remote_seconds,
+                "model_load_seconds": prewarm_receipt.get("model_load_seconds", 0),
+                "inference_warmup_seconds": prewarm_receipt.get(
+                    "inference_warmup_seconds", 0
+                ),
+            },
             "preview": {
                 "model": FAST_MODEL,
                 "model_revision": FAST_MODEL_REVISION,
@@ -881,7 +900,7 @@ def preview_scene_cli(
         prompt=prompt,
         artifact_path=master_path,
         sha256=payload["artifacts"]["preview"]["sha256"],
-        remote_seconds=remote_seconds,
+        remote_seconds=billable_remote_seconds,
         width=width,
         height=height,
         frames=1,

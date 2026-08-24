@@ -85,11 +85,19 @@ let rendererWarmExpiryTimer = null;
 let rendererWarmUntil = 0;
 let preparedPlanKey = null;
 
-const LIVE_STAGES = ["queued", "planning", "draft_ready", "master_ready", "motion_ready"];
+const LIVE_STAGES = [
+  "queued",
+  "planning",
+  "draft_ready",
+  "preview_ready",
+  "master_ready",
+  "motion_ready",
+];
 const STAGE_LABELS = {
   queued: "Generation job queued",
   planning: "Planning the visual world",
   draft_ready: "Animated draft is live",
+  preview_ready: "Generated visual sketch is live",
   master_ready: "Artwork and depth are live",
   motion_ready: "Cinematic motion loop is live",
   failed: "Generation stopped",
@@ -541,6 +549,7 @@ function snapshotProgress(snapshot) {
     queued: 0.04,
     planning: 0.16,
     draft_ready: 0.38,
+    preview_ready: 0.58,
     master_ready: 0.74,
     motion_ready: 1,
     failed: 1,
@@ -657,6 +666,7 @@ function setGenerateButtonForStage(stage) {
     queued: "Waiting for generation provider…",
     planning: "Building animated draft…",
     draft_ready: "Preparing artwork + depth…",
+    preview_ready: "Gemma is directing the final artwork…",
     master_ready: "Preparing motion loop…",
     motion_ready: "Generate another moving scene",
     failed: "Try generation again",
@@ -735,6 +745,7 @@ function renderLiveSnapshot(snapshot, epoch = liveRequestEpoch) {
     renderPack({story_pack: snapshot.story_pack, live_snapshot: snapshot}, {hotSwap: true});
     const stageCopy = {
       draft_ready: "Animated draft live—the generation provider is preparing the master.",
+      preview_ready: "Generated visual sketch live—Gemma is directing the final artwork.",
       master_ready: snapshot.complete
         ? "Artwork and depth are live with local WebGL motion."
         : "Artwork and depth are live—optional video motion is preparing next.",

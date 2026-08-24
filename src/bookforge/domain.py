@@ -166,6 +166,7 @@ class AssetKind(StrEnum):
 
 class AssetRole(StrEnum):
     MASTER = "master"
+    PREVIEW = "preview"
     LAYER = "layer"
     DEPTH = "depth"
     MASK = "mask"

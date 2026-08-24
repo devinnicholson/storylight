@@ -73,6 +73,7 @@ def test_live_scene_model_planner_has_a_bounded_independent_timeout() -> None:
     assert settings.live_scene_master_width == 896
     assert settings.live_scene_master_height == 512
     assert settings.live_scene_master_steps == 2
+    assert settings.live_scene_enable_preview is True
     assert settings.live_scene_master_guidance_scale == 4.5
     assert settings.live_scene_auto_prewarm_on_submit is False
     assert (

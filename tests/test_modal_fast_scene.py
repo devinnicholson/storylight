@@ -79,9 +79,9 @@ def test_provisional_preview_is_explicitly_low_resolution_and_depth_free() -> No
     assert "self.depth_pipe" not in studio
     assert '"provisional_preview_only": True' in cli
     assert '"source_text_allowed": False' in cli
-    assert cli.index("_guard_and_reserve(") < cli.index(
-        "FastSceneStudio().generate_preview.remote("
-    )
+    assert "prewarm_receipt = studio.prewarm.remote()" in cli
+    assert "billable_remote_seconds = prewarm_remote_seconds + remote_seconds" in cli
+    assert cli.index("_guard_and_reserve(") < cli.index("studio.generate_preview.remote(")
 
 
 def test_fast_prewarm_executes_shape_matched_cuda_and_depth_work() -> None:

@@ -123,6 +123,7 @@ async def lifespan(app: FastAPI):
             cache=app.state.asset_cache,
             output_root=settings.live_scene_output_dir,
             enable_motion=settings.live_scene_enable_motion,
+            enable_preview=settings.live_scene_enable_preview,
             modal_session_gpu_cap_usd=settings.live_scene_modal_session_gpu_cap_usd,
             planner_mode=settings.live_scene_planner,
             model_client=client,

@@ -73,6 +73,7 @@ class LiveSceneStage(StrEnum):
     QUEUED = "queued"
     PLANNING = "planning"
     DRAFT_READY = "draft_ready"
+    PREVIEW_READY = "preview_ready"
     MASTER_READY = "master_ready"
     MOTION_READY = "motion_ready"
     FAILED = "failed"
@@ -84,6 +85,7 @@ class LiveSceneStage(StrEnum):
 
 class LiveSceneArtifactKind(StrEnum):
     DRAFT = "draft"
+    PREVIEW = "preview"
     MASTER = "master"
     DEPTH = "depth"
     MOTION = "motion"
@@ -294,6 +296,7 @@ class LiveSceneError(FrozenStrictModel):
 
 
 _HEAVY_ARTIFACTS = {
+    LiveSceneArtifactKind.PREVIEW,
     LiveSceneArtifactKind.MASTER,
     LiveSceneArtifactKind.DEPTH,
     LiveSceneArtifactKind.MOTION,
@@ -340,6 +343,7 @@ class LiveSceneJob(FrozenStrictModel):
             if heavy_ids != set(assets):
                 raise ValueError("live-scene artifacts must exactly cover Story Pack assets")
             expected_asset_types = {
+                LiveSceneArtifactKind.PREVIEW: (AssetKind.IMAGE, AssetRole.PREVIEW),
                 LiveSceneArtifactKind.MASTER: (AssetKind.IMAGE, AssetRole.MASTER),
                 LiveSceneArtifactKind.DEPTH: (AssetKind.DEPTH_MAP, AssetRole.DEPTH),
                 LiveSceneArtifactKind.MOTION: (AssetKind.VIDEO_LOOP, AssetRole.MOTION),
@@ -411,6 +415,11 @@ class LiveSceneJob(FrozenStrictModel):
             raise ValueError("draft-ready jobs cannot include heavy generated assets")
         if self.stage is LiveSceneStage.DRAFT_READY and self.complete:
             raise ValueError("draft-ready jobs cannot be complete")
+        if self.stage is LiveSceneStage.PREVIEW_READY:
+            if kinds != {LiveSceneArtifactKind.PREVIEW}:
+                raise ValueError("preview-ready jobs require exactly one preview artifact")
+            if self.complete:
+                raise ValueError("preview-ready jobs cannot be complete")
         if self.stage is LiveSceneStage.MASTER_READY:
             if not {LiveSceneArtifactKind.MASTER, LiveSceneArtifactKind.DEPTH} <= kinds:
                 raise ValueError("master-ready jobs require master and depth artifacts")
@@ -489,6 +498,7 @@ class LiveSceneUpdate(FrozenStrictModel):
     def require_generation_stage(self) -> LiveSceneUpdate:
         if self.stage not in {
             LiveSceneStage.DRAFT_READY,
+            LiveSceneStage.PREVIEW_READY,
             LiveSceneStage.MASTER_READY,
             LiveSceneStage.MOTION_READY,
         }:
@@ -549,11 +559,15 @@ class LiveSceneProviderUnavailableError(RuntimeError):
 
 
 _CLOSED = object()
-_NEXT_STAGE = {
-    LiveSceneStage.QUEUED: LiveSceneStage.PLANNING,
-    LiveSceneStage.PLANNING: LiveSceneStage.DRAFT_READY,
-    LiveSceneStage.DRAFT_READY: LiveSceneStage.MASTER_READY,
-    LiveSceneStage.MASTER_READY: LiveSceneStage.MOTION_READY,
+_NEXT_STAGES = {
+    LiveSceneStage.QUEUED: {LiveSceneStage.PLANNING},
+    LiveSceneStage.PLANNING: {LiveSceneStage.DRAFT_READY},
+    LiveSceneStage.DRAFT_READY: {
+        LiveSceneStage.PREVIEW_READY,
+        LiveSceneStage.MASTER_READY,
+    },
+    LiveSceneStage.PREVIEW_READY: {LiveSceneStage.MASTER_READY},
+    LiveSceneStage.MASTER_READY: {LiveSceneStage.MOTION_READY},
 }
 
 
@@ -1075,8 +1089,8 @@ class LiveSceneJobRegistry:
             if record is None:
                 raise LiveSceneNotFoundError(f"Live-scene job {job_id!r} was not found")
             current = record.snapshot
-            expected = _NEXT_STAGE.get(current.stage)
-            if stage is not expected:
+            expected = _NEXT_STAGES.get(current.stage, set())
+            if stage not in expected:
                 raise LiveSceneProviderProtocolError(
                     f"Invalid live-scene transition {current.stage.value} -> {stage.value}"
                 )
@@ -1558,6 +1572,7 @@ def build_live_scene_provider(
     cache: AssetCache | None = None,
     output_root: Path = Path("artifacts/live-scenes/generated"),
     enable_motion: bool = False,
+    enable_preview: bool = True,
     modal_session_gpu_cap_usd: float = 1.0,
     planner_mode: str = "deterministic",
     model_client: StructuredModelClient | None = None,
@@ -1611,6 +1626,7 @@ def build_live_scene_provider(
             cache=cache,
             output_root=output_root,
             enable_motion=enable_motion,
+            enable_preview=enable_preview,
             planner=planner,
             master_width=master_width,
             master_height=master_height,
@@ -1631,6 +1647,7 @@ def build_live_scene_provider(
             cache=cache,
             output_root=output_root,
             enable_motion=enable_motion,
+            enable_preview=enable_preview,
             planner=planner,
             master_width=master_width,
             master_height=master_height,

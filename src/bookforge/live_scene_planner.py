@@ -1095,6 +1095,21 @@ class StructuredLiveScenePlanner:
             )
         return await asyncio.shield(task)
 
+    async def has_cached_plan(self, *, text: str) -> bool:
+        """Check and hydrate the private semantic cache without running the model."""
+
+        text = _PLAN_TEXT_ADAPTER.validate_python(text)
+        cache_key = self._cache_key(text=text)
+        cached = self._cache.get(cache_key)
+        if cached is None and self.cache_entries and self.persistent_cache_dir is not None:
+            cached = await asyncio.to_thread(self._load_persistent_cache, cache_key)
+            if cached is not None:
+                self._remember(cache_key, cached)
+        if cached is None:
+            return False
+        validate_live_scene_plan_privacy(cached[0], source_text=text)
+        return True
+
     async def _plan_uncached(
         self,
         *,

@@ -751,6 +751,7 @@ function commitSceneVersion(nextVersion, mode, nextRenderer = null, renderToken 
     "hero-composed",
     "motion-composed",
     "draft-composed",
+    "preview-composed",
   );
   if (mode) elements.generatedScene.classList.add(mode);
   elements.generatedScene.prepend(nextVersion);
@@ -798,6 +799,29 @@ async function renderPackLayers(pack, page, renderToken = null, timings = null) 
   const motionAsset = readyAssets.find(
     (asset) => asset.role === "motion" && asset.kind === "video_loop",
   );
+  const previewAsset = readyAssets.find(
+    (asset) => asset.role === "preview" && asset.kind === "image",
+  );
+  if (previewAsset?.local_uri?.startsWith("/v1/assets/")) {
+    const version = createSceneVersion();
+    const scene = document.createElement("div");
+    scene.className = "preview-scene";
+    const mediaStartedAt = performance.now();
+    const preview = await loadSceneImage(previewAsset.local_uri, {
+      signal: renderToken?.signal,
+    });
+    if (timings) timings.mediaReadyMs = performance.now() - mediaStartedAt;
+    preview.className = "preview-scene-image";
+    preview.alt = `${page.scene_summary} provisional visual sketch`;
+    scene.append(preview);
+    appendAmbientEffects(scene, page.scene_spec);
+    appendSceneHotspots(scene, page);
+    version.append(scene);
+    const commitStartedAt = performance.now();
+    if (!commitSceneVersion(version, "preview-composed", null, renderToken)) return false;
+    if (timings) timings.commitMs = performance.now() - commitStartedAt;
+    return "preview-composed";
+  }
   if (motionAsset?.local_uri?.startsWith("/v1/assets/")) {
     const version = createSceneVersion();
     const scene = document.createElement("div");
@@ -1382,12 +1406,14 @@ function renderLiveGenerationBadge(snapshot, {activated = true, fallbackMode = n
     queued: "Generation job queued",
     planning: "Planning visual world",
     draft_ready: "Animated draft live",
+    preview_ready: "Generated visual sketch live",
     master_ready: "Artwork + depth live",
     motion_ready: "Motion loop live",
     failed: "Generation failed",
   };
   const pendingStageLabels = {
     draft_ready: "Preparing animated draft",
+    preview_ready: "Loading generated visual sketch",
     master_ready: "Loading artwork + depth",
     motion_ready: "Loading motion loop",
   };
@@ -1496,6 +1522,7 @@ function invalidateLiveRender({jobId, revision, serverInstanceId, sessionRevisio
 function liveModeSatisfiesStage(stage, mode) {
   if (stage === "motion_ready") return mode === "motion-composed";
   if (stage === "master_ready") return mode === "depth-composed";
+  if (stage === "preview_ready") return mode === "preview-composed";
   if (stage === "draft_ready") return mode === "draft-composed" || mode === "hero-composed";
   return true;
 }
