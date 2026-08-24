@@ -238,6 +238,12 @@ BOOKFORGE_LIVE_SCENE_PLANNER_MODEL_REVISION=ollama-manifest-sha256:8648f39daa8fb
 BOOKFORGE_LIVE_SCENE_AUTO_PREWARM_ON_SUBMIT=true
 ```
 
+An experimental short-key wire contract is available with
+`BOOKFORGE_LIVE_SCENE_PLANNER_COMPACT_WIRE=true`. It preserves the normalized plan while reducing a
+representative response from 272 to 226 bytes and its JSON Schema from 1,694 to 1,160 bytes. Leave
+it off for a showcase until a multi-passage Jetson run proves schema adherence and semantic quality;
+the optimization is code-complete but not yet hardware-accepted.
+
 `BOOKFORGE_MODEL_MAX_OUTPUT_TOKENS` is a hard decode ceiling, not a target. The final compact contract
 removed redundant camera, lighting, palette, and region fields; its accepted hero repeats used
 107-109 of 180 tokens without truncation. Keep the 180 ceiling until a broader benchmark proves that

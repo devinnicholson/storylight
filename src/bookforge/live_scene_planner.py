@@ -9,7 +9,7 @@ import unicodedata
 from time import perf_counter
 from typing import Annotated, Literal, Protocol
 
-from pydantic import Field, StringConstraints, TypeAdapter
+from pydantic import ConfigDict, Field, StringConstraints, TypeAdapter
 
 from bookforge.domain import (
     AmbientEffect,
@@ -253,6 +253,79 @@ class LiveSceneWirePlan(FrozenStrictModel):
                 motion="pulse" if self.magic.kind == "effect" else "drift",
             ),
             ambience=_wire_ambience(context_text or self.background_prompt),
+        )
+
+
+class LiveSceneCompactWireFocus(FrozenStrictModel):
+    """Alias-key equivalent of :class:`LiveSceneWireFocus` for edge decoding."""
+
+    model_config = ConfigDict(
+        extra="forbid",
+        frozen=True,
+        validate_by_alias=True,
+        validate_by_name=True,
+    )
+
+    kind: Literal["character", "prop"] = Field(alias="k")
+    subject: Annotated[
+        str,
+        StringConstraints(strip_whitespace=True, min_length=1, max_length=80),
+    ] = Field(alias="s")
+    action: Annotated[
+        str,
+        StringConstraints(strip_whitespace=True, min_length=1, max_length=70),
+    ] = Field(alias="a")
+
+    def to_wire_focus(self) -> LiveSceneWireFocus:
+        return LiveSceneWireFocus(
+            kind=self.kind,
+            subject=self.subject,
+            action=self.action,
+        )
+
+
+class LiveSceneCompactWireMagic(FrozenStrictModel):
+    """Alias-key equivalent of :class:`LiveSceneWireMagic` for edge decoding."""
+
+    model_config = ConfigDict(
+        extra="forbid",
+        frozen=True,
+        validate_by_alias=True,
+        validate_by_name=True,
+    )
+
+    kind: Literal["prop", "effect"] = Field(alias="k")
+    prompt: Annotated[
+        str,
+        StringConstraints(strip_whitespace=True, min_length=1, max_length=110),
+    ] = Field(alias="p")
+
+    def to_wire_magic(self) -> LiveSceneWireMagic:
+        return LiveSceneWireMagic(kind=self.kind, prompt=self.prompt)
+
+
+class LiveSceneCompactWirePlan(FrozenStrictModel):
+    """Short-key wire contract for opt-in, lower-latency Jetson inference."""
+
+    model_config = ConfigDict(
+        extra="forbid",
+        frozen=True,
+        validate_by_alias=True,
+        validate_by_name=True,
+    )
+
+    background_prompt: Annotated[
+        str,
+        StringConstraints(strip_whitespace=True, min_length=1, max_length=110),
+    ] = Field(alias="b")
+    focus: LiveSceneCompactWireFocus = Field(alias="f")
+    magic: LiveSceneCompactWireMagic = Field(alias="m")
+
+    def to_wire_plan(self) -> LiveSceneWirePlan:
+        return LiveSceneWirePlan(
+            background_prompt=self.background_prompt,
+            focus=self.focus.to_wire_focus(),
+            magic=self.magic.to_wire_magic(),
         )
 
 
@@ -856,12 +929,24 @@ Do not extend its plot or invent characters, events, brands, labels, or readable
 one cohesive, safe, projection-ready visual plan for a child."""
 
 
-def live_scene_plan_prompt(*, text: str, visual_style: str, seed: int) -> str:
+def live_scene_plan_prompt(
+    *,
+    text: str,
+    visual_style: str,
+    seed: int,
+    compact_wire: bool = False,
+) -> str:
     # Geometry and animation remain deterministic from the seed. The language
     # model only performs semantic extraction, so sending the seed wastes edge
     # input tokens and can introduce irrelevant variation.
     del seed
     request = {"passage": text, "visual_style": visual_style}
+    compact_key_guide = (
+        "\nCompact JSON keys: b=background_prompt; f={k=kind,s=subject,a=action}; "
+        "m={k=kind,p=prompt}.\n"
+        if compact_wire
+        else ""
+    )
     return """Plan one full-bleed cinematic 16:9 illustration for immediate projection.
 
 Requirements:
@@ -896,7 +981,7 @@ Requirements:
   coordinates, or measurements.
 - The scene must remain legible on a projector. Atmosphere is supplied locally from the setting.
 - Keep the entire JSON compact; omit unnecessary adjectives and explanations.
-
+""" + compact_key_guide + """
 Input:
 """ + json.dumps(request, ensure_ascii=False, indent=2)
 
@@ -910,12 +995,14 @@ class StructuredLiveScenePlanner:
         *,
         timeout_seconds: float,
         model_revision: str = "configured-local-model",
+        compact_wire: bool = False,
     ) -> None:
         if timeout_seconds <= 0:
             raise ValueError("live-scene planner timeout must be positive")
         self.client = client
         self.timeout_seconds = timeout_seconds
         self.model_revision = _PLAN_MODEL_REVISION_ADAPTER.validate_python(model_revision)
+        self.compact_wire = compact_wire
 
     async def plan(
         self,
@@ -931,14 +1018,18 @@ class StructuredLiveScenePlanner:
         started = perf_counter()
         try:
             async with asyncio.timeout(self.timeout_seconds):
+                output_type = (
+                    LiveSceneCompactWirePlan if self.compact_wire else LiveSceneWirePlan
+                )
                 plan, metrics = await self.client.generate(
                     system=LIVE_SCENE_SYSTEM_PROMPT,
                     prompt=live_scene_plan_prompt(
                         text=text,
                         visual_style=visual_style,
                         seed=seed,
+                        compact_wire=self.compact_wire,
                     ),
-                    output_type=LiveSceneWirePlan,
+                    output_type=output_type,
                 )
         except TimeoutError as error:
             raise LiveScenePlannerTimeoutError(
@@ -952,7 +1043,11 @@ class StructuredLiveScenePlanner:
                 f"local structured scene planning failed: {detail}"
             ) from error
 
-        wire_plan = LiveSceneWirePlan.model_validate(plan.model_dump())
+        if self.compact_wire:
+            compact_plan = LiveSceneCompactWirePlan.model_validate(plan.model_dump())
+            wire_plan = compact_plan.to_wire_plan()
+        else:
+            wire_plan = LiveSceneWirePlan.model_validate(plan.model_dump())
         sanitized_wire_plan = wire_plan.privacy_sanitized(source_text=text)
         validated = sanitized_wire_plan.to_live_scene_plan(
             context_text=f"{text} {visual_style}"

@@ -132,6 +132,12 @@ Jetson reruns the current code. Across six visual samples, the book/origami scen
 central semantics while fox and orrery compositions showed bounded misses; seed-level semantic
 selection remains a quality frontier.
 
+The next planner candidate replaces only the model-facing JSON property names with short aliases.
+Static contract measurement reduces a representative response by 16.9% and the schema by 31.5%
+without changing the normalized `LiveScenePlan`. It is opt-in and remains disabled until the Jetson
+can run semantic and truncation acceptance; these byte reductions are not presented as measured
+latency savings.
+
 The automatic-prewarm acceptance exercised a real cold deployed-class prewarm and real two-step
 generation while substituting the last measured 4.285-second Jetson planning delay because the
 board was off. API preparation took 30.744 seconds, planning took 4.288 seconds concurrently, and

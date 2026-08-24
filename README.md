@@ -206,6 +206,11 @@ misses in the fox and orrery prompts keep seed-level semantic validation on the 
 has no separate negative-prompt channel; no-text and safety direction is carried in the positive
 visual prompt and provenance reports that boundary.
 
+An opt-in short-key Gemma response contract is also ready for the next Jetson session. It reduces a
+representative structured response from 272 to 226 bytes without changing the scene plan. It is
+disabled by default because output size alone does not prove lower latency or equivalent semantics;
+the production switch requires a real multi-passage edge benchmark.
+
 Depth Anything now runs in explicit FP16 on the L4. Against the same prompt and seed, both the
 master and depth JPEGs were byte-identical to the FP32 baseline; model load improved 8.4%, depth
 inference improved 24.3%, and the measured cold wall improved by 726 ms. A parallel checkpoint-load

@@ -1288,6 +1288,7 @@ def build_live_scene_provider(
     model_client: StructuredModelClient | None = None,
     planner_timeout_seconds: float = 12.0,
     planner_model_revision: str = "configured-local-model",
+    planner_compact_wire: bool = False,
     master_width: int = 896,
     master_height: int = 512,
     master_steps: int = 2,
@@ -1304,6 +1305,7 @@ def build_live_scene_provider(
             model_client,
             timeout_seconds=planner_timeout_seconds,
             model_revision=planner_model_revision,
+            compact_wire=planner_compact_wire,
         )
     elif planner_mode != "deterministic":
         raise ValueError(f"unknown live-scene planner mode {planner_mode!r}")

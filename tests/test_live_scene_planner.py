@@ -4,6 +4,9 @@ import pytest
 
 from bookforge.domain import ModelMetrics
 from bookforge.live_scene_planner import (
+    LiveSceneCompactWireFocus,
+    LiveSceneCompactWireMagic,
+    LiveSceneCompactWirePlan,
     LiveScenePlacedLayerPlan,
     LiveScenePlan,
     LiveScenePlannerError,
@@ -76,6 +79,31 @@ def test_wire_plan_is_compact_and_normalizes_safe_geometry_and_motion() -> None:
     assert plan.accent.depth == 5
     assert plan.accent.motion == "pulse"
     assert plan.ambience == ["dust"]
+
+
+def test_short_key_wire_contract_preserves_semantics_with_less_decode_text() -> None:
+    compact = LiveSceneCompactWirePlan(
+        background_prompt=_wire_plan().background_prompt,
+        focus=LiveSceneCompactWireFocus(
+            kind=_wire_plan().focus.kind,
+            subject=_wire_plan().focus.subject,
+            action=_wire_plan().focus.action,
+        ),
+        magic=LiveSceneCompactWireMagic(
+            kind=_wire_plan().magic.kind,
+            prompt=_wire_plan().magic.prompt,
+        ),
+    )
+
+    assert compact.to_wire_plan() == _wire_plan()
+    assert set(LiveSceneCompactWirePlan.model_json_schema()["properties"]) == {
+        "b",
+        "f",
+        "m",
+    }
+    assert len(compact.model_dump_json(by_alias=True)) < len(
+        _wire_plan().model_dump_json()
+    )
 
 
 def test_wire_plan_repairs_possessive_body_fragment_to_complete_character() -> None:
@@ -405,7 +433,22 @@ class _ModelStub:
             await asyncio.sleep(self.delay_seconds)
         if self.failure is not None:
             raise self.failure
-        return _wire_plan(), ModelMetrics(
+        plan = _wire_plan()
+        if output_type is LiveSceneCompactWirePlan:
+            result = LiveSceneCompactWirePlan.model_validate(
+                {
+                    "b": plan.background_prompt,
+                    "f": {
+                        "k": plan.focus.kind,
+                        "s": plan.focus.subject,
+                        "a": plan.focus.action,
+                    },
+                    "m": {"k": plan.magic.kind, "p": plan.magic.prompt},
+                }
+            )
+        else:
+            result = plan
+        return result, ModelMetrics(
             backend="ollama",
             model="gemma3:1b",
             total_ms=9.5,
@@ -460,6 +503,34 @@ def test_structured_planner_uses_live_schema_and_records_model_revision() -> Non
         stub.calls[0]["prompt"]
     )
     assert "essential object or destination" in str(stub.calls[0]["prompt"])
+
+
+def test_structured_planner_can_use_opt_in_short_key_contract() -> None:
+    stub = _ModelStub()
+    planner = StructuredLiveScenePlanner(
+        stub,  # type: ignore[arg-type]
+        timeout_seconds=1,
+        compact_wire=True,
+    )
+
+    result = asyncio.run(
+        planner.plan(
+            text="A child opens a quiet book while paper birds rise.",
+            visual_style="luminous watercolor paper theater",
+            seed=23,
+        )
+    )
+
+    assert stub.calls[0]["output_type"] is LiveSceneCompactWirePlan
+    assert "b=background_prompt" in str(stub.calls[0]["prompt"])
+    assert result.plan.focus.prompt == (
+        _wire_plan().to_live_scene_plan(
+            context_text=(
+                "A child opens a quiet book while paper birds rise. "
+                "luminous watercolor paper theater"
+            )
+        ).focus.prompt
+    )
 
 
 def test_structured_planner_turns_timeout_and_model_failure_into_recoverable_errors() -> None:
