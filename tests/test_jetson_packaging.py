@@ -650,6 +650,14 @@ def test_bootstrap_keeps_jetpack_python_packages_visible() -> None:
     assert 'pip install --upgrade "$REPO_ROOT"' in bootstrap
 
 
+def test_api_launchers_bound_shutdown_with_long_lived_scene_streams() -> None:
+    makefile = (ROOT / "Makefile").read_text()
+    service = (ROOT / "deploy/jetson/systemd/bookforge@.service").read_text()
+
+    assert "--timeout-graceful-shutdown 3" in makefile
+    assert "--timeout-graceful-shutdown 3" in service
+
+
 def test_optimized_jetson_gemma_fixture_matches_the_production_wire_contract() -> None:
     fixture = json.loads(
         (ROOT / "benchmarks/jetson-gemma3-optimized-schema-request.json").read_text()

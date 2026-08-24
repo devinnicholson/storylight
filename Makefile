@@ -4,7 +4,7 @@ install:
 	uv sync --dev
 
 dev:
-	uv run uvicorn bookforge.api:app --reload --host 127.0.0.1 --port 8080
+	uv run uvicorn bookforge.api:app --reload --host 127.0.0.1 --port 8080 --timeout-graceful-shutdown 3
 
 test:
 	uv run pytest

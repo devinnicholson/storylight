@@ -82,7 +82,7 @@ cp deploy/jetson/bookforge.env.example .env
 set -a
 source .env
 set +a
-.venv/bin/python -m uvicorn bookforge.api:app --host 127.0.0.1 --port 8080
+.venv/bin/python -m uvicorn bookforge.api:app --host 127.0.0.1 --port 8080 --timeout-graceful-shutdown 3
 ```
 
 In another terminal:

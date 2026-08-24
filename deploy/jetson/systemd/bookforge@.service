@@ -9,7 +9,7 @@ WorkingDirectory=/opt/bookforge
 EnvironmentFile=/etc/bookforge/bookforge.env
 Environment=HOME=/var/cache/bookforge/home
 ExecStartPre=/opt/bookforge/.venv/bin/python -m bookforge.edge_preflight
-ExecStart=/opt/bookforge/.venv/bin/python -m uvicorn bookforge.api:app --host 127.0.0.1 --port 8080
+ExecStart=/opt/bookforge/.venv/bin/python -m uvicorn bookforge.api:app --host 127.0.0.1 --port 8080 --timeout-graceful-shutdown 3
 Restart=on-failure
 RestartSec=3
 TimeoutStopSec=20
