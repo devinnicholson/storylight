@@ -962,6 +962,10 @@ class LiveSceneJobRegistry:
             if pack is None:
                 return False
             pack = await self.completed_pack_validator(pack)
+            story_prefix = request.session_id or "live-scene"
+            pack = pack.model_copy(
+                update={"story_id": f"{story_prefix}-{job_id[-12:]}"}
+            )
             artifacts = _cached_live_scene_artifacts(pack, provider=self.provider.name)
         except Exception:
             # A stale/corrupt/incompatible cache is only a missed optimization.
@@ -1355,7 +1359,9 @@ def live_scene_request_seed(request: LiveSceneCreateRequest) -> int:
 
     if request.seed is not None:
         return request.seed
-    payload = f"{request.text}\0{request.visual_style}\0{request.session_id or ''}".encode()
+    # Transport identity must not alter a requested visual. This lets an exact
+    # scene survive a workbench or rehearsal session change.
+    payload = f"{request.text}\0{request.visual_style}".encode()
     return int.from_bytes(hashlib.sha256(payload).digest()[:4], "big")
 
 
@@ -1674,9 +1680,7 @@ def build_live_scene_provider(
 
 
 def _stable_seed(request: LiveSceneCreateRequest) -> int:
-    digest = hashlib.sha256(
-        f"{request.text}\0{request.visual_style}\0{request.session_id or ''}".encode()
-    ).digest()
+    digest = hashlib.sha256(f"{request.text}\0{request.visual_style}".encode()).digest()
     return int.from_bytes(digest[:4], "big")
 
 

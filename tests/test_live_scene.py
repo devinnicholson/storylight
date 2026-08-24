@@ -22,6 +22,7 @@ from bookforge.live_scene import (
     LiveSceneUpdate,
     build_live_scene_provider,
     build_live_scene_story_pack,
+    live_scene_request_seed,
 )
 from bookforge.model_client import FakeModelClient
 from bookforge.story_store import StoryPackStore
@@ -450,6 +451,78 @@ def test_exact_completed_scene_reuse_skips_provider_and_revalidates_assets(
     assert [artifact.checksum_sha256 for artifact in restored.artifacts] == [
         artifact.checksum_sha256 for artifact in generated.artifacts
     ]
+
+
+def test_completed_scene_replays_across_transport_sessions(tmp_path: Path) -> None:
+    class ProviderMustNotRun:
+        name = "fake"
+
+        async def generate(self, request, *, job_id):
+            del request, job_id
+            raise AssertionError("exact cached scene should bypass the provider")
+            yield  # pragma: no cover
+
+    async def exercise():
+        first_request = LiveSceneCreateRequest(
+            text="A paper moon rises from an open book.",
+            visual_style="luminous paper theater",
+            seed=74,
+            session_id="rehearsal-one",
+        )
+        replay_request = first_request.model_copy(update={"session_id": "rehearsal-two"})
+        cache = AssetCache(tmp_path / "cache")
+        await cache.initialize()
+        store = StoryPackStore(tmp_path / "story-packs")
+        await store.initialize()
+        first_registry = LiveSceneJobRegistry(
+            DeterministicFakeLiveSceneProvider(cache=cache),
+            completed_pack_sink=store.save,
+        )
+        first = await first_registry.submit(first_request)
+        generated = await first_registry.wait(first.job_id)
+        await first_registry.close()
+
+        async def source(payload):
+            return await store.find_live_scene(
+                text=payload.text,
+                visual_style=payload.visual_style,
+                seed=payload.seed,
+                session_id=payload.session_id,
+            )
+
+        async def validator(pack):
+            return await cache.install_pack(pack, tmp_path)
+
+        replay_registry = LiveSceneJobRegistry(
+            ProviderMustNotRun(),
+            completed_pack_source=source,
+            completed_pack_validator=validator,
+        )
+        replay = await replay_registry.submit(replay_request)
+        restored = await replay_registry.wait(replay.job_id)
+        await replay_registry.close()
+        return generated, replay, restored
+
+    generated, replay, restored = asyncio.run(exercise())
+
+    assert restored.stage is LiveSceneStage.MOTION_READY, restored.error
+    assert restored.metrics.scene_cache_hit is True
+    assert restored.story_pack.story_id == f"rehearsal-two-{replay.job_id[-12:]}"
+    assert [artifact.checksum_sha256 for artifact in restored.artifacts] == [
+        artifact.checksum_sha256 for artifact in generated.artifacts
+    ]
+
+
+def test_default_live_scene_seed_is_independent_of_transport_session() -> None:
+    request = LiveSceneCreateRequest(
+        text="A paper moon rises from an open book.",
+        visual_style="luminous paper theater",
+        session_id="rehearsal-one",
+    )
+
+    assert live_scene_request_seed(request) == live_scene_request_seed(
+        request.model_copy(update={"session_id": "rehearsal-two"})
+    )
 
 
 def test_corrupt_completed_scene_asset_falls_through_to_provider(tmp_path: Path) -> None:

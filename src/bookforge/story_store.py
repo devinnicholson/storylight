@@ -111,6 +111,7 @@ class StoryPackStore:
         seed: int,
         session_id: str | None,
     ) -> StoryPack | None:
+        del session_id  # Transport identity does not change exact visual identity.
         self._initialize_sync()
         if not self._live_scene_index_ready:
             self._rebuild_live_scene_index_sync()
@@ -118,7 +119,6 @@ class StoryPackStore:
             text=text,
             visual_style=visual_style,
             seed=seed,
-            story_prefix=session_id or "live-scene",
         )
         candidate = self._live_scene_index.get(cache_key)
         if candidate is None:
@@ -162,7 +162,7 @@ class StoryPackStore:
 
     @classmethod
     def _stored_live_scene_key(cls, pack: StoryPack) -> str | None:
-        story_identity = re.fullmatch(r"(.+)-[a-f0-9]{12}", pack.story_id)
+        story_identity = re.fullmatch(r".+-[a-f0-9]{12}", pack.story_id)
         if story_identity is None or len(pack.pages) != 1:
             return None
         ready_assets = [asset for asset in pack.assets if asset.state.value == "ready"]
@@ -178,7 +178,6 @@ class StoryPackStore:
             text=pack.pages[0].source_text,
             visual_style=pack.visual_style,
             seed=master_assets[0].seed,
-            story_prefix=story_identity.group(1),
         )
 
     @staticmethod
@@ -187,14 +186,12 @@ class StoryPackStore:
         text: str,
         visual_style: str,
         seed: int,
-        story_prefix: str,
     ) -> str:
         payload = json.dumps(
             {
                 "text": text,
                 "visual_style": visual_style,
                 "seed": seed,
-                "story_prefix": story_prefix,
             },
             ensure_ascii=False,
             sort_keys=True,

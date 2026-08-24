@@ -124,8 +124,17 @@ def test_story_pack_store_finds_only_exact_completed_live_scene(tmp_path: Path) 
             session_id="reader-1",
         )
     )
+    other_session = asyncio.run(
+        restarted.find_live_scene(
+            text="The moth found the gate.",
+            visual_style="paper theater",
+            seed=17,
+            session_id="reader-elsewhere",
+        )
+    )
 
     assert exact == pack
+    assert other_session == pack
     assert wrong_seed is None
     assert all("The moth found the gate." not in key for key in restarted._live_scene_index)  # noqa: SLF001
 
