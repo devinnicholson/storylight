@@ -593,6 +593,6 @@ def test_optimized_jetson_gemma_fixture_matches_the_production_wire_contract() -
     assert fixture["options"] == {
         "temperature": 0,
         "num_ctx": 4096,
-        "num_predict": 200,
+        "num_predict": 180,
     }
     assert fixture["model"] == "gemma3:1b-it-q4_K_M"

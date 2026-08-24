@@ -2,7 +2,8 @@
 
 The same pinned classes support finite ``modal run`` jobs and authenticated SDK
 lookup after ``modal deploy``. There is deliberately no public web endpoint. Both
-classes scale from zero to one container and return to zero after 30 idle seconds.
+classes scale from zero to one container and return to zero after 90 idle seconds. The longer
+window keeps the explicitly prewarmed container alive while Jetson finishes local planning.
 Each local entry point creates one bounded GPU call and exits::
 
     modal run deploy/modal_fast_scene.py::fast_scene_cli \
@@ -34,6 +35,9 @@ GPU = "L4"
 GPU_USD_PER_SECOND = 0.000222
 FAST_TIMEOUT_SECONDS = 180
 MOTION_TIMEOUT_SECONDS = 300
+SCALEDOWN_WINDOW_SECONDS = 90
+FAST_PREWARM_WIDTH = 896
+FAST_PREWARM_HEIGHT = 512
 FAST_MODEL = "Efficient-Large-Model/SANA1.5_1.6B_1024px_diffusers"
 FAST_MODEL_REVISION = "caa51e5ea874be07d3a9c7c2d0fd800570b18440"
 DEPTH_MODEL = "depth-anything/Depth-Anything-V2-Small-hf"
@@ -113,7 +117,7 @@ def _validate_seed(seed: int) -> None:
     timeout=FAST_TIMEOUT_SECONDS,
     min_containers=0,
     max_containers=1,
-    scaledown_window=30,
+    scaledown_window=SCALEDOWN_WINDOW_SECONDS,
     volumes={CACHE_DIR: model_cache},
 )
 class FastSceneStudio:
@@ -129,6 +133,7 @@ class FastSceneStudio:
         ).to("cuda")
         self.image_pipe.vae.to(torch.bfloat16)
         self.image_pipe.text_encoder.to(torch.bfloat16)
+        self.image_pipe.set_progress_bar_config(disable=True)
         self.depth_pipe = pipeline(
             task="depth-estimation",
             model=DEPTH_MODEL,
@@ -136,16 +141,35 @@ class FastSceneStudio:
             device=0,
         )
         self.model_load_seconds = time.perf_counter() - load_started
+        self.inference_warmup_seconds = 0.0
+        self.inference_warmed = False
         self.loaded_at = time.monotonic()
 
     @modal.method()
     def prewarm(self) -> dict[str, Any]:
+        if not self.inference_warmed:
+            warmup_started = time.perf_counter()
+            with torch.inference_mode():
+                warmup_master = self.image_pipe(
+                    prompt="bright layered paper theater with one simple lantern",
+                    negative_prompt="text, logo, watermark, interface",
+                    width=FAST_PREWARM_WIDTH,
+                    height=FAST_PREWARM_HEIGHT,
+                    guidance_scale=4.5,
+                    num_inference_steps=1,
+                    generator=torch.Generator(device="cuda").manual_seed(1),
+                ).images[0]
+                self.depth_pipe(warmup_master)
+            self.inference_warmup_seconds = time.perf_counter() - warmup_started
+            self.inference_warmed = True
         return {
             "model": FAST_MODEL,
             "model_revision": FAST_MODEL_REVISION,
             "depth_model": DEPTH_MODEL,
             "depth_model_revision": DEPTH_MODEL_REVISION,
             "model_load_seconds": self.model_load_seconds,
+            "inference_warmup_seconds": self.inference_warmup_seconds,
+            "inference_warmed": self.inference_warmed,
             "container_age_seconds": time.monotonic() - self.loaded_at,
         }
 
@@ -186,9 +210,11 @@ class FastSceneStudio:
         depth_seconds = time.perf_counter() - depth_started
         master_buffer = io.BytesIO()
         depth_buffer = io.BytesIO()
-        master.save(master_buffer, format="PNG", optimize=True)
-        depth.save(depth_buffer, format="PNG", optimize=True)
-        torch.cuda.empty_cache()
+        # PNG's exhaustive optimizer is CPU-heavy and sits directly on the live
+        # critical path. Level 1 preserves lossless pixels/checksums while
+        # favoring sub-second packaging over a modest transfer-size reduction.
+        master.save(master_buffer, format="PNG", compress_level=1)
+        depth.save(depth_buffer, format="PNG", compress_level=1)
         return {
             "master": master_buffer.getvalue(),
             "depth": depth_buffer.getvalue(),
@@ -205,7 +231,7 @@ class FastSceneStudio:
     timeout=MOTION_TIMEOUT_SECONDS,
     min_containers=0,
     max_containers=1,
-    scaledown_window=30,
+    scaledown_window=SCALEDOWN_WINDOW_SECONDS,
     volumes={CACHE_DIR: model_cache},
 )
 class MotionUpgradeStudio:

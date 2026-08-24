@@ -104,7 +104,7 @@ MOTION_STAGE_POLICY = ModalStagePolicy(
 )
 WARM_FAST_SESSION_CEILING_USD = 0.12
 WARM_FULL_SESSION_CEILING_USD = 0.25
-WARM_SCALEDOWN_WINDOW_SECONDS = 30
+WARM_SCALEDOWN_WINDOW_SECONDS = 90
 
 
 @dataclass(frozen=True, slots=True)
@@ -289,6 +289,7 @@ class WarmPrewarmReport:
     fast_model_load_seconds: float
     motion_model_load_seconds: float
     expires_in_seconds: float
+    fast_inference_warmup_seconds: float = 0.0
 
 
 @dataclass(frozen=True, slots=True)
@@ -680,7 +681,7 @@ class WarmModalSceneProvider(FiniteModalSceneProvider):
 
             # Motion is deliberately opt-in. A master-only session never starts
             # or pays for the LTX container. When requested, the two independently
-            # scaling classes load concurrently and each returns to zero after 30s.
+            # scaling classes load concurrently and each returns to zero after 90s.
             try:
                 if include_motion:
                     (fast_seconds, fast), (motion_seconds, motion) = await asyncio.gather(
@@ -704,6 +705,9 @@ class WarmModalSceneProvider(FiniteModalSceneProvider):
                     "include_motion": include_motion,
                     "fast_remote_seconds": fast_seconds,
                     "motion_remote_seconds": motion_seconds,
+                    "fast_inference_warmup_seconds": float(
+                        fast.get("inference_warmup_seconds", 0)
+                    ),
                     "created_at": datetime.now(UTC).isoformat(),
                 },
             )
@@ -731,6 +735,9 @@ class WarmModalSceneProvider(FiniteModalSceneProvider):
                 fast_model_load_seconds=session.fast_model_load_seconds,
                 motion_model_load_seconds=session.motion_model_load_seconds,
                 expires_in_seconds=WARM_SCALEDOWN_WINDOW_SECONDS,
+                fast_inference_warmup_seconds=float(
+                    fast.get("inference_warmup_seconds", 0)
+                ),
             )
 
     async def warm_status(self) -> WarmProviderStatus:
@@ -1121,6 +1128,10 @@ class FiniteModalLiveSceneProvider:
         planner: LiveScenePlanner | None = None,
         motion_gate: MotionTechnicalGate | None = None,
         motion_evaluator: MotionEvaluator | None = None,
+        master_width: int = 896,
+        master_height: int = 512,
+        master_steps: int = 8,
+        master_guidance_scale: float = 4.5,
     ) -> None:
         self.provider = provider
         self.cache = cache
@@ -1129,6 +1140,21 @@ class FiniteModalLiveSceneProvider:
         self.planner = planner
         self.motion_gate = motion_gate or MotionTechnicalGate()
         self.motion_evaluator = motion_evaluator or _evaluate_motion_technical
+        # Validate the complete render profile once at construction time.
+        profile = FastSceneRequest(
+            scene_id="render-profile",
+            prompt="validated render profile",
+            negative_prompt="text",
+            seed=0,
+            width=master_width,
+            height=master_height,
+            steps=master_steps,
+            guidance_scale=master_guidance_scale,
+        )
+        self.master_width = profile.width
+        self.master_height = profile.height
+        self.master_steps = profile.steps
+        self.master_guidance_scale = profile.guidance_scale
 
     @property
     def name(self) -> str:
@@ -1200,6 +1226,10 @@ class FiniteModalLiveSceneProvider:
                 "split screen, collage, photorealism, duplicate character"
             ),
             seed=seed,
+            width=self.master_width,
+            height=self.master_height,
+            steps=self.master_steps,
+            guidance_scale=self.master_guidance_scale,
         )
         try:
             fast_bundle = await self.provider.generate_fast(

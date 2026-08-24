@@ -45,20 +45,15 @@ def _plan() -> LiveScenePlan:
 
 def _wire_plan() -> LiveSceneWirePlan:
     return LiveSceneWirePlan(
-        lighting="moonlit",
-        palette="cool",
-        camera_motion="slow_push",
         background_prompt="Indigo cloudscape and distant floating school with warm windows",
         focus=LiveSceneWireFocus(
             kind="character",
             subject="A child in profile",
             action="holding a luminous open storybook",
-            region="left",
         ),
         magic=LiveSceneWireMagic(
             kind="effect",
             prompt="Cyan origami birds becoming constellations",
-            region="upper_right",
         ),
     )
 
@@ -72,16 +67,15 @@ def test_wire_plan_is_compact_and_normalizes_safe_geometry_and_motion() -> None:
         "A complete visible child in profile, holding a luminous open storybook."
     )
     assert plan.art_direction == (
-        "moonlit rim lighting, cool cobalt and cyan palette, clear silhouettes, "
-        "projection-bright midtones, tactile depth"
+        "clear silhouettes, projection-bright midtones, tactile depth"
     )
-    assert plan.focus.anchor == (0.3, 0.52, 0.4, 0.62)
+    assert plan.focus.anchor == (0.5, 0.55, 0.4, 0.62)
     assert plan.focus.depth == 2.5
     assert plan.focus.motion == "breathe"
     assert plan.accent.anchor == (0.73, 0.28, 0.3, 0.26)
     assert plan.accent.depth == 5
     assert plan.accent.motion == "pulse"
-    assert plan.ambience == ["stars"]
+    assert plan.ambience == ["dust"]
 
 
 def test_wire_plan_repairs_possessive_body_fragment_to_complete_character() -> None:
@@ -181,6 +175,9 @@ def test_compact_plan_normalizes_to_canonical_scene_spec_and_layers() -> None:
     assert plan.background_prompt in page.scene_spec.master_prompt
     assert plan.focus.prompt in page.scene_spec.master_prompt
     assert plan.accent.prompt in page.scene_spec.master_prompt
+    assert "Show the background, subject, and supporting visual simultaneously" in (
+        page.scene_spec.master_prompt
+    )
     assert "main subject at left" in page.scene_spec.master_prompt
     assert "supporting detail at upper right" in page.scene_spec.master_prompt
     assert page.source_text == "A child opened a book and the birds showed the way."
@@ -436,13 +433,19 @@ def test_structured_planner_uses_live_schema_and_records_model_revision() -> Non
         )
     )
 
-    assert result.plan == _wire_plan().to_live_scene_plan()
+    assert result.plan == _wire_plan().to_live_scene_plan(
+        context_text=(
+            "A child opens a silent book and origami birds light the sky. "
+            "luminous watercolor paper theater"
+        )
+    )
     assert result.metrics.model == "gemma3:1b"
     assert result.model_revision == "sha256:gemma-fixture"
     assert result.wall_ms >= 0
     assert stub.calls[0]["output_type"] is LiveSceneWirePlan
     assert "origami birds light the sky" in str(stub.calls[0]["prompt"])
     assert "luminous watercolor paper theater" in str(stub.calls[0]["prompt"])
+    assert '"seed"' not in str(stub.calls[0]["prompt"])
     assert "focus.action must separately state the exact visible action" in str(
         stub.calls[0]["prompt"]
     )
@@ -450,6 +453,12 @@ def test_structured_planner_uses_live_schema_and_records_model_revision() -> Non
     assert "most visually surprising transformation" in str(stub.calls[0]["prompt"])
     assert "exact visible action" in str(stub.calls[0]["prompt"])
     assert "Never invent a transformation" in str(stub.calls[0]["prompt"])
+    assert "magic.prompt must name that concrete result" in str(
+        stub.calls[0]["prompt"]
+    )
+    assert "Stop the action before a later magical transformation" in str(
+        stub.calls[0]["prompt"]
+    )
     assert "essential object or destination" in str(stub.calls[0]["prompt"])
 
 

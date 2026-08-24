@@ -437,6 +437,10 @@ def test_provider_factory_selects_fake_and_finite_modal_without_persistent_servi
         asset_backend="modal",
         cache=cache,
         output_root=tmp_path / "generated",
+        master_width=960,
+        master_height=544,
+        master_steps=7,
+        master_guidance_scale=4,
     )
     modal_warm = build_live_scene_provider(
         "modal_warm",
@@ -468,6 +472,10 @@ def test_provider_factory_selects_fake_and_finite_modal_without_persistent_servi
     assert modal_warm.provider.__class__.__name__ == "WarmModalSceneProvider"  # type: ignore[attr-defined]
     assert modal.enable_motion is False  # type: ignore[attr-defined]
     assert modal.output_root == tmp_path / "generated"  # type: ignore[attr-defined]
+    assert modal.master_width == 960  # type: ignore[attr-defined]
+    assert modal.master_height == 544  # type: ignore[attr-defined]
+    assert modal.master_steps == 7  # type: ignore[attr-defined]
+    assert modal.master_guidance_scale == 4  # type: ignore[attr-defined]
     assert LiveSceneJobRegistry(modal, max_active_jobs=8).max_active_jobs == 1
     assert LiveSceneJobRegistry(modal_warm, max_active_jobs=8).max_active_jobs == 1
     assert LiveSceneJobRegistry(fake, max_active_jobs=8).max_active_jobs == 8

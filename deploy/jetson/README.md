@@ -237,12 +237,20 @@ BOOKFORGE_LIVE_SCENE_PLANNER_TIMEOUT_SECONDS=12
 BOOKFORGE_LIVE_SCENE_PLANNER_MODEL_REVISION=ollama-manifest-sha256:8648f39daa8fbf5b18c7b4e6a8fb4990c692751d49917417b8842ca5758e7ffc
 ```
 
-`BOOKFORGE_MODEL_MAX_OUTPUT_TOKENS` is a hard decode ceiling, not a target. The optimized five-passage
-acceptance used at most 143 of 200 tokens without truncation. Keep the 200 ceiling until a broader
-benchmark proves that a lower ceiling never truncates valid JSON. The 12-second planner deadline
-passed with at least 6.22 seconds of headroom, but only on a prewarmed model; keep the independent
+`BOOKFORGE_MODEL_MAX_OUTPUT_TOKENS` is a hard decode ceiling, not a target. The final compact contract
+removed redundant camera, lighting, palette, and region fields; its accepted hero repeats used
+107-109 of 180 tokens without truncation. Keep the 180 ceiling until a broader benchmark proves that
+a lower ceiling never truncates valid JSON. The 12-second planner deadline passed comfortably on a
+prewarmed model; keep the independent
 20-second model-client timeout for
 diagnostics and ensure the prewarm completes before a live reading.
+
+The final speed acceptance kept Gemma 1B after rejecting the 270M model for invented settings and
+missing transformations. With the 896x512, 8-step, truly prewarmed Modal renderer, the full path
+reached `master_ready` in 6.971 seconds: 4.285 seconds planning, 2.673 seconds provider time, and 2.7
+ms cache promotion. The renderer's 90-second scale-down window is intentional: the earlier
+30-second window expired during local planning/operator handoff and produced a 44.8-second cold
+request. Full evidence is in `benchmarks/bookforge-speed-optimization-2026-08-23.json`.
 
 Keep the model endpoint on loopback. When a Mac control plane needs it during development, use an
 explicit SSH local forward rather than changing `OLLAMA_HOST` to a LAN address.

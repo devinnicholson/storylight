@@ -40,6 +40,12 @@ The first cloud result is a 16:9 master plus depth sidecar. The existing WebGL r
 for a slow camera push, parallax, focus breathing, and ambient particles. This is already a moving
 generated scene and is the required live milestone.
 
+The accepted speed profile is 896x512 at 8 SANA steps. Explicit prewarm runs one small SANA and
+Depth Anything inference, not just model loading, and the authenticated class remains warm for 90
+seconds before scaling to zero. Seven steps saved only about 0.2 seconds and reduced anatomical
+stability; six steps visibly collapsed the central subject. PNG promotion uses fast lossless
+compression and the live request no longer empties the CUDA cache between scenes.
+
 LTX-Video is an optional refinement. It must preserve identity and composition, pass endpoint and
 motion-stability checks, and arrive without interrupting the depth scene. A failed or malformed
 video leaves the accepted depth scene in place.
@@ -65,9 +71,17 @@ are served through the local Bookforge API and can be promoted to the Jetson cac
 interface remains HTTP/job based so GCP can replace Modal without changing the live-scene API or
 projector.
 
-Typed story text, style, seed, and model configuration may reach the generation provider. Live
-microphone audio, camera data, reader alignment, and reader telemetry remain local. Microphone work
-is intentionally deferred until typed-text generation meets this performance contract.
+Raw typed story text, microphone audio, camera data, reader alignment, and reader telemetry remain
+local. The Jetson Gemma planner emits a compact visual plan; a fail-closed local privacy gate blocks
+distinctive source overlap and common PII patterns before only that semantic visual direction,
+style, seed, and renderer configuration may reach the generation provider. This is content
+minimization rather than semantic confidentiality.
+
+The final exact-code warm acceptance reached `master_ready` in 6.971 seconds: 4.285 seconds local
+Gemma planning, 2.673 seconds provider time, 2.402 seconds of GPU inference within that provider
+call, and 2.7 ms cache promotion. The selected output retained the child, open book, and multiple
+origami birds. A second seed at comparable speed omitted the birds and was rejected, so seed-level
+semantic image validation remains a documented quality frontier rather than a hidden success.
 
 ### Mac-to-Jetson development topology
 

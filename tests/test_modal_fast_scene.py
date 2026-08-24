@@ -31,9 +31,34 @@ def test_modal_scene_has_no_public_endpoint_and_keeps_finite_cli() -> None:
 def test_deployed_classes_scale_to_zero_and_require_explicit_prewarm() -> None:
     assert SOURCE.count("min_containers=0") == 2
     assert SOURCE.count("max_containers=1") == 2
-    assert SOURCE.count("scaledown_window=30") == 2
+    assert "SCALEDOWN_WINDOW_SECONDS = 90" in SOURCE
+    assert SOURCE.count("scaledown_window=SCALEDOWN_WINDOW_SECONDS") == 2
     assert SOURCE.count("def prewarm(self)") == 2
     assert "modal.Cls.from_name" not in SOURCE
+
+
+def test_fast_scene_uses_low_latency_lossless_packaging() -> None:
+    fast = SOURCE.split("class FastSceneStudio:", 1)[1].split(
+        "class MotionUpgradeStudio:", 1
+    )[0]
+
+    assert 'format="PNG", compress_level=1' in fast
+    assert "optimize=True" not in fast
+    assert "torch.cuda.empty_cache()" not in fast
+    assert "set_progress_bar_config(disable=True)" in fast
+
+
+def test_fast_prewarm_executes_shape_matched_cuda_and_depth_work() -> None:
+    fast = SOURCE.split("class FastSceneStudio:", 1)[1].split(
+        "class MotionUpgradeStudio:", 1
+    )[0]
+
+    assert "FAST_PREWARM_WIDTH = 896" in SOURCE
+    assert "FAST_PREWARM_HEIGHT = 512" in SOURCE
+    assert "if not self.inference_warmed:" in fast
+    assert "num_inference_steps=1" in fast
+    assert "self.depth_pipe(warmup_master)" in fast
+    assert '"inference_warmup_seconds"' in fast
 
 
 def test_motion_is_projection_native_and_exactly_seamless() -> None:

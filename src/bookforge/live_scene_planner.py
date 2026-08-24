@@ -134,19 +134,6 @@ LiveSceneAnchor = Annotated[
 ]
 LiveSceneMotion = Literal["drift", "float", "breathe", "pulse", "parallax"]
 LiveSceneAmbience = Literal["dust", "fireflies", "fog", "stars", "light_rays"]
-LiveSceneRegion = Literal[
-    "upper_left",
-    "upper_center",
-    "upper_right",
-    "left",
-    "center",
-    "right",
-    "lower_left",
-    "lower_center",
-    "lower_right",
-]
-
-
 class LiveScenePlacedLayerPlan(FrozenStrictModel):
     kind: Literal["character", "prop", "effect"]
     prompt: Annotated[
@@ -182,7 +169,6 @@ class LiveSceneWireFocus(FrozenStrictModel):
             )
         ),
     ]
-    region: LiveSceneRegion
 
 
 class LiveSceneWireMagic(FrozenStrictModel):
@@ -200,15 +186,11 @@ class LiveSceneWireMagic(FrozenStrictModel):
             )
         ),
     ]
-    region: LiveSceneRegion
 
 
 class LiveSceneWirePlan(FrozenStrictModel):
     """Compact structured output requested from the edge model."""
 
-    lighting: Literal["moonlit", "golden", "luminous", "soft", "dramatic"]
-    palette: Literal["warm", "cool", "jewel", "pastel", "earth", "monochrome"]
-    camera_motion: Literal["locked", "slow_push", "pan_left", "pan_right", "float"]
     background_prompt: Annotated[
         str,
         StringConstraints(strip_whitespace=True, min_length=1, max_length=110),
@@ -247,27 +229,30 @@ class LiveSceneWirePlan(FrozenStrictModel):
         accent_prompt = _bounded_words(self.magic.prompt, 8)
         return LiveScenePlan(
             scene_summary=_derived_scene_summary(focus_prompt, accent_prompt),
-            art_direction=_wire_art_direction(self.lighting, self.palette),
-            camera_motion=self.camera_motion,
+            # The caller already supplies the visual style, including palette
+            # and lighting. A fixed projection treatment avoids contradictory
+            # tiny-model choices and saves two fields on the critical path.
+            art_direction=_wire_art_direction(),
+            # Every accepted compact-planner case selected slow_push. Keeping
+            # this projection-safe motion local removes an unnecessary decode
+            # decision from the latency-critical edge model.
+            camera_motion="slow_push",
             background_prompt=_bounded_words(self.background_prompt, 10),
             focus=LiveScenePlacedLayerPlan(
                 kind=self.focus.kind,
                 prompt=focus_prompt,
-                anchor=_wire_anchor(self.focus, role="focus"),
+                anchor=_wire_anchor(self.focus.kind, role="focus"),
                 depth=2.5,
                 motion="breathe" if self.focus.kind == "character" else "float",
             ),
             accent=LiveScenePlacedLayerPlan(
                 kind=self.magic.kind,
                 prompt=accent_prompt,
-                anchor=_wire_anchor(self.magic, role="accent"),
+                anchor=_wire_anchor(self.magic.kind, role="accent"),
                 depth=5,
                 motion="pulse" if self.magic.kind == "effect" else "drift",
             ),
-            ambience=_wire_ambience(
-                self.lighting,
-                context_text or self.background_prompt,
-            ),
+            ambience=_wire_ambience(context_text or self.background_prompt),
         )
 
 
@@ -340,8 +325,9 @@ class LiveScenePlan(FrozenStrictModel):
         master_prompt = (
             f"{_prompt_fragment(visual_style)}. {_prompt_fragment(art_direction)}. "
             f"{background_clause.lstrip()} "
-            f"Main subject: {_prompt_fragment(focus_prompt)}. "
-            f"Supporting visual detail: {_prompt_fragment(accent_prompt)}. "
+            f"Required foreground subject: {_prompt_fragment(focus_prompt)}. "
+            f"Required supporting visual: {_prompt_fragment(accent_prompt)}. "
+            "Show the background, subject, and supporting visual simultaneously. "
             f"{composition_clause} "
             "Full-bleed cinematic 16:9 storybook projection with clear foreground/background "
             "depth, clean silhouettes, and no readable text, captions, logos, borders, or UI."
@@ -465,35 +451,11 @@ def _derived_scene_summary(focus_prompt: str, accent_prompt: str) -> str:
     return f"{summary[0].upper()}{summary[1:]}."
 
 
-def _wire_art_direction(
-    lighting: Literal["moonlit", "golden", "luminous", "soft", "dramatic"],
-    palette: Literal["warm", "cool", "jewel", "pastel", "earth", "monochrome"],
-) -> str:
-    lighting_phrase = {
-        "moonlit": "moonlit rim lighting",
-        "golden": "golden-hour illumination",
-        "luminous": "luminous internal glow",
-        "soft": "soft diffuse lighting",
-        "dramatic": "dramatic directional lighting",
-    }[lighting]
-    palette_phrase = {
-        "warm": "warm amber and coral palette",
-        "cool": "cool cobalt and cyan palette",
-        "jewel": "saturated jewel-tone palette",
-        "pastel": "gentle pastel palette",
-        "earth": "earthy natural palette",
-        "monochrome": "restrained monochrome palette",
-    }[palette]
-    return (
-        f"{lighting_phrase}, {palette_phrase}, clear silhouettes, "
-        "projection-bright midtones, tactile depth"
-    )
+def _wire_art_direction() -> str:
+    return "clear silhouettes, projection-bright midtones, tactile depth"
 
 
-def _wire_ambience(
-    lighting: Literal["moonlit", "golden", "luminous", "soft", "dramatic"],
-    background_prompt: str,
-) -> list[LiveSceneAmbience]:
+def _wire_ambience(background_prompt: str) -> list[LiveSceneAmbience]:
     setting_tokens = {
         token.casefold() for token in _SEMANTIC_WORD.findall(background_prompt)
     }
@@ -505,13 +467,7 @@ def _wire_ambience(
         return ["fireflies"]
     if setting_tokens & {"desert", "dunes", "sunrise", "sunset"}:
         return ["dust", "light_rays"]
-    return {
-        "moonlit": ["stars"],
-        "golden": ["dust", "light_rays"],
-        "luminous": ["fireflies"],
-        "soft": ["dust"],
-        "dramatic": ["light_rays"],
-    }[lighting]
+    return ["dust"]
 
 
 def _normalized_wire_focus(layer: LiveSceneWireFocus) -> str:
@@ -611,38 +567,26 @@ def _normalized_placements(
     )
 
 
-_REGION_CENTERS: dict[LiveSceneRegion, tuple[float, float]] = {
-    "upper_left": (0.27, 0.28),
-    "upper_center": (0.5, 0.28),
-    "upper_right": (0.73, 0.28),
-    "left": (0.3, 0.52),
-    "center": (0.5, 0.52),
-    "right": (0.7, 0.52),
-    "lower_left": (0.27, 0.7),
-    "lower_center": (0.5, 0.7),
-    "lower_right": (0.73, 0.7),
-}
-
-
 def _wire_anchor(
-    layer: LiveSceneWireFocus | LiveSceneWireMagic,
+    kind: Literal["character", "prop", "effect"],
     *,
     role: Literal["focus", "accent"],
 ) -> tuple[float, float, float, float]:
-    center_x, center_y = _REGION_CENTERS[layer.region]
     if role == "focus":
+        center_x, center_y = 0.5, 0.55
         dimensions = {
             "character": (0.4, 0.62),
             "prop": (0.4, 0.46),
             "effect": (0.46, 0.42),
         }
     else:
+        center_x, center_y = 0.73, 0.28
         dimensions = {
             "character": (0.25, 0.38),
             "prop": (0.27, 0.28),
             "effect": (0.3, 0.26),
         }
-    width, height = dimensions[layer.kind]
+    width, height = dimensions[kind]
     return center_x, center_y, width, height
 
 
@@ -913,13 +857,17 @@ one cohesive, safe, projection-ready visual plan for a child."""
 
 
 def live_scene_plan_prompt(*, text: str, visual_style: str, seed: int) -> str:
-    request = {"passage": text, "visual_style": visual_style, "seed": seed}
+    # Geometry and animation remain deterministic from the seed. The language
+    # model only performs semantic extraction, so sending the seed wastes edge
+    # input tokens and can introduce irrelevant variation.
+    del seed
+    request = {"passage": text, "visual_style": visual_style}
     return """Plan one full-bleed cinematic 16:9 illustration for immediate projection.
 
 Requirements:
 - Preserve only the subjects, setting, action, and mood present in the passage.
-- Choose one lighting and one palette value that complement the supplied visual style. Projection
-  brightness, silhouette clarity, materials, and depth are supplied locally.
+- Palette, lighting, projection brightness, silhouette clarity, materials, depth, geometry, and
+  animation are supplied locally. Spend the output only on story-visible semantics.
 - background_prompt is at most 10 words. focus.subject is a complete actor in at most 8 words and
   focus.action is the exact visible action in at most 6 words. magic.prompt is at most 8 words.
 - Do not put trailing punctuation in any layer prompt.
@@ -936,14 +884,17 @@ Requirements:
 - focus.subject must name the complete actor. Prefer the person or creature acting over the object
   it touches. focus.action must separately state the exact visible action from the passage. Never
   invent a pose or action. Include its essential object or destination instead of returning only a
-  verb. Never return an isolated body part, gaze, expression, or adjective list.
+  verb. Stop the action before a later magical transformation; that result belongs in magic.prompt.
+  Never return an isolated body part, gaze, expression, or adjective list.
 - magic must name the passage's most visually surprising transformation, creature, or object.
   Prefer an actual magical change over the focus's tool. If no transformation occurs, use a
   concrete supporting element explicitly present in the passage. Never invent a transformation.
+  When the passage says something becomes, turns into, transforms, blooms, or rises into something,
+  magic.prompt must name that concrete result, including its essential form or destination.
   Light, glow, shimmer, dust, fog, color, or atmosphere alone is not magic.
-- Place focus and magic in visibly different named regions. Geometry, depth, and layer motion are
-  supplied locally; never emit coordinates or measurements.
-- The scene must remain legible on a projector. Atmosphere is supplied locally from lighting.
+- Geometry, depth, composition, and layer motion are supplied locally; never emit regions,
+  coordinates, or measurements.
+- The scene must remain legible on a projector. Atmosphere is supplied locally from the setting.
 - Keep the entire JSON compact; omit unnecessary adjectives and explanations.
 
 Input:

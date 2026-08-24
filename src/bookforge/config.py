@@ -46,6 +46,10 @@ class Settings(BaseSettings):
     ] = "configured-local-model"
     live_scene_enable_motion: bool = False
     live_scene_output_dir: Path = Path("artifacts/live-scenes/generated")
+    live_scene_master_width: int = 896
+    live_scene_master_height: int = 512
+    live_scene_master_steps: Annotated[int, Field(ge=4, le=30)] = 8
+    live_scene_master_guidance_scale: Annotated[float, Field(ge=0, le=12)] = 4.5
     live_scene_modal_session_gpu_cap_usd: Annotated[float, Field(gt=0, le=10)] = 1.0
     live_scene_max_active_jobs: Annotated[int, Field(ge=1, le=16)] = 2
     live_scene_max_retained_jobs: Annotated[int, Field(ge=1, le=256)] = 64
@@ -66,6 +70,13 @@ class Settings(BaseSettings):
     def split_origins(cls, value: object) -> object:
         if isinstance(value, str):
             return [origin.strip() for origin in value.split(",") if origin.strip()]
+        return value
+
+    @field_validator("live_scene_master_width", "live_scene_master_height")
+    @classmethod
+    def validate_live_scene_master_dimension(cls, value: int) -> int:
+        if not 512 <= value <= 1_536 or value % 32:
+            raise ValueError("live-scene master dimensions must be 512..1536 and divisible by 32")
         return value
 
 

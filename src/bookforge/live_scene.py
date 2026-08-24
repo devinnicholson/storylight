@@ -189,6 +189,7 @@ class LiveScenePrewarmResponse(FrozenStrictModel):
     fast_model_load_seconds: Annotated[float, Field(ge=0)]
     motion_model_load_seconds: Annotated[float, Field(ge=0)]
     expires_in_seconds: Annotated[float, Field(ge=0)]
+    fast_inference_warmup_seconds: Annotated[float, Field(ge=0)] = 0
 
 
 class LiveSceneWarmProviderStatus(FrozenStrictModel):
@@ -1262,6 +1263,10 @@ def build_live_scene_provider(
     model_client: StructuredModelClient | None = None,
     planner_timeout_seconds: float = 12.0,
     planner_model_revision: str = "configured-local-model",
+    master_width: int = 896,
+    master_height: int = 512,
+    master_steps: int = 8,
+    master_guidance_scale: float = 4.5,
 ) -> LiveSceneProvider:
     planner = None
     if planner_mode == "model":
@@ -1296,6 +1301,10 @@ def build_live_scene_provider(
             output_root=output_root,
             enable_motion=enable_motion,
             planner=planner,
+            master_width=master_width,
+            master_height=master_height,
+            master_steps=master_steps,
+            master_guidance_scale=master_guidance_scale,
         )
     if selected == "modal_warm":
         if cache is None:
@@ -1311,6 +1320,10 @@ def build_live_scene_provider(
             output_root=output_root,
             enable_motion=enable_motion,
             planner=planner,
+            master_width=master_width,
+            master_height=master_height,
+            master_steps=master_steps,
+            master_guidance_scale=master_guidance_scale,
         )
     return DisabledLiveSceneProvider(
         f"No live-scene provider is configured for backend {selected!r}"

@@ -131,7 +131,8 @@ For an intentional warm demo run, install the authoring extra and deploy the nam
 performs an authenticated metadata lookup for both class names. Select
 `BOOKFORGE_LIVE_SCENE_BACKEND=modal_warm`, start the API, and explicitly prewarm master/depth. The
 route is loopback-only, budget-checked, expires with Modal's scale-down window, and is never invoked
-automatically:
+automatically. The selected master/depth class keeps a 90-second warm window so Jetson planning and
+operator handoff cannot accidentally trigger a second cold start:
 
 ```bash
 uv sync --extra modal-authoring
@@ -162,6 +163,14 @@ The authoritative Modal delta was $0.01350024 under the atomic $0.12 session cei
 measurements, not a pricing guarantee; the provider still checks current billing and reserves the
 full ceiling before prewarm. On a Mac that must retain local microphone support, sync both optional
 groups with `uv sync --extra modal-authoring --extra mac-asr`.
+
+The final speed pass couples the real Jetson Gemma planner to an 896x512, 8-step warm renderer. Its
+exact-code accepted scene reached `master_ready` in **6.971 seconds**: 4.285 seconds for local Gemma,
+2.673 seconds for SANA plus Depth Anything, and 2.7 ms of cache work. That is 53.5% faster than the
+original 15.005-second real Gemma acceptance. The 270M Gemma experiment was faster but rejected for
+inventing and omitting story elements; the production choice remains the quality-preserving 1B
+model. See the speed benchmark below for the rejected configurations, seed-variance evidence, and
+authoritative billing reconciliation.
 
 For higher-quality offline scene R&D, `deploy/modal_visual_lab.py` provides finite `modal run`
 jobs on an NVIDIA L4. It pins SANA 1.5, SigLIP, and LTX-Video revisions; records prompts, seeds,
@@ -360,3 +369,4 @@ passes the real I/O and latency run on JetPack 7.2.1.
 - [`benchmarks/jetson-projector-live-scene-2026-08-23.json`](benchmarks/jetson-projector-live-scene-2026-08-23.json): physical-Jetson cross-device generation and asset-delivery pass, with the projector display gate explicitly pending an unlocked screenshot or video
 - [`benchmarks/jetson-gemma3-ollama-2026-08-23.json`](benchmarks/jetson-gemma3-ollama-2026-08-23.json): pinned Jetson Gemma runtime, GPU/memory/privacy evidence, exact planning latency, and the complete Gemma-to-SANA-to-depth acceptance
 - [`benchmarks/jetson-gemma3-planner-optimization-2026-08-23.json`](benchmarks/jetson-gemma3-planner-optimization-2026-08-23.json): five-passage compact-planner acceptance with a 5.24-second mean plus two bounded warm visual comparisons; the fastest full Gemma-to-master result was 9.37 seconds, the selected character-preserving result was 10.55 seconds, and both paid comparisons cost $0.03883467 combined
+- [`benchmarks/bookforge-speed-optimization-2026-08-23.json`](benchmarks/bookforge-speed-optimization-2026-08-23.json): final 6.971-second Jetson Gemma → warm Modal SANA/depth acceptance, renderer sweep, rejected tiny-model/low-step configurations, seed-quality evidence, and billing reconciliation

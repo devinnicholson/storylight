@@ -60,12 +60,20 @@ def test_live_scene_model_planner_has_a_bounded_independent_timeout() -> None:
     assert settings.live_scene_planner_model_revision == "sha256:gemma3-fixture"
     assert settings.model_context_tokens == 4_096
     assert settings.model_max_output_tokens == 320
+    assert settings.live_scene_master_width == 896
+    assert settings.live_scene_master_height == 512
+    assert settings.live_scene_master_steps == 8
+    assert settings.live_scene_master_guidance_scale == 4.5
     with pytest.raises(ValidationError):
         Settings(_env_file=None, live_scene_planner_timeout_seconds=61)
     with pytest.raises(ValidationError):
         Settings(_env_file=None, model_context_tokens=1_024)
     with pytest.raises(ValidationError):
         Settings(_env_file=None, model_max_output_tokens=32)
+    with pytest.raises(ValidationError):
+        Settings(_env_file=None, live_scene_master_width=900)
+    with pytest.raises(ValidationError):
+        Settings(_env_file=None, live_scene_master_height=480)
 
 
 def test_general_model_output_default_remains_large_enough_for_story_compilation(
