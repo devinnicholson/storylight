@@ -1049,31 +1049,19 @@ class LiveSceneJobRegistry:
         except Exception:
             return False
 
-        await self._transition(
-            job_id,
-            stage=LiveSceneStage.DRAFT_READY,
-            progress=0.55,
-            story_pack=draft_pack,
-            metrics=draft_metrics,
-        )
-        master_snapshot = await self._transition(
-            job_id,
-            stage=LiveSceneStage.MASTER_READY,
-            progress=1 if motion_artifact is None else 0.82,
-            complete=motion_artifact is None,
-            artifacts=master_artifacts,
-            story_pack=master_pack,
-            metrics=master_metrics,
-        )
-        if master_snapshot.terminal:
+        if motion_artifact is None:
+            await self._publish_cached_terminal(
+                job_id,
+                stage=LiveSceneStage.MASTER_READY,
+                artifacts=master_artifacts,
+                story_pack=master_pack,
+                metrics=master_metrics,
+            )
             return True
-        assert motion_artifact is not None
         assert motion_metrics is not None
-        await self._transition(
+        await self._publish_cached_terminal(
             job_id,
             stage=LiveSceneStage.MOTION_READY,
-            progress=1,
-            complete=True,
             artifacts=artifacts,
             story_pack=pack,
             metrics=motion_metrics,
@@ -1089,6 +1077,50 @@ class LiveSceneJobRegistry:
             # Generation already succeeded and its assets remain usable. Local
             # persistence is a recovery optimization, not a reason to discard it.
             return
+
+    async def _publish_cached_terminal(
+        self,
+        job_id: str,
+        *,
+        stage: LiveSceneStage,
+        artifacts: list[LiveSceneArtifact],
+        story_pack: StoryPack,
+        metrics: LiveSceneMetrics,
+    ) -> LiveSceneJob:
+        """Publish one verified cache hit without replaying synthetic visual stages."""
+
+        if stage not in {LiveSceneStage.MASTER_READY, LiveSceneStage.MOTION_READY}:
+            raise LiveSceneProviderProtocolError("Cached restore must publish a usable scene")
+        async with self._lock:
+            record = self._jobs.get(job_id)
+            if record is None:
+                raise LiveSceneNotFoundError(f"Live-scene job {job_id!r} was not found")
+            current = record.snapshot
+            if current.stage is not LiveSceneStage.PLANNING:
+                raise LiveSceneProviderProtocolError(
+                    "Cached restore can only replace the planning snapshot"
+                )
+            self._validate_metrics_progression(current.metrics, metrics)
+            snapshot = LiveSceneJob.model_validate(
+                current.model_copy(
+                    update={
+                        "stage": stage,
+                        "revision": current.revision + 1,
+                        "progress": 1,
+                        "complete": True,
+                        "artifacts": artifacts,
+                        "story_pack": story_pack,
+                        "metrics": self._metrics_locked(
+                            record,
+                            stage=stage,
+                            provider_metrics=metrics,
+                        ),
+                        "updated_at": datetime.now(UTC),
+                    }
+                ).model_dump()
+            )
+            self._publish_locked(record, snapshot)
+            return snapshot
 
     async def _transition(
         self,

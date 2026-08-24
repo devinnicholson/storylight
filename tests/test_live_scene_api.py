@@ -147,6 +147,9 @@ def test_live_scene_api_reuses_exact_verified_completed_scene() -> None:
     assert replay_terminal["metrics"]["provider_ms"] == 0
     assert replay_terminal["metrics"]["inference_ms"] == 0
     assert replay_terminal["metrics"]["estimated_gpu_usd"] == 0
+    assert replay_terminal["revision"] == 3
+    assert "draft_ready" not in replay_terminal["metrics"]["milestones_ms"]
+    assert "master_ready" not in replay_terminal["metrics"]["milestones_ms"]
     assert [artifact["checksum_sha256"] for artifact in replay_terminal["artifacts"]] == [
         artifact["checksum_sha256"] for artifact in generated_terminal["artifacts"]
     ]

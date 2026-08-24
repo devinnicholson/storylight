@@ -448,6 +448,9 @@ def test_exact_completed_scene_reuse_skips_provider_and_revalidates_assets(
     assert restored.metrics.provider_ms == 0
     assert restored.metrics.inference_ms == 0
     assert restored.metrics.estimated_gpu_usd == 0
+    assert restored.revision == 3
+    assert LiveSceneStage.DRAFT_READY not in restored.metrics.milestones_ms
+    assert LiveSceneStage.MASTER_READY not in restored.metrics.milestones_ms
     assert [artifact.checksum_sha256 for artifact in restored.artifacts] == [
         artifact.checksum_sha256 for artifact in generated.artifacts
     ]
