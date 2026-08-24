@@ -60,6 +60,8 @@ let starting = false;
 let sceneReady = false;
 const workbenchQuery = new URLSearchParams(window.location.search);
 const readerSessionId = workbenchQuery.get("session") || "bookforge-live";
+const restoreLatestScene = !workbenchQuery.has("session")
+  || workbenchQuery.get("restore") === "latest";
 const rehearsalMode = workbenchQuery.get("rehearsal") === "1";
 let liveSessionEventSource = null;
 let liveSessionStreamHealthy = false;
@@ -1140,7 +1142,7 @@ async function recoverLiveSceneSession() {
 
 async function restoreInitialScene() {
   if (await recoverLiveSceneSession()) return;
-  await loadLatestScene();
+  if (restoreLatestScene) await loadLatestScene();
 }
 
 function invalidateScene() {

@@ -676,6 +676,18 @@ def test_new_live_session_skips_unrelated_latest_story_pack() -> None:
     assert 'elements.fixtureScene.hidden = true' in projector
 
 
+def test_explicit_new_workbench_session_skips_unrelated_latest_story_pack() -> None:
+    workbench = (ROOT / "src/bookforge/static/workbench.js").read_text()
+    startup = workbench.split("async function restoreInitialScene()", 1)[1].split(
+        "function invalidateScene()", 1
+    )[0]
+
+    assert '!workbenchQuery.has("session")' in workbench
+    assert 'workbenchQuery.get("restore") === "latest"' in workbench
+    assert "if (await recoverLiveSceneSession()) return;" in startup
+    assert "if (restoreLatestScene) await loadLatestScene();" in startup
+
+
 def test_embedded_visual_preview_defers_reader_transport() -> None:
     workbench = (ROOT / "src/bookforge/static/workbench.js").read_text()
     projector = (ROOT / "src/bookforge/static/projector.js").read_text()
