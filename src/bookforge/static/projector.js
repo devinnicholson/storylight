@@ -10,6 +10,8 @@ const OFFLINE_REPLAY = query.get("offline") === "1";
 const LIVE_MODE = query.get("live") === "1";
 const LIVE_SCENE_STORAGE_KEY = "bookforge.liveSceneSnapshot.v1";
 const LIVE_SCENE_CHANNEL = "bookforge.live-scenes";
+const SCENE_CROSSFADE_MS = 320;
+const SCENE_RETIRE_GRACE_MS = 360;
 
 if (PRESENTATION_MODE) document.body.classList.add("hud-hidden");
 if (OFFLINE_REPLAY) document.body.dataset.replayBoundary = "loopback-only";
@@ -680,6 +682,9 @@ function commitSceneVersion(nextVersion, mode, nextRenderer = null, renderToken 
     return false;
   }
   const previousVersions = [...elements.generatedScene.querySelectorAll(":scope > .scene-version")];
+  const rapidReplacement = previousVersions.some(
+    (version) => version.classList.contains("incoming") || version.classList.contains("retiring"),
+  );
   const previousRenderer = state.depthRenderer;
   state.depthRenderer = nextRenderer;
   elements.generatedScene.classList.remove(
@@ -712,6 +717,7 @@ function commitSceneVersion(nextVersion, mode, nextRenderer = null, renderToken 
   // The former nested rAF added a full refresh interval to every scene upgrade.
   void nextVersion.offsetWidth;
   requestAnimationFrame(() => {
+    if (rapidReplacement) nextVersion.classList.add("rapid-replacement");
     nextVersion.classList.remove("incoming");
     nextVersion.classList.add("current");
     resolveFirstPaint(performance.now());
@@ -719,7 +725,7 @@ function commitSceneVersion(nextVersion, mode, nextRenderer = null, renderToken 
   window.setTimeout(() => {
     previousVersions.forEach((version) => version.remove());
     previousRenderer?.destroy();
-  }, 760);
+  }, rapidReplacement ? 50 : SCENE_RETIRE_GRACE_MS);
   // Acceptance telemetry belongs to the scene currently on screen, not to the
   // authoring tab's entire lifetime.
   resetFrameSampling({resetDropped: true});
@@ -1357,6 +1363,7 @@ function renderLiveGenerationBadge(snapshot, {activated = true, fallbackMode = n
     Number.isFinite(state.liveActivationMs)
       ? `client activate ${Math.round(state.liveActivationMs)} ms`
       : null,
+    Number.isFinite(state.liveActivationMs) ? `visual blend ${SCENE_CROSSFADE_MS} ms` : null,
     fallback,
     warning ? "motion skipped" : null,
   ].filter(Boolean).join(" · ");
@@ -1531,6 +1538,7 @@ function queueLiveSceneSnapshot(envelope) {
       stage: snapshot.stage,
       renderedMode,
       activationMs: state.liveActivationMs,
+      crossfadeMs: SCENE_CROSSFADE_MS,
       activationBreakdown: state.liveActivationBreakdown,
     });
     setEvent("scene.upgraded", `${snapshot.stage} · revision ${revision} · no reload`);

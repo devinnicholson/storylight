@@ -42,8 +42,9 @@ body.blackout #projectionStage { opacity: 0; }
 .fixture-scene, .generated-scene { position: absolute; inset: 0; }
 .generated-scene:empty { display: none; }
 .scene-version { position: absolute; inset: 0; opacity: 0; transform: scale(1.018); }
-.scene-version.current { z-index: 2; opacity: 1; transform: scale(1); transition: opacity 680ms ease, transform 1.1s cubic-bezier(.2,.8,.2,1); }
-.scene-version.retiring { z-index: 1; opacity: 0; transform: scale(1.012); transition: opacity 720ms ease, transform 900ms ease; }
+.scene-version.current { z-index: 2; opacity: 1; transform: scale(1); transition: opacity 280ms ease, transform 520ms cubic-bezier(.2,.8,.2,1); }
+.scene-version.current.rapid-replacement { transition: none; }
+.scene-version.retiring { z-index: 1; opacity: 0; transform: scale(1.008); transition: opacity 320ms ease, transform 480ms ease; }
 .scene-version.incoming { z-index: 3; }
 
 .depth-scene { position: absolute; inset: 0; overflow: hidden; background: #02050a; }
@@ -53,7 +54,7 @@ body.blackout #projectionStage { opacity: 0; }
   filter: brightness(var(--projection-exposure, 1));
   animation: hero-breathe 18s ease-in-out infinite alternate;
 }
-.depth-scene-canvas { opacity: 0; transition: opacity 700ms ease; }
+.depth-scene-canvas { opacity: 0; transition: opacity 180ms ease; }
 .depth-scene-canvas.ready { opacity: 1; }
 .motion-scene { position: absolute; inset: 0; overflow: hidden; background: #02050a; }
 .motion-scene > video { width: 100%; height: 100%; object-fit: cover; transform: scale(1.006); }

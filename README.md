@@ -228,6 +228,12 @@ milliseconds with `scene_cache_hit=true`, zero provider/inference time, and zero
 mismatch, missing file, corrupt checksum, unsupported asset, or provider change falls through to a
 normal new generation.
 
+The projector handoff no longer spends another 680–720 ms on every artwork blend. Normal decoded,
+first-painted scenes crossfade in 320 ms; depth-canvas reveal is 180 ms. A burst-safe path detects
+overlapping draft/master/motion upgrades and promotes the newest prepared scene on the next display
+frame instead of stacking opacity transitions. Browser stress evidence held minimum combined opacity
+at 1.0, finished with one scene version at 30 fps/zero dropped frames, and never reloaded.
+
 An opt-in short-key Gemma response contract is also ready for the next Jetson session. It reduces a
 representative structured response from 272 to 226 bytes without changing the scene plan. It is
 disabled by default because output size alone does not prove lower latency or equivalent semantics;
@@ -479,6 +485,7 @@ passes the real I/O and latency run on JetPack 7.2.1.
 - [`benchmarks/bookforge-sana-sprint-one-step-ab-2026-08-24.json`](benchmarks/bookforge-sana-sprint-one-step-ab-2026-08-24.json): same-prompt, same-seed warm one-step versus two-step A/B; one step was rejected after a duplicate-subject regression for only 65.6 ms end-to-end gain
 - [`benchmarks/bookforge-modal-routing-ab-2026-08-24.json`](benchmarks/bookforge-modal-routing-ab-2026-08-24.json): byte-identical default versus us-west Modal routing A/B; west routing was rejected after a 113.1 ms end-to-end regression
 - [`benchmarks/bookforge-exact-scene-replay-2026-08-24.json`](benchmarks/bookforge-exact-scene-replay-2026-08-24.json): exact request replay through POST/SSE in 4.73 ms client wall with full SHA-256 asset validation and zero new provider work
+- [`benchmarks/bookforge-projector-crossfade-2026-08-24.json`](benchmarks/bookforge-projector-crossfade-2026-08-24.json): live-browser burst test of the 320 ms crossfade and immediate replacement guard; minimum scene opacity 1.0, 30 fps, zero dropped frames
 - [`benchmarks/bookforge-render-delivery-optimization-2026-08-23.json`](benchmarks/bookforge-render-delivery-optimization-2026-08-23.json): JPEG delivery, adaptive projector exposure, and measured rejections for smaller renders, compilation, and prompt changes
 - [`benchmarks/bookforge-packaging-optimization-2026-08-24.json`](benchmarks/bookforge-packaging-optimization-2026-08-24.json): parallel packaging telemetry, depth-JPEG quality/transfer evidence, single-decode projector delivery, and reconciled spend
 - [`benchmarks/bookforge-sana-sprint-optimization-2026-08-24.json`](benchmarks/bookforge-sana-sprint-optimization-2026-08-24.json): six-image SANA-Sprint quality/speed sweep, exact 1.188-second production API acceptance, honest projected full-path boundary, and billing reconciliation

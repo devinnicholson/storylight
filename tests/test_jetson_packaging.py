@@ -285,6 +285,26 @@ def test_projector_reports_asset_renderer_paint_and_reader_activation_timings() 
     assert "dataset.rendererSetupMs" in projector
     assert "dataset.firstPaintMs" in projector
     assert "dataset.readerSyncMs" in projector
+    assert "const SCENE_CROSSFADE_MS = 320" in projector
+    assert "crossfadeMs: SCENE_CROSSFADE_MS" in projector
+
+
+def test_projector_uses_fast_nonblanking_live_scene_crossfade() -> None:
+    projector = (ROOT / "src/bookforge/static/projector.js").read_text()
+    stylesheet = (ROOT / "src/bookforge/static/projector.css").read_text()
+
+    assert "const SCENE_RETIRE_GRACE_MS = 360" in projector
+    assert "rapidReplacement ? 50 : SCENE_RETIRE_GRACE_MS" in projector
+    assert "opacity 280ms ease" in stylesheet
+    assert "opacity 320ms ease" in stylesheet
+    assert "opacity 180ms ease" in stylesheet
+    assert 'version.classList.contains("incoming")' in projector
+    assert 'version.classList.contains("retiring")' in projector
+    assert 'nextVersion.classList.add("rapid-replacement")' in projector
+    assert ".scene-version.current.rapid-replacement { transition: none; }" in stylesheet
+    assert "opacity 680ms" not in stylesheet
+    assert "opacity 720ms" not in stylesheet
+    assert "opacity 700ms" not in stylesheet
 
 
 def test_projector_uses_depth_webgl_and_enforces_offline_replay_boundary() -> None:

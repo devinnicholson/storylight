@@ -67,6 +67,13 @@ SHA-256 verifies every master/depth/motion file before the registry publishes it
 explicit (`scene_cache_hit=true`); provider, inference, and estimated GPU cost remain zero. Failed
 verification is a cache miss, never a partially trusted replay.
 
+Projector visual latency is bounded after media readiness. A normal scene uses a 320 ms blend while
+the prior version remains mounted; the depth canvas reveals over 180 ms after its first WebGL frame
+passes. If another prepared revision arrives while a blend is active, the newest scene is promoted
+opaque on the next display frame and superseded versions retire after 50 ms. This prevents stacked
+progressive revisions from producing a dim or blank stage. The loopback browser burst gate observed
+minimum combined scene opacity 1.0, one final version, 30 fps, and zero dropped frames.
+
 For a rehearsal or judged presentation, the loopback-only prewarm request may explicitly extend
 the master/depth idle window from 90 seconds to at most 900 seconds. This updates the deployed
 class's scale-down window; it does not set an always-on minimum container. The GPU therefore still
