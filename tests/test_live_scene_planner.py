@@ -234,6 +234,10 @@ def test_compact_plan_normalizes_to_canonical_scene_spec_and_layers() -> None:
     assert "Show the background, subject, and supporting visual simultaneously" in (
         page.scene_spec.master_prompt
     )
+    assert "exactly one main actor performing the action once" in (
+        page.scene_spec.master_prompt
+    )
+    assert "duplicate person" in page.scene_spec.negative_prompt
     assert "main subject at left" in page.scene_spec.master_prompt
     assert "supporting detail at upper right" in page.scene_spec.master_prompt
     assert page.source_text == "A child opened a book and the birds showed the way."
@@ -248,6 +252,28 @@ def test_compact_plan_normalizes_to_canonical_scene_spec_and_layers() -> None:
     focus = page.scene_spec.composition[1]
     assert (focus.center_x, focus.center_y, focus.depth) == (0.32, 0.58, 4)
     assert focus.ambient_motion.kind == "breathe"
+
+
+def test_background_drops_repeated_foreground_actor_or_tool() -> None:
+    plan = _plan().model_copy(
+        update={
+            "background_prompt": "moonlit observatory, brass telescope, starry open dome",
+            "focus": _plan().focus.model_copy(
+                update={"prompt": "a complete visible astronomer raises brass telescope"}
+            ),
+        }
+    )
+
+    page = plan.to_page(
+        source_text="A figure studies the night as sea creatures cross overhead.",
+        visual_style="luminous paper theater",
+        seed=17,
+    )
+
+    assert page.layers[0].prompt == "moonlit observatory, starry open dome"
+    assert "Background: moonlit observatory, starry open dome." in (
+        page.scene_spec.master_prompt
+    )
 
 
 def test_plan_normalizes_raw_anchor_inside_projection_canvas() -> None:
@@ -522,6 +548,8 @@ def test_structured_planner_uses_live_schema_and_records_model_revision() -> Non
     assert "magic.prompt must name that concrete result" in str(stub.calls[0]["prompt"])
     assert "Stop the action before a later magical transformation" in str(stub.calls[0]["prompt"])
     assert "essential object or destination" in str(stub.calls[0]["prompt"])
+    assert "inspect that clause first" in str(stub.calls[0]["prompt"])
+    assert "luminous moths spiral through arch" in str(stub.calls[0]["prompt"])
 
 
 def test_structured_planner_can_use_opt_in_short_key_contract() -> None:

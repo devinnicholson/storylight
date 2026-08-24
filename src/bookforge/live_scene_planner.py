@@ -66,7 +66,7 @@ _LEADING_ARTICLE = re.compile(r"^(?:a|an|the)\s+", re.IGNORECASE)
 _SEMANTIC_WORD = re.compile(r"[A-Za-z][A-Za-z'-]*")
 _PLACEMENT_MARGIN = 0.04
 _PLAN_CACHE_SCHEMA_VERSION = "1"
-_PLAN_CACHE_CONTRACT_REVISION = "semantic-v1-style-independent-privacy-gated"
+_PLAN_CACHE_CONTRACT_REVISION = "semantic-v2-clause-faithful-privacy-gated"
 _EMAIL = re.compile(r"\b[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}\b", re.IGNORECASE)
 _PHONE = re.compile(r"(?<!\w)(?:\+?\d[\d\s()./-]{6,}\d)(?!\w)")
 _URL = re.compile(r"\b(?:https?://|www\.)\S+", re.IGNORECASE)
@@ -374,13 +374,14 @@ class LiveScenePlan(FrozenStrictModel):
         }[self.camera_motion]
         art_direction = _bounded_words(self.art_direction, 35)
         scene_summary = _normalized_summary(self.scene_summary)
+        focus_prompt = _bounded_words(self.focus.prompt, 18)
+        accent_prompt = _bounded_words(self.accent.prompt, 18)
         background_prompt = _normalized_background_prompt(
             self.background_prompt,
             art_direction=art_direction,
             scene_summary=scene_summary,
+            foreground_prompt=focus_prompt,
         )
-        focus_prompt = _bounded_words(self.focus.prompt, 18)
-        accent_prompt = _bounded_words(self.accent.prompt, 18)
         focus_placement, accent_placement = _normalized_placements(
             self.focus,
             self.accent,
@@ -401,6 +402,8 @@ class LiveScenePlan(FrozenStrictModel):
             f"{background_clause.lstrip()} "
             f"Required foreground subject: {_prompt_fragment(focus_prompt)}. "
             f"Required supporting visual: {_prompt_fragment(accent_prompt)}. "
+            "Render exactly one main actor performing the action once; do not duplicate the "
+            "actor or its tool. "
             "Show the background, subject, and supporting visual simultaneously. "
             f"{composition_clause} "
             "Full-bleed cinematic 16:9 storybook projection with clear foreground/background "
@@ -410,7 +413,8 @@ class LiveScenePlan(FrozenStrictModel):
             master_prompt=master_prompt,
             negative_prompt=(
                 "readable text, letters, words, captions, signs, logo, watermark, interface, "
-                "border, split screen, collage, duplicate subject, distorted anatomy"
+                "border, split screen, collage, duplicate actor, duplicate person, duplicate tool, "
+                "distorted anatomy"
             ),
             camera=CameraMotion(
                 kind=self.camera_motion,
@@ -489,6 +493,7 @@ def _normalized_background_prompt(
     *,
     art_direction: str,
     scene_summary: str,
+    foreground_prompt: str = "",
 ) -> str:
     leading_coordinates = _COORDINATE_BLOCK.match(value)
     candidate = value
@@ -503,7 +508,35 @@ def _normalized_background_prompt(
     candidate = " ".join(
         candidate.replace("[", " ").replace("]", " ").replace(";", " ").replace(":", " ").split()
     ).strip(" ,-")
+    candidate = _remove_foreground_terms(candidate, foreground_prompt)
     return _prompt_fragment(_bounded_words(candidate, 18)) or "cinematic storybook setting"
+
+
+def _remove_foreground_terms(background: str, foreground: str) -> str:
+    """Keep the setting from asking the renderer for a second actor or tool."""
+
+    blocked = {
+        token.casefold()
+        for token in _SEMANTIC_WORD.findall(foreground)
+        if token.casefold()
+        not in {
+            "a",
+            "an",
+            "complete",
+            "the",
+            "visible",
+        }
+    }
+    if not blocked:
+        return background
+    parts = []
+    for part in background.split(","):
+        words = _SEMANTIC_WORD.findall(part)
+        meaningful = [word for word in words if word.casefold() not in _PHRASE_STOPWORDS]
+        if meaningful and all(word.casefold() in blocked for word in meaningful):
+            continue
+        parts.append(part.strip())
+    return ", ".join(part for part in parts if part).strip(" ,-")
 
 
 def _normalized_summary(value: str) -> str:
@@ -985,11 +1018,16 @@ Requirements:
   verb. Stop the action before a later magical transformation; that result belongs in magic.prompt.
   Never return an isolated body part, gaze, expression, or adjective list.
 - magic must name the passage's most visually surprising transformation, creature, or object.
+  If the passage has a later independent clause introduced by and, while, as, when, then, or a
+  comma, inspect that clause first: its new creature, transformed result, or impossible event is
+  usually magic. Include both that concrete subject and its visible action or destination.
   Prefer an actual magical change over the focus's tool. If no transformation occurs, use a
   concrete supporting element explicitly present in the passage. Never invent a transformation.
   When the passage says something becomes, turns into, transforms, blooms, or rises into something,
   magic.prompt must name that concrete result, including its essential form or destination.
   Light, glow, shimmer, dust, fog, color, or atmosphere alone is not magic.
+- Fidelity example only: for "a keeper lifts a brass key, and luminous moths spiral through the
+  arch", focus.action is "lifts key" and magic.prompt is "luminous moths spiral through arch".
 - Geometry, depth, composition, and layer motion are supplied locally; never emit regions,
   coordinates, or measurements.
 - The scene must remain legible on a projector. Atmosphere is supplied locally from the setting.
