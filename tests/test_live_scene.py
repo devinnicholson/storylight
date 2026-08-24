@@ -22,6 +22,7 @@ from bookforge.live_scene import (
     build_live_scene_story_pack,
 )
 from bookforge.model_client import FakeModelClient
+from bookforge.story_store import StoryPackStore
 
 
 def test_live_scene_request_is_strict_text_only() -> None:
@@ -310,6 +311,59 @@ def test_master_scene_is_successful_without_optional_video(provider, warning_cod
     assert {artifact.kind.value for artifact in terminal.artifacts} == {"master", "depth"}
     assert terminal.error is None
     assert (terminal.warning.code if terminal.warning else None) == warning_code
+
+
+@pytest.mark.parametrize(
+    "provider",
+    [DeterministicFakeLiveSceneProvider(), _MasterOnlyProvider()],
+)
+def test_completed_live_scene_is_persisted_before_terminal_delivery(
+    provider,
+    tmp_path: Path,
+) -> None:
+    async def exercise():
+        store = StoryPackStore(tmp_path / "story-packs")
+        await store.initialize()
+        registry = LiveSceneJobRegistry(
+            provider,
+            completed_pack_sink=store.save,
+        )
+        created = await registry.submit(
+            LiveSceneCreateRequest(text="A paper moon rises from an open book.")
+        )
+        terminal = await registry.wait(created.job_id)
+        restored = await store.latest()
+        await registry.close()
+        return terminal, restored
+
+    terminal, restored = asyncio.run(exercise())
+
+    assert terminal.complete is True
+    assert terminal.story_pack is not None
+    assert restored == terminal.story_pack
+
+
+def test_persistence_failure_never_discards_a_completed_live_scene() -> None:
+    async def failing_sink(_pack):
+        raise OSError("disk unavailable")
+
+    async def exercise():
+        registry = LiveSceneJobRegistry(
+            _MasterOnlyProvider(),
+            completed_pack_sink=failing_sink,
+        )
+        created = await registry.submit(
+            LiveSceneCreateRequest(text="A paper moon rises from an open book.")
+        )
+        terminal = await registry.wait(created.job_id)
+        await registry.close()
+        return terminal
+
+    terminal = asyncio.run(exercise())
+
+    assert terminal.stage is LiveSceneStage.MASTER_READY
+    assert terminal.complete is True
+    assert terminal.error is None
 
 
 class _FailBeforeMasterProvider:

@@ -122,6 +122,7 @@ async def lifespan(app: FastAPI):
         max_active_jobs=settings.live_scene_max_active_jobs,
         max_retained_jobs=settings.live_scene_max_retained_jobs,
         event_queue_size=settings.live_scene_event_queue_size,
+        completed_pack_sink=app.state.story_store.save,
     )
     yield
     await app.state.live_scenes.close()

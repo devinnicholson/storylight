@@ -75,6 +75,12 @@ the unused reservation; once a remote call might exist, the reservation remains 
 authoritative current-app and workspace interval delta was $0.03089237. The app was explicitly
 stopped after the proof and reached zero tasks.
 
+Every successfully completed live master is now atomically written to the existing local Story Pack
+store before its terminal event is delivered. The in-progress registry and session sequence remain
+memory-only, but a restart or browser reload can immediately restore the last finished projection
+without another Gemma or Modal call. A storage failure never converts already-generated artwork into
+a failed job; it only forfeits this restart shortcut.
+
 When `BOOKFORGE_LIVE_SCENE_AUTO_PREWARM_ON_SUBMIT=true`, the deployed class prewarm begins at the
 same time as local Gemma planning. The prewarm request contains no story text or visual prompt;
 only the later generation call receives the locally validated, privacy-gated visual direction.

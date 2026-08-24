@@ -10,7 +10,7 @@ from __future__ import annotations
 import asyncio
 import hashlib
 from collections import OrderedDict
-from collections.abc import AsyncIterator
+from collections.abc import AsyncIterator, Awaitable, Callable
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from enum import StrEnum
@@ -606,6 +606,7 @@ class LiveSceneJobRegistry:
         max_active_jobs: int = 2,
         max_retained_jobs: int = 64,
         event_queue_size: int = 8,
+        completed_pack_sink: Callable[[StoryPack], Awaitable[object]] | None = None,
     ) -> None:
         if max_active_jobs < 1:
             raise ValueError("max_active_jobs must be at least 1")
@@ -620,6 +621,7 @@ class LiveSceneJobRegistry:
         self.max_active_jobs = effective_max_active_jobs
         self.max_retained_jobs = max_retained_jobs
         self.event_queue_size = event_queue_size
+        self.completed_pack_sink = completed_pack_sink
         self._jobs: OrderedDict[str, _JobRecord] = OrderedDict()
         self._session_jobs: dict[str, tuple[int, str]] = {}
         self._session_subscribers: dict[str, set[LiveSceneSessionSubscription]] = {}
@@ -837,6 +839,8 @@ class LiveSceneJobRegistry:
             emitted = False
             async for update in self.provider.generate(request, job_id=job_id):
                 emitted = True
+                if update.complete and update.story_pack is not None:
+                    await self._persist_completed_pack(update.story_pack)
                 snapshot = await self._transition(
                     job_id,
                     stage=update.stage,
@@ -850,6 +854,8 @@ class LiveSceneJobRegistry:
                     return
             current = await self.get(job_id)
             if emitted and current.stage is LiveSceneStage.MASTER_READY:
+                assert current.story_pack is not None
+                await self._persist_completed_pack(current.story_pack)
                 await self._complete_master(job_id)
                 return
             if not emitted or not current.terminal:
@@ -861,6 +867,8 @@ class LiveSceneJobRegistry:
         except Exception as error:  # Providers are an explicit failure boundary.
             current = await self.get(job_id)
             if current.stage is LiveSceneStage.MASTER_READY:
+                assert current.story_pack is not None
+                await self._persist_completed_pack(current.story_pack)
                 await self._complete_master(
                     job_id,
                     warning=LiveSceneError(
@@ -883,6 +891,16 @@ class LiveSceneJobRegistry:
                     retryable=isinstance(error, LiveSceneProviderUnavailableError),
                 ),
             )
+
+    async def _persist_completed_pack(self, pack: StoryPack) -> None:
+        if self.completed_pack_sink is None:
+            return
+        try:
+            await self.completed_pack_sink(pack)
+        except Exception:
+            # Generation already succeeded and its assets remain usable. Local
+            # persistence is a recovery optimization, not a reason to discard it.
+            return
 
     async def _transition(
         self,
