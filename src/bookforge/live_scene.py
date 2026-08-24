@@ -133,6 +133,7 @@ class LiveSceneMetrics(FrozenStrictModel):
     overhead_ms: Annotated[float, Field(ge=0)] = 0
     packaging_ms: Annotated[float, Field(ge=0)] = 0
     planning_ms: Annotated[float, Field(ge=0)] = 0
+    preparation_ms: Annotated[float, Field(ge=0)] = 0
     planning_status: LiveScenePlanningStatus = LiveScenePlanningStatus.PENDING
     warm_state: LiveSceneWarmState = LiveSceneWarmState.UNKNOWN
     gpu: Annotated[
@@ -1028,6 +1029,7 @@ class LiveSceneJobRegistry:
             "overhead_ms",
             "packaging_ms",
             "planning_ms",
+            "preparation_ms",
             "estimated_gpu_usd",
         )
         for field_name in cumulative_fields:
@@ -1269,6 +1271,7 @@ def build_live_scene_provider(
     master_height: int = 512,
     master_steps: int = 2,
     master_guidance_scale: float = 4.5,
+    auto_prewarm_on_submit: bool = False,
 ) -> LiveSceneProvider:
     planner = None
     if planner_mode == "model":
@@ -1307,6 +1310,7 @@ def build_live_scene_provider(
             master_height=master_height,
             master_steps=master_steps,
             master_guidance_scale=master_guidance_scale,
+            auto_prewarm_on_submit=auto_prewarm_on_submit,
         )
     if selected == "modal_warm":
         if cache is None:
@@ -1326,6 +1330,7 @@ def build_live_scene_provider(
             master_height=master_height,
             master_steps=master_steps,
             master_guidance_scale=master_guidance_scale,
+            auto_prewarm_on_submit=auto_prewarm_on_submit,
         )
     return DisabledLiveSceneProvider(
         f"No live-scene provider is configured for backend {selected!r}"

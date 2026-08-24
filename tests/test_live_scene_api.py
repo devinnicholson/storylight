@@ -63,6 +63,7 @@ def test_live_scene_api_progresses_to_resolvable_motion_scene() -> None:
             "overhead_ms",
             "packaging_ms",
             "planning_ms",
+            "preparation_ms",
             "planning_status",
             "warm_state",
             "gpu",
@@ -74,6 +75,7 @@ def test_live_scene_api_progresses_to_resolvable_motion_scene() -> None:
         assert metrics["provider_ms"] == 30
         assert metrics["inference_ms"] == 22
         assert metrics["planning_ms"] == 2
+        assert metrics["preparation_ms"] == 0
         assert metrics["planning_status"] == "deterministic"
         assert metrics["cost_source"] == "fixture"
         assert metrics["milestones_ms"]["motion_ready"] == metrics["elapsed_ms"]
@@ -152,7 +154,7 @@ def test_live_scene_api_rejects_raw_media_unknown_jobs_and_remote_clients() -> N
     assert remote_prewarm.status_code == 403
 
 
-def test_explicit_warm_provider_routes_are_strict_and_never_automatic() -> None:
+def test_explicit_warm_provider_routes_are_strict_by_default() -> None:
     class StubWarmProvider:
         async def warm_status(self) -> WarmProviderStatus:
             return WarmProviderStatus(

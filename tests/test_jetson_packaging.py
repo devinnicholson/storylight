@@ -553,6 +553,7 @@ def test_live_ui_displays_backend_metrics_without_a_saved_local_fallback() -> No
     controller = (ROOT / "src/bookforge/static/workbench.js").read_text()
     stylesheet = (ROOT / "src/bookforge/static/workbench.css").read_text()
     assert "packaging ${formatBackendMs(metrics.packaging_ms)}" in controller
+    assert "renderer prep ${formatBackendMs(metrics.preparation_ms)}" in controller
 
     assert 'id="generationMetrics"' in markup
     assert 'id="planningPrivacy"' in markup

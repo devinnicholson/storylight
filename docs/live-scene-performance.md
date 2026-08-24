@@ -48,6 +48,12 @@ visibly collapsed the central subject. SANA-Sprint is distilled for one-to-four-
 cut the exact warm provider path from 2.673 seconds to 1.176 seconds. Master and depth plates use
 bounded JPEG encodings, and the live request never empties the CUDA cache between scenes.
 
+When `BOOKFORGE_LIVE_SCENE_AUTO_PREWARM_ON_SUBMIT=true`, the deployed class prewarm begins at the
+same time as local Gemma planning. The prewarm request contains no story text or visual prompt;
+only the later generation call receives the locally validated, privacy-gated visual direction.
+The feature remains explicit because prewarm allocates a bounded GPU session and retains its full
+reservation after cancellation or an uncertain provider failure.
+
 LTX-Video is an optional refinement. It must preserve identity and composition, pass endpoint and
 motion-stability checks, and arrive without interrupting the depth scene. A failed or malformed
 video leaves the accepted depth scene in place.
@@ -92,6 +98,15 @@ projects 5.464 seconds end to end, but it is not labeled an exact combined resul
 Jetson reruns the current code. Across six visual samples, the book/origami scenes preserved the
 central semantics while fox and orrery compositions showed bounded misses; seed-level semantic
 selection remains a quality frontier.
+
+The automatic-prewarm acceptance exercised a real cold deployed-class prewarm and real two-step
+generation while substituting the last measured 4.285-second Jetson planning delay because the
+board was off. API preparation took 30.744 seconds, planning took 4.288 seconds concurrently, and
+provider generation took 1.318 seconds. The critical-path metric is therefore
+`max(planning_ms, preparation_ms) + provider_ms + cache_ms`: 32.063 seconds versus 32.070 seconds
+observed wall. A serialized path would have been 36.351 seconds, so concurrency saved 4.288 seconds
+(11.8%) without sending story text during prewarm. This is cold-path concurrency evidence, not a
+replacement for the pending exact current-code Jetson run.
 
 SANA-Sprint does not expose a separate negative-prompt input. Bookforge therefore carries no-text,
 no-logo, and projection constraints in the positive semantic visual direction and records

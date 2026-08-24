@@ -10,7 +10,7 @@ import shutil
 import signal
 import time
 from collections.abc import AsyncIterator, Awaitable, Callable, Mapping
-from dataclasses import asdict, dataclass
+from dataclasses import asdict, dataclass, replace
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any, Protocol
@@ -759,6 +759,13 @@ class WarmModalSceneProvider(FiniteModalSceneProvider):
                 ),
             )
 
+    async def is_prewarmed(self) -> bool:
+        """Check local session state without a second deployed-class metadata probe."""
+
+        async with self._operation_lock:
+            await self._expire_warm_session_locked()
+            return self._warm_session is not None
+
     async def abandon_warm_session(self, *, scene_id: str | None = None) -> None:
         """Forget a possibly billable session while retaining its ledger reservation."""
 
@@ -1113,6 +1120,7 @@ class _ResolvedLiveScenePlan:
     planning_ms: float
     status: LiveScenePlanningStatus
     provenance: LiveSceneModelProvenance
+    preparation_ms: float = 0
 
 
 class FiniteModalLiveSceneProvider:
@@ -1132,6 +1140,7 @@ class FiniteModalLiveSceneProvider:
         master_height: int = 512,
         master_steps: int = 2,
         master_guidance_scale: float = 4.5,
+        auto_prewarm_on_submit: bool = False,
     ) -> None:
         self.provider = provider
         self.cache = cache
@@ -1140,6 +1149,7 @@ class FiniteModalLiveSceneProvider:
         self.planner = planner
         self.motion_gate = motion_gate or MotionTechnicalGate()
         self.motion_evaluator = motion_evaluator or _evaluate_motion_technical
+        self.auto_prewarm_on_submit = auto_prewarm_on_submit
         # Validate the complete render profile once at construction time.
         profile = FastSceneRequest(
             scene_id="render-profile",
@@ -1204,7 +1214,7 @@ class FiniteModalLiveSceneProvider:
             story_pack=draft,
         )
 
-        resolved = await self._resolve_plan(
+        resolved = await self._resolve_plan_while_preparing_renderer(
             request,
             job_id=job_id,
             seed=seed,
@@ -1334,6 +1344,59 @@ class FiniteModalLiveSceneProvider:
                 planning=resolved,
             ),
         )
+
+    async def _resolve_plan_while_preparing_renderer(
+        self,
+        request: LiveSceneCreateRequest,
+        *,
+        job_id: str,
+        seed: int,
+        draft: StoryPack,
+    ) -> _ResolvedLiveScenePlan:
+        prepare_task: asyncio.Task[float] | None = None
+        if self.auto_prewarm_on_submit and isinstance(
+            self.provider, WarmModalSceneProvider
+        ):
+            prepare_task = asyncio.create_task(
+                self._prepare_warm_renderer(job_id=job_id),
+                name=f"bookforge-prewarm-{job_id}",
+            )
+        try:
+            resolved = await self._resolve_plan(
+                request,
+                job_id=job_id,
+                seed=seed,
+                draft=draft,
+            )
+            if prepare_task is not None:
+                resolved = replace(
+                    resolved,
+                    preparation_ms=await prepare_task,
+                )
+            return resolved
+        finally:
+            if prepare_task is not None and not prepare_task.done():
+                prepare_task.cancel()
+                drain = asyncio.ensure_future(
+                    asyncio.gather(prepare_task, return_exceptions=True)
+                )
+                try:
+                    await asyncio.shield(drain)
+                except asyncio.CancelledError:
+                    await drain
+                    raise
+
+    async def _prepare_warm_renderer(self, *, job_id: str) -> float:
+        if not isinstance(self.provider, WarmModalSceneProvider):
+            return 0
+        if await self.provider.is_prewarmed():
+            return 0
+        started = time.perf_counter()
+        await self.provider.prewarm(
+            prewarm_id=f"auto-{job_id}",
+            include_motion=self.enable_motion,
+        )
+        return (time.perf_counter() - started) * 1_000
 
     async def _resolve_plan(
         self,
@@ -1573,14 +1636,16 @@ def _live_scene_metrics(
     cache_ms = max(0.0, cache_ms)
     provider_ms = max(0.0, provider_seconds * 1000)
     planning_ms = max(0.0, planning.planning_ms)
+    preparation_ms = max(0.0, planning.preparation_ms)
     return LiveSceneMetrics(
-        elapsed_ms=planning_ms + provider_ms + cache_ms,
+        elapsed_ms=max(planning_ms, preparation_ms) + provider_ms + cache_ms,
         provider_ms=provider_ms,
         inference_ms=max(0.0, inference_seconds * 1000),
         cache_ms=cache_ms,
         overhead_ms=max(0.0, overhead_seconds * 1000),
         packaging_ms=max(0.0, packaging_seconds * 1000),
         planning_ms=planning_ms,
+        preparation_ms=preparation_ms,
         planning_status=planning.status,
         warm_state=warm_state,
         gpu=str(stages[0].get("gpu", "L4")),

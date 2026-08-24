@@ -64,6 +64,10 @@ def test_live_scene_model_planner_has_a_bounded_independent_timeout() -> None:
     assert settings.live_scene_master_height == 512
     assert settings.live_scene_master_steps == 2
     assert settings.live_scene_master_guidance_scale == 4.5
+    assert settings.live_scene_auto_prewarm_on_submit is False
+    assert Settings(
+        _env_file=None, live_scene_auto_prewarm_on_submit=True
+    ).live_scene_auto_prewarm_on_submit is True
     with pytest.raises(ValidationError):
         Settings(_env_file=None, live_scene_planner_timeout_seconds=61)
     with pytest.raises(ValidationError):

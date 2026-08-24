@@ -493,6 +493,125 @@ def test_warm_fast_only_prewarm_never_loads_motion_and_settles_one_envelope(
     assert ledger.records[0].estimated_gpu_usd >= 30 * 0.000222
 
 
+def test_auto_prewarm_overlaps_local_planning_before_generation(tmp_path: Path) -> None:
+    invoker = BlockingWarmInvoker(("FastSceneStudio", "prewarm"))
+    warm = _warm_provider(tmp_path, invoker)
+
+    class BlockingPlanner:
+        def __init__(self) -> None:
+            self.started = asyncio.Event()
+            self.release = asyncio.Event()
+
+        async def plan(self, **kwargs) -> LiveScenePlanningResult:
+            del kwargs
+            self.started.set()
+            await self.release.wait()
+            return LiveScenePlanningResult(
+                plan=_gemma_live_plan(),
+                metrics=ModelMetrics(
+                    backend="ollama",
+                    model="gemma3:1b",
+                    total_ms=4_000,
+                    input_tokens=300,
+                    output_tokens=108,
+                ),
+                model_revision="sha256:gemma-fixture",
+                wall_ms=4_050,
+            )
+
+    async def run():
+        cache = AssetCache(tmp_path / "auto-prewarm-cache")
+        await cache.initialize()
+        planner = BlockingPlanner()
+        adapter = FiniteModalLiveSceneProvider(
+            warm,
+            cache=cache,
+            output_root=tmp_path / "auto-prewarm-output",
+            planner=planner,
+            auto_prewarm_on_submit=True,
+        )
+        iterator = adapter.generate(
+            LiveSceneCreateRequest(text="A child opens a book and birds fill the sky.", seed=37),
+            job_id="scene_000000000000000000000037",
+        )
+        draft = await anext(iterator)
+        master_task = asyncio.create_task(anext(iterator))
+        await asyncio.wait_for(planner.started.wait(), timeout=1)
+        await asyncio.wait_for(invoker.started.wait(), timeout=1)
+        assert not master_task.done()
+        planner.release.set()
+        invoker.release.set()
+        master = await asyncio.wait_for(master_task, timeout=2)
+        with pytest.raises(StopAsyncIteration):
+            await anext(iterator)
+        return draft, master
+
+    draft, master = asyncio.run(run())
+
+    assert draft.stage is LiveSceneStage.DRAFT_READY
+    assert master.stage is LiveSceneStage.MASTER_READY
+    assert master.complete is True
+    assert master.metrics is not None
+    assert master.metrics.preparation_ms > 0
+    assert master.metrics.elapsed_ms == pytest.approx(
+        max(master.metrics.planning_ms, master.metrics.preparation_ms)
+        + master.metrics.provider_ms
+        + master.metrics.cache_ms
+    )
+    assert [(class_name, method) for class_name, method, _ in invoker.calls].count(
+        ("FastSceneStudio", "prewarm")
+    ) >= 1
+    assert ("FastSceneStudio", "generate") in [
+        (class_name, method) for class_name, method, _ in invoker.calls
+    ]
+
+
+def test_auto_prewarm_is_cancelled_and_drained_with_scene_planning(tmp_path: Path) -> None:
+    invoker = BlockingWarmInvoker(("FastSceneStudio", "prewarm"))
+    warm = _warm_provider(tmp_path, invoker)
+
+    class BlockingPlanner:
+        def __init__(self) -> None:
+            self.started = asyncio.Event()
+
+        async def plan(self, **kwargs) -> LiveScenePlanningResult:
+            del kwargs
+            self.started.set()
+            await asyncio.Event().wait()
+            raise AssertionError("unreachable")
+
+    async def run() -> None:
+        cache = AssetCache(tmp_path / "cancel-auto-prewarm-cache")
+        await cache.initialize()
+        planner = BlockingPlanner()
+        adapter = FiniteModalLiveSceneProvider(
+            warm,
+            cache=cache,
+            planner=planner,
+            auto_prewarm_on_submit=True,
+        )
+        iterator = adapter.generate(
+            LiveSceneCreateRequest(text="A child opens a book.", seed=38),
+            job_id="scene_000000000000000000000038",
+        )
+        await anext(iterator)
+        task = asyncio.create_task(anext(iterator))
+        await asyncio.wait_for(planner.started.wait(), timeout=1)
+        await asyncio.wait_for(invoker.started.wait(), timeout=1)
+        task.cancel()
+        with pytest.raises(asyncio.CancelledError):
+            await task
+        await iterator.aclose()
+
+    asyncio.run(run())
+
+    methods = [(class_name, method) for class_name, method, _ in invoker.calls]
+    assert ("FastSceneStudio", "generate") not in methods
+    envelope, _ = budget_envelope_from_plan(warm.plan_file)
+    ledger = VisualLabLedger.read(warm.ledger_path, envelope=envelope)
+    assert len(ledger.reservations) == 1
+
+
 def test_sdk_probe_hydrates_both_deployed_classes_without_invoking_gpu(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

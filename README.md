@@ -131,8 +131,11 @@ For an intentional warm demo run, install the authoring extra and deploy the nam
 performs an authenticated metadata lookup for both class names. Select
 `BOOKFORGE_LIVE_SCENE_BACKEND=modal_warm`, start the API, and explicitly prewarm master/depth. The
 route is loopback-only, budget-checked, expires with Modal's scale-down window, and is never invoked
-automatically. The selected master/depth class keeps a 90-second warm window so Jetson planning and
-operator handoff cannot accidentally trigger a second cold start:
+automatically unless `BOOKFORGE_LIVE_SCENE_AUTO_PREWARM_ON_SUBMIT=true` is deliberately enabled.
+With that flag, a scene submission starts the same budget-checked, text-free prewarm concurrently
+with private Gemma planning; image generation still waits for the locally validated semantic plan.
+The selected master/depth class keeps a 90-second warm window so Jetson planning and operator
+handoff cannot accidentally trigger a second cold start:
 
 ```bash
 uv sync --extra modal-authoring
@@ -143,15 +146,13 @@ modal app list
 BOOKFORGE_MODEL_BACKEND=fake \
 BOOKFORGE_ASSET_BACKEND=modal \
 BOOKFORGE_LIVE_SCENE_BACKEND=modal_warm \
+BOOKFORGE_LIVE_SCENE_AUTO_PREWARM_ON_SUBMIT=true \
 BOOKFORGE_LIVE_SCENE_ENABLE_MOTION=false \
 BOOKFORGE_ASR_BACKEND=disabled \
 make dev
 
 curl -sS http://127.0.0.1:8080/v1/live-scene-provider/warm-status
-curl -sS -X POST http://127.0.0.1:8080/v1/live-scene-provider/prewarm \
-  -H 'content-type: application/json' \
-  -d '{"prewarm_id":"bookforge-demo","include_motion":false}'
-# Submit one scene from the workbench immediately after prewarm returns.
+# Submit one scene from the workbench. Automatic prewarm and local planning overlap.
 
 # Explicit teardown after the demo; this terminates any remaining containers.
 modal app stop bookforge-fast-scene --yes
@@ -182,6 +183,14 @@ online for the exact combined run. Six visual trials were presentation-grade, wh
 misses in the fox and orrery prompts keep seed-level semantic validation on the backlog. SANA-Sprint
 has no separate negative-prompt channel; no-text and safety direction is carried in the positive
 visual prompt and provenance reports that boundary.
+
+The automatic-prewarm acceptance then measured the cold scale-to-zero case honestly. A real Modal
+prewarm took 30.744 seconds at the API boundary while the 4.288-second last-measured Jetson planning
+delay ran inside that window; the subsequent two-step master/depth call took 1.318 seconds. The
+overlap removed 4.288 seconds, or 11.8%, from the serialized cold-stage projection. This run uses a
+measured planning surrogate because the Jetson was powered off, so the evidence does not replace a
+current exact-device acceptance. `preparation_ms` is now a first-class metric and the reported
+32.063-second backend elapsed time matched the 32.070-second observed wall time within 6.9 ms.
 
 The earlier delivery pass kept that SANA 1.5 profile but changed the master plate to quality-95
 4:4:4 JPEG.
@@ -402,3 +411,4 @@ passes the real I/O and latency run on JetPack 7.2.1.
 - [`benchmarks/bookforge-render-delivery-optimization-2026-08-23.json`](benchmarks/bookforge-render-delivery-optimization-2026-08-23.json): JPEG delivery, adaptive projector exposure, and measured rejections for smaller renders, compilation, and prompt changes
 - [`benchmarks/bookforge-packaging-optimization-2026-08-24.json`](benchmarks/bookforge-packaging-optimization-2026-08-24.json): parallel packaging telemetry, depth-JPEG quality/transfer evidence, single-decode projector delivery, and reconciled spend
 - [`benchmarks/bookforge-sana-sprint-optimization-2026-08-24.json`](benchmarks/bookforge-sana-sprint-optimization-2026-08-24.json): six-image SANA-Sprint quality/speed sweep, exact 1.188-second production API acceptance, honest projected full-path boundary, and billing reconciliation
+- [`benchmarks/bookforge-auto-prewarm-overlap-2026-08-24.json`](benchmarks/bookforge-auto-prewarm-overlap-2026-08-24.json): real cold Modal prewarm/generation overlap, honest preparation telemetry, visual and checksum review, planning-surrogate boundary, and billing reconciliation

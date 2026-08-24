@@ -231,10 +231,11 @@ BOOKFORGE_MODEL_BASE_URL=http://127.0.0.1:11434
 BOOKFORGE_MODEL_TIMEOUT_SECONDS=20
 BOOKFORGE_MODEL_KEEP_ALIVE=10m
 BOOKFORGE_MODEL_CONTEXT_TOKENS=4096
-BOOKFORGE_MODEL_MAX_OUTPUT_TOKENS=200
+BOOKFORGE_MODEL_MAX_OUTPUT_TOKENS=180
 BOOKFORGE_LIVE_SCENE_PLANNER=model
 BOOKFORGE_LIVE_SCENE_PLANNER_TIMEOUT_SECONDS=12
 BOOKFORGE_LIVE_SCENE_PLANNER_MODEL_REVISION=ollama-manifest-sha256:8648f39daa8fbf5b18c7b4e6a8fb4990c692751d49917417b8842ca5758e7ffc
+BOOKFORGE_LIVE_SCENE_AUTO_PREWARM_ON_SUBMIT=true
 ```
 
 `BOOKFORGE_MODEL_MAX_OUTPUT_TOKENS` is a hard decode ceiling, not a target. The final compact contract
@@ -252,7 +253,9 @@ path: `master_ready` in 6.971 seconds, with 4.285 seconds planning, 2.673 second
 device acceptance. Its measured provider component is 1.176 seconds, projecting 5.464 seconds with
 the last Gemma measurement. The renderer's 90-second scale-down window is intentional: the earlier
 30-second window expired during local planning/operator handoff and produced a 44.8-second cold
-request. Full evidence is in `benchmarks/bookforge-speed-optimization-2026-08-23.json`.
+request. Automatic prewarm overlaps its text-free preparation with Gemma planning; it does not send
+the passage to Modal. Full evidence is in
+`benchmarks/bookforge-speed-optimization-2026-08-23.json`.
 
 Keep the model endpoint on loopback. When a Mac control plane needs it during development, use an
 explicit SSH local forward rather than changing `OLLAMA_HOST` to a LAN address.

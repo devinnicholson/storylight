@@ -143,6 +143,8 @@ def test_live_scene_metrics_are_strict_and_require_immutable_model_roles() -> No
         LiveSceneMetrics(provider_ms=-1)
     with pytest.raises(ValidationError):
         LiveSceneMetrics(packaging_ms=-1)
+    with pytest.raises(ValidationError):
+        LiveSceneMetrics(preparation_ms=-1)
     with pytest.raises(ValidationError, match="unavailable cost evidence"):
         LiveSceneMetrics(estimated_gpu_usd=0.01)
     with pytest.raises(ValidationError, match="model roles must be unique"):
@@ -449,6 +451,7 @@ def test_provider_factory_selects_fake_and_finite_modal_without_persistent_servi
         asset_backend="disabled",
         cache=cache,
         output_root=tmp_path / "warm-generated",
+        auto_prewarm_on_submit=True,
     )
     explicit_fake = build_live_scene_provider(
         "fake",
@@ -472,6 +475,7 @@ def test_provider_factory_selects_fake_and_finite_modal_without_persistent_servi
     assert modal_warm.name == "modal-finite"
     assert model_planned.planner.__class__.__name__ == "StructuredLiveScenePlanner"  # type: ignore[attr-defined]
     assert modal_warm.provider.__class__.__name__ == "WarmModalSceneProvider"  # type: ignore[attr-defined]
+    assert modal_warm.auto_prewarm_on_submit is True  # type: ignore[attr-defined]
     assert modal.enable_motion is False  # type: ignore[attr-defined]
     assert modal.output_root == tmp_path / "generated"  # type: ignore[attr-defined]
     assert modal.master_width == 960  # type: ignore[attr-defined]

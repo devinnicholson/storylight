@@ -461,6 +461,7 @@ function renderBackendMetrics(snapshot) {
   elements.generationMetrics.textContent = [
     `backend wall ${formatBackendMs(metrics.elapsed_ms)}`,
     `edge plan ${formatBackendMs(metrics.planning_ms)} (${metrics.planning_status || "pending"})`,
+    `renderer prep ${formatBackendMs(metrics.preparation_ms)}`,
     `provider remote ${formatBackendMs(metrics.provider_ms)}`,
     `inference ${formatBackendMs(metrics.inference_ms)}`,
     `packaging ${formatBackendMs(metrics.packaging_ms)}`,
