@@ -9,8 +9,10 @@ from pydantic import ValidationError
 from bookforge.asset_cache import AssetCache
 from bookforge.live_scene import (
     DeterministicFakeLiveSceneProvider,
+    LiveSceneArtifactKind,
     LiveSceneCapacityError,
     LiveSceneCreateRequest,
+    LiveSceneJob,
     LiveSceneJobRegistry,
     LiveSceneMetrics,
     LiveSceneModelProvenance,
@@ -201,6 +203,28 @@ def test_fake_provider_is_deterministic_for_the_same_request() -> None:
     second = asyncio.run(collect(DeterministicFakeLiveSceneProvider(), request))
 
     assert [update.model_dump() for update in first] == [update.model_dump() for update in second]
+
+
+def test_fake_provider_can_finish_at_master_when_motion_is_disabled() -> None:
+    async def exercise() -> LiveSceneJob:
+        registry = LiveSceneJobRegistry(
+            DeterministicFakeLiveSceneProvider(enable_motion=False)
+        )
+        submitted = await registry.submit(
+            LiveSceneCreateRequest(text="A moonlit paper whale crosses the library.")
+        )
+        completed = await registry.wait(submitted.job_id)
+        await registry.close()
+        return completed
+
+    completed = asyncio.run(exercise())
+
+    assert completed.stage is LiveSceneStage.MASTER_READY
+    assert completed.complete is True
+    assert {artifact.kind for artifact in completed.artifacts} == {
+        LiveSceneArtifactKind.MASTER,
+        LiveSceneArtifactKind.DEPTH,
+    }
 
 
 @pytest.mark.parametrize(

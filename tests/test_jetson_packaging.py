@@ -134,9 +134,14 @@ def test_projector_adapts_dark_scenes_without_an_extra_generation_pass() -> None
 
     assert "sample.width = 32;" in projector
     assert "sample.height = 18;" in projector
-    assert "return Math.min(1.22, Math.max(1, 0.32 / Math.max(0.01, meanLuma)));" in projector
-    assert "uniform float u_exposure;" in projector
-    assert "gl.uniform1f(exposureLocation, projectionExposure);" in projector
+    assert "Math.log(targetLuma) / Math.log(boundedLuma)" in projector
+    assert "fallbackExposure: Math.min(1.45" in projector
+    assert "uniform float u_gamma;" in projector
+    assert "color = pow(max(color, vec3(0.0)), vec3(u_gamma));" in projector
+    assert "gl.uniform1f(gammaLocation, projectionTone.gamma);" in projector
+    assert "projectionGamma: projectionTone.gamma" in projector
+    assert "scene.dataset.projectionGamma = renderer.projectionGamma.toFixed(3);" in projector
+    assert "timings.projectionMeanLuma = renderer.projectionMeanLuma;" in projector
     assert "projectionExposureForImage(masterImage).toFixed(3)" in projector
     assert "filter: brightness(var(--projection-exposure, 1));" in stylesheet
 

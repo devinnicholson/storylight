@@ -1458,11 +1458,13 @@ class DeterministicFakeLiveSceneProvider:
         *,
         cache: AssetCache | None = None,
         stage_delay_seconds: float = 0,
+        enable_motion: bool = True,
     ) -> None:
         if stage_delay_seconds < 0:
             raise ValueError("stage_delay_seconds cannot be negative")
         self.cache = cache
         self.stage_delay_seconds = stage_delay_seconds
+        self.enable_motion = enable_motion
 
     @property
     def name(self) -> str:
@@ -1520,6 +1522,9 @@ class DeterministicFakeLiveSceneProvider:
             artifacts=master_artifacts,
             metrics=_fake_live_scene_metrics(LiveSceneStage.MASTER_READY),
         )
+
+        if not self.enable_motion:
+            return
 
         motion = await _fake_asset(
             job_id,
@@ -1585,7 +1590,11 @@ def build_live_scene_provider(
     selected = asset_backend if live_scene_backend == "auto" else live_scene_backend
     if selected == "fake":
         # A small delay makes each progressive stage observable in local UI smoke tests.
-        return DeterministicFakeLiveSceneProvider(cache=cache, stage_delay_seconds=0.05)
+        return DeterministicFakeLiveSceneProvider(
+            cache=cache,
+            stage_delay_seconds=0.05,
+            enable_motion=enable_motion,
+        )
     if selected == "modal":
         if cache is None:
             raise ValueError("The finite Modal live-scene provider requires an AssetCache")
