@@ -619,17 +619,30 @@ def test_workbench_uses_session_polling_only_while_session_sse_is_unhealthy() ->
     assert "pollLiveScene(activeLiveJobId, liveRequestEpoch)" in workbench
 
 
-def test_projector_activates_initial_pack_before_subscribing_to_live_session() -> None:
+def test_projector_restores_session_or_fallback_before_subscribing() -> None:
     projector = (ROOT / "src/bookforge/static/projector.js").read_text()
 
     startup = projector.split("async function startProjector()", 1)[1].split(
         'elements.previous.addEventListener("click"', 1
     )[0]
-    assert startup.index("await loadStoryPack();") < startup.index("setupLiveSceneTransport();")
+    assert "restoreAuthoritativeLiveSession()" in startup
+    assert startup.index("restoreAuthoritativeLiveSession()") < startup.index(
+        "setupLiveSceneTransport();"
+    )
+    assert startup.index("loadStoryPack();") < startup.index("setupLiveSceneTransport();")
     assert startup.index("setupLiveSceneTransport();") < startup.index(
         "if (state.page) connectReaderSession();"
     )
-    assert "session stream replays its current pointer on subscribe" in startup
+    restore = projector.split("async function restoreAuthoritativeLiveSession()", 1)[1].split(
+        "async function startProjector()", 1
+    )[0]
+    assert "/v1/live-scene-sessions/${encodeURIComponent(SESSION_ID)}" in restore
+    assert "if (!pointer.job?.story_pack) return false;" in restore
+    assert "acceptLiveSceneSessionPointer(pointer);" in restore
+    assert "await state.liveTransition;" in restore
+    assert "state.liveCommittedJobId === pointer.job.job_id" in restore
+    assert "stream replays its current pointer" in startup
+    assert "if (!state.liveServerInstanceId) rendezvousLiveScene();" in projector
     assert projector.count("setupLiveSceneTransport();") == 1
     assert "void startProjector();" in projector
 

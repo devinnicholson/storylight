@@ -1829,7 +1829,7 @@ function setupLiveSceneTransport() {
   } catch (_) {
     localStorage.removeItem(LIVE_SCENE_STORAGE_KEY);
   }
-  rendezvousLiveScene();
+  if (!state.liveServerInstanceId) rendezvousLiveScene();
   window.setInterval(updateLiveGenerationClock, 100);
 }
 
@@ -2017,11 +2017,34 @@ async function loadStoryPack() {
   }
 }
 
+async function restoreAuthoritativeLiveSession() {
+  if (!LIVE_MODE) return false;
+  try {
+    const response = await localFetch(
+      `/v1/live-scene-sessions/${encodeURIComponent(SESSION_ID)}`,
+      {cache: "no-store"},
+    );
+    if (response.status === 404) return false;
+    const pointer = await response.json().catch(() => ({}));
+    if (!response.ok) {
+      throw new Error(pointer.detail || `session restore failed (${response.status})`);
+    }
+    if (!pointer.job?.story_pack) return false;
+    acceptLiveSceneSessionPointer(pointer);
+    await state.liveTransition;
+    return state.liveCommittedJobId === pointer.job.job_id;
+  } catch (error) {
+    setEvent("scene.session-restore-error", error.message);
+    return false;
+  }
+}
+
 async function startProjector() {
   try {
-    // Activate the device fallback before session SSE is allowed to replace state.pack.
-    // The session stream replays its current pointer on subscribe, so this cannot miss a job.
-    await loadStoryPack();
+    // Restore an already-generated session directly. If it has no usable pack,
+    // activate the device fallback before SSE is allowed to replace state.pack.
+    // The stream replays its current pointer, so a job created during startup cannot be missed.
+    if (!await restoreAuthoritativeLiveSession()) await loadStoryPack();
   } finally {
     setupLiveSceneTransport();
     if (state.page) connectReaderSession();
