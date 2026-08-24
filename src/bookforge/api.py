@@ -424,7 +424,7 @@ async def prewarm_live_scene_provider(
     payload: LiveScenePrewarmRequest,
     request: Request,
 ) -> LiveScenePrewarmResponse:
-    """Explicitly prewarm bounded Modal classes; this is never called automatically."""
+    """Explicitly prewarm bounded Modal classes; disabled by default in the UI."""
 
     if not _is_local_connection(request):
         raise HTTPException(status_code=403, detail="Live-scene prewarm is local-only")

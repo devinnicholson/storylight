@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <meta name="theme-color" content="#07110f" />
     <title>Bookforge Live Scene Foundry</title>
-    <link rel="stylesheet" href="/workbench-assets/workbench.css?v=0.2.0-live4" />
+    <link rel="stylesheet" href="/workbench-assets/workbench.css?v=0.2.0-live5" />
   </head>
   <body>
     <main class="shell">
@@ -60,6 +60,17 @@
               </label>
             </div>
           </details>
+
+          <div class="renderer-preflight" id="rendererPreflight" data-state="checking">
+            <span class="renderer-preflight-dot"></span>
+            <div>
+              <strong id="rendererReadiness">Checking renderer readiness…</strong>
+              <small id="rendererReadinessDetail">No story text is used for this check.</small>
+            </div>
+            <button class="button renderer-warm-button" id="prewarmButton" type="button">
+              Prepare renderer
+            </button>
+          </div>
 
           <button class="button primary generate-button" id="compileButton">
             Generate moving scene
@@ -224,6 +235,6 @@
         separate local-only milestone after the live generation path is proven.
       </footer>
     </main>
-    <script src="/workbench-assets/workbench.js?v=0.2.0-live4"></script>
+    <script src="/workbench-assets/workbench.js?v=0.2.0-live5"></script>
   </body>
 </html>

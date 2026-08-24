@@ -596,6 +596,26 @@ def test_live_ui_displays_backend_metrics_without_a_saved_local_fallback() -> No
     assert '.generation-progress:not([data-terminal="true"]) .stage-rail li.current i' in stylesheet
 
 
+def test_workbench_rehearsal_prewarm_is_explicit_bounded_and_text_free() -> None:
+    markup = (ROOT / "src/bookforge/static/workbench.html").read_text()
+    controller = (ROOT / "src/bookforge/static/workbench.js").read_text()
+
+    assert 'id="prewarmButton"' in markup
+    assert 'id="rendererReadiness"' in markup
+    assert 'workbenchQuery.get("rehearsal") === "1"' in controller
+    assert 'fetch("/v1/live-scene-provider/prewarm"' in controller
+    assert "scaledown_window_seconds: 600" in controller
+    assert "if (rehearsalMode) prewarmRenderer();" in controller
+    prewarm_source = controller[
+        controller.index("async function prewarmRenderer()") : controller.index(
+            "function setSceneReady"
+        )
+    ]
+    assert "elements.story" not in prewarm_source
+    assert "elements.style" not in prewarm_source
+    assert "include_motion: false" in prewarm_source
+
+
 def test_hardware_evidence_and_privacy_scripts_are_executable() -> None:
     for name in (
         "collect-evidence.sh",

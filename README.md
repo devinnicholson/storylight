@@ -159,6 +159,9 @@ curl -sS -X POST http://127.0.0.1:8080/v1/live-scene-provider/prewarm \
   -H 'content-type: application/json' \
   -d '{"prewarm_id":"bookforge-showcase","include_motion":false,"scaledown_window_seconds":600}'
 
+# Or open the operator workbench in explicit rehearsal mode. It performs the same text-free prewarm.
+# http://127.0.0.1:8080/workbench?session=bookforge-live&rehearsal=1
+
 # Explicit teardown after the demo; this terminates any remaining containers.
 modal app stop bookforge-fast-scene --yes
 ```
@@ -167,6 +170,8 @@ The presentation window is explicit, master/depth-only, and bounded to 90–900 
 Modal's idle scale-down policy rather than creating an always-on minimum container, so a crashed
 local API still scales the GPU to zero. Extended sessions reserve a conservative $0.30 ceiling
 before starting; use the normal 90-second window outside rehearsals and stop the app after a demo.
+The workbench also exposes a **Prepare renderer** control. Automatic page-load preparation occurs
+only when the operator adds `rehearsal=1`; ordinary workbench visits never allocate a GPU.
 
 On the August 23 acceptance, fast-only prewarm took 28.459 seconds and the following master/depth
 job completed in 5.256 seconds end to end (3.528 seconds inference and 2.87 ms cache promotion).

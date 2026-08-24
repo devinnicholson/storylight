@@ -4,6 +4,10 @@ const elements = {
   micButton: document.querySelector("#micButton"),
   micButtonText: document.querySelector("#micButtonText"),
   compileButton: document.querySelector("#compileButton"),
+  prewarmButton: document.querySelector("#prewarmButton"),
+  rendererPreflight: document.querySelector("#rendererPreflight"),
+  rendererReadiness: document.querySelector("#rendererReadiness"),
+  rendererReadinessDetail: document.querySelector("#rendererReadinessDetail"),
   projectorLink: document.querySelector("#projectorLink"),
   projectionPreview: document.querySelector("#projectionPreview"),
   projectorFrame: document.querySelector("#projectorFrame"),
@@ -56,6 +60,7 @@ let starting = false;
 let sceneReady = false;
 const workbenchQuery = new URLSearchParams(window.location.search);
 const readerSessionId = workbenchQuery.get("session") || "bookforge-live";
+const rehearsalMode = workbenchQuery.get("rehearsal") === "1";
 const LIVE_SCENE_STORAGE_KEY = "bookforge.liveSceneSnapshot.v1";
 const LIVE_SCENE_CHANNEL = "bookforge.live-scenes";
 const liveSceneChannel = "BroadcastChannel" in window
@@ -75,6 +80,8 @@ let latestLiveSnapshot = null;
 let lastLiveRevision = -1;
 let liveSessionRevision = 0;
 let liveServerInstanceId = null;
+let rendererPrewarming = false;
+let rendererWarmExpiryTimer = null;
 
 const LIVE_STAGES = ["queued", "planning", "draft_ready", "master_ready", "motion_ready"];
 const STAGE_LABELS = {
@@ -89,6 +96,93 @@ const STAGE_LABELS = {
 function setStatus(state, text) {
   elements.status.dataset.state = state;
   elements.status.lastChild.textContent = ` ${text}`;
+}
+
+function setRendererReadiness(state, title, detail, {buttonDisabled = false} = {}) {
+  elements.rendererPreflight.dataset.state = state;
+  elements.rendererReadiness.textContent = title;
+  elements.rendererReadinessDetail.textContent = detail;
+  elements.prewarmButton.disabled = buttonDisabled;
+}
+
+function markRendererReady(expiresInSeconds) {
+  window.clearTimeout(rendererWarmExpiryTimer);
+  const boundedSeconds = Math.max(0, Number(expiresInSeconds) || 0);
+  const minutes = Math.max(1, Math.ceil(boundedSeconds / 60));
+  elements.prewarmButton.textContent = "Renderer ready";
+  setRendererReadiness(
+    "ready",
+    `Cloud renderer ready for about ${minutes} min`,
+    "Submit a story now to avoid cold-start delay.",
+    {buttonDisabled: true},
+  );
+  rendererWarmExpiryTimer = window.setTimeout(() => {
+    elements.prewarmButton.textContent = "Prepare renderer";
+    setRendererReadiness(
+      "idle",
+      "Renderer may be asleep",
+      "Prepare it before a judged run; no story text is sent.",
+    );
+  }, boundedSeconds * 1000);
+}
+
+async function inspectRendererReadiness() {
+  try {
+    const response = await fetch("/v1/live-scene-provider/warm-status", {cache: "no-store"});
+    const payload = await response.json().catch(() => ({}));
+    if (!response.ok) throw new Error(payload.detail || `Readiness failed (${response.status})`);
+    if (payload.state === "prewarmed") {
+      markRendererReady(payload.expires_in_seconds);
+      return;
+    }
+    setRendererReadiness(
+      "idle",
+      "Renderer sleeps between scenes",
+      "Prepare it before a judged run; no story text is sent.",
+    );
+  } catch (error) {
+    setRendererReadiness(
+      "error",
+      "Renderer prewarm unavailable",
+      error.message,
+      {buttonDisabled: true},
+    );
+  }
+}
+
+async function prewarmRenderer() {
+  if (rendererPrewarming) return;
+  rendererPrewarming = true;
+  elements.prewarmButton.textContent = "Preparing…";
+  setRendererReadiness(
+    "warming",
+    "Preparing the cloud renderer…",
+    "This can take about 30–50 seconds from sleep; no story text is sent.",
+    {buttonDisabled: true},
+  );
+  try {
+    const response = await fetch("/v1/live-scene-provider/prewarm", {
+      method: "POST",
+      headers: {"Content-Type": "application/json"},
+      body: JSON.stringify({
+        prewarm_id: `rehearsal-${Date.now().toString(36)}`,
+        include_motion: false,
+        scaledown_window_seconds: 600,
+      }),
+    });
+    const payload = await response.json().catch(() => ({}));
+    if (!response.ok) throw new Error(payload.detail || `Prewarm failed (${response.status})`);
+    markRendererReady(payload.expires_in_seconds);
+  } catch (error) {
+    elements.prewarmButton.textContent = "Retry preparation";
+    setRendererReadiness(
+      "error",
+      "Renderer preparation failed",
+      error.message,
+    );
+  } finally {
+    rendererPrewarming = false;
+  }
 }
 
 function setSceneReady(ready) {
@@ -888,6 +982,7 @@ elements.micButton.addEventListener("click", () => {
   else startSpeaking();
 });
 elements.compileButton.addEventListener("click", compileStory);
+elements.prewarmButton.addEventListener("click", prewarmRenderer);
 elements.projectorLink.addEventListener("click", (event) => {
   if (!sceneReady) event.preventDefault();
 });
@@ -908,7 +1003,10 @@ if (!canRecordAudio) {
 
 connectLiveSceneSessionEvents();
 restoreInitialScene();
+if (rehearsalMode) prewarmRenderer();
+else inspectRendererReadiness();
 window.addEventListener("beforeunload", () => {
+  window.clearTimeout(rendererWarmExpiryTimer);
   liveSessionEventSource?.close();
   stopLiveJobTransport();
 });
