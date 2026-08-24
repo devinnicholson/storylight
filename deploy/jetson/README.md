@@ -263,6 +263,20 @@ request. Automatic prewarm overlaps its text-free preparation with Gemma plannin
 the passage to Modal. Full evidence is in
 `benchmarks/bookforge-speed-optimization-2026-08-23.json`.
 
+When the Jetson is available, compare the accepted and short-key contracts with the local-only
+five-passage harness. A warmup is run and excluded; the report fails technical acceptance when any
+case exceeds 12 seconds or 180 output tokens, and it still requires human semantic review:
+
+```bash
+python -m bookforge.planner_benchmark \
+  --contract both \
+  --model-revision ollama-manifest-sha256:8648f39daa8fbf5b18c7b4e6a8fb4990c692751d49917417b8842ca5758e7ffc \
+  --output benchmarks/jetson-gemma3-short-key-acceptance.json
+```
+
+For the Mac-to-Jetson SSH loopback forward, add `--base-url http://127.0.0.1:11435`. The harness
+rejects non-loopback model URLs and never calls Modal or GCP.
+
 Keep the model endpoint on loopback. When a Mac control plane needs it during development, use an
 explicit SSH local forward rather than changing `OLLAMA_HOST` to a LAN address.
 
