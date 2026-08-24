@@ -440,6 +440,21 @@ function projectionExposureForImage(image) {
   return projectionToneForImage(image).fallbackExposure;
 }
 
+function sizeDepthCanvasToSource(canvas, image) {
+  const sourceWidth = Number(image.naturalWidth) || LOGICAL_WIDTH;
+  const sourceHeight = Number(image.naturalHeight) || LOGICAL_HEIGHT;
+  canvas.width = Math.min(LOGICAL_WIDTH, sourceWidth);
+  canvas.height = Math.min(LOGICAL_HEIGHT, sourceHeight);
+  canvas.dataset.renderWidth = String(canvas.width);
+  canvas.dataset.renderHeight = String(canvas.height);
+  return {
+    width: canvas.width,
+    height: canvas.height,
+    pixels: canvas.width * canvas.height,
+    logicalPixels: LOGICAL_WIDTH * LOGICAL_HEIGHT,
+  };
+}
+
 function compileShader(gl, type, source) {
   const shader = gl.createShader(type);
   gl.shaderSource(shader, source);
@@ -800,8 +815,6 @@ async function renderPackLayers(pack, page, renderToken = null, timings = null) 
     scene.className = "depth-scene";
     const canvas = document.createElement("canvas");
     canvas.className = "depth-scene-canvas";
-    canvas.width = LOGICAL_WIDTH;
-    canvas.height = LOGICAL_HEIGHT;
     try {
       // Load and decode each provider asset exactly once. The decoded master image
       // doubles as the always-visible fallback and the WebGL source texture.
@@ -815,6 +828,7 @@ async function renderPackLayers(pack, page, renderToken = null, timings = null) 
       const fallback = masterResult.value;
       fallback.className = "depth-scene-fallback";
       fallback.alt = page.scene_summary;
+      const renderSize = sizeDepthCanvasToSource(canvas, fallback);
       scene.append(fallback, canvas);
       appendAmbientEffects(scene, page.scene_spec);
       appendSceneHotspots(scene, page);
@@ -837,6 +851,10 @@ async function renderPackLayers(pack, page, renderToken = null, timings = null) 
       if (timings) {
         timings.projectionGamma = renderer.projectionGamma;
         timings.projectionMeanLuma = renderer.projectionMeanLuma;
+        timings.renderWidth = renderSize.width;
+        timings.renderHeight = renderSize.height;
+        timings.renderPixels = renderSize.pixels;
+        timings.logicalPixels = renderSize.logicalPixels;
       }
       const commitStartedAt = performance.now();
       if (!commitSceneVersion(version, "depth-composed", renderer, renderToken)) return false;

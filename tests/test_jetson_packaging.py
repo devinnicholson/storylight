@@ -146,6 +146,18 @@ def test_projector_adapts_dark_scenes_without_an_extra_generation_pass() -> None
     assert "filter: brightness(var(--projection-exposure, 1));" in stylesheet
 
 
+def test_projector_renders_depth_at_source_resolution_before_display_upscale() -> None:
+    projector = (ROOT / "src/bookforge/static/projector.js").read_text()
+
+    assert "function sizeDepthCanvasToSource(canvas, image)" in projector
+    assert "canvas.width = Math.min(LOGICAL_WIDTH, sourceWidth);" in projector
+    assert "canvas.height = Math.min(LOGICAL_HEIGHT, sourceHeight);" in projector
+    assert "const renderSize = sizeDepthCanvasToSource(canvas, fallback);" in projector
+    assert "timings.renderPixels = renderSize.pixels;" in projector
+    assert "canvas.width = LOGICAL_WIDTH;" not in projector
+    assert "canvas.height = LOGICAL_HEIGHT;" not in projector
+
+
 def test_kiosk_preserves_chromium_sandbox_and_waits_for_readiness() -> None:
     unit = (ROOT / "deploy/jetson/systemd/bookforge-kiosk.service").read_text()
     launcher = KIOSK_LAUNCHER.read_text()
