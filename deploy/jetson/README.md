@@ -242,9 +242,10 @@ BOOKFORGE_LIVE_SCENE_AUTO_PREWARM_ON_SUBMIT=true
 
 An experimental short-key wire contract is available with
 `BOOKFORGE_LIVE_SCENE_PLANNER_COMPACT_WIRE=true`. It preserves the normalized plan while reducing a
-representative response from 272 to 226 bytes and its JSON Schema from 1,694 to 1,160 bytes. Leave
-it off for a showcase until a multi-passage Jetson run proves schema adherence and semantic quality;
-the optimization is code-complete but not yet hardware-accepted.
+representative response from 221 to 142 bytes and its JSON Schema from 1,694 to 632 bytes. Two
+independent five-scene Mac runs were schema-valid and semantically faithful, reducing mean planning
+latency by 25.3%. Leave it off for a showcase until the same counterbalanced benchmark passes on the
+Jetson Gemma 3 runtime; the optimization is code-complete but not yet hardware-accepted.
 
 `BOOKFORGE_MODEL_MAX_OUTPUT_TOKENS` is a hard decode ceiling, not a target. The final compact contract
 removed redundant camera, lighting, palette, and region fields; its accepted hero repeats used

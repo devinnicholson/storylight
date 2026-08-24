@@ -5,8 +5,6 @@ import pytest
 
 from bookforge.domain import ModelMetrics
 from bookforge.live_scene_planner import (
-    LiveSceneCompactWireFocus,
-    LiveSceneCompactWireMagic,
     LiveSceneCompactWirePlan,
     LiveScenePlacedLayerPlan,
     LiveScenePlan,
@@ -83,15 +81,8 @@ def test_wire_plan_is_compact_and_normalizes_safe_geometry_and_motion() -> None:
 def test_short_key_wire_contract_preserves_semantics_with_less_decode_text() -> None:
     compact = LiveSceneCompactWirePlan(
         background_prompt=_wire_plan().background_prompt,
-        focus=LiveSceneCompactWireFocus(
-            kind=_wire_plan().focus.kind,
-            subject=_wire_plan().focus.subject,
-            action=_wire_plan().focus.action,
-        ),
-        magic=LiveSceneCompactWireMagic(
-            kind=_wire_plan().magic.kind,
-            prompt=_wire_plan().magic.prompt,
-        ),
+        focus=("c", _wire_plan().focus.subject, _wire_plan().focus.action),
+        magic=("e", _wire_plan().magic.prompt),
     )
 
     assert compact.to_wire_plan() == _wire_plan()
@@ -465,12 +456,12 @@ class _ModelStub:
             result = LiveSceneCompactWirePlan.model_validate(
                 {
                     "b": plan.background_prompt,
-                    "f": {
-                        "k": plan.focus.kind,
-                        "s": plan.focus.subject,
-                        "a": plan.focus.action,
-                    },
-                    "m": {"k": plan.magic.kind, "p": plan.magic.prompt},
+                    "f": [
+                        "c" if plan.focus.kind == "character" else "p",
+                        plan.focus.subject,
+                        plan.focus.action,
+                    ],
+                    "m": ["p" if plan.magic.kind == "prop" else "e", plan.magic.prompt],
                 }
             )
         else:
@@ -542,7 +533,7 @@ def test_structured_planner_can_use_opt_in_short_key_contract() -> None:
     )
 
     assert stub.calls[0]["output_type"] is LiveSceneCompactWirePlan
-    assert "b=background_prompt" in str(stub.calls[0]["prompt"])
+    assert "f=[kind,subject,action]" in str(stub.calls[0]["prompt"])
     assert result.plan.focus.prompt == (
         _wire_plan()
         .to_live_scene_plan(

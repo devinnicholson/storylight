@@ -280,56 +280,24 @@ class LiveSceneWirePlan(FrozenStrictModel):
         )
 
 
-class LiveSceneCompactWireFocus(FrozenStrictModel):
-    """Alias-key equivalent of :class:`LiveSceneWireFocus` for edge decoding."""
-
-    model_config = ConfigDict(
-        extra="forbid",
-        frozen=True,
-        validate_by_alias=True,
-        validate_by_name=True,
-    )
-
-    kind: Literal["character", "prop"] = Field(alias="k")
-    subject: Annotated[
-        str,
-        StringConstraints(strip_whitespace=True, min_length=1, max_length=80),
-    ] = Field(alias="s")
-    action: Annotated[
-        str,
-        StringConstraints(strip_whitespace=True, min_length=1, max_length=70),
-    ] = Field(alias="a")
-
-    def to_wire_focus(self) -> LiveSceneWireFocus:
-        return LiveSceneWireFocus(
-            kind=self.kind,
-            subject=self.subject,
-            action=self.action,
-        )
-
-
-class LiveSceneCompactWireMagic(FrozenStrictModel):
-    """Alias-key equivalent of :class:`LiveSceneWireMagic` for edge decoding."""
-
-    model_config = ConfigDict(
-        extra="forbid",
-        frozen=True,
-        validate_by_alias=True,
-        validate_by_name=True,
-    )
-
-    kind: Literal["prop", "effect"] = Field(alias="k")
-    prompt: Annotated[
-        str,
-        StringConstraints(strip_whitespace=True, min_length=1, max_length=110),
-    ] = Field(alias="p")
-
-    def to_wire_magic(self) -> LiveSceneWireMagic:
-        return LiveSceneWireMagic(kind=self.kind, prompt=self.prompt)
+CompactFocusSubject = Annotated[
+    str,
+    StringConstraints(strip_whitespace=True, min_length=1, max_length=80),
+]
+CompactFocusAction = Annotated[
+    str,
+    StringConstraints(strip_whitespace=True, min_length=1, max_length=70),
+]
+CompactMagicPrompt = Annotated[
+    str,
+    StringConstraints(strip_whitespace=True, min_length=1, max_length=110),
+]
+CompactFocusTuple = tuple[Literal["c", "p"], CompactFocusSubject, CompactFocusAction]
+CompactMagicTuple = tuple[Literal["p", "e"], CompactMagicPrompt]
 
 
 class LiveSceneCompactWirePlan(FrozenStrictModel):
-    """Short-key wire contract for opt-in, lower-latency Jetson inference."""
+    """Short-key tuple contract for opt-in, lower-latency Jetson inference."""
 
     model_config = ConfigDict(
         extra="forbid",
@@ -342,14 +310,23 @@ class LiveSceneCompactWirePlan(FrozenStrictModel):
         str,
         StringConstraints(strip_whitespace=True, min_length=1, max_length=110),
     ] = Field(alias="b")
-    focus: LiveSceneCompactWireFocus = Field(alias="f")
-    magic: LiveSceneCompactWireMagic = Field(alias="m")
+    focus: CompactFocusTuple = Field(alias="f")
+    magic: CompactMagicTuple = Field(alias="m")
 
     def to_wire_plan(self) -> LiveSceneWirePlan:
+        focus_kind, subject, action = self.focus
+        magic_kind, prompt = self.magic
         return LiveSceneWirePlan(
             background_prompt=self.background_prompt,
-            focus=self.focus.to_wire_focus(),
-            magic=self.magic.to_wire_magic(),
+            focus=LiveSceneWireFocus(
+                kind="character" if focus_kind == "c" else "prop",
+                subject=subject,
+                action=action,
+            ),
+            magic=LiveSceneWireMagic(
+                kind="prop" if magic_kind == "p" else "effect",
+                prompt=prompt,
+            ),
         )
 
 
@@ -968,8 +945,8 @@ def live_scene_plan_prompt(
     del visual_style
     request = {"passage": text}
     compact_key_guide = (
-        "\nCompact JSON keys: b=background_prompt; f={k=kind,s=subject,a=action}; "
-        "m={k=kind,p=prompt}.\n"
+        "\nCompact JSON: b=background; f=[kind,subject,action], where kind c=character or "
+        "p=prop; m=[kind,prompt], where kind p=prop or e=effect.\n"
         if compact_wire
         else ""
     )
