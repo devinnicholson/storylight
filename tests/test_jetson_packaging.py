@@ -599,7 +599,7 @@ def test_server_rendezvous_synchronizes_separate_workbench_and_kiosk_browsers() 
     assert "server_instance_id" in workbench
     assert "serverChanged || revisionAdvanced" in workbench
     assert "!serverInstanceId || !Number.isInteger(sessionRevision)" in projector
-    assert "rendezvousLiveScene();" in projector
+    assert "scheduleLiveSceneRendezvous(250);" in projector
     # The authoritative session stream is the only live-stage delivery path.
     assert "BroadcastChannel" not in projector
     assert "bookforge.liveSceneSnapshot.v1" not in projector
@@ -647,7 +647,7 @@ def test_projector_restores_session_or_fallback_before_subscribing() -> None:
     )
     assert startup.index("loadStoryPack();") < startup.index("setupLiveSceneTransport();")
     assert startup.index("setupLiveSceneTransport();") < startup.index(
-        "if (state.page) connectReaderSession();"
+        "if (READER_MODE && state.page) connectReaderSession();"
     )
     restore = projector.split("async function restoreAuthoritativeLiveSession()", 1)[1].split(
         "async function startProjector()", 1
@@ -658,15 +658,27 @@ def test_projector_restores_session_or_fallback_before_subscribing() -> None:
     assert "await state.liveTransition;" in restore
     assert "state.liveCommittedJobId === pointer.job.job_id" in restore
     assert "stream replays its current pointer" in startup
-    assert "if (!state.liveServerInstanceId) rendezvousLiveScene();" in projector
+    assert "if (!state.liveServerInstanceId) scheduleLiveSceneRendezvous(250);" in projector
     assert projector.count("setupLiveSceneTransport();") == 1
     assert "void startProjector();" in projector
+
+
+def test_embedded_visual_preview_defers_reader_transport() -> None:
+    workbench = (ROOT / "src/bookforge/static/workbench.js").read_text()
+    projector = (ROOT / "src/bookforge/static/projector.js").read_text()
+
+    assert "&reader=0" in workbench
+    assert 'const READER_MODE = query.get("reader") !== "0";' in projector
+    assert "if (!READER_MODE || readerSessionReusable)" in projector
+    assert "if (READER_MODE && state.page) connectReaderSession();" in projector
+    assert "readerEnabled: READER_MODE" in projector
+    assert "reader=0" not in workbench.split("elements.projectorLink.href", 1)[1].split(";", 1)[0]
 
 
 def test_projector_reuses_reader_session_for_visual_only_scene_upgrades() -> None:
     projector = (ROOT / "src/bookforge/static/projector.js").read_text()
 
-    assert "const readerSessionReusable = Boolean(" in projector
+    assert "const readerSessionReusable = READER_MODE && Boolean(" in projector
     assert "state.readerConfiguredPageId === nextPage.page_id" in projector
     assert "state.readerConfiguredPageText === nextPage.source_text" in projector
     assert "state.readerConfiguredPageId = state.page.page_id" in projector
@@ -676,8 +688,8 @@ def test_projector_reuses_reader_session_for_visual_only_scene_upgrades() -> Non
     assert "state.readerConfiguredPageId = null" in projector
     assert "state.readerConfiguredPageText = null" in projector
     assert "readerSessionReused: readerSessionReusable" in projector
-    assert "if (readerSessionReusable) {\n    rebuildScene();" in projector
-    assert "if (!readerSessionReusable) goToWord(readerCursor);" in projector
+    assert "if (!READER_MODE || readerSessionReusable) {\n    rebuildScene();" in projector
+    assert "if (READER_MODE && !readerSessionReusable) goToWord(readerCursor);" in projector
     assert "dataset.readerSessionReused" in projector
 
 

@@ -268,7 +268,7 @@ function setSceneReady(ready) {
 
 function ensureProjectionPreview() {
   if (!elements.projectorFrame.src) {
-    elements.projectorFrame.src = `/projector?pack=latest&session=${readerSessionId}&present=1&live=1`;
+    elements.projectorFrame.src = `/projector?pack=latest&session=${readerSessionId}&present=1&live=1&reader=0`;
   }
 }
 

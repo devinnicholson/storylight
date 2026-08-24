@@ -8,6 +8,7 @@ const PACK_SOURCE = query.get("pack") || "fixture";
 const PRESENTATION_MODE = query.get("debug") !== "1";
 const OFFLINE_REPLAY = query.get("offline") === "1";
 const LIVE_MODE = query.get("live") === "1";
+const READER_MODE = query.get("reader") !== "0";
 const SCENE_CROSSFADE_MS = 320;
 const SCENE_RETIRE_GRACE_MS = 360;
 const DEPTH_RENDER_TARGET_FPS = 30;
@@ -1307,7 +1308,7 @@ async function activatePage(nextIndex, renderToken = null) {
   if (!state.pack || nextIndex < 0 || nextIndex >= state.pack.pages.length) return false;
   if (!liveRenderTokenIsCurrent(renderToken)) return false;
   const nextPage = state.pack.pages[nextIndex];
-  const readerSessionReusable = Boolean(
+  const readerSessionReusable = READER_MODE && Boolean(
     state.generation !== null
     && state.readerConfiguredPageId === nextPage.page_id
     && state.readerConfiguredPageText === nextPage.source_text
@@ -1332,6 +1333,7 @@ async function activatePage(nextIndex, renderToken = null) {
     readerSyncMs: 0,
     visualReadyMs: 0,
     totalMs: 0,
+    readerEnabled: READER_MODE,
     readerSessionReused: readerSessionReusable,
   };
   const renderedMode = await renderPackLayers(state.pack, state.page, renderToken, timings);
@@ -1344,7 +1346,7 @@ async function activatePage(nextIndex, renderToken = null) {
   timings.visualReadyMs = performance.now() - activationStartedAt;
   timings.firstPaintMs = Math.max(0, firstPaintAt - (committedPaint?.committedAt || firstPaintAt));
   let readerCursor = state.cursor;
-  if (readerSessionReusable) {
+  if (!READER_MODE || readerSessionReusable) {
     rebuildScene();
   } else {
     const readerSyncStartedAt = performance.now();
@@ -1355,7 +1357,7 @@ async function activatePage(nextIndex, renderToken = null) {
   timings.totalMs = performance.now() - activationStartedAt;
   if (!liveRenderTokenIsCurrent(renderToken)) return false;
   state.liveActivationBreakdown = timings;
-  if (!readerSessionReusable) goToWord(readerCursor);
+  if (READER_MODE && !readerSessionReusable) goToWord(readerCursor);
   const currentUrl = new URL(window.location.href);
   currentUrl.searchParams.set("page", String(nextIndex + 1));
   window.history.replaceState({}, "", currentUrl);
@@ -1803,7 +1805,9 @@ async function rendezvousLiveScene() {
 function setupLiveSceneTransport() {
   if (!LIVE_MODE) return;
   connectLiveSceneSessionEvents();
-  if (!state.liveServerInstanceId) rendezvousLiveScene();
+  // Give the authoritative stream one short turn to deliver its immediate
+  // epoch event before issuing a redundant status fallback request.
+  if (!state.liveServerInstanceId) scheduleLiveSceneRendezvous(250);
   window.setInterval(updateLiveGenerationClock, 100);
 }
 
@@ -2021,7 +2025,7 @@ async function startProjector() {
     if (!await restoreAuthoritativeLiveSession()) await loadStoryPack();
   } finally {
     setupLiveSceneTransport();
-    if (state.page) connectReaderSession();
+    if (READER_MODE && state.page) connectReaderSession();
   }
 }
 
