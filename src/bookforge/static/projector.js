@@ -1739,6 +1739,14 @@ function monitorFrames(timestamp) {
   requestAnimationFrame(monitorFrames);
 }
 
+function resetFrameSampling() {
+  // requestAnimationFrame pauses in a background tab. Do not count that pause
+  // as millions of dropped display frames when the projector becomes visible.
+  monitorFrames.previous = null;
+  monitorFrames.startedAt = null;
+  state.frameSamples = [];
+}
+
 async function loadStoryPack() {
   try {
     if (PACK_SOURCE === "latest") {
@@ -1833,6 +1841,7 @@ document.addEventListener("keydown", (event) => {
 });
 
 window.addEventListener("resize", updateProjection);
+document.addEventListener("visibilitychange", resetFrameSampling);
 window.addEventListener("beforeunload", () => {
   clearTimeout(state.reconnectTimer);
   stopLiveSceneRendezvous();

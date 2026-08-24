@@ -51,6 +51,12 @@ _COORDINATE_ASSIGNMENT = re.compile(
 )
 _NUMERIC_TOKEN = re.compile(r"(?<!\w)[+-]?\d+(?:\.\d+)?(?!\w)")
 _DANGLING_PARTICIPLE = re.compile(r",\s+[A-Za-z]+ing[.!?]?$")
+_POSSESSIVE_BODY_FRAGMENT = re.compile(
+    r"^(?:a\s+|the\s+)?([A-Za-z][A-Za-z'-]*)['’]s\s+"
+    r"(?:hand|hands|face|eyes?|gaze|head)\b",
+    re.IGNORECASE,
+)
+_LEADING_ARTICLE = re.compile(r"^(?:a|an|the)\s+", re.IGNORECASE)
 _SEMANTIC_WORD = re.compile(r"[A-Za-z][A-Za-z'-]*")
 _PLACEMENT_MARGIN = 0.04
 _EMAIL = re.compile(r"\b[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}\b", re.IGNORECASE)
@@ -128,6 +134,17 @@ LiveSceneAnchor = Annotated[
 ]
 LiveSceneMotion = Literal["drift", "float", "breathe", "pulse", "parallax"]
 LiveSceneAmbience = Literal["dust", "fireflies", "fog", "stars", "light_rays"]
+LiveSceneRegion = Literal[
+    "upper_left",
+    "upper_center",
+    "upper_right",
+    "left",
+    "center",
+    "right",
+    "lower_left",
+    "lower_center",
+    "lower_right",
+]
 
 
 class LiveScenePlacedLayerPlan(FrozenStrictModel):
@@ -139,6 +156,119 @@ class LiveScenePlacedLayerPlan(FrozenStrictModel):
     anchor: LiveSceneAnchor
     depth: Annotated[float, Field(ge=0, le=20)]
     motion: LiveSceneMotion
+
+
+class LiveSceneWireFocus(FrozenStrictModel):
+    """Complete primary subject selected by the small edge model."""
+
+    kind: Literal["character", "prop"]
+    subject: Annotated[
+        str,
+        StringConstraints(strip_whitespace=True, min_length=1, max_length=80),
+        Field(
+            description=(
+                "One complete visible actor or primary object; never an isolated body part, "
+                "gaze, expression, lighting, or adjective list"
+            )
+        ),
+    ]
+    action: Annotated[
+        str,
+        StringConstraints(strip_whitespace=True, min_length=1, max_length=70),
+        Field(
+            description=(
+                "The exact visible action performed in the passage, paraphrased in at most six "
+                "words; never invent a pose or event"
+            )
+        ),
+    ]
+    region: LiveSceneRegion
+
+
+class LiveSceneWireMagic(FrozenStrictModel):
+    """Most visually surprising story element selected by the edge model."""
+
+    kind: Literal["prop", "effect"]
+    prompt: Annotated[
+        str,
+        StringConstraints(strip_whitespace=True, min_length=1, max_length=110),
+        Field(
+            description=(
+                "The passage's most visually surprising transformation, creature, or object; "
+                "prefer the magical change over the focus's tool and never return lighting, "
+                "glow, atmosphere, or a duplicate of the focus"
+            )
+        ),
+    ]
+    region: LiveSceneRegion
+
+
+class LiveSceneWirePlan(FrozenStrictModel):
+    """Compact structured output requested from the edge model."""
+
+    lighting: Literal["moonlit", "golden", "luminous", "soft", "dramatic"]
+    palette: Literal["warm", "cool", "jewel", "pastel", "earth", "monochrome"]
+    camera_motion: Literal["locked", "slow_push", "pan_left", "pan_right", "float"]
+    background_prompt: Annotated[
+        str,
+        StringConstraints(strip_whitespace=True, min_length=1, max_length=110),
+    ]
+    focus: LiveSceneWireFocus
+    magic: LiveSceneWireMagic
+
+    def privacy_sanitized(self, *, source_text: str) -> LiveSceneWirePlan:
+        return self.model_copy(
+            update={
+                "background_prompt": _remove_distinctive_source_overlap(
+                    self.background_prompt, source_text
+                ),
+                "focus": self.focus.model_copy(
+                    update={
+                        "subject": _remove_distinctive_source_overlap(
+                            self.focus.subject, source_text
+                        ),
+                        "action": _remove_distinctive_source_overlap(
+                            self.focus.action, source_text
+                        ),
+                    }
+                ),
+                "magic": self.magic.model_copy(
+                    update={
+                        "prompt": _remove_distinctive_source_overlap(
+                            self.magic.prompt, source_text
+                        )
+                    }
+                ),
+            }
+        )
+
+    def to_live_scene_plan(self, *, context_text: str = "") -> LiveScenePlan:
+        focus_prompt = _normalized_wire_focus(self.focus)
+        accent_prompt = _bounded_words(self.magic.prompt, 8)
+        return LiveScenePlan(
+            scene_summary=_derived_scene_summary(focus_prompt, accent_prompt),
+            art_direction=_wire_art_direction(self.lighting, self.palette),
+            camera_motion=self.camera_motion,
+            background_prompt=_bounded_words(self.background_prompt, 10),
+            focus=LiveScenePlacedLayerPlan(
+                kind=self.focus.kind,
+                prompt=focus_prompt,
+                anchor=_wire_anchor(self.focus, role="focus"),
+                depth=2.5,
+                motion="breathe" if self.focus.kind == "character" else "float",
+            ),
+            accent=LiveScenePlacedLayerPlan(
+                kind=self.magic.kind,
+                prompt=accent_prompt,
+                anchor=_wire_anchor(self.magic, role="accent"),
+                depth=5,
+                motion="pulse" if self.magic.kind == "effect" else "drift",
+            ),
+            ambience=_wire_ambience(
+                self.lighting,
+                context_text or self.background_prompt,
+            ),
+        )
 
 
 class LiveScenePlan(FrozenStrictModel):
@@ -202,11 +332,17 @@ class LiveScenePlan(FrozenStrictModel):
             if _semantically_redundant(background_prompt, art_direction)
             else f" Background: {_prompt_fragment(background_prompt)}."
         )
+        composition_clause = (
+            "Composition: place the main subject "
+            f"{_placement_label(focus_placement)}, clearly larger and nearer; place the "
+            f"supporting detail {_placement_label(accent_placement)}, smaller and separated."
+        )
         master_prompt = (
             f"{_prompt_fragment(visual_style)}. {_prompt_fragment(art_direction)}. "
-            f"Scene: {_prompt_fragment(scene_summary)}.{background_clause} "
+            f"{background_clause.lstrip()} "
             f"Main subject: {_prompt_fragment(focus_prompt)}. "
             f"Supporting visual detail: {_prompt_fragment(accent_prompt)}. "
+            f"{composition_clause} "
             "Full-bleed cinematic 16:9 storybook projection with clear foreground/background "
             "depth, clean silhouettes, and no readable text, captions, logos, borders, or UI."
         )
@@ -321,6 +457,105 @@ def _normalized_summary(value: str) -> str:
     return _DANGLING_PARTICIPLE.sub("", summary).strip() or "A clear story moment"
 
 
+def _derived_scene_summary(focus_prompt: str, accent_prompt: str) -> str:
+    del accent_prompt
+    summary = _bounded_words(focus_prompt, 18).strip(" ,;:-")
+    if not summary:
+        return "A clear story moment"
+    return f"{summary[0].upper()}{summary[1:]}."
+
+
+def _wire_art_direction(
+    lighting: Literal["moonlit", "golden", "luminous", "soft", "dramatic"],
+    palette: Literal["warm", "cool", "jewel", "pastel", "earth", "monochrome"],
+) -> str:
+    lighting_phrase = {
+        "moonlit": "moonlit rim lighting",
+        "golden": "golden-hour illumination",
+        "luminous": "luminous internal glow",
+        "soft": "soft diffuse lighting",
+        "dramatic": "dramatic directional lighting",
+    }[lighting]
+    palette_phrase = {
+        "warm": "warm amber and coral palette",
+        "cool": "cool cobalt and cyan palette",
+        "jewel": "saturated jewel-tone palette",
+        "pastel": "gentle pastel palette",
+        "earth": "earthy natural palette",
+        "monochrome": "restrained monochrome palette",
+    }[palette]
+    return (
+        f"{lighting_phrase}, {palette_phrase}, clear silhouettes, "
+        "projection-bright midtones, tactile depth"
+    )
+
+
+def _wire_ambience(
+    lighting: Literal["moonlit", "golden", "luminous", "soft", "dramatic"],
+    background_prompt: str,
+) -> list[LiveSceneAmbience]:
+    setting_tokens = {
+        token.casefold() for token in _SEMANTIC_WORD.findall(background_prompt)
+    }
+    if setting_tokens & {"star", "stars", "moon", "moonlit", "night", "sky"}:
+        return ["stars"]
+    if setting_tokens & {"ocean", "underwater", "water", "sea", "reef"}:
+        return ["light_rays"]
+    if setting_tokens & {"forest", "garden", "grove", "flowers", "leaves"}:
+        return ["fireflies"]
+    if setting_tokens & {"desert", "dunes", "sunrise", "sunset"}:
+        return ["dust", "light_rays"]
+    return {
+        "moonlit": ["stars"],
+        "golden": ["dust", "light_rays"],
+        "luminous": ["fireflies"],
+        "soft": ["dust"],
+        "dramatic": ["light_rays"],
+    }[lighting]
+
+
+def _normalized_wire_focus(layer: LiveSceneWireFocus) -> str:
+    subject = _bounded_words(layer.subject, 8)
+    action = _normalized_action(_bounded_words(layer.action, 6))
+    if layer.kind != "character":
+        return f"{subject}, {action}".strip(" ,")
+    # Gemma 1B occasionally describes a character through one body fragment.
+    # Preserve the model's subject word and action while restoring a complete figure.
+    subject = _POSSESSIVE_BODY_FRAGMENT.sub(r"\1", subject, count=1)
+    subject = _LEADING_ARTICLE.sub("", subject).strip(" ,")
+    return f"a complete visible {subject}, {action}".strip(" ,")
+
+
+def _normalized_action(value: str) -> str:
+    words = value.strip(" ,").split()
+    if not words:
+        return "performing the story action"
+    verb = words[0].casefold()
+    gerunds = {
+        "carry": "carrying",
+        "carries": "carrying",
+        "climb": "climbing",
+        "climbs": "climbing",
+        "create": "creating",
+        "creates": "creating",
+        "hold": "holding",
+        "holds": "holding",
+        "lift": "lifting",
+        "lifts": "lifting",
+        "open": "opening",
+        "opens": "opening",
+        "plant": "planting",
+        "plants": "planting",
+        "read": "reading",
+        "reads": "reading",
+        "unfold": "unfolding",
+        "unfolds": "unfolding",
+    }
+    if verb in gerunds:
+        words[0] = gerunds[verb]
+    return " ".join(words)
+
+
 def _prompt_fragment(value: str) -> str:
     return value.rstrip(" \t\r\n.,;:!?")
 
@@ -374,6 +609,52 @@ def _normalized_placements(
         (*focus_box, focus_depth),
         (accent_x, accent_y, accent_width, accent_height, accent_depth),
     )
+
+
+_REGION_CENTERS: dict[LiveSceneRegion, tuple[float, float]] = {
+    "upper_left": (0.27, 0.28),
+    "upper_center": (0.5, 0.28),
+    "upper_right": (0.73, 0.28),
+    "left": (0.3, 0.52),
+    "center": (0.5, 0.52),
+    "right": (0.7, 0.52),
+    "lower_left": (0.27, 0.7),
+    "lower_center": (0.5, 0.7),
+    "lower_right": (0.73, 0.7),
+}
+
+
+def _wire_anchor(
+    layer: LiveSceneWireFocus | LiveSceneWireMagic,
+    *,
+    role: Literal["focus", "accent"],
+) -> tuple[float, float, float, float]:
+    center_x, center_y = _REGION_CENTERS[layer.region]
+    if role == "focus":
+        dimensions = {
+            "character": (0.4, 0.62),
+            "prop": (0.4, 0.46),
+            "effect": (0.46, 0.42),
+        }
+    else:
+        dimensions = {
+            "character": (0.25, 0.38),
+            "prop": (0.27, 0.28),
+            "effect": (0.3, 0.26),
+        }
+    width, height = dimensions[layer.kind]
+    return center_x, center_y, width, height
+
+
+def _placement_label(placement: tuple[float, float, float, float, float]) -> str:
+    center_x, center_y, *_ = placement
+    horizontal = "left" if center_x < 0.4 else "right" if center_x > 0.6 else "center"
+    vertical = "upper" if center_y < 0.4 else "lower" if center_y > 0.62 else "mid-frame"
+    if horizontal == "center":
+        return f"at {vertical} center"
+    if vertical == "mid-frame":
+        return f"at {horizontal} mid-frame"
+    return f"at {vertical} {horizontal}"
 
 
 def _normalized_box(
@@ -578,6 +859,37 @@ def _contains_distinctive_source_phrase(
     )
 
 
+def _remove_distinctive_source_overlap(value: str, source_text: str) -> str:
+    """Minimally redact repeated source trigrams without inventing replacement text."""
+
+    output_tokens = list(_privacy_tokens(value))
+    source_tokens = _privacy_tokens(source_text)
+    if len(output_tokens) < 3 or len(source_tokens) < 3:
+        return value
+    source_phrases = {
+        source_tokens[index : index + 3]
+        for index in range(len(source_tokens) - 2)
+        if _distinctive_phrase(source_tokens[index : index + 3])
+    }
+    changed = False
+    while True:
+        overlap_index = next(
+            (
+                index
+                for index in range(len(output_tokens) - 2)
+                if tuple(output_tokens[index : index + 3]) in source_phrases
+            ),
+            None,
+        )
+        if overlap_index is None:
+            break
+        window = output_tokens[overlap_index : overlap_index + 3]
+        shortest_offset = min(range(3), key=lambda offset: len(window[offset]))
+        del output_tokens[overlap_index + shortest_offset]
+        changed = True
+    return (" ".join(output_tokens) if changed else value) or value
+
+
 def _distinctive_phrase(tokens: tuple[str, ...]) -> bool:
     content = [token for token in tokens if token not in _PHRASE_STOPWORDS]
     return len(content) >= 2 and any(len(token) >= 4 for token in content)
@@ -606,23 +918,32 @@ def live_scene_plan_prompt(*, text: str, visual_style: str, seed: int) -> str:
 
 Requirements:
 - Preserve only the subjects, setting, action, and mood present in the passage.
-- art_direction adds composition, lighting, materials, and palette to the supplied style. It must
-  describe one finished frame in at most 35 words; do not repeat the passage.
-- scene_summary is one complete grammatical sentence of at most 18 words; do not end it with a
-  dangling participle. background_prompt, focus.prompt, and accent.prompt are at most 18 words.
-- Do not put trailing punctuation in art_direction or any layer prompt.
+- Choose one lighting and one palette value that complement the supplied visual style. Projection
+  brightness, silhouette clarity, materials, and depth are supplied locally.
+- background_prompt is at most 10 words. focus.subject is a complete actor in at most 8 words and
+  focus.action is the exact visible action in at most 6 words. magic.prompt is at most 8 words.
+- Do not put trailing punctuation in any layer prompt.
 - Return visual semantics only: do not copy sentences, distinctive phrases, proper names, or
   personal information from the passage.
+- Reuse ordinary visual nouns and the exact visible action from the passage when needed. This is
+  safer and more faithful than replacing them with a different action or invented object.
+- Never copy three adjacent words from the passage into any output field. Keep the action verb and
+  essential ordinary nouns, but remove or paraphrase neighboring modifiers.
 - Never request readable writing, captions, signs, logos, watermarks, borders, panels, or UI.
-- Describe exactly three semantic layers: one background_prompt plus focus and accent. Each anchor
-  is [center_x, center_y, width, height] in 0..1; depth is separate and smaller values are nearer.
+- Describe exactly three semantic layers: one background_prompt plus focus and magic.
 - background_prompt is setting words only: never put numbers, brackets, arrays, coordinates,
-  subjects, or actions in it. focus.prompt is the main subject and action. accent.prompt is one
-  supporting visual detail, not a duplicate subject.
-- Give focus and accent visibly different anchor centers, sizes, and depths. Never reuse an anchor
-  or depth for both layers.
-- Use restrained camera and layer motion that can loop seamlessly for a reader.
-- Select at most three ambience kinds. The scene must remain legible on a projector.
+  subjects, actions, or camera directions in it.
+- focus.subject must name the complete actor. Prefer the person or creature acting over the object
+  it touches. focus.action must separately state the exact visible action from the passage. Never
+  invent a pose or action. Include its essential object or destination instead of returning only a
+  verb. Never return an isolated body part, gaze, expression, or adjective list.
+- magic must name the passage's most visually surprising transformation, creature, or object.
+  Prefer an actual magical change over the focus's tool. If no transformation occurs, use a
+  concrete supporting element explicitly present in the passage. Never invent a transformation.
+  Light, glow, shimmer, dust, fog, color, or atmosphere alone is not magic.
+- Place focus and magic in visibly different named regions. Geometry, depth, and layer motion are
+  supplied locally; never emit coordinates or measurements.
+- The scene must remain legible on a projector. Atmosphere is supplied locally from lighting.
 - Keep the entire JSON compact; omit unnecessary adjectives and explanations.
 
 Input:
@@ -666,7 +987,7 @@ class StructuredLiveScenePlanner:
                         visual_style=visual_style,
                         seed=seed,
                     ),
-                    output_type=LiveScenePlan,
+                    output_type=LiveSceneWirePlan,
                 )
         except TimeoutError as error:
             raise LiveScenePlannerTimeoutError(
@@ -680,7 +1001,11 @@ class StructuredLiveScenePlanner:
                 f"local structured scene planning failed: {detail}"
             ) from error
 
-        validated = LiveScenePlan.model_validate(plan.model_dump())
+        wire_plan = LiveSceneWirePlan.model_validate(plan.model_dump())
+        sanitized_wire_plan = wire_plan.privacy_sanitized(source_text=text)
+        validated = sanitized_wire_plan.to_live_scene_plan(
+            context_text=f"{text} {visual_style}"
+        )
         validate_live_scene_plan_privacy(validated, source_text=text)
         return LiveScenePlanningResult(
             plan=validated,

@@ -1,6 +1,9 @@
+import json
 import os
 import subprocess
 from pathlib import Path
+
+from bookforge.live_scene_planner import LiveSceneWirePlan
 
 ROOT = Path(__file__).parents[1]
 KIOSK_LAUNCHER = ROOT / "deploy/jetson/launch-kiosk.sh"
@@ -238,6 +241,15 @@ def test_projector_wake_lock_is_visibility_scoped_and_never_bypasses_login() -> 
     assert "state.screenWakeLock?.release()" in projector
     assert 'document.body.dataset.projectorWakeLock = "active"' in projector
     assert "setupProjectorWakeLock();" in projector
+
+
+def test_projector_does_not_count_background_tab_time_as_dropped_frames() -> None:
+    projector = (ROOT / "src/bookforge/static/projector.js").read_text()
+
+    assert "function resetFrameSampling()" in projector
+    assert "monitorFrames.previous = null" in projector
+    assert "monitorFrames.startedAt = null" in projector
+    assert 'document.addEventListener("visibilitychange", resetFrameSampling)' in projector
 
 
 def test_projector_uses_depth_webgl_and_enforces_offline_replay_boundary() -> None:
@@ -570,3 +582,17 @@ def test_bootstrap_keeps_jetpack_python_packages_visible() -> None:
 
     assert "python3 -m venv --system-site-packages" in bootstrap
     assert 'pip install --upgrade "$REPO_ROOT"' in bootstrap
+
+
+def test_optimized_jetson_gemma_fixture_matches_the_production_wire_contract() -> None:
+    fixture = json.loads(
+        (ROOT / "benchmarks/jetson-gemma3-optimized-schema-request.json").read_text()
+    )
+
+    assert fixture["format"] == LiveSceneWirePlan.model_json_schema()
+    assert fixture["options"] == {
+        "temperature": 0,
+        "num_ctx": 4096,
+        "num_predict": 200,
+    }
+    assert fixture["model"] == "gemma3:1b-it-q4_K_M"

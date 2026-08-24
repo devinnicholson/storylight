@@ -9,6 +9,9 @@ from bookforge.live_scene_planner import (
     LiveScenePlannerError,
     LiveScenePlannerPrivacyError,
     LiveScenePlannerTimeoutError,
+    LiveSceneWireFocus,
+    LiveSceneWireMagic,
+    LiveSceneWirePlan,
     StructuredLiveScenePlanner,
     validate_live_scene_plan_privacy,
 )
@@ -37,8 +40,120 @@ def _plan() -> LiveScenePlan:
             depth=2,
             motion="float",
         ),
-        ambience=["stars"],
     )
+
+
+def _wire_plan() -> LiveSceneWirePlan:
+    return LiveSceneWirePlan(
+        lighting="moonlit",
+        palette="cool",
+        camera_motion="slow_push",
+        background_prompt="Indigo cloudscape and distant floating school with warm windows",
+        focus=LiveSceneWireFocus(
+            kind="character",
+            subject="A child in profile",
+            action="holding a luminous open storybook",
+            region="left",
+        ),
+        magic=LiveSceneWireMagic(
+            kind="effect",
+            prompt="Cyan origami birds becoming constellations",
+            region="upper_right",
+        ),
+    )
+
+
+def test_wire_plan_is_compact_and_normalizes_safe_geometry_and_motion() -> None:
+    wire = _wire_plan()
+    plan = wire.to_live_scene_plan()
+
+    assert len(wire.model_dump_json()) < 620
+    assert plan.scene_summary == (
+        "A complete visible child in profile, holding a luminous open storybook."
+    )
+    assert plan.art_direction == (
+        "moonlit rim lighting, cool cobalt and cyan palette, clear silhouettes, "
+        "projection-bright midtones, tactile depth"
+    )
+    assert plan.focus.anchor == (0.3, 0.52, 0.4, 0.62)
+    assert plan.focus.depth == 2.5
+    assert plan.focus.motion == "breathe"
+    assert plan.accent.anchor == (0.73, 0.28, 0.3, 0.26)
+    assert plan.accent.depth == 5
+    assert plan.accent.motion == "pulse"
+    assert plan.ambience == ["stars"]
+
+
+def test_wire_plan_repairs_possessive_body_fragment_to_complete_character() -> None:
+    payload = _wire_plan().model_dump()
+    payload["focus"]["subject"] = "child's hand"
+    payload["focus"]["action"] = "opening a book beneath rising birds"
+
+    plan = LiveSceneWirePlan.model_validate(payload).to_live_scene_plan()
+
+    assert plan.focus.prompt == (
+        "a complete visible child, opening a book beneath rising birds"
+    )
+    assert "hand" not in plan.focus.prompt
+
+
+@pytest.mark.parametrize(
+    ("action", "expected"),
+    [
+        ("open book", "opening book"),
+        ("carries library", "carrying library"),
+        ("plants brass seed", "planting brass seed"),
+        ("climbs moonlit stairs", "climbing moonlit stairs"),
+    ],
+)
+def test_wire_plan_normalizes_visible_character_action(
+    action: str,
+    expected: str,
+) -> None:
+    payload = _wire_plan().model_dump()
+    payload["focus"]["subject"] = "the child"
+    payload["focus"]["action"] = action
+
+    plan = LiveSceneWirePlan.model_validate(payload).to_live_scene_plan()
+
+    assert plan.focus.prompt == f"a complete visible child, {expected}"
+
+
+@pytest.mark.parametrize(
+    ("background", "expected"),
+    [
+        ("midnight sky above silver clouds", ["stars"]),
+        ("turquoise underwater canyon", ["light_rays"]),
+        ("floating botanical garden", ["fireflies"]),
+        ("saffron desert at sunrise", ["dust", "light_rays"]),
+    ],
+)
+def test_wire_plan_derives_setting_specific_ambience(
+    background: str,
+    expected: list[str],
+) -> None:
+    payload = _wire_plan().model_dump()
+    payload["background_prompt"] = background
+
+    plan = LiveSceneWirePlan.model_validate(payload).to_live_scene_plan()
+
+    assert plan.ambience == expected
+
+
+def test_wire_plan_redacts_distinctive_source_phrase_without_inventing_text() -> None:
+    source = "A turtle climbs moonlit stairs while glowing jellyfish drift between stars."
+    payload = _wire_plan().model_dump()
+    payload["magic"]["prompt"] = "glowing jellyfish drift between stars"
+    wire = LiveSceneWirePlan.model_validate(payload).privacy_sanitized(
+        source_text=source
+    )
+    plan = wire.to_live_scene_plan(context_text=source)
+
+    assert "glowing" in plan.accent.prompt
+    assert "jellyfish" in plan.accent.prompt
+    assert "glowing jellyfish drift" not in plan.accent.prompt
+    validate_live_scene_plan_privacy(plan, source_text=source)
+    assert plan.ambience == ["stars"]
 
 
 def test_compact_plan_normalizes_to_canonical_scene_spec_and_layers() -> None:
@@ -66,6 +181,8 @@ def test_compact_plan_normalizes_to_canonical_scene_spec_and_layers() -> None:
     assert plan.background_prompt in page.scene_spec.master_prompt
     assert plan.focus.prompt in page.scene_spec.master_prompt
     assert plan.accent.prompt in page.scene_spec.master_prompt
+    assert "main subject at left" in page.scene_spec.master_prompt
+    assert "supporting detail at upper right" in page.scene_spec.master_prompt
     assert page.source_text == "A child opened a book and the birds showed the way."
     assert "readable text" in page.scene_spec.negative_prompt
     assert page.scene_spec.camera.kind == "slow_push"
@@ -291,7 +408,7 @@ class _ModelStub:
             await asyncio.sleep(self.delay_seconds)
         if self.failure is not None:
             raise self.failure
-        return _plan(), ModelMetrics(
+        return _wire_plan(), ModelMetrics(
             backend="ollama",
             model="gemma3:1b",
             total_ms=9.5,
@@ -319,13 +436,21 @@ def test_structured_planner_uses_live_schema_and_records_model_revision() -> Non
         )
     )
 
-    assert result.plan == _plan()
+    assert result.plan == _wire_plan().to_live_scene_plan()
     assert result.metrics.model == "gemma3:1b"
     assert result.model_revision == "sha256:gemma-fixture"
     assert result.wall_ms >= 0
-    assert stub.calls[0]["output_type"] is LiveScenePlan
+    assert stub.calls[0]["output_type"] is LiveSceneWirePlan
     assert "origami birds light the sky" in str(stub.calls[0]["prompt"])
     assert "luminous watercolor paper theater" in str(stub.calls[0]["prompt"])
+    assert "focus.action must separately state the exact visible action" in str(
+        stub.calls[0]["prompt"]
+    )
+    assert "Never copy three adjacent words" in str(stub.calls[0]["prompt"])
+    assert "most visually surprising transformation" in str(stub.calls[0]["prompt"])
+    assert "exact visible action" in str(stub.calls[0]["prompt"])
+    assert "Never invent a transformation" in str(stub.calls[0]["prompt"])
+    assert "essential object or destination" in str(stub.calls[0]["prompt"])
 
 
 def test_structured_planner_turns_timeout_and_model_failure_into_recoverable_errors() -> None:

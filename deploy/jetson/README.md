@@ -202,11 +202,11 @@ the steady-state acceptance deadline before connecting Bookforge:
 ```bash
 curl --fail --silent --show-error --max-time 240 \
   --header 'Content-Type: application/json' \
-  --data-binary @benchmarks/jetson-gemma3-schema-request.json \
+  --data-binary @benchmarks/jetson-gemma3-optimized-schema-request.json \
   http://127.0.0.1:11434/api/chat | python3 -m json.tool
 curl --fail --silent --show-error --max-time 20 \
   --header 'Content-Type: application/json' \
-  --data-binary @benchmarks/jetson-gemma3-schema-request.json \
+  --data-binary @benchmarks/jetson-gemma3-optimized-schema-request.json \
   http://127.0.0.1:11434/api/chat | python3 -m json.tool
 OLLAMA_HOST=http://127.0.0.1:11434 \
   "$BOOKFORGE_OLLAMA_ROOT/bin/ollama" ps
@@ -216,10 +216,11 @@ OLLAMA_HOST=http://127.0.0.1:11434 \
 warm new-passage request was 4.57 seconds at roughly 27-29 generated tokens per second. The very
 first request took about 152 seconds while CUDA compiled and cached kernels; always prewarm before
 a live reading. Full evidence is in
-`benchmarks/jetson-gemma3-ollama-2026-08-23.json`. The request fixture now contains the actual
-compact `LiveScenePlan` contract from `src/bookforge/live_scene_planner.py`, not the earlier
-six-string toy schema. Its canonical JSON Schema SHA-256 is
-`a2b099807ac2f80c54b8243189652e73af2bb1e5a59e7baf575706882589f1ac`.
+`benchmarks/jetson-gemma3-ollama-2026-08-23.json`. The optimized request fixture contains the actual
+compact `LiveSceneWirePlan` contract from `src/bookforge/live_scene_planner.py`; its canonical JSON
+Schema SHA-256 is `d08b410c34d519a12410e2b22beb89beb2ec9d89a06887c783d3a6ce44839c14`.
+The earlier `jetson-gemma3-schema-request.json` remains immutable historical evidence for the first
+accepted end-to-end run and is not the current production contract.
 
 For Bookforge on the same Jetson, use these settings after the independent probe passes:
 
@@ -230,16 +231,17 @@ BOOKFORGE_MODEL_BASE_URL=http://127.0.0.1:11434
 BOOKFORGE_MODEL_TIMEOUT_SECONDS=20
 BOOKFORGE_MODEL_KEEP_ALIVE=10m
 BOOKFORGE_MODEL_CONTEXT_TOKENS=4096
-BOOKFORGE_MODEL_MAX_OUTPUT_TOKENS=320
+BOOKFORGE_MODEL_MAX_OUTPUT_TOKENS=200
 BOOKFORGE_LIVE_SCENE_PLANNER=model
 BOOKFORGE_LIVE_SCENE_PLANNER_TIMEOUT_SECONDS=12
 BOOKFORGE_LIVE_SCENE_PLANNER_MODEL_REVISION=ollama-manifest-sha256:8648f39daa8fbf5b18c7b4e6a8fb4990c692751d49917417b8842ca5758e7ffc
 ```
 
-`BOOKFORGE_MODEL_MAX_OUTPUT_TOKENS` is a hard decode ceiling, not a target. The integrated acceptance
-used 283 of 320 tokens without truncation. Keep the 320 ceiling until a multi-passage benchmark
-proves that 256 never truncates valid JSON. The 12-second planner deadline passed with 2.84 seconds
-of headroom, but only on a prewarmed model; keep the independent 20-second model-client timeout for
+`BOOKFORGE_MODEL_MAX_OUTPUT_TOKENS` is a hard decode ceiling, not a target. The optimized five-passage
+acceptance used at most 143 of 200 tokens without truncation. Keep the 200 ceiling until a broader
+benchmark proves that a lower ceiling never truncates valid JSON. The 12-second planner deadline
+passed with at least 6.22 seconds of headroom, but only on a prewarmed model; keep the independent
+20-second model-client timeout for
 diagnostics and ensure the prewarm completes before a live reading.
 
 Keep the model endpoint on loopback. When a Mac control plane needs it during development, use an
