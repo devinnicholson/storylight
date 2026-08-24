@@ -168,6 +168,7 @@ def test_explicit_warm_provider_routes_are_strict_by_default() -> None:
             *,
             prewarm_id: str,
             include_motion: bool,
+            scaledown_window_seconds: int,
         ) -> WarmPrewarmReport:
             return WarmPrewarmReport(
                 prewarm_id=prewarm_id,
@@ -179,6 +180,7 @@ def test_explicit_warm_provider_routes_are_strict_by_default() -> None:
                 fast_model_load_seconds=2,
                 motion_model_load_seconds=0,
                 expires_in_seconds=30,
+                scaledown_window_seconds=scaledown_window_seconds,
             )
 
     with TestClient(app) as client:
@@ -191,6 +193,14 @@ def test_explicit_warm_provider_routes_are_strict_by_default() -> None:
             "/v1/live-scene-provider/prewarm",
             json={"prewarm_id": "demo-prewarm", "include_motion": False},
         )
+        presentation_response = client.post(
+            "/v1/live-scene-provider/prewarm",
+            json={
+                "prewarm_id": "demo-presentation",
+                "include_motion": False,
+                "scaledown_window_seconds": 600,
+            },
+        )
         invalid = client.post(
             "/v1/live-scene-provider/prewarm",
             json={"prewarm_id": "x", "include_motion": False},
@@ -198,6 +208,10 @@ def test_explicit_warm_provider_routes_are_strict_by_default() -> None:
         unused_motion = client.post(
             "/v1/live-scene-provider/prewarm",
             json={"prewarm_id": "motion-prewarm", "include_motion": True},
+        )
+        excessive_window = client.post(
+            "/v1/live-scene-provider/prewarm",
+            json={"prewarm_id": "too-long", "scaledown_window_seconds": 901},
         )
 
     assert status_response.status_code == 200
@@ -208,12 +222,16 @@ def test_explicit_warm_provider_routes_are_strict_by_default() -> None:
         "prewarm_id": None,
         "include_motion": False,
         "expires_in_seconds": 0.0,
+        "scaledown_window_seconds": 90,
     }
     assert prewarm_response.status_code == 200
     assert prewarm_response.json()["prewarm_id"] == "demo-prewarm"
     assert prewarm_response.json()["expires_in_seconds"] == 30
+    assert presentation_response.status_code == 200
+    assert presentation_response.json()["scaledown_window_seconds"] == 600
     assert invalid.status_code == 422
     assert unused_motion.status_code == 409
+    assert excessive_window.status_code == 422
 
 
 def test_live_scene_session_endpoint_recovers_latest_job_and_advances_monotonically() -> None:

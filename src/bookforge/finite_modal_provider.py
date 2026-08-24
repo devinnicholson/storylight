@@ -104,8 +104,10 @@ MOTION_STAGE_POLICY = ModalStagePolicy(
     maximum_gpu_usd=0.12,
 )
 WARM_FAST_SESSION_CEILING_USD = 0.12
+WARM_FAST_PRESENTATION_SESSION_CEILING_USD = 0.30
 WARM_FULL_SESSION_CEILING_USD = 0.25
 WARM_SCALEDOWN_WINDOW_SECONDS = 90
+WARM_MAX_SCALEDOWN_WINDOW_SECONDS = 900
 
 
 @dataclass(frozen=True, slots=True)
@@ -217,6 +219,12 @@ class WarmModalInvoker(Protocol):
         arguments: Mapping[str, Any],
     ) -> dict[str, Any]: ...
 
+    async def configure_scaledown_window(
+        self,
+        class_name: str,
+        seconds: int,
+    ) -> None: ...
+
 
 class ModalSdkWarmInvoker:
     """Authenticated SDK lookup for deployed, scale-to-zero Modal classes."""
@@ -265,11 +273,7 @@ class ModalSdkWarmInvoker:
         method_name: str,
         arguments: Mapping[str, Any],
     ) -> dict[str, Any]:
-        instance = self._objects.get(class_name)
-        if instance is None:
-            deployed_class = await self._deployed_class(class_name)
-            instance = deployed_class()
-            self._objects[class_name] = instance
+        instance = await self._deployed_object(class_name)
         remote_method = getattr(instance, method_name)
         result = await remote_method.remote.aio(**dict(arguments))
         if not isinstance(result, dict):
@@ -277,6 +281,18 @@ class ModalSdkWarmInvoker:
                 f"deployed Modal class {class_name}.{method_name} returned invalid data"
             )
         return result
+
+    async def _deployed_object(self, class_name: str) -> Any:
+        instance = self._objects.get(class_name)
+        if instance is None:
+            deployed_class = await self._deployed_class(class_name)
+            instance = deployed_class()
+            self._objects[class_name] = instance
+        return instance
+
+    async def configure_scaledown_window(self, class_name: str, seconds: int) -> None:
+        instance = await self._deployed_object(class_name)
+        await asyncio.to_thread(instance.update_autoscaler, scaledown_window=seconds)
 
 
 @dataclass(frozen=True, slots=True)
@@ -290,6 +306,7 @@ class WarmPrewarmReport:
     fast_model_load_seconds: float
     motion_model_load_seconds: float
     expires_in_seconds: float
+    scaledown_window_seconds: int = WARM_SCALEDOWN_WINDOW_SECONDS
     fast_inference_warmup_seconds: float = 0.0
 
 
@@ -301,6 +318,7 @@ class WarmProviderStatus:
     prewarm_id: str | None = None
     include_motion: bool = False
     expires_in_seconds: float = 0.0
+    scaledown_window_seconds: int = WARM_SCALEDOWN_WINDOW_SECONDS
 
 
 @dataclass(slots=True)
@@ -316,6 +334,7 @@ class _ActiveWarmSession:
     motion_model_load_seconds: float
     receipt_path: Path
     deadline_monotonic: float
+    scaledown_window_seconds: int = WARM_SCALEDOWN_WINDOW_SECONDS
     fast_scene_seconds: float = 0
     scene_id: str | None = None
     scene_master: SceneArtifact | None = None
@@ -646,6 +665,7 @@ class WarmModalSceneProvider(FiniteModalSceneProvider):
         self.invoker = invoker or ModalSdkWarmInvoker()
         self._warm_session: _ActiveWarmSession | None = None
         self._operation_lock = asyncio.Lock()
+        self._configured_scaledown_window_seconds = WARM_SCALEDOWN_WINDOW_SECONDS
 
     async def probe(self) -> tuple[bool, str]:
         ready, detail = await super().probe()
@@ -658,16 +678,28 @@ class WarmModalSceneProvider(FiniteModalSceneProvider):
         *,
         prewarm_id: str,
         include_motion: bool = False,
+        scaledown_window_seconds: int = WARM_SCALEDOWN_WINDOW_SECONDS,
     ) -> WarmPrewarmReport:
         _validate_identifier(prewarm_id)
+        if not (
+            WARM_SCALEDOWN_WINDOW_SECONDS
+            <= scaledown_window_seconds
+            <= WARM_MAX_SCALEDOWN_WINDOW_SECONDS
+        ):
+            raise ValueError(
+                f"scaledown window must be {WARM_SCALEDOWN_WINDOW_SECONDS}-"
+                f"{WARM_MAX_SCALEDOWN_WINDOW_SECONDS} seconds"
+            )
+        if include_motion and scaledown_window_seconds != WARM_SCALEDOWN_WINDOW_SECONDS:
+            raise ValueError("extended presentation warming is supported for master/depth only")
         await self._require_ready()
         async with self._operation_lock:
             if self._warm_session is not None:
                 raise FiniteModalProviderError("a prewarmed scene session is already active")
             experiment_id = f"warm-session:{prewarm_id}"
-            session_ceiling = (
-                WARM_FULL_SESSION_CEILING_USD
-                if include_motion
+            session_ceiling = WARM_FULL_SESSION_CEILING_USD if include_motion else (
+                WARM_FAST_PRESENTATION_SESSION_CEILING_USD
+                if scaledown_window_seconds > WARM_SCALEDOWN_WINDOW_SECONDS
                 else WARM_FAST_SESSION_CEILING_USD
             )
             reservation_id = await self._reserve_against_current_billing(
@@ -682,9 +714,19 @@ class WarmModalSceneProvider(FiniteModalSceneProvider):
 
             # Motion is deliberately opt-in. A master-only session never starts
             # or pays for the LTX container. When requested, the two independently
-            # scaling classes load concurrently and each returns to zero after 90s.
+            # scaling classes load concurrently. Extended presentation warming is
+            # master/depth-only and remains bounded by Modal's idle scale-down timer.
             try:
+                await self.invoker.configure_scaledown_window(
+                    "FastSceneStudio",
+                    scaledown_window_seconds,
+                )
+                self._configured_scaledown_window_seconds = scaledown_window_seconds
                 if include_motion:
+                    await self.invoker.configure_scaledown_window(
+                        "MotionUpgradeStudio",
+                        WARM_SCALEDOWN_WINDOW_SECONDS,
+                    )
                     (fast_seconds, fast), (motion_seconds, motion) = await asyncio.gather(
                         timed("FastSceneStudio"),
                         timed("MotionUpgradeStudio"),
@@ -706,6 +748,7 @@ class WarmModalSceneProvider(FiniteModalSceneProvider):
                     "include_motion": include_motion,
                     "fast_remote_seconds": fast_seconds,
                     "motion_remote_seconds": motion_seconds,
+                    "scaledown_window_seconds": scaledown_window_seconds,
                     "fast_inference_warmup_seconds": float(
                         fast.get("inference_warmup_seconds", 0)
                     ),
@@ -723,7 +766,8 @@ class WarmModalSceneProvider(FiniteModalSceneProvider):
                 fast_model_load_seconds=float(fast.get("model_load_seconds", 0)),
                 motion_model_load_seconds=float(motion.get("model_load_seconds", 0)),
                 receipt_path=receipt_path,
-                deadline_monotonic=time.monotonic() + WARM_SCALEDOWN_WINDOW_SECONDS,
+                deadline_monotonic=time.monotonic() + scaledown_window_seconds,
+                scaledown_window_seconds=scaledown_window_seconds,
             )
             self._warm_session = session
             return WarmPrewarmReport(
@@ -735,7 +779,8 @@ class WarmModalSceneProvider(FiniteModalSceneProvider):
                 full_session_ceiling_usd=session_ceiling,
                 fast_model_load_seconds=session.fast_model_load_seconds,
                 motion_model_load_seconds=session.motion_model_load_seconds,
-                expires_in_seconds=WARM_SCALEDOWN_WINDOW_SECONDS,
+                expires_in_seconds=scaledown_window_seconds,
+                scaledown_window_seconds=scaledown_window_seconds,
                 fast_inference_warmup_seconds=float(
                     fast.get("inference_warmup_seconds", 0)
                 ),
@@ -747,7 +792,12 @@ class WarmModalSceneProvider(FiniteModalSceneProvider):
             await self._expire_warm_session_locked()
             session = self._warm_session
             if session is None:
-                return WarmProviderStatus(ready=ready, detail=detail, state="idle")
+                return WarmProviderStatus(
+                    ready=ready,
+                    detail=detail,
+                    state="idle",
+                    scaledown_window_seconds=self._configured_scaledown_window_seconds,
+                )
             return WarmProviderStatus(
                 ready=ready,
                 detail=detail,
@@ -758,6 +808,7 @@ class WarmModalSceneProvider(FiniteModalSceneProvider):
                     0.0,
                     session.deadline_monotonic - time.monotonic(),
                 ),
+                scaledown_window_seconds=session.scaledown_window_seconds,
             )
 
     async def is_prewarmed(self) -> bool:
@@ -767,7 +818,11 @@ class WarmModalSceneProvider(FiniteModalSceneProvider):
             await self._expire_warm_session_locked()
             return self._warm_session is not None
 
-    async def abandon_warm_session(self, *, scene_id: str | None = None) -> None:
+    async def abandon_warm_session(
+        self,
+        *,
+        scene_id: str | None = None,
+    ) -> None:
         """Forget a possibly billable session while retaining its ledger reservation."""
 
         async with self._operation_lock:
@@ -788,7 +843,7 @@ class WarmModalSceneProvider(FiniteModalSceneProvider):
             session.fast_prewarm_seconds
             + session.motion_prewarm_seconds
             + session.fast_scene_seconds
-            + loaded_classes * WARM_SCALEDOWN_WINDOW_SECONDS
+            + loaded_classes * session.scaledown_window_seconds
         )
         estimate = min(
             session.full_session_ceiling_usd,
@@ -884,7 +939,11 @@ class WarmModalSceneProvider(FiniteModalSceneProvider):
                     destination=destination,
                     remote_seconds=remote_seconds,
                     estimated_gpu_usd=estimated_gpu_usd,
-                    warm_state="prewarmed" if uses_session else "unknown",
+                    warm_state=_deployed_warm_state(
+                        result,
+                        remote_seconds=remote_seconds,
+                        uses_session=uses_session,
+                    ),
                     reservation_id=reservation_id,
                 )
             except BaseException:
@@ -901,7 +960,7 @@ class WarmModalSceneProvider(FiniteModalSceneProvider):
                     total_seconds = (
                         session.fast_prewarm_seconds
                         + remote_seconds
-                        + WARM_SCALEDOWN_WINDOW_SECONDS
+                        + session.scaledown_window_seconds
                     )
                     session_estimate = min(
                         session.full_session_ceiling_usd,
@@ -1014,7 +1073,11 @@ class WarmModalSceneProvider(FiniteModalSceneProvider):
                     result=result,
                     remote_seconds=remote_seconds,
                     estimated_gpu_usd=estimated_gpu_usd,
-                    warm_state="prewarmed" if uses_session else "unknown",
+                    warm_state=_deployed_warm_state(
+                        result,
+                        remote_seconds=remote_seconds,
+                        uses_session=uses_session,
+                    ),
                     reservation_id=reservation_id,
                 )
             except BaseException:
@@ -1029,7 +1092,7 @@ class WarmModalSceneProvider(FiniteModalSceneProvider):
                     + session.motion_prewarm_seconds
                     + session.fast_scene_seconds
                     + remote_seconds
-                    + 2 * WARM_SCALEDOWN_WINDOW_SECONDS
+                    + 2 * session.scaledown_window_seconds
                 )
                 session_estimate = min(
                     session.full_session_ceiling_usd,
@@ -1762,6 +1825,23 @@ def _bounded_prompt(subject: str, direction: str) -> str:
         raise ValueError("generation direction is too long")
     bounded_subject = subject[:available].rstrip(" \t\r\n.,;:!?")
     return f"{bounded_subject}{separator}{direction}"
+
+
+def _deployed_warm_state(
+    result: Mapping[str, Any],
+    *,
+    remote_seconds: float,
+    uses_session: bool,
+) -> str:
+    if uses_session:
+        return "prewarmed"
+    try:
+        container_age_seconds = float(result["container_age_seconds"])
+    except (KeyError, TypeError, ValueError):
+        return "unknown"
+    # loaded_at is recorded after the model is resident. A container older than
+    # this RPC was necessarily reused; a cold RPC includes startup outside age.
+    return "warm" if container_age_seconds >= remote_seconds + 0.25 else "cold"
 
 
 def _write_warm_fast_bundle(

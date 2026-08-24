@@ -154,13 +154,23 @@ make dev
 curl -sS http://127.0.0.1:8080/v1/live-scene-provider/warm-status
 # Submit one scene from the workbench. Automatic prewarm and local planning overlap.
 
+# Optional rehearsal/showcase window: retain the fast master/depth container for up to 10 minutes.
+curl -sS -X POST http://127.0.0.1:8080/v1/live-scene-provider/prewarm \
+  -H 'content-type: application/json' \
+  -d '{"prewarm_id":"bookforge-showcase","include_motion":false,"scaledown_window_seconds":600}'
+
 # Explicit teardown after the demo; this terminates any remaining containers.
 modal app stop bookforge-fast-scene --yes
 ```
 
+The presentation window is explicit, master/depth-only, and bounded to 90–900 seconds. It changes
+Modal's idle scale-down policy rather than creating an always-on minimum container, so a crashed
+local API still scales the GPU to zero. Extended sessions reserve a conservative $0.30 ceiling
+before starting; use the normal 90-second window outside rehearsals and stop the app after a demo.
+
 On the August 23 acceptance, fast-only prewarm took 28.459 seconds and the following master/depth
 job completed in 5.256 seconds end to end (3.528 seconds inference and 2.87 ms cache promotion).
-The authoritative Modal delta was $0.01350024 under the atomic $0.12 session ceiling. These are
+The authoritative Modal delta was $0.01350024 under the normal atomic $0.12 session ceiling. These are
 measurements, not a pricing guarantee; the provider still checks current billing and reserves the
 full ceiling before prewarm. On a Mac that must retain local microphone support, sync both optional
 groups with `uv sync --extra modal-authoring --extra mac-asr`.
@@ -416,4 +426,4 @@ passes the real I/O and latency run on JetPack 7.2.1.
 - [`benchmarks/bookforge-render-delivery-optimization-2026-08-23.json`](benchmarks/bookforge-render-delivery-optimization-2026-08-23.json): JPEG delivery, adaptive projector exposure, and measured rejections for smaller renders, compilation, and prompt changes
 - [`benchmarks/bookforge-packaging-optimization-2026-08-24.json`](benchmarks/bookforge-packaging-optimization-2026-08-24.json): parallel packaging telemetry, depth-JPEG quality/transfer evidence, single-decode projector delivery, and reconciled spend
 - [`benchmarks/bookforge-sana-sprint-optimization-2026-08-24.json`](benchmarks/bookforge-sana-sprint-optimization-2026-08-24.json): six-image SANA-Sprint quality/speed sweep, exact 1.188-second production API acceptance, honest projected full-path boundary, and billing reconciliation
-- [`benchmarks/bookforge-auto-prewarm-overlap-2026-08-24.json`](benchmarks/bookforge-auto-prewarm-overlap-2026-08-24.json): real cold Modal prewarm/generation overlap, accepted FP16 depth, a 71.1% client first-paint activation reduction, honest boundary labels, visual/checksum review, and billing reconciliation
+- [`benchmarks/bookforge-auto-prewarm-overlap-2026-08-24.json`](benchmarks/bookforge-auto-prewarm-overlap-2026-08-24.json): real cold Modal prewarm/generation overlap, accepted FP16 depth, a 71.1% client first-paint activation reduction, bounded presentation-window reuse, rejected shared-reservation evidence, visual/checksum review, and billing reconciliation

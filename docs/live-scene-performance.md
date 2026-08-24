@@ -48,6 +48,20 @@ visibly collapsed the central subject. SANA-Sprint is distilled for one-to-four-
 cut the exact warm provider path from 2.673 seconds to 1.176 seconds. Master and depth plates use
 bounded JPEG encodings, and the live request never empties the CUDA cache between scenes.
 
+For a rehearsal or judged presentation, the loopback-only prewarm request may explicitly extend
+the master/depth idle window from 90 seconds to at most 900 seconds. This updates the deployed
+class's scale-down window; it does not set an always-on minimum container. The GPU therefore still
+returns to zero if the local API crashes or the operator walks away. Extended sessions reserve a
+$0.30 conservative ceiling before launch and do not support the optional LTX class.
+
+An exact 180-second rehearsal-window acceptance prewarmed in 29.869 seconds. Its first scene used
+1.363 seconds of provider time; a second independently authorized scene reused the live container
+and used 1.050 seconds, 23.0% faster. The second backend wall remained 2.035 seconds because its
+authoritative billing preflight added about 983 ms. A follow-up attempt to share one reservation
+across multiple scenes was rejected after two production replays cleared the local session after
+scene one despite isolated tests passing. That code was removed, both uncertain reservations remain
+fail-closed, the remote window was restored to 90 seconds, and the app reached zero tasks.
+
 When `BOOKFORGE_LIVE_SCENE_AUTO_PREWARM_ON_SUBMIT=true`, the deployed class prewarm begins at the
 same time as local Gemma planning. The prewarm request contains no story text or visual prompt;
 only the later generation call receives the locally validated, privacy-gated visual direction.

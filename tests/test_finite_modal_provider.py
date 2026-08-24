@@ -16,6 +16,7 @@ from bookforge.finite_modal_provider import (
     FAST_MODEL_REVISION,
     MOTION_MODEL,
     MOTION_MODEL_REVISION,
+    WARM_FAST_PRESENTATION_SESSION_CEILING_USD,
     WARM_FAST_SESSION_CEILING_USD,
     WARM_FULL_SESSION_CEILING_USD,
     FastSceneRequest,
@@ -166,9 +167,13 @@ def _provider(
 class StubWarmInvoker:
     def __init__(self) -> None:
         self.calls: list[tuple[str, str, dict]] = []
+        self.autoscaler_calls: list[tuple[str, int]] = []
 
     async def probe(self) -> tuple[bool, str]:
         return True, "fixture deployed classes ready"
+
+    async def configure_scaledown_window(self, class_name: str, seconds: int) -> None:
+        self.autoscaler_calls.append((class_name, seconds))
 
     async def invoke(self, class_name: str, method_name: str, arguments: dict) -> dict:
         self.calls.append((class_name, method_name, arguments))
@@ -458,6 +463,21 @@ def test_request_profiles_are_projection_native_and_bounded() -> None:
         FastSceneRequest(scene_id="scene", prompt="A fox", steps=5)
 
 
+def test_deployed_warm_state_uses_measured_container_reuse() -> None:
+    classify = finite_modal_provider_module._deployed_warm_state
+
+    assert classify({}, remote_seconds=1, uses_session=False) == "unknown"
+    assert (
+        classify({"container_age_seconds": 1.1}, remote_seconds=1, uses_session=False)
+        == "cold"
+    )
+    assert (
+        classify({"container_age_seconds": 12}, remote_seconds=1, uses_session=False)
+        == "warm"
+    )
+    assert classify({}, remote_seconds=30, uses_session=True) == "prewarmed"
+
+
 def test_warm_fast_only_prewarm_never_loads_motion_and_settles_one_envelope(
     tmp_path: Path,
 ) -> None:
@@ -492,6 +512,56 @@ def test_warm_fast_only_prewarm_never_loads_motion_and_settles_one_envelope(
     assert ledger.reservations == {}
     assert [record.stage for record in ledger.records] == ["warm-prewarm-master"]
     assert ledger.records[0].estimated_gpu_usd >= 30 * 0.000222
+
+
+def test_presentation_prewarm_extends_only_fast_idle_window_with_bounded_cost(
+    tmp_path: Path,
+) -> None:
+    invoker = StubWarmInvoker()
+    provider = _warm_provider(tmp_path, invoker)
+
+    async def run():
+        report = await provider.prewarm(
+            prewarm_id="presentation",
+            scaledown_window_seconds=600,
+        )
+        status = await provider.warm_status()
+        bundle = await provider.generate_fast(
+            FastSceneRequest(scene_id="presentation-001", prompt="A bright paper library"),
+            output_dir=tmp_path / "presentation-001",
+        )
+        final_status = await provider.warm_status()
+        return report, status, bundle, final_status
+
+    report, status, bundle, final_status = asyncio.run(run())
+
+    assert report.full_session_ceiling_usd == WARM_FAST_PRESENTATION_SESSION_CEILING_USD
+    assert report.scaledown_window_seconds == 600
+    assert report.expires_in_seconds == 600
+    assert status.scaledown_window_seconds == 600
+    assert status.expires_in_seconds > 599
+    assert final_status.state == "idle"
+    assert final_status.scaledown_window_seconds == 600
+    assert invoker.autoscaler_calls == [("FastSceneStudio", 600)]
+    assert bundle.manifest["stages"]["fast"]["warm_state"] == "prewarmed"
+    assert [(class_name, method) for class_name, method, _ in invoker.calls] == [
+        ("FastSceneStudio", "prewarm"),
+        ("FastSceneStudio", "generate"),
+    ]
+    envelope, _ = budget_envelope_from_plan(provider.plan_file)
+    ledger = VisualLabLedger.read(provider.ledger_path, envelope=envelope)
+    assert ledger.reservations == {}
+    assert [record.stage for record in ledger.records] == ["warm-prewarm-master"]
+    assert ledger.records[0].estimated_gpu_usd >= 600 * 0.000222
+
+    with pytest.raises(ValueError, match="master/depth only"):
+        asyncio.run(
+            provider.prewarm(
+                prewarm_id="invalid-motion-presentation",
+                include_motion=True,
+                scaledown_window_seconds=600,
+            )
+        )
 
 
 def test_auto_prewarm_overlaps_local_planning_before_generation(tmp_path: Path) -> None:
@@ -631,8 +701,12 @@ def test_sdk_probe_hydrates_both_deployed_classes_without_invoking_gpu(
                 events.append(("invoke", self.class_name, arguments))
                 return {"model": self.class_name}
 
+            def update_autoscaler(**arguments):
+                events.append(("autoscaler", self.class_name, arguments))
+
             return SimpleNamespace(
-                prewarm=SimpleNamespace(remote=SimpleNamespace(aio=prewarm))
+                prewarm=SimpleNamespace(remote=SimpleNamespace(aio=prewarm)),
+                update_autoscaler=update_autoscaler,
             )
 
     class FakeCls:
@@ -651,6 +725,7 @@ def test_sdk_probe_hydrates_both_deployed_classes_without_invoking_gpu(
     async def run():
         invoker = ModalSdkWarmInvoker(app_name="fixture-app")
         readiness = await invoker.probe()
+        await invoker.configure_scaledown_window("FastSceneStudio", 600)
         result = await invoker.invoke("FastSceneStudio", "prewarm", {})
         return readiness, result
 
@@ -664,6 +739,7 @@ def test_sdk_probe_hydrates_both_deployed_classes_without_invoking_gpu(
     ]
     assert len([event for event in events if event[0] == "lookup"]) == 2
     assert len([event for event in events if event[0] == "invoke"]) == 1
+    assert ("autoscaler", "FastSceneStudio", {"scaledown_window": 600}) in events
 
 
 def test_warm_readiness_fails_before_billing_when_deployment_is_missing(

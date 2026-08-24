@@ -439,6 +439,7 @@ async def prewarm_live_scene_provider(
         report = await provider.prewarm(
             prewarm_id=payload.prewarm_id,
             include_motion=payload.include_motion,
+            scaledown_window_seconds=payload.scaledown_window_seconds,
         )
     except RuntimeError as error:
         raise HTTPException(status_code=409, detail=str(error)) from error

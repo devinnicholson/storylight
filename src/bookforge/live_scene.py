@@ -176,6 +176,7 @@ class LiveSceneCreateRequest(FrozenStrictModel):
 class LiveScenePrewarmRequest(FrozenStrictModel):
     prewarm_id: LiveScenePrewarmId
     include_motion: bool = False
+    scaledown_window_seconds: Annotated[int, Field(ge=90, le=900)] = 90
 
 
 class LiveScenePrewarmResponse(FrozenStrictModel):
@@ -191,6 +192,7 @@ class LiveScenePrewarmResponse(FrozenStrictModel):
     fast_model_load_seconds: Annotated[float, Field(ge=0)]
     motion_model_load_seconds: Annotated[float, Field(ge=0)]
     expires_in_seconds: Annotated[float, Field(ge=0)]
+    scaledown_window_seconds: Annotated[int, Field(ge=90, le=900)] = 90
     fast_inference_warmup_seconds: Annotated[float, Field(ge=0)] = 0
 
 
@@ -204,6 +206,7 @@ class LiveSceneWarmProviderStatus(FrozenStrictModel):
     prewarm_id: LiveScenePrewarmId | None = None
     include_motion: bool = False
     expires_in_seconds: Annotated[float, Field(ge=0)] = 0
+    scaledown_window_seconds: Annotated[int, Field(ge=90, le=900)] = 90
 
     @model_validator(mode="after")
     def require_prewarm_identity(self) -> LiveSceneWarmProviderStatus:
