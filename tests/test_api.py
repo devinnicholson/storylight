@@ -186,6 +186,8 @@ def test_cached_asset_route_serves_only_validated_cache_paths() -> None:
         (directory / "sky.png").write_bytes(content)
 
         response = client.get(f"/v1/assets/{checksum}/sky.png")
+        assert response.headers["cache-control"] == "public, max-age=31536000, immutable"
+        assert response.headers["etag"] == f'"{checksum}"'
         traversal = client.get(f"/v1/assets/{checksum}/..%2Fsecret")
 
     assert response.status_code == 200

@@ -106,6 +106,7 @@ const state = {
   liveStage: null,
   liveStartedAt: 0,
   liveElapsedMs: 0,
+  liveActivationMs: null,
   liveUpdatedAt: 0,
   liveTerminal: false,
   liveLastEnvelopeAt: 0,
@@ -1280,10 +1281,18 @@ function renderLiveGenerationBadge(snapshot, {activated = true, fallbackMode = n
   const evidence = [
     detail,
     hardware,
+    Number.isFinite(state.liveActivationMs)
+      ? `client activate ${Math.round(state.liveActivationMs)} ms`
+      : null,
     fallback,
     warning ? "motion skipped" : null,
   ].filter(Boolean).join(" · ");
   elements.liveGenerationDetail.textContent = evidence;
+  if (Number.isFinite(state.liveActivationMs)) {
+    elements.liveGenerationBadge.dataset.activationMs = state.liveActivationMs.toFixed(3);
+  } else {
+    delete elements.liveGenerationBadge.dataset.activationMs;
+  }
   elements.liveGenerationBadge.classList.toggle("has-warning", Boolean(warning));
   updateLiveGenerationClock();
 }
@@ -1361,6 +1370,7 @@ function queueLiveSceneSnapshot(envelope) {
     state.liveCommittedRevision = -1;
     state.liveRevision = -1;
     state.liveElapsedMs = 0;
+    state.liveActivationMs = null;
     state.liveStartedAt = performance.now();
   } else if (revision === state.liveAcceptedRevision) {
     if (state.liveRenderPending) return;
@@ -1402,6 +1412,7 @@ function queueLiveSceneSnapshot(envelope) {
     const fingerprint = livePageAssetFingerprint(pack, nextPage);
     if (state.liveAssetFingerprint === fingerprint) {
       state.page = nextPage;
+      state.liveActivationMs = 0;
       state.liveRenderPending = false;
       state.liveCommittedJobId = jobId;
       state.liveCommittedRevision = revision;
@@ -1409,8 +1420,10 @@ function queueLiveSceneSnapshot(envelope) {
       setEvent("scene.status-updated", `${snapshot.stage} · revision ${revision} · media unchanged`);
       return;
     }
+    const activationStartedAt = performance.now();
     const renderedMode = await activatePage(nextIndex, renderToken);
     if (!renderedMode || !liveRenderTokenIsCurrent(renderToken)) return;
+    state.liveActivationMs = performance.now() - activationStartedAt;
     state.liveRenderPending = false;
     if (!liveModeSatisfiesStage(snapshot.stage, renderedMode)) {
       renderLiveGenerationBadge(snapshot, {activated: false, fallbackMode: renderedMode});
@@ -1421,6 +1434,13 @@ function queueLiveSceneSnapshot(envelope) {
     state.liveCommittedJobId = jobId;
     state.liveCommittedRevision = revision;
     renderLiveGenerationBadge(snapshot);
+    publish("scene.activated", {
+      jobId,
+      revision,
+      stage: snapshot.stage,
+      renderedMode,
+      activationMs: state.liveActivationMs,
+    });
     setEvent("scene.upgraded", `${snapshot.stage} · revision ${revision} · no reload`);
   }).catch((error) => {
     if (renderToken.signal.aborted) return;

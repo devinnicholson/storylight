@@ -183,6 +183,8 @@ class StubWarmInvoker:
                 "image_seconds": 3.0,
                 "depth_seconds": 0.2,
                 "packaging_seconds": 0.04,
+                "master_jpeg_quality": 95,
+                "depth_jpeg_quality": 85,
                 "model_load_seconds": 2.5,
                 "container_age_seconds": 3.4,
             }

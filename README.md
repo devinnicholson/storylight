@@ -181,12 +181,13 @@ to both WebGL and still-image fallback; bright scenes remain unchanged and no ex
 is added. The linked delivery benchmark records the rejected smaller render, `torch.compile`, and
 prompt A/B experiments as well as their spend.
 
-The follow-up packaging pass also makes the depth plate a quality-95 grayscale JPEG. It cut the
-provider depth payload from 67,038 to 34,802 bytes (48.1%); an exact codec comparison measured
-0.9953 SSIM. Master and depth encoding now run concurrently and report `packaging_ms` through the
-live API. The projector loads and decodes each plate once, reusing the master image as both its
-WebGL texture and fail-safe still. Modal wall time was noisy, so this is a delivery/decoder win—not
-a replacement for the 6.971-second end-to-end record.
+The follow-up packaging pass also makes the depth plate a quality-85 grayscale JPEG. Across ten
+real depth maps it reduced 686,418 bytes to 222,272 bytes (67.6%) while the worst decoded SSIM was
+0.9944; the deployed acceptance depth was only 12,545 bytes. Master and depth encoding now run
+concurrently and report `packaging_ms` through the live API. The projector loads and decodes each
+plate once, reusing the master image as both its WebGL texture and fail-safe still. Modal wall time
+was noisy, so this is a delivery/decoder win—not a replacement for the 6.971-second end-to-end
+record.
 
 For higher-quality offline scene R&D, `deploy/modal_visual_lab.py` provides finite `modal run`
 jobs on an NVIDIA L4. It pins SANA 1.5, SigLIP, and LTX-Video revisions; records prompts, seeds,

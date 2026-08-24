@@ -534,6 +534,9 @@ def test_projector_never_reveals_an_undrawn_or_lost_webgl_canvas() -> None:
     decoded_call = "startDepthRenderer(\n        canvas,\n        fallback,\n        depthImage,"
     assert decoded_call in projector
     assert "The decoded master image" in projector
+    assert "client activate ${Math.round(state.liveActivationMs)} ms" in projector
+    assert 'publish("scene.activated"' in projector
+    assert "activationMs: state.liveActivationMs" in projector
 
 
 def test_packaged_kiosk_defaults_join_the_canonical_live_session() -> None:

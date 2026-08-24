@@ -357,7 +357,13 @@ async def cached_asset(checksum: str, filename: str, request: Request) -> FileRe
         raise HTTPException(status_code=403, detail="Cached assets are local-only")
     cache: AssetCache = request.app.state.asset_cache
     try:
-        return FileResponse(cache.resolve(checksum, filename))
+        return FileResponse(
+            cache.resolve(checksum, filename),
+            headers={
+                "Cache-Control": "public, max-age=31536000, immutable",
+                "ETag": f'"{checksum}"',
+            },
+        )
     except AssetCacheError as error:
         raise HTTPException(status_code=404, detail=str(error)) from error
 

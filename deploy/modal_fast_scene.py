@@ -39,6 +39,8 @@ MOTION_TIMEOUT_SECONDS = 300
 SCALEDOWN_WINDOW_SECONDS = 90
 FAST_PREWARM_WIDTH = 896
 FAST_PREWARM_HEIGHT = 512
+MASTER_JPEG_QUALITY = 95
+DEPTH_JPEG_QUALITY = 85
 FAST_MODEL = "Efficient-Large-Model/SANA1.5_1.6B_1024px_diffusers"
 FAST_MODEL_REVISION = "caa51e5ea874be07d3a9c7c2d0fd800570b18440"
 DEPTH_MODEL = "depth-anything/Depth-Anything-V2-Small-hf"
@@ -218,7 +220,7 @@ class FastSceneStudio:
             master.convert("RGB").save(
                 master_buffer,
                 format="JPEG",
-                quality=95,
+                quality=MASTER_JPEG_QUALITY,
                 subsampling=0,
                 optimize=False,
                 progressive=False,
@@ -230,7 +232,7 @@ class FastSceneStudio:
             depth.convert("L").save(
                 depth_buffer,
                 format="JPEG",
-                quality=95,
+                quality=DEPTH_JPEG_QUALITY,
                 optimize=False,
                 progressive=False,
             )
@@ -250,6 +252,8 @@ class FastSceneStudio:
             "master_media_type": "image/jpeg",
             "depth": depth_bytes,
             "depth_media_type": "image/jpeg",
+            "master_jpeg_quality": MASTER_JPEG_QUALITY,
+            "depth_jpeg_quality": DEPTH_JPEG_QUALITY,
             "image_seconds": image_seconds,
             "depth_seconds": depth_seconds,
             "packaging_seconds": packaging_seconds,
@@ -612,6 +616,8 @@ def fast_scene_cli(
                 "image_seconds": result["image_seconds"],
                 "depth_seconds": result["depth_seconds"],
                 "packaging_seconds": result["packaging_seconds"],
+                "master_jpeg_quality": result["master_jpeg_quality"],
+                "depth_jpeg_quality": result["depth_jpeg_quality"],
                 "model_load_seconds": result.get("model_load_seconds", 0),
                 "container_age_seconds": result.get("container_age_seconds", 0),
                 "warm_state": "cold",

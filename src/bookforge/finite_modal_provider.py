@@ -1719,12 +1719,16 @@ def _write_warm_fast_bundle(
         image_seconds = float(result["image_seconds"])
         depth_seconds = float(result["depth_seconds"])
         packaging_seconds = float(result["packaging_seconds"])
+        master_jpeg_quality = int(result["master_jpeg_quality"])
+        depth_jpeg_quality = int(result["depth_jpeg_quality"])
     except (KeyError, TypeError, ValueError) as error:
         raise FiniteModalProviderError("warm fast class returned invalid output") from error
     if result.get("master_media_type") != "image/jpeg":
         raise FiniteModalProviderError("warm fast class returned an unsupported master format")
     if result.get("depth_media_type") != "image/jpeg":
         raise FiniteModalProviderError("warm fast class returned an unsupported depth format")
+    if master_jpeg_quality != 95 or depth_jpeg_quality != 85:
+        raise FiniteModalProviderError("warm fast class returned unexpected JPEG quality")
     if _jpeg_dimensions(master) != (request.width, request.height):
         raise FiniteModalProviderError("warm master dimensions do not match the request")
     if _jpeg_dimensions(depth) != (request.width, request.height):
@@ -1768,6 +1772,8 @@ def _write_warm_fast_bundle(
                 "image_seconds": image_seconds,
                 "depth_seconds": depth_seconds,
                 "packaging_seconds": packaging_seconds,
+                "master_jpeg_quality": master_jpeg_quality,
+                "depth_jpeg_quality": depth_jpeg_quality,
                 "model_load_seconds": float(result.get("model_load_seconds", 0)),
                 "container_age_seconds": float(result.get("container_age_seconds", 0)),
                 "warm_state": warm_state,

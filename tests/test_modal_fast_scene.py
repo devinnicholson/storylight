@@ -43,7 +43,10 @@ def test_fast_scene_uses_low_latency_projection_quality_packaging() -> None:
     )[0]
 
     assert 'format="JPEG"' in fast
-    assert "quality=95" in fast
+    assert "MASTER_JPEG_QUALITY = 95" in SOURCE
+    assert "DEPTH_JPEG_QUALITY = 85" in SOURCE
+    assert "quality=MASTER_JPEG_QUALITY" in fast
+    assert "quality=DEPTH_JPEG_QUALITY" in fast
     assert "subsampling=0" in fast
     assert "ThreadPoolExecutor(max_workers=2" in fast
     assert '"packaging_seconds": packaging_seconds' in fast
