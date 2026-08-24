@@ -158,6 +158,17 @@ def test_projector_renders_depth_at_source_resolution_before_display_upscale() -
     assert "canvas.height = LOGICAL_HEIGHT;" not in projector
 
 
+def test_projector_caps_only_the_continuous_depth_draw_pass_at_30_fps() -> None:
+    projector = (ROOT / "src/bookforge/static/projector.js").read_text()
+
+    assert "const DEPTH_RENDER_TARGET_FPS = 30;" in projector
+    assert "const frameIntervalMs = 1000 / DEPTH_RENDER_TARGET_FPS;" in projector
+    assert "timestamp - lastRenderedAt >= frameIntervalMs - 1" in projector
+    assert "canvas.dataset.depthRenderedFrames = String(renderedFrames);" in projector
+    assert "canvas.dataset.depthSkippedFrames = String(skippedFrames);" in projector
+    assert "targetFps: DEPTH_RENDER_TARGET_FPS" in projector
+
+
 def test_kiosk_preserves_chromium_sandbox_and_waits_for_readiness() -> None:
     unit = (ROOT / "deploy/jetson/systemd/bookforge-kiosk.service").read_text()
     launcher = KIOSK_LAUNCHER.read_text()
@@ -589,7 +600,7 @@ def test_projector_never_reveals_an_undrawn_or_lost_webgl_canvas() -> None:
 
     assert "1.0 - smoothstep(0.26, 0.88" in projector
     assert "smoothstep(0.88, 0.26" not in projector
-    first_draw = projector.index("render(performance.now());")
+    first_draw = projector.index("draw(performance.now());")
     reveal_canvas = projector.index('canvas.classList.add("ready");', first_draw)
     assert first_draw < reveal_canvas
     assert "const firstDrawError = gl.getError();" in projector

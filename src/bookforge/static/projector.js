@@ -12,6 +12,7 @@ const LIVE_SCENE_STORAGE_KEY = "bookforge.liveSceneSnapshot.v1";
 const LIVE_SCENE_CHANNEL = "bookforge.live-scenes";
 const SCENE_CROSSFADE_MS = 320;
 const SCENE_RETIRE_GRACE_MS = 360;
+const DEPTH_RENDER_TARGET_FPS = 30;
 
 if (PRESENTATION_MODE) document.body.classList.add("hud-hidden");
 if (OFFLINE_REPLAY) document.body.dataset.replayBoundary = "loopback-only";
@@ -558,6 +559,18 @@ async function startDepthRenderer(canvas, masterImage, depthImage, sceneSpec) {
   gl.viewport(0, 0, canvas.width, canvas.height);
   let animationFrame = null;
   let stopped = false;
+  let renderedFrames = 0;
+  let skippedFrames = 0;
+  let lastRenderedAt = null;
+  let lastTelemetryAt = 0;
+  const frameIntervalMs = 1000 / DEPTH_RENDER_TARGET_FPS;
+  canvas.dataset.depthTargetFps = String(DEPTH_RENDER_TARGET_FPS);
+  const updateRenderTelemetry = (timestamp) => {
+    if (timestamp - lastTelemetryAt < 500 && renderedFrames > 1) return;
+    lastTelemetryAt = timestamp;
+    canvas.dataset.depthRenderedFrames = String(renderedFrames);
+    canvas.dataset.depthSkippedFrames = String(skippedFrames);
+  };
   const release = () => {
     gl.deleteTexture(masterTexture);
     gl.deleteTexture(depthTexture);
@@ -573,15 +586,28 @@ async function startDepthRenderer(canvas, masterImage, depthImage, sceneSpec) {
     setEvent("renderer.fallback", "WebGL context was lost; provider artwork remains visible");
   };
   canvas.addEventListener("webglcontextlost", revealFallback);
-  const render = (timestamp) => {
+  const draw = (timestamp) => {
     if (stopped) return;
     gl.uniform1f(timeLocation, timestamp);
     gl.drawArrays(gl.TRIANGLES, 0, 6);
+    renderedFrames += 1;
+    lastRenderedAt = timestamp;
+    updateRenderTelemetry(timestamp);
+  };
+  const render = (timestamp) => {
+    if (stopped) return;
+    if (lastRenderedAt === null || timestamp - lastRenderedAt >= frameIntervalMs - 1) {
+      draw(timestamp);
+    } else {
+      skippedFrames += 1;
+      updateRenderTelemetry(timestamp);
+    }
     animationFrame = requestAnimationFrame(render);
   };
   // Paint once before the opaque canvas is revealed. If Firefox accepts WebGL but
   // cannot execute the first draw on Jetson, the caller keeps the master image fallback.
-  render(performance.now());
+  draw(performance.now());
+  animationFrame = requestAnimationFrame(render);
   const firstDrawError = gl.getError();
   if (gl.isContextLost() || firstDrawError !== gl.NO_ERROR) {
     stopped = true;
@@ -595,6 +621,7 @@ async function startDepthRenderer(canvas, masterImage, depthImage, sceneSpec) {
     projectionExposure: projectionTone.fallbackExposure,
     projectionGamma: projectionTone.gamma,
     projectionMeanLuma: projectionTone.meanLuma,
+    targetFps: DEPTH_RENDER_TARGET_FPS,
     destroy() {
       stopped = true;
       if (animationFrame !== null) cancelAnimationFrame(animationFrame);
