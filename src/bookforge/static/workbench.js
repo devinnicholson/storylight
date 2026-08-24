@@ -761,7 +761,8 @@ function finishLiveJob(snapshot) {
     setStatus("error", "Generation failed");
     return;
   }
-  elements.compileButton.textContent = "Generate another moving scene";
+  elements.compileButton.dataset.visualVariation = "true";
+  elements.compileButton.textContent = "Generate a new visual variation";
   elements.interim.textContent = snapshot.stage === "motion_ready"
     ? (snapshot.metrics?.scene_cache_hit
       ? "The exact moving scene was restored locally. No Gemma or cloud renderer call was needed."
@@ -1048,6 +1049,11 @@ async function compileStory() {
     elements.interim.textContent = "Add the exact words from one book page first.";
     return;
   }
+  const visualVariation = elements.compileButton.dataset.visualVariation === "true";
+  const variationSeed = visualVariation
+    ? window.crypto.getRandomValues(new Uint32Array(1))[0]
+    : null;
+  delete elements.compileButton.dataset.visualVariation;
   // If the user clicks before the typing-pause timer fires, let the accepted
   // live job start the planner directly. If preparation is already in flight,
   // the server coalesces both waiters onto that one local Gemma call.
@@ -1079,6 +1085,7 @@ async function compileStory() {
         text,
         visual_style: elements.style.value.trim() || "luminous paper theater",
         session_id: readerSessionId,
+        ...(variationSeed === null ? {} : {seed: variationSeed}),
       }),
     });
     const snapshot = await response.json();
@@ -1155,6 +1162,7 @@ elements.projectorLink.addEventListener("click", (event) => {
 });
 [elements.style, elements.story].forEach((element) => {
   element.addEventListener("input", () => {
+    delete elements.compileButton.dataset.visualVariation;
     invalidatePreparation();
     invalidateScene();
   });

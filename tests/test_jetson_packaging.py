@@ -866,6 +866,23 @@ def test_workbench_prepares_private_edge_plan_after_typing_pause() -> None:
     )
 
 
+def test_workbench_explicit_variation_changes_only_the_renderer_seed() -> None:
+    controller = (ROOT / "src/bookforge/static/workbench.js").read_text()
+    finish = controller.split("function finishLiveJob", 1)[1].split(
+        "function renderLiveSnapshot", 1
+    )[0]
+    compile_story = controller.split("async function compileStory()", 1)[1].split(
+        "async function loadLatestScene", 1
+    )[0]
+
+    assert 'dataset.visualVariation = "true"' in finish
+    assert "Generate a new visual variation" in finish
+    assert "window.crypto.getRandomValues(new Uint32Array(1))[0]" in compile_story
+    assert "...(variationSeed === null ? {} : {seed: variationSeed})" in compile_story
+    assert 'post("/v1/live-scene-planner/prepare"' not in compile_story
+    assert "delete elements.compileButton.dataset.visualVariation;" in controller
+
+
 def test_hardware_evidence_and_privacy_scripts_are_executable() -> None:
     for name in (
         "collect-evidence.sh",
