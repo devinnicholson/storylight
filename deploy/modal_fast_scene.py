@@ -210,13 +210,20 @@ class FastSceneStudio:
         depth_seconds = time.perf_counter() - depth_started
         master_buffer = io.BytesIO()
         depth_buffer = io.BytesIO()
-        # PNG's exhaustive optimizer is CPU-heavy and sits directly on the live
-        # critical path. Level 1 preserves lossless pixels/checksums while
-        # favoring sub-second packaging over a modest transfer-size reduction.
-        master.save(master_buffer, format="PNG", compress_level=1)
+        # High-quality 4:4:4 JPEG is visually indistinguishable at projection
+        # distance, avoids PNG's CPU-heavy compression, and cuts transfer size.
+        master.convert("RGB").save(
+            master_buffer,
+            format="JPEG",
+            quality=95,
+            subsampling=0,
+            optimize=False,
+            progressive=False,
+        )
         depth.save(depth_buffer, format="PNG", compress_level=1)
         return {
             "master": master_buffer.getvalue(),
+            "master_media_type": "image/jpeg",
             "depth": depth_buffer.getvalue(),
             "image_seconds": image_seconds,
             "depth_seconds": depth_seconds,
@@ -484,7 +491,7 @@ def fast_scene_cli(
         raise ValueError("fast-scene steps must be between 4 and 30")
     destination = Path(output_dir).resolve()
     manifest_path = destination / "scene.manifest.json"
-    master_path = destination / "master.png"
+    master_path = destination / "master.jpg"
     depth_path = destination / "depth.png"
     if any(path.exists() for path in (manifest_path, master_path, depth_path)):
         raise ValueError(f"scene output already exists: {destination}")
@@ -525,6 +532,8 @@ def fast_scene_cli(
         steps=steps,
         guidance_scale=guidance_scale,
     )
+    if result.get("master_media_type") != "image/jpeg":
+        raise RuntimeError("fast scene returned an unsupported master format")
     remote_seconds = time.perf_counter() - remote_started
     estimated_gpu_usd = remote_seconds * GPU_USD_PER_SECOND
     if estimated_gpu_usd > maximum_gpu_usd + 1e-9:
@@ -586,7 +595,7 @@ def fast_scene_cli(
             "master": _artifact_record(
                 path=master_path,
                 root=destination,
-                mime_type="image/png",
+                mime_type="image/jpeg",
                 width=width,
                 height=height,
             ),

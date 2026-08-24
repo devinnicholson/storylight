@@ -88,6 +88,16 @@ def _png(width: int, height: int, *, value: int = 96) -> bytes:
     )
 
 
+def _jpeg(width: int, height: int) -> bytes:
+    return (
+        b"\xff\xd8"
+        + b"\xff\xc0\x00\x0b\x08"
+        + struct.pack(">HH", height, width)
+        + b"\x01\x01\x11\x00"
+        + b"\xff\xd9"
+    )
+
+
 def _gemma_live_plan() -> LiveScenePlan:
     return LiveScenePlan(
         scene_summary="A moonlit reader releases a bridge of paper birds.",
@@ -166,7 +176,8 @@ class StubWarmInvoker:
             return {"model_load_seconds": 2.5, "container_age_seconds": 0.01}
         if class_name == "FastSceneStudio":
             return {
-                "master": _png(arguments["width"], arguments["height"], value=72),
+                "master": _jpeg(arguments["width"], arguments["height"]),
+                "master_media_type": "image/jpeg",
                 "depth": _png(arguments["width"], arguments["height"], value=128),
                 "image_seconds": 3.0,
                 "depth_seconds": 0.2,

@@ -172,6 +172,15 @@ inventing and omitting story elements; the production choice remains the quality
 model. See the speed benchmark below for the rejected configurations, seed-variance evidence, and
 authoritative billing reconciliation.
 
+The delivery pass keeps that quality profile but changes the master plate to quality-95 4:4:4 JPEG.
+On the same prompt and seed it reduced the master from 599,489 to 163,709 bytes (72.7%) at 0.9904
+decoded SSIM, materially reducing cache and Mac-to-Jetson tunnel traffic. It did not measurably
+improve the Modal RPC itself, so the 6.971-second end-to-end result remains the honest speed claim.
+The projector now samples a 32x18 copy of the decoded master and applies a bounded 1.0-1.22 exposure
+to both WebGL and still-image fallback; bright scenes remain unchanged and no extra generation pass
+is added. The linked delivery benchmark records the rejected smaller render, `torch.compile`, and
+prompt A/B experiments as well as their spend.
+
 For higher-quality offline scene R&D, `deploy/modal_visual_lab.py` provides finite `modal run`
 jobs on an NVIDIA L4. It pins SANA 1.5, SigLIP, and LTX-Video revisions; records prompts, seeds,
 checksums, generation time, and estimated GPU cost; and never deploys a persistent endpoint. The
@@ -370,3 +379,4 @@ passes the real I/O and latency run on JetPack 7.2.1.
 - [`benchmarks/jetson-gemma3-ollama-2026-08-23.json`](benchmarks/jetson-gemma3-ollama-2026-08-23.json): pinned Jetson Gemma runtime, GPU/memory/privacy evidence, exact planning latency, and the complete Gemma-to-SANA-to-depth acceptance
 - [`benchmarks/jetson-gemma3-planner-optimization-2026-08-23.json`](benchmarks/jetson-gemma3-planner-optimization-2026-08-23.json): five-passage compact-planner acceptance with a 5.24-second mean plus two bounded warm visual comparisons; the fastest full Gemma-to-master result was 9.37 seconds, the selected character-preserving result was 10.55 seconds, and both paid comparisons cost $0.03883467 combined
 - [`benchmarks/bookforge-speed-optimization-2026-08-23.json`](benchmarks/bookforge-speed-optimization-2026-08-23.json): final 6.971-second Jetson Gemma → warm Modal SANA/depth acceptance, renderer sweep, rejected tiny-model/low-step configurations, seed-quality evidence, and billing reconciliation
+- [`benchmarks/bookforge-render-delivery-optimization-2026-08-23.json`](benchmarks/bookforge-render-delivery-optimization-2026-08-23.json): JPEG delivery, adaptive projector exposure, and measured rejections for smaller renders, compilation, and prompt changes

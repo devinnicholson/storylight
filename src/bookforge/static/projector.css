@@ -48,7 +48,11 @@ body.blackout #projectionStage { opacity: 0; }
 
 .depth-scene { position: absolute; inset: 0; overflow: hidden; background: #02050a; }
 .depth-scene-fallback, .depth-scene-canvas { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
-.depth-scene-fallback { transform: scale(1.025); animation: hero-breathe 18s ease-in-out infinite alternate; }
+.depth-scene-fallback {
+  transform: scale(1.025);
+  filter: brightness(var(--projection-exposure, 1));
+  animation: hero-breathe 18s ease-in-out infinite alternate;
+}
 .depth-scene-canvas { opacity: 0; transition: opacity 700ms ease; }
 .depth-scene-canvas.ready { opacity: 1; }
 .motion-scene { position: absolute; inset: 0; overflow: hidden; background: #02050a; }

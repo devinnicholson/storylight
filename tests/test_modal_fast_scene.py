@@ -37,12 +37,17 @@ def test_deployed_classes_scale_to_zero_and_require_explicit_prewarm() -> None:
     assert "modal.Cls.from_name" not in SOURCE
 
 
-def test_fast_scene_uses_low_latency_lossless_packaging() -> None:
+def test_fast_scene_uses_low_latency_projection_quality_packaging() -> None:
     fast = SOURCE.split("class FastSceneStudio:", 1)[1].split(
         "class MotionUpgradeStudio:", 1
     )[0]
 
-    assert 'format="PNG", compress_level=1' in fast
+    assert 'format="JPEG"' in fast
+    assert "quality=95" in fast
+    assert "subsampling=0" in fast
+    assert '"master_media_type": "image/jpeg"' in fast
+    assert 'result.get("master_media_type") != "image/jpeg"' in SOURCE
+    assert 'depth.save(depth_buffer, format="PNG", compress_level=1)' in fast
     assert "optimize=True" not in fast
     assert "torch.cuda.empty_cache()" not in fast
     assert "set_progress_bar_config(disable=True)" in fast

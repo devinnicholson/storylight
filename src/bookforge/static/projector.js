@@ -383,6 +383,28 @@ function loadSceneImage(uri, {signal = null, timeoutMs = 5000} = {}) {
   });
 }
 
+function projectionExposureForImage(image) {
+  const sample = document.createElement("canvas");
+  sample.width = 32;
+  sample.height = 18;
+  const context = sample.getContext("2d", {alpha: false, willReadFrequently: true});
+  if (!context) return 1;
+  try {
+    context.drawImage(image, 0, 0, sample.width, sample.height);
+    const pixels = context.getImageData(0, 0, sample.width, sample.height).data;
+    let luma = 0;
+    for (let offset = 0; offset < pixels.length; offset += 4) {
+      luma += (0.2126 * pixels[offset] + 0.7152 * pixels[offset + 1] + 0.0722 * pixels[offset + 2]) / 255;
+    }
+    const meanLuma = luma / (pixels.length / 4);
+    // Generated night scenes need a modest lift on inexpensive projectors. Bright
+    // artwork stays byte-for-byte neutral, and the cap protects highlights.
+    return Math.min(1.22, Math.max(1, 0.32 / Math.max(0.01, meanLuma)));
+  } catch (_error) {
+    return 1;
+  }
+}
+
 function compileShader(gl, type, source) {
   const shader = gl.createShader(type);
   gl.shaderSource(shader, source);
@@ -435,6 +457,7 @@ async function startDepthRenderer(canvas, masterUri, depthUri, sceneSpec, signal
     uniform float u_time;
     uniform float u_strength;
     uniform float u_camera_scale;
+    uniform float u_exposure;
     uniform vec2 u_camera_travel;
     in vec2 v_uv;
     out vec4 out_color;
@@ -449,7 +472,7 @@ async function startDepthRenderer(canvas, masterUri, depthUri, sceneSpec, signal
       vec3 color = texture(u_master, clamp(uv + parallax, 0.002, 0.998)).rgb;
       float vignette = 1.0 - smoothstep(0.26, 0.88, length(v_uv - 0.5));
       float lanternBreath = 1.0 + 0.018 * sin(u_time * 0.0017);
-      color *= mix(0.92, lanternBreath, vignette);
+      color *= mix(0.92, lanternBreath, vignette) * u_exposure;
       out_color = vec4(color, 1.0);
     }
   `;
@@ -476,11 +499,14 @@ async function startDepthRenderer(canvas, masterUri, depthUri, sceneSpec, signal
   const timeLocation = gl.getUniformLocation(program, "u_time");
   const strengthLocation = gl.getUniformLocation(program, "u_strength");
   const scaleLocation = gl.getUniformLocation(program, "u_camera_scale");
+  const exposureLocation = gl.getUniformLocation(program, "u_exposure");
   const travelLocation = gl.getUniformLocation(program, "u_camera_travel");
   const camera = sceneSpec?.camera || {};
   const scaleDelta = Math.max(0, (camera.end_scale || 1.04) - (camera.start_scale || 1.01));
   gl.uniform1f(strengthLocation, 0.010);
   gl.uniform1f(scaleLocation, Math.min(0.08, scaleDelta));
+  const projectionExposure = projectionExposureForImage(masterImage);
+  gl.uniform1f(exposureLocation, projectionExposure);
   gl.uniform2f(travelLocation, camera.travel_x || 0, -(camera.travel_y || 0));
   gl.viewport(0, 0, canvas.width, canvas.height);
   let animationFrame = null;
@@ -519,6 +545,7 @@ async function startDepthRenderer(canvas, masterUri, depthUri, sceneSpec, signal
   }
   canvas.classList.add("ready");
   return {
+    projectionExposure,
     destroy() {
       stopped = true;
       if (animationFrame !== null) cancelAnimationFrame(animationFrame);
@@ -733,6 +760,7 @@ async function renderPackLayers(pack, page, renderToken = null) {
         page.scene_spec,
         renderToken?.signal,
       );
+      scene.style.setProperty("--projection-exposure", renderer.projectionExposure.toFixed(3));
       if (!commitSceneVersion(version, "depth-composed", renderer, renderToken)) return false;
       return "depth-composed";
     } catch (error) {
@@ -741,7 +769,11 @@ async function renderPackLayers(pack, page, renderToken = null) {
         return false;
       }
       setEvent("renderer.fallback", error.message);
-      await loadSceneImage(masterAsset.local_uri, {signal: renderToken?.signal});
+      const masterImage = await loadSceneImage(masterAsset.local_uri, {signal: renderToken?.signal});
+      scene.style.setProperty(
+        "--projection-exposure",
+        projectionExposureForImage(masterImage).toFixed(3),
+      );
       if (!commitSceneVersion(version, "depth-composed", null, renderToken)) return false;
       return "master-fallback";
     }

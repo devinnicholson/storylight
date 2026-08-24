@@ -1430,7 +1430,6 @@ class FiniteModalLiveSceneProvider:
                 AssetKind.IMAGE,
                 AssetRole.MASTER,
                 LiveSceneArtifactKind.MASTER,
-                ".png",
                 FAST_MODEL,
                 FAST_MODEL_REVISION,
             ),
@@ -1438,7 +1437,6 @@ class FiniteModalLiveSceneProvider:
                 AssetKind.DEPTH_MAP,
                 AssetRole.DEPTH,
                 LiveSceneArtifactKind.DEPTH,
-                ".png",
                 DEPTH_MODEL,
                 DEPTH_MODEL_REVISION,
             ),
@@ -1446,12 +1444,20 @@ class FiniteModalLiveSceneProvider:
                 AssetKind.VIDEO_LOOP,
                 AssetRole.MOTION,
                 LiveSceneArtifactKind.MOTION,
-                ".mp4",
                 MOTION_MODEL,
                 MOTION_MODEL_REVISION,
             ),
         }
-        asset_kind, asset_role, live_kind, suffix, model, revision = settings[role]
+        asset_kind, asset_role, live_kind, model, revision = settings[role]
+        suffix = {
+            "image/jpeg": ".jpg",
+            "image/png": ".png",
+            "video/mp4": ".mp4",
+        }.get(source.mime_type)
+        if suffix is None:
+            raise FiniteModalProviderError(
+                f"unsupported {role} artifact media type: {source.mime_type}"
+            )
         artifact_id = f"{job_id}-{role}"
         content = await asyncio.to_thread(source.path.read_bytes)
         digest, uri = await self.cache.store_generated(
@@ -1699,7 +1705,7 @@ def _write_warm_fast_bundle(
     warm_state: str,
     reservation_id: str,
 ) -> FiniteSceneBundle:
-    master_path = destination / "master.png"
+    master_path = destination / "master.jpg"
     depth_path = destination / "depth.png"
     manifest_path = destination / "scene.manifest.json"
     if any(path.exists() for path in (master_path, depth_path, manifest_path)):
@@ -1711,7 +1717,9 @@ def _write_warm_fast_bundle(
         depth_seconds = float(result["depth_seconds"])
     except (KeyError, TypeError, ValueError) as error:
         raise FiniteModalProviderError("warm fast class returned invalid output") from error
-    if _png_dimensions(master) != (request.width, request.height):
+    if result.get("master_media_type") != "image/jpeg":
+        raise FiniteModalProviderError("warm fast class returned an unsupported master format")
+    if _jpeg_dimensions(master) != (request.width, request.height):
         raise FiniteModalProviderError("warm master dimensions do not match the request")
     if _png_dimensions(depth) != (request.width, request.height):
         raise FiniteModalProviderError("warm depth dimensions do not match the request")
@@ -1765,7 +1773,7 @@ def _write_warm_fast_bundle(
             "master": _local_artifact_payload(
                 master_path,
                 root=destination,
-                mime_type="image/png",
+                mime_type="image/jpeg",
                 width=request.width,
                 height=request.height,
             ),
@@ -1897,6 +1905,59 @@ def _png_dimensions(content: bytes) -> tuple[int, int]:
     if len(content) < 24 or content[:8] != b"\x89PNG\r\n\x1a\n":
         raise FiniteModalProviderError("deployed Modal class did not return a valid PNG")
     return int.from_bytes(content[16:20], "big"), int.from_bytes(content[20:24], "big")
+
+
+def _jpeg_dimensions(content: bytes) -> tuple[int, int]:
+    if len(content) < 4 or content[:2] != b"\xff\xd8":
+        raise FiniteModalProviderError("deployed Modal class did not return a valid JPEG")
+    offset = 2
+    start_of_frame = {
+        0xC0,
+        0xC1,
+        0xC2,
+        0xC3,
+        0xC5,
+        0xC6,
+        0xC7,
+        0xC9,
+        0xCA,
+        0xCB,
+        0xCD,
+        0xCE,
+        0xCF,
+    }
+    while offset + 3 < len(content):
+        if content[offset] != 0xFF:
+            raise FiniteModalProviderError(
+                "deployed Modal class returned malformed JPEG data"
+            )
+        while offset < len(content) and content[offset] == 0xFF:
+            offset += 1
+        if offset >= len(content):
+            break
+        marker = content[offset]
+        offset += 1
+        if marker == 0x01 or 0xD0 <= marker <= 0xD9:
+            continue
+        if offset + 2 > len(content):
+            break
+        segment_length = int.from_bytes(content[offset : offset + 2], "big")
+        if segment_length < 2 or offset + segment_length > len(content):
+            raise FiniteModalProviderError(
+                "deployed Modal class returned malformed JPEG data"
+            )
+        if marker in start_of_frame:
+            if segment_length < 7:
+                break
+            height = int.from_bytes(content[offset + 3 : offset + 5], "big")
+            width = int.from_bytes(content[offset + 5 : offset + 7], "big")
+            if width and height:
+                return width, height
+            break
+        if marker == 0xDA:
+            break
+        offset += segment_length
+    raise FiniteModalProviderError("deployed Modal class JPEG omitted dimensions")
 
 
 def load_finite_scene_bundle(manifest_path: Path) -> FiniteSceneBundle:

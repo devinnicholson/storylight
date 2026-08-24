@@ -128,6 +128,19 @@ def test_system_service_has_persistent_private_paths_and_preflight() -> None:
     assert "EnvironmentFile=/etc/bookforge/bookforge.env" in unit
 
 
+def test_projector_adapts_dark_scenes_without_an_extra_generation_pass() -> None:
+    projector = (ROOT / "src/bookforge/static/projector.js").read_text()
+    stylesheet = (ROOT / "src/bookforge/static/projector.css").read_text()
+
+    assert 'sample.width = 32;' in projector
+    assert 'sample.height = 18;' in projector
+    assert 'return Math.min(1.22, Math.max(1, 0.32 / Math.max(0.01, meanLuma)));' in projector
+    assert 'uniform float u_exposure;' in projector
+    assert 'gl.uniform1f(exposureLocation, projectionExposure);' in projector
+    assert 'projectionExposureForImage(masterImage).toFixed(3)' in projector
+    assert 'filter: brightness(var(--projection-exposure, 1));' in stylesheet
+
+
 def test_kiosk_preserves_chromium_sandbox_and_waits_for_readiness() -> None:
     unit = (ROOT / "deploy/jetson/systemd/bookforge-kiosk.service").read_text()
     launcher = KIOSK_LAUNCHER.read_text()
