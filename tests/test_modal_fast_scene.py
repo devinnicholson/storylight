@@ -69,6 +69,21 @@ def test_sana_sprint_is_the_pinned_production_fast_renderer() -> None:
     assert "sprint_scene_experiment_cli" not in SOURCE
 
 
+def test_provisional_preview_is_explicitly_low_resolution_and_depth_free() -> None:
+    studio = SOURCE.split("def generate_preview(", 1)[1].split("def _generate_master(", 1)[0]
+    cli = SOURCE.split("def preview_scene_cli(", 1)[1].split("def motion_upgrade_cli(", 1)[0]
+
+    assert "minimum=256" in studio
+    assert "preview dimensions cannot exceed 640x384" in studio
+    assert "steps=1" in studio
+    assert "self.depth_pipe" not in studio
+    assert '"provisional_preview_only": True' in cli
+    assert '"source_text_allowed": False' in cli
+    assert cli.index("_guard_and_reserve(") < cli.index(
+        "FastSceneStudio().generate_preview.remote("
+    )
+
+
 def test_fast_prewarm_executes_shape_matched_cuda_and_depth_work() -> None:
     fast = SOURCE.split("class FastSceneStudio:", 1)[1].split("class MotionUpgradeStudio:", 1)[0]
 

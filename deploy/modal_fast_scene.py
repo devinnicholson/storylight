@@ -229,22 +229,14 @@ class FastSceneStudio:
         _validate_dimensions(width, height, minimum=512)
         if not 1 <= steps <= 4:
             raise ValueError("fast-scene steps must be between 1 and 4")
-        # Diffusers defaults SCM's intermediate timestep to 1.3, then rejects
-        # that value for every non-two-step request. Passing None is the
-        # documented one/three/four-step path; two-step keeps the tuned 1.3.
-        sprint_timing = {"intermediate_timesteps": None} if steps != 2 else {}
-        started = time.perf_counter()
-        with torch.inference_mode():
-            master = self.image_pipe(
-                prompt=prompt,
-                width=width,
-                height=height,
-                guidance_scale=guidance_scale,
-                num_inference_steps=steps,
-                generator=torch.Generator(device="cuda").manual_seed(seed),
-                **sprint_timing,
-            ).images[0]
-        image_seconds = time.perf_counter() - started
+        master, image_seconds = self._generate_master(
+            prompt=prompt,
+            seed=seed,
+            width=width,
+            height=height,
+            steps=steps,
+            guidance_scale=guidance_scale,
+        )
         depth_started = time.perf_counter()
         with torch.inference_mode():
             depth = self.depth_pipe(master)["depth"].convert("L").resize(
@@ -267,6 +259,79 @@ class FastSceneStudio:
             "model_load_seconds": self.model_load_seconds,
             "container_age_seconds": time.monotonic() - self.loaded_at,
         }
+
+    @modal.method()
+    def generate_preview(
+        self,
+        prompt: str,
+        seed: int,
+        width: int,
+        height: int,
+        guidance_scale: float,
+    ) -> dict[str, Any]:
+        """Generate an explicitly provisional low-resolution plate without depth work."""
+
+        _validate_prompt(prompt, name="prompt")
+        _validate_seed(seed)
+        _validate_dimensions(width, height, minimum=256)
+        if width > 640 or height > 384:
+            raise ValueError("preview dimensions cannot exceed 640x384")
+        master, image_seconds = self._generate_master(
+            prompt=prompt,
+            seed=seed,
+            width=width,
+            height=height,
+            steps=1,
+            guidance_scale=guidance_scale,
+        )
+        packaging_started = time.perf_counter()
+        master_buffer = io.BytesIO()
+        master.convert("RGB").save(
+            master_buffer,
+            format="JPEG",
+            quality=MASTER_JPEG_QUALITY,
+            subsampling=0,
+            optimize=False,
+            progressive=False,
+        )
+        return {
+            "master": master_buffer.getvalue(),
+            "master_media_type": "image/jpeg",
+            "negative_prompt_supported": False,
+            "master_jpeg_quality": MASTER_JPEG_QUALITY,
+            "image_seconds": image_seconds,
+            "packaging_seconds": time.perf_counter() - packaging_started,
+            "model_load_seconds": self.model_load_seconds,
+            "container_age_seconds": time.monotonic() - self.loaded_at,
+        }
+
+    def _generate_master(
+        self,
+        *,
+        prompt: str,
+        seed: int,
+        width: int,
+        height: int,
+        steps: int,
+        guidance_scale: float,
+    ) -> tuple[Any, float]:
+        # Diffusers defaults SCM's intermediate timestep to 1.3, then rejects
+        # that value for every non-two-step request. Passing None is the
+        # documented one/three/four-step path; two-step keeps the tuned 1.3.
+        sprint_timing = {"intermediate_timesteps": None} if steps != 2 else {}
+        started = time.perf_counter()
+        with torch.inference_mode():
+            master = self.image_pipe(
+                prompt=prompt,
+                width=width,
+                height=height,
+                guidance_scale=guidance_scale,
+                num_inference_steps=steps,
+                generator=torch.Generator(device="cuda").manual_seed(seed),
+                **sprint_timing,
+            ).images[0]
+        image_seconds = time.perf_counter() - started
+        return master, image_seconds
 
 
 @app.cls(
@@ -669,6 +734,153 @@ def fast_scene_cli(
         prompt=prompt,
         artifact_path=master_path,
         sha256=payload["artifacts"]["master"]["sha256"],
+        remote_seconds=remote_seconds,
+        width=width,
+        height=height,
+        frames=1,
+        fps=0,
+    )
+    print(json.dumps(payload, sort_keys=True))
+
+
+@app.local_entrypoint()
+def preview_scene_cli(
+    scene_id: str,
+    prompt: str,
+    output_dir: str,
+    seed: int = 42,
+    width: int = 512,
+    height: int = 288,
+    guidance_scale: float = 4.5,
+    plan_file: str = "experiments/live-scenes/modal-plan.json",
+    ledger_path: str = "artifacts/live-scenes/modal-ledger.json",
+    maximum_gpu_usd: float = 0.08,
+    experiment_id: str = "",
+    reservation_id: str = "",
+) -> None:
+    """Run one budgeted provisional-plate experiment; never a final scene."""
+
+    _validate_identifier(scene_id)
+    _validate_prompt(prompt, name="prompt")
+    _validate_seed(seed)
+    _validate_dimensions(width, height, minimum=256)
+    if width > 640 or height > 384:
+        raise ValueError("preview dimensions cannot exceed 640x384")
+    destination = Path(output_dir).resolve()
+    manifest_path = destination / "preview.manifest.json"
+    master_path = destination / "preview.jpg"
+    if manifest_path.exists() or master_path.exists():
+        raise ValueError(f"preview output already exists: {destination}")
+    identity = hashlib.sha256(
+        json.dumps(
+            {
+                "scene_id": scene_id,
+                "prompt": prompt,
+                "seed": seed,
+                "width": width,
+                "height": height,
+                "guidance_scale": guidance_scale,
+            },
+            sort_keys=True,
+        ).encode()
+    ).hexdigest()[:16]
+    computed_experiment_id = f"preview-scene:{scene_id}:{identity}"
+    if experiment_id and experiment_id != computed_experiment_id:
+        raise ValueError("external preview experiment identity does not match the request")
+    experiment_id = computed_experiment_id
+    reservation_id = _guard_and_reserve(
+        plan_file=plan_file,
+        ledger_path=ledger_path,
+        experiment_id=experiment_id,
+        timeout_seconds=FAST_TIMEOUT_SECONDS,
+        maximum_gpu_usd=maximum_gpu_usd,
+        existing_reservation_id=reservation_id,
+    )
+    remote_started = time.perf_counter()
+    result = FastSceneStudio().generate_preview.remote(
+        prompt=prompt,
+        seed=seed,
+        width=width,
+        height=height,
+        guidance_scale=guidance_scale,
+    )
+    if result.get("master_media_type") != "image/jpeg":
+        raise RuntimeError("preview scene returned an unsupported master format")
+    if result.get("negative_prompt_supported") is not False:
+        raise RuntimeError("preview scene returned ambiguous prompt provenance")
+    remote_seconds = time.perf_counter() - remote_started
+    estimated_gpu_usd = remote_seconds * GPU_USD_PER_SECOND
+    if estimated_gpu_usd > maximum_gpu_usd + 1e-9:
+        raise RuntimeError(
+            f"preview scene exceeded its ${maximum_gpu_usd:.6f} call cap: "
+            f"${estimated_gpu_usd:.6f} estimated"
+        )
+    _atomic_write_bytes(master_path, result["master"])
+    now = datetime.now(UTC).isoformat()
+    payload = {
+        "schema_version": "1.0",
+        "provider": PROVIDER_NAME,
+        "scene_id": scene_id,
+        "created_at": now,
+        "updated_at": now,
+        "request": {
+            "prompt": prompt,
+            "seed": seed,
+            "width": width,
+            "height": height,
+        },
+        "policy": {
+            "finite_calls_only": True,
+            "persistent_endpoint": False,
+            "provisional_preview_only": True,
+            "source_text_allowed": False,
+            "budget_plan": plan_file,
+            "budget_ledger": ledger_path,
+        },
+        "stages": {
+            "preview": {
+                "model": FAST_MODEL,
+                "model_revision": FAST_MODEL_REVISION,
+                "gpu": GPU,
+                "finite_call": True,
+                "hard_timeout_seconds": FAST_TIMEOUT_SECONDS,
+                "remote_seconds": remote_seconds,
+                "inference_seconds": result["image_seconds"],
+                "provider_overhead_seconds": max(0.0, remote_seconds - result["image_seconds"]),
+                "image_seconds": result["image_seconds"],
+                "packaging_seconds": result["packaging_seconds"],
+                "master_jpeg_quality": result["master_jpeg_quality"],
+                "negative_prompt_supported": False,
+                "model_load_seconds": result.get("model_load_seconds", 0),
+                "container_age_seconds": result.get("container_age_seconds", 0),
+                "estimated_gpu_usd": estimated_gpu_usd,
+                "steps": 1,
+                "guidance_scale": guidance_scale,
+            }
+        },
+        "artifacts": {
+            "preview": _artifact_record(
+                path=master_path,
+                root=destination,
+                mime_type="image/jpeg",
+                width=width,
+                height=height,
+            )
+        },
+    }
+    _atomic_write_json(manifest_path, payload)
+    _record_budget(
+        plan_file=plan_file,
+        ledger_path=ledger_path,
+        reservation_id=reservation_id,
+        experiment_id=experiment_id,
+        stage="preview-scene",
+        model=FAST_MODEL,
+        revision=FAST_MODEL_REVISION,
+        seed=seed,
+        prompt=prompt,
+        artifact_path=master_path,
+        sha256=payload["artifacts"]["preview"]["sha256"],
         remote_seconds=remote_seconds,
         width=width,
         height=height,
