@@ -62,7 +62,7 @@ def test_live_scene_model_planner_has_a_bounded_independent_timeout() -> None:
     assert settings.model_max_output_tokens == 320
     assert settings.live_scene_master_width == 896
     assert settings.live_scene_master_height == 512
-    assert settings.live_scene_master_steps == 8
+    assert settings.live_scene_master_steps == 2
     assert settings.live_scene_master_guidance_scale == 4.5
     with pytest.raises(ValidationError):
         Settings(_env_file=None, live_scene_planner_timeout_seconds=61)

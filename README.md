@@ -164,18 +164,30 @@ measurements, not a pricing guarantee; the provider still checks current billing
 full ceiling before prewarm. On a Mac that must retain local microphone support, sync both optional
 groups with `uv sync --extra modal-authoring --extra mac-asr`.
 
-The final speed pass couples the real Jetson Gemma planner to an 896x512, 8-step warm renderer. Its
-exact-code accepted scene reached `master_ready` in **6.971 seconds**: 4.285 seconds for local Gemma,
+The prior full-device speed pass coupled the real Jetson Gemma planner to an 896x512, 8-step warm
+SANA 1.5 renderer. Its exact-code accepted scene reached `master_ready` in **6.971 seconds**: 4.285
+seconds for local Gemma,
 2.673 seconds for SANA plus Depth Anything, and 2.7 ms of cache work. That is 53.5% faster than the
 original 15.005-second real Gemma acceptance. The 270M Gemma experiment was faster but rejected for
 inventing and omitting story elements; the production choice remains the quality-preserving 1B
 model. See the speed benchmark below for the rejected configurations, seed-variance evidence, and
 authoritative billing reconciliation.
 
-The delivery pass keeps that quality profile but changes the master plate to quality-95 4:4:4 JPEG.
+The production fast renderer is now the pinned two-step SANA-Sprint 1.6B checkpoint. Across three
+scene types, steady image inference averaged 730 ms; the exact warm production API path reached
+`master_ready` in 1.188 seconds, including depth, encoding, cache promotion, and control overhead.
+Combining that measured provider result with the last exact Jetson Gemma time projects a 5.464-second
+full path (21.6% faster), but that number remains explicitly projected until the Jetson is back
+online for the exact combined run. Six visual trials were presentation-grade, while composition
+misses in the fox and orrery prompts keep seed-level semantic validation on the backlog. SANA-Sprint
+has no separate negative-prompt channel; no-text and safety direction is carried in the positive
+visual prompt and provenance reports that boundary.
+
+The earlier delivery pass kept that SANA 1.5 profile but changed the master plate to quality-95
+4:4:4 JPEG.
 On the same prompt and seed it reduced the master from 599,489 to 163,709 bytes (72.7%) at 0.9904
 decoded SSIM, materially reducing cache and Mac-to-Jetson tunnel traffic. It did not measurably
-improve the Modal RPC itself, so the 6.971-second end-to-end result remains the honest speed claim.
+improve the Modal RPC itself, so the 6.971-second result remained the last exact full-device claim.
 The projector now samples a 32x18 copy of the decoded master and applies a bounded 1.0-1.22 exposure
 to both WebGL and still-image fallback; bright scenes remain unchanged and no extra generation pass
 is added. The linked delivery benchmark records the rejected smaller render, `torch.compile`, and
@@ -187,7 +199,7 @@ real depth maps it reduced 686,418 bytes to 222,272 bytes (67.6%) while the wors
 concurrently and report `packaging_ms` through the live API. The projector loads and decodes each
 plate once, reusing the master image as both its WebGL texture and fail-safe still. Modal wall time
 was noisy, so this is a delivery/decoder win—not a replacement for the 6.971-second end-to-end
-record.
+record until the current Sprint renderer is rerun with the Jetson online.
 
 For higher-quality offline scene R&D, `deploy/modal_visual_lab.py` provides finite `modal run`
 jobs on an NVIDIA L4. It pins SANA 1.5, SigLIP, and LTX-Video revisions; records prompts, seeds,
@@ -389,3 +401,4 @@ passes the real I/O and latency run on JetPack 7.2.1.
 - [`benchmarks/bookforge-speed-optimization-2026-08-23.json`](benchmarks/bookforge-speed-optimization-2026-08-23.json): final 6.971-second Jetson Gemma → warm Modal SANA/depth acceptance, renderer sweep, rejected tiny-model/low-step configurations, seed-quality evidence, and billing reconciliation
 - [`benchmarks/bookforge-render-delivery-optimization-2026-08-23.json`](benchmarks/bookforge-render-delivery-optimization-2026-08-23.json): JPEG delivery, adaptive projector exposure, and measured rejections for smaller renders, compilation, and prompt changes
 - [`benchmarks/bookforge-packaging-optimization-2026-08-24.json`](benchmarks/bookforge-packaging-optimization-2026-08-24.json): parallel packaging telemetry, depth-JPEG quality/transfer evidence, single-decode projector delivery, and reconciled spend
+- [`benchmarks/bookforge-sana-sprint-optimization-2026-08-24.json`](benchmarks/bookforge-sana-sprint-optimization-2026-08-24.json): six-image SANA-Sprint quality/speed sweep, exact 1.188-second production API acceptance, honest projected full-path boundary, and billing reconciliation

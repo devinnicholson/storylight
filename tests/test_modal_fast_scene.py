@@ -6,7 +6,7 @@ SOURCE = (ROOT / "deploy/modal_fast_scene.py").read_text()
 
 def test_fast_scene_models_and_revisions_are_pinned() -> None:
     assert (
-        'FAST_MODEL_REVISION = "caa51e5ea874be07d3a9c7c2d0fd800570b18440"' in SOURCE
+        'FAST_MODEL_REVISION = "19683c58b7ea290e55cedd8950ae1d86ada7ef96"' in SOURCE
     )
     assert (
         'DEPTH_MODEL_REVISION = "b4769fd619394250528294b658587285526fab1c"' in SOURCE
@@ -41,23 +41,38 @@ def test_fast_scene_uses_low_latency_projection_quality_packaging() -> None:
     fast = SOURCE.split("class FastSceneStudio:", 1)[1].split(
         "class MotionUpgradeStudio:", 1
     )[0]
+    packaging = SOURCE.split("def _encode_scene_assets", 1)[1].split("@app.cls", 1)[0]
 
-    assert 'format="JPEG"' in fast
+    assert 'format="JPEG"' in packaging
     assert "MASTER_JPEG_QUALITY = 95" in SOURCE
     assert "DEPTH_JPEG_QUALITY = 85" in SOURCE
-    assert "quality=MASTER_JPEG_QUALITY" in fast
-    assert "quality=DEPTH_JPEG_QUALITY" in fast
-    assert "subsampling=0" in fast
-    assert "ThreadPoolExecutor(max_workers=2" in fast
+    assert "quality=MASTER_JPEG_QUALITY" in packaging
+    assert "quality=DEPTH_JPEG_QUALITY" in packaging
+    assert "subsampling=0" in packaging
+    assert "ThreadPoolExecutor(max_workers=2" in packaging
     assert '"packaging_seconds": packaging_seconds' in fast
     assert '"master_media_type": "image/jpeg"' in fast
     assert '"depth_media_type": "image/jpeg"' in fast
+    assert '"negative_prompt_supported": False' in fast
     assert 'result.get("master_media_type") != "image/jpeg"' in SOURCE
     assert 'result.get("depth_media_type") != "image/jpeg"' in SOURCE
-    assert 'depth.convert("L").save(' in fast
-    assert "optimize=True" not in fast
+    assert 'depth.convert("L").save(' in packaging
+    assert "optimize=True" not in packaging
     assert "torch.cuda.empty_cache()" not in fast
     assert "set_progress_bar_config(disable=True)" in fast
+
+
+def test_sana_sprint_is_the_pinned_production_fast_renderer() -> None:
+    fast = SOURCE.split("class FastSceneStudio:", 1)[1].split(
+        "class MotionUpgradeStudio:", 1
+    )[0]
+
+    assert 'FAST_MODEL = "Efficient-Large-Model/Sana_Sprint_1.6B_1024px_diffusers"' in SOURCE
+    assert "diffusers.SanaSprintPipeline.from_pretrained(" in fast
+    assert "if not 1 <= steps <= 4" in fast
+    assert "num_inference_steps=steps" in fast
+    assert "class SprintSceneStudio" not in SOURCE
+    assert "sprint_scene_experiment_cli" not in SOURCE
 
 
 def test_fast_prewarm_executes_shape_matched_cuda_and_depth_work() -> None:
@@ -68,7 +83,7 @@ def test_fast_prewarm_executes_shape_matched_cuda_and_depth_work() -> None:
     assert "FAST_PREWARM_WIDTH = 896" in SOURCE
     assert "FAST_PREWARM_HEIGHT = 512" in SOURCE
     assert "if not self.inference_warmed:" in fast
-    assert "num_inference_steps=1" in fast
+    assert "num_inference_steps=2" in fast
     assert "self.depth_pipe(warmup_master)" in fast
     assert '"inference_warmup_seconds"' in fast
 

@@ -180,6 +180,7 @@ class StubWarmInvoker:
                 "master_media_type": "image/jpeg",
                 "depth": _jpeg(arguments["width"], arguments["height"]),
                 "depth_media_type": "image/jpeg",
+                "negative_prompt_supported": False,
                 "image_seconds": 3.0,
                 "depth_seconds": 0.2,
                 "packaging_seconds": 0.04,
@@ -445,13 +446,15 @@ def test_request_profiles_are_projection_native_and_bounded() -> None:
     fast = FastSceneRequest(scene_id="scene", prompt="A fox")
     motion = MotionUpgradeRequest()
 
-    assert (fast.width, fast.height, fast.steps) == (1024, 576, 10)
+    assert (fast.width, fast.height, fast.steps) == (1024, 576, 2)
     assert (motion.width, motion.height) == (800, 448)
     assert motion.generated_frames == 41
     assert (motion.generated_frames * 2 - 1) / motion.fps == pytest.approx(3.375)
 
     with pytest.raises(ValueError, match=r"8n\+1"):
         MotionUpgradeRequest(generated_frames=32)
+    with pytest.raises(ValueError, match="between 1 and 4"):
+        FastSceneRequest(scene_id="scene", prompt="A fox", steps=5)
 
 
 def test_warm_fast_only_prewarm_never_loads_motion_and_settles_one_envelope(

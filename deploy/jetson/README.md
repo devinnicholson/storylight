@@ -246,9 +246,11 @@ prewarmed model; keep the independent
 diagnostics and ensure the prewarm completes before a live reading.
 
 The final speed acceptance kept Gemma 1B after rejecting the 270M model for invented settings and
-missing transformations. With the 896x512, 8-step, truly prewarmed Modal renderer, the full path
-reached `master_ready` in 6.971 seconds: 4.285 seconds planning, 2.673 seconds provider time, and 2.7
-ms cache promotion. The renderer's 90-second scale-down window is intentional: the earlier
+missing transformations. The prior 896x512, 8-step SANA 1.5 renderer produced the last exact full
+path: `master_ready` in 6.971 seconds, with 4.285 seconds planning, 2.673 seconds provider time, and
+2.7 ms cache promotion. The current 896x512, 2-step SANA-Sprint renderer must repeat that exact
+device acceptance. Its measured provider component is 1.176 seconds, projecting 5.464 seconds with
+the last Gemma measurement. The renderer's 90-second scale-down window is intentional: the earlier
 30-second window expired during local planning/operator handoff and produced a 44.8-second cold
 request. Full evidence is in `benchmarks/bookforge-speed-optimization-2026-08-23.json`.
 

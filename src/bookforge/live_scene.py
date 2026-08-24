@@ -1267,7 +1267,7 @@ def build_live_scene_provider(
     planner_model_revision: str = "configured-local-model",
     master_width: int = 896,
     master_height: int = 512,
-    master_steps: int = 8,
+    master_steps: int = 2,
     master_guidance_scale: float = 4.5,
 ) -> LiveSceneProvider:
     planner = None

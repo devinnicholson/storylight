@@ -48,7 +48,7 @@ class Settings(BaseSettings):
     live_scene_output_dir: Path = Path("artifacts/live-scenes/generated")
     live_scene_master_width: int = 896
     live_scene_master_height: int = 512
-    live_scene_master_steps: Annotated[int, Field(ge=4, le=30)] = 8
+    live_scene_master_steps: Annotated[int, Field(ge=1, le=4)] = 2
     live_scene_master_guidance_scale: Annotated[float, Field(ge=0, le=12)] = 4.5
     live_scene_modal_session_gpu_cap_usd: Annotated[float, Field(gt=0, le=10)] = 1.0
     live_scene_max_active_jobs: Annotated[int, Field(ge=1, le=16)] = 2

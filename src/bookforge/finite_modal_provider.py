@@ -40,8 +40,8 @@ from bookforge.modal_budget import authorize_and_reserve_modal_budget, settle_mo
 from bookforge.visual_evaluation import MediaEvaluation, evaluate_media
 from bookforge.visual_lab import GPU_USD_PER_SECOND, GenerationRecord
 
-FAST_MODEL = "Efficient-Large-Model/SANA1.5_1.6B_1024px_diffusers"
-FAST_MODEL_REVISION = "caa51e5ea874be07d3a9c7c2d0fd800570b18440"
+FAST_MODEL = "Efficient-Large-Model/Sana_Sprint_1.6B_1024px_diffusers"
+FAST_MODEL_REVISION = "19683c58b7ea290e55cedd8950ae1d86ada7ef96"
 DEPTH_MODEL = "depth-anything/Depth-Anything-V2-Small-hf"
 DEPTH_MODEL_REVISION = "b4769fd619394250528294b658587285526fab1c"
 MOTION_MODEL = "Lightricks/LTX-Video"
@@ -118,7 +118,7 @@ class FastSceneRequest:
     seed: int = 42
     width: int = 1024
     height: int = 576
-    steps: int = 10
+    steps: int = 2
     guidance_scale: float = 4.5
 
     def __post_init__(self) -> None:
@@ -127,8 +127,8 @@ class FastSceneRequest:
         _validate_prompt(self.negative_prompt, name="negative_prompt")
         _validate_seed(self.seed)
         _validate_dimensions(self.width, self.height, minimum=512)
-        if not 4 <= self.steps <= 30:
-            raise ValueError("fast-scene steps must be between 4 and 30")
+        if not 1 <= self.steps <= 4:
+            raise ValueError("fast-scene steps must be between 1 and 4")
         if not math.isfinite(self.guidance_scale) or not 0 <= self.guidance_scale <= 12:
             raise ValueError("guidance_scale must be between 0 and 12")
 
@@ -1130,7 +1130,7 @@ class FiniteModalLiveSceneProvider:
         motion_evaluator: MotionEvaluator | None = None,
         master_width: int = 896,
         master_height: int = 512,
-        master_steps: int = 8,
+        master_steps: int = 2,
         master_guidance_scale: float = 4.5,
     ) -> None:
         self.provider = provider
@@ -1727,6 +1727,8 @@ def _write_warm_fast_bundle(
         raise FiniteModalProviderError("warm fast class returned an unsupported master format")
     if result.get("depth_media_type") != "image/jpeg":
         raise FiniteModalProviderError("warm fast class returned an unsupported depth format")
+    if result.get("negative_prompt_supported") is not False:
+        raise FiniteModalProviderError("warm fast class returned ambiguous prompt provenance")
     if master_jpeg_quality != 95 or depth_jpeg_quality != 85:
         raise FiniteModalProviderError("warm fast class returned unexpected JPEG quality")
     if _jpeg_dimensions(master) != (request.width, request.height):
@@ -1774,6 +1776,7 @@ def _write_warm_fast_bundle(
                 "packaging_seconds": packaging_seconds,
                 "master_jpeg_quality": master_jpeg_quality,
                 "depth_jpeg_quality": depth_jpeg_quality,
+                "negative_prompt_supported": False,
                 "model_load_seconds": float(result.get("model_load_seconds", 0)),
                 "container_age_seconds": float(result.get("container_age_seconds", 0)),
                 "warm_state": warm_state,

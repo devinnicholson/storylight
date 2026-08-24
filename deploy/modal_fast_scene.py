@@ -41,8 +41,8 @@ FAST_PREWARM_WIDTH = 896
 FAST_PREWARM_HEIGHT = 512
 MASTER_JPEG_QUALITY = 95
 DEPTH_JPEG_QUALITY = 85
-FAST_MODEL = "Efficient-Large-Model/SANA1.5_1.6B_1024px_diffusers"
-FAST_MODEL_REVISION = "caa51e5ea874be07d3a9c7c2d0fd800570b18440"
+FAST_MODEL = "Efficient-Large-Model/Sana_Sprint_1.6B_1024px_diffusers"
+FAST_MODEL_REVISION = "19683c58b7ea290e55cedd8950ae1d86ada7ef96"
 DEPTH_MODEL = "depth-anything/Depth-Anything-V2-Small-hf"
 DEPTH_MODEL_REVISION = "b4769fd619394250528294b658587285526fab1c"
 MOTION_MODEL = "Lightricks/LTX-Video"
@@ -114,6 +114,40 @@ def _validate_seed(seed: int) -> None:
         raise ValueError("seed must be an unsigned 32-bit integer")
 
 
+def _encode_scene_assets(master: Any, depth: Any) -> tuple[bytes, bytes, float]:
+    packaging_started = time.perf_counter()
+
+    def encode_master() -> bytes:
+        master_buffer = io.BytesIO()
+        master.convert("RGB").save(
+            master_buffer,
+            format="JPEG",
+            quality=MASTER_JPEG_QUALITY,
+            subsampling=0,
+            optimize=False,
+            progressive=False,
+        )
+        return master_buffer.getvalue()
+
+    def encode_depth() -> bytes:
+        depth_buffer = io.BytesIO()
+        depth.convert("L").save(
+            depth_buffer,
+            format="JPEG",
+            quality=DEPTH_JPEG_QUALITY,
+            optimize=False,
+            progressive=False,
+        )
+        return depth_buffer.getvalue()
+
+    with ThreadPoolExecutor(max_workers=2, thread_name_prefix="bookforge-pack") as pool:
+        master_future = pool.submit(encode_master)
+        depth_future = pool.submit(encode_depth)
+        master_bytes = master_future.result()
+        depth_bytes = depth_future.result()
+    return master_bytes, depth_bytes, time.perf_counter() - packaging_started
+
+
 @app.cls(
     image=runtime_image,
     gpu=GPU,
@@ -129,7 +163,7 @@ class FastSceneStudio:
         from transformers import pipeline
 
         load_started = time.perf_counter()
-        self.image_pipe = diffusers.SanaPipeline.from_pretrained(
+        self.image_pipe = diffusers.SanaSprintPipeline.from_pretrained(
             FAST_MODEL,
             revision=FAST_MODEL_REVISION,
             torch_dtype=torch.bfloat16,
@@ -155,11 +189,10 @@ class FastSceneStudio:
             with torch.inference_mode():
                 warmup_master = self.image_pipe(
                     prompt="bright layered paper theater with one simple lantern",
-                    negative_prompt="text, logo, watermark, interface",
                     width=FAST_PREWARM_WIDTH,
                     height=FAST_PREWARM_HEIGHT,
                     guidance_scale=4.5,
-                    num_inference_steps=1,
+                    num_inference_steps=2,
                     generator=torch.Generator(device="cuda").manual_seed(1),
                 ).images[0]
                 self.depth_pipe(warmup_master)
@@ -191,13 +224,12 @@ class FastSceneStudio:
         _validate_prompt(negative_prompt, name="negative_prompt")
         _validate_seed(seed)
         _validate_dimensions(width, height, minimum=512)
-        if not 4 <= steps <= 30:
-            raise ValueError("fast-scene steps must be between 4 and 30")
+        if not 1 <= steps <= 4:
+            raise ValueError("fast-scene steps must be between 1 and 4")
         started = time.perf_counter()
         with torch.inference_mode():
             master = self.image_pipe(
                 prompt=prompt,
-                negative_prompt=negative_prompt,
                 width=width,
                 height=height,
                 guidance_scale=guidance_scale,
@@ -211,47 +243,13 @@ class FastSceneStudio:
                 (width, height), Image.Resampling.LANCZOS
             )
         depth_seconds = time.perf_counter() - depth_started
-        packaging_started = time.perf_counter()
-
-        def encode_master() -> bytes:
-            master_buffer = io.BytesIO()
-            # High-quality 4:4:4 JPEG is visually indistinguishable at projection
-            # distance, avoids PNG's CPU-heavy compression, and cuts transfer size.
-            master.convert("RGB").save(
-                master_buffer,
-                format="JPEG",
-                quality=MASTER_JPEG_QUALITY,
-                subsampling=0,
-                optimize=False,
-                progressive=False,
-            )
-            return master_buffer.getvalue()
-
-        def encode_depth() -> bytes:
-            depth_buffer = io.BytesIO()
-            depth.convert("L").save(
-                depth_buffer,
-                format="JPEG",
-                quality=DEPTH_JPEG_QUALITY,
-                optimize=False,
-                progressive=False,
-            )
-            return depth_buffer.getvalue()
-
-        # The two images are independent and Pillow's native codecs release the
-        # GIL. Encoding them together removes serial CPU work after the GPU has
-        # already finished, without changing either model or generated pixels.
-        with ThreadPoolExecutor(max_workers=2, thread_name_prefix="bookforge-pack") as pool:
-            master_future = pool.submit(encode_master)
-            depth_future = pool.submit(encode_depth)
-            master_bytes = master_future.result()
-            depth_bytes = depth_future.result()
-        packaging_seconds = time.perf_counter() - packaging_started
+        master_bytes, depth_bytes, packaging_seconds = _encode_scene_assets(master, depth)
         return {
             "master": master_bytes,
             "master_media_type": "image/jpeg",
             "depth": depth_bytes,
             "depth_media_type": "image/jpeg",
+            "negative_prompt_supported": False,
             "master_jpeg_quality": MASTER_JPEG_QUALITY,
             "depth_jpeg_quality": DEPTH_JPEG_QUALITY,
             "image_seconds": image_seconds,
@@ -504,7 +502,7 @@ def fast_scene_cli(
     seed: int = 42,
     width: int = 1024,
     height: int = 576,
-    steps: int = 10,
+    steps: int = 2,
     guidance_scale: float = 4.5,
     plan_file: str = "experiments/live-scenes/modal-plan.json",
     ledger_path: str = "artifacts/live-scenes/modal-ledger.json",
@@ -517,8 +515,8 @@ def fast_scene_cli(
     _validate_prompt(negative_prompt, name="negative_prompt")
     _validate_seed(seed)
     _validate_dimensions(width, height, minimum=512)
-    if not 4 <= steps <= 30:
-        raise ValueError("fast-scene steps must be between 4 and 30")
+    if not 1 <= steps <= 4:
+        raise ValueError("fast-scene steps must be between 1 and 4")
     destination = Path(output_dir).resolve()
     manifest_path = destination / "scene.manifest.json"
     master_path = destination / "master.jpg"
@@ -566,6 +564,8 @@ def fast_scene_cli(
         raise RuntimeError("fast scene returned an unsupported master format")
     if result.get("depth_media_type") != "image/jpeg":
         raise RuntimeError("fast scene returned an unsupported depth format")
+    if result.get("negative_prompt_supported") is not False:
+        raise RuntimeError("fast scene returned ambiguous negative-prompt provenance")
     remote_seconds = time.perf_counter() - remote_started
     estimated_gpu_usd = remote_seconds * GPU_USD_PER_SECOND
     if estimated_gpu_usd > maximum_gpu_usd + 1e-9:
@@ -618,6 +618,7 @@ def fast_scene_cli(
                 "packaging_seconds": result["packaging_seconds"],
                 "master_jpeg_quality": result["master_jpeg_quality"],
                 "depth_jpeg_quality": result["depth_jpeg_quality"],
+                "negative_prompt_supported": False,
                 "model_load_seconds": result.get("model_load_seconds", 0),
                 "container_age_seconds": result.get("container_age_seconds", 0),
                 "warm_state": "cold",

@@ -40,11 +40,13 @@ The first cloud result is a 16:9 master plus depth sidecar. The existing WebGL r
 for a slow camera push, parallax, focus breathing, and ambient particles. This is already a moving
 generated scene and is the required live milestone.
 
-The accepted speed profile is 896x512 at 8 SANA steps. Explicit prewarm runs one small SANA and
-Depth Anything inference, not just model loading, and the authenticated class remains warm for 90
-seconds before scaling to zero. Seven steps saved only about 0.2 seconds and reduced anatomical
-stability; six steps visibly collapsed the central subject. PNG promotion uses fast lossless
-compression and the live request no longer empties the CUDA cache between scenes.
+The accepted speed profile is 896x512 at two SANA-Sprint steps. Explicit prewarm runs the exact
+two-step SANA-Sprint shape and Depth Anything inference, not just model loading, and the
+authenticated class remains warm for 90 seconds before scaling to zero. The prior SANA 1.5 profile
+needed eight steps; seven saved only about 0.2 seconds and reduced anatomical stability, while six
+visibly collapsed the central subject. SANA-Sprint is distilled for one-to-four-step generation and
+cut the exact warm provider path from 2.673 seconds to 1.176 seconds. Master and depth plates use
+bounded JPEG encodings, and the live request never empties the CUDA cache between scenes.
 
 LTX-Video is an optional refinement. It must preserve identity and composition, pass endpoint and
 motion-stability checks, and arrive without interrupting the depth scene. A failed or malformed
@@ -52,8 +54,8 @@ video leaves the accepted depth scene in place.
 
 ## Performance and cost evidence
 
-Each revision records backend elapsed time, provider time, inference time, cache time, measured
-overhead, milestone times, warm-state evidence, model and immutable revision, GPU class, seed,
+Each revision records backend elapsed time, provider time, inference time, packaging time, cache
+time, measured overhead, milestone times, warm-state evidence, model and immutable revision, GPU class, seed,
 dimensions, checksums, and the provider-manifest cost estimate. Authoritative workspace billing is
 checked before a paid call; post-call deltas are reconciled in benchmark evidence rather than
 misrepresented as real-time SSE fields. Benchmarks report p50, p95, cold, and warm runs separately
@@ -82,6 +84,19 @@ Gemma planning, 2.673 seconds provider time, 2.402 seconds of GPU inference with
 call, and 2.7 ms cache promotion. The selected output retained the child, open book, and multiple
 origami birds. A second seed at comparable speed omitted the birds and was rejected, so seed-level
 semantic image validation remains a documented quality frontier rather than a hidden success.
+
+The subsequent SANA-Sprint production-provider acceptance reached `master_ready` in 1.188 seconds
+with a deterministic integration planner: 1.176 seconds provider time, 813 ms inference, 33 ms
+packaging, and 3.1 ms cache promotion. Reusing the last measured 4.285-second Jetson Gemma result
+projects 5.464 seconds end to end, but it is not labeled an exact combined result until the offline
+Jetson reruns the current code. Across six visual samples, the book/origami scenes preserved the
+central semantics while fox and orrery compositions showed bounded misses; seed-level semantic
+selection remains a quality frontier.
+
+SANA-Sprint does not expose a separate negative-prompt input. Bookforge therefore carries no-text,
+no-logo, and projection constraints in the positive semantic visual direction and records
+`negative_prompt_supported=false` in the provider manifest instead of implying that a discarded
+negative string influenced the pixels.
 
 ### Mac-to-Jetson development topology
 
