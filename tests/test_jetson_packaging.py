@@ -841,6 +841,31 @@ def test_workbench_starts_only_text_free_edge_warmup_in_background() -> None:
     assert "JSON.stringify" not in warmup
 
 
+def test_workbench_prepares_private_edge_plan_after_typing_pause() -> None:
+    controller = (ROOT / "src/bookforge/static/workbench.js").read_text()
+    scheduler = controller.split("function scheduleEdgePlanPreparation()", 1)[1].split(
+        "async function prepareEdgePlan", 1
+    )[0]
+    preparation = controller.split("async function prepareEdgePlan", 1)[1].split(
+        "async function prewarmRenderer", 1
+    )[0]
+
+    assert "1200" in scheduler
+    assert "text.length < 3" in scheduler
+    assert "text === preparedPlanKey" in scheduler
+    assert 'fetch("/v1/live-scene-planner/prepare"' in preparation
+    assert 'fetch("/v1/live-scene-provider/prewarm"' not in preparation
+    assert "preparedPlanKey = text" in preparation
+    assert 'elements.story.addEventListener("input", scheduleEdgePlanPreparation);' in controller
+    assert "window.clearTimeout(edgePlanPreparationTimer);" in controller
+    compile_story = controller.split("async function compileStory()", 1)[1].split(
+        "async function loadLatestScene", 1
+    )[0]
+    assert compile_story.index("window.clearTimeout(edgePlanPreparationTimer);") < (
+        compile_story.index('fetch("/v1/live-scenes"')
+    )
+
+
 def test_hardware_evidence_and_privacy_scripts_are_executable() -> None:
     for name in (
         "collect-evidence.sh",

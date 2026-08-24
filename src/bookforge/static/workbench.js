@@ -82,6 +82,8 @@ let rendererPrewarming = false;
 let rendererWarmExpiryTimer = null;
 let rendererWarmUntil = 0;
 let preparedPlanKey = null;
+let edgePlanPreparationTimer = null;
+let edgePlanPreparingKey = null;
 
 const LIVE_STAGES = [
   "queued",
@@ -179,6 +181,48 @@ async function warmEdgePlanner() {
   } catch (_) {
     // Warmup is latency hiding, not a prerequisite. Generate retains its
     // normal bounded planner call and deterministic fallback.
+  }
+}
+
+function scheduleEdgePlanPreparation() {
+  window.clearTimeout(edgePlanPreparationTimer);
+  edgePlanPreparationTimer = null;
+  const text = currentPlanKey();
+  if (text.length < 3 || text === preparedPlanKey || text === edgePlanPreparingKey) return;
+  edgePlanPreparationTimer = window.setTimeout(() => {
+    edgePlanPreparationTimer = null;
+    void prepareEdgePlan(text);
+  }, 1200);
+}
+
+async function prepareEdgePlan(text) {
+  if (text !== currentPlanKey() || text === preparedPlanKey || text === edgePlanPreparingKey) return;
+  edgePlanPreparingKey = text;
+  try {
+    const response = await fetch("/v1/live-scene-planner/prepare", {
+      method: "POST",
+      headers: {"Content-Type": "application/json"},
+      body: JSON.stringify({
+        text,
+        visual_style: elements.style.value.trim() || "luminous paper theater",
+      }),
+    });
+    const planner = await response.json().catch(() => ({}));
+    if (!response.ok || text !== currentPlanKey()) return;
+    preparedPlanKey = text;
+    const rendererReady = Date.now() < rendererWarmUntil;
+    elements.prewarmButton.textContent = rendererReady ? "Full path ready" : "Prepare renderer";
+    setRendererReadiness(
+      rendererReady ? "ready" : "idle",
+      rendererReady ? "Gemma + renderer ready" : "Gemma plan ready; renderer may be asleep",
+      `Private edge plan cached in ${(planner.planning_ms / 1000).toFixed(1)} s; Generate can skip that wait.`,
+      {buttonDisabled: rendererReady},
+    );
+  } catch (_) {
+    // Automatic planning is latency hiding only. Manual preparation and
+    // Generate preserve their explicit error/fallback behavior.
+  } finally {
+    if (edgePlanPreparingKey === text) edgePlanPreparingKey = null;
   }
 }
 
@@ -1004,6 +1048,11 @@ async function compileStory() {
     elements.interim.textContent = "Add the exact words from one book page first.";
     return;
   }
+  // If the user clicks before the typing-pause timer fires, let the accepted
+  // live job start the planner directly. If preparation is already in flight,
+  // the server coalesces both waiters onto that one local Gemma call.
+  window.clearTimeout(edgePlanPreparationTimer);
+  edgePlanPreparationTimer = null;
   if (listening) stopSpeaking();
   stopLiveJobTransport();
   liveRequestEpoch += 1;
@@ -1110,6 +1159,7 @@ elements.projectorLink.addEventListener("click", (event) => {
     invalidateScene();
   });
 });
+elements.story.addEventListener("input", scheduleEdgePlanPreparation);
 
 const canRecordAudio = Boolean(window.MediaRecorder && navigator.mediaDevices?.getUserMedia);
 document.body.dataset.audioSupport = canRecordAudio ? "available" : "unavailable";
@@ -1126,6 +1176,7 @@ if (rehearsalMode) prewarmRenderer();
 else inspectRendererReadiness();
 window.addEventListener("beforeunload", () => {
   window.clearTimeout(rendererWarmExpiryTimer);
+  window.clearTimeout(edgePlanPreparationTimer);
   liveSessionEventSource?.close();
   stopLiveJobTransport();
 });
