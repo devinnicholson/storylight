@@ -675,6 +675,21 @@ def test_embedded_visual_preview_defers_reader_transport() -> None:
     assert "reader=0" not in workbench.split("elements.projectorLink.href", 1)[1].split(";", 1)[0]
 
 
+def test_projector_elapsed_clock_stops_after_terminal_scene() -> None:
+    projector = (ROOT / "src/bookforge/static/projector.js").read_text()
+
+    assert "liveClockTimer: null" in projector
+    assert "function synchronizeLiveGenerationClock()" in projector
+    assert "if (state.liveJobId && !state.liveTerminal)" in projector
+    assert "dataset.clockRunning" in projector
+    assert "synchronizeLiveGenerationClock();" in projector
+    assert "window.clearInterval(state.liveClockTimer);" in projector
+    setup = projector.split("function setupLiveSceneTransport()", 1)[1].split(
+        "function defaultCorners()", 1
+    )[0]
+    assert "setInterval(updateLiveGenerationClock" not in setup
+
+
 def test_projector_reuses_reader_session_for_visual_only_scene_upgrades() -> None:
     projector = (ROOT / "src/bookforge/static/projector.js").read_text()
 

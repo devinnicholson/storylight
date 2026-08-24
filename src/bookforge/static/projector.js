@@ -89,6 +89,7 @@ const state = {
   depthRenderer: null,
   liveSessionEventSource: null,
   liveSessionStreamHealthy: false,
+  liveClockTimer: null,
   liveRendezvousTimer: null,
   liveRendezvousInFlight: false,
   liveServerInstanceId: null,
@@ -1417,6 +1418,18 @@ function updateLiveGenerationClock() {
   elements.liveGenerationElapsed.textContent = `${((state.liveElapsedMs + continued) / 1000).toFixed(1)} s`;
 }
 
+function synchronizeLiveGenerationClock() {
+  window.clearInterval(state.liveClockTimer);
+  state.liveClockTimer = null;
+  updateLiveGenerationClock();
+  if (state.liveJobId && !state.liveTerminal) {
+    state.liveClockTimer = window.setInterval(updateLiveGenerationClock, 100);
+  }
+  elements.liveGenerationBadge.dataset.clockRunning = String(
+    state.liveClockTimer !== null
+  );
+}
+
 function renderLiveGenerationBadge(snapshot, {activated = true, fallbackMode = null} = {}) {
   const readyStageLabels = {
     queued: "Generation job queued",
@@ -1507,7 +1520,7 @@ function renderLiveGenerationBadge(snapshot, {activated = true, fallbackMode = n
     delete elements.liveGenerationBadge.dataset.readerSessionReused;
   }
   elements.liveGenerationBadge.classList.toggle("has-warning", Boolean(warning));
-  updateLiveGenerationClock();
+  synchronizeLiveGenerationClock();
 }
 
 function livePageAssetFingerprint(pack, page) {
@@ -1808,7 +1821,6 @@ function setupLiveSceneTransport() {
   // Give the authoritative stream one short turn to deliver its immediate
   // epoch event before issuing a redundant status fallback request.
   if (!state.liveServerInstanceId) scheduleLiveSceneRendezvous(250);
-  window.setInterval(updateLiveGenerationClock, 100);
 }
 
 function defaultCorners() {
@@ -2084,6 +2096,7 @@ window.addEventListener("beforeunload", () => {
   stopLiveSceneRendezvous();
   state.liveSessionEventSource?.close();
   state.liveSessionStreamHealthy = false;
+  window.clearInterval(state.liveClockTimer);
   state.depthRenderer?.destroy();
   state.socket?.close();
   void state.screenWakeLock?.release();
