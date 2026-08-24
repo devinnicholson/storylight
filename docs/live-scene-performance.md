@@ -48,6 +48,13 @@ visibly collapsed the central subject. SANA-Sprint is distilled for one-to-four-
 cut the exact warm provider path from 2.673 seconds to 1.176 seconds. Master and depth plates use
 bounded JPEG encodings, and the live request never empties the CUDA cache between scenes.
 
+One-step support was tested separately with Diffusers' required
+`intermediate_timesteps=None` override. On the exact same prompt, seed, 896x512 plate, and warm L4,
+it reduced image inference from 739.861 ms to 613.681 ms but reduced full API wall time by only
+65.631 ms (5.5%). The image also changed from one central figure to two, failing the duplicate-subject
+showcase gate. Runtime configuration therefore enforces at least two steps. The finite command keeps
+the explicit non-two-step override solely so future bounded research does not fail ambiguously.
+
 For a rehearsal or judged presentation, the loopback-only prewarm request may explicitly extend
 the master/depth idle window from 90 seconds to at most 900 seconds. This updates the deployed
 class's scale-down window; it does not set an always-on minimum container. The GPU therefore still

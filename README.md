@@ -211,6 +211,11 @@ misses in the fox and orrery prompts keep seed-level semantic validation on the 
 has no separate negative-prompt channel; no-text and safety direction is carried in the positive
 visual prompt and provenance reports that boundary.
 
+A same-prompt, same-seed one-step experiment was rejected. Diffusers' documented non-two-step
+override reduced image inference by 17.1%, but provider end-to-end improved only 65.6 ms (5.5%) and
+the central subject duplicated from one figure to two. Production settings therefore reject fewer
+than two steps; the finite CLI retains the explicit override only for bounded research.
+
 An opt-in short-key Gemma response contract is also ready for the next Jetson session. It reduces a
 representative structured response from 272 to 226 bytes without changing the scene plan. It is
 disabled by default because output size alone does not prove lower latency or equivalent semantics;
@@ -459,6 +464,7 @@ passes the real I/O and latency run on JetPack 7.2.1.
 - [`benchmarks/jetson-gemma3-planner-optimization-2026-08-23.json`](benchmarks/jetson-gemma3-planner-optimization-2026-08-23.json): five-passage compact-planner acceptance with a 5.24-second mean plus two bounded warm visual comparisons; the fastest full Gemma-to-master result was 9.37 seconds, the selected character-preserving result was 10.55 seconds, and both paid comparisons cost $0.03883467 combined
 - [`benchmarks/bookforge-speed-optimization-2026-08-23.json`](benchmarks/bookforge-speed-optimization-2026-08-23.json): final 6.971-second Jetson Gemma → warm Modal SANA/depth acceptance, renderer sweep, rejected tiny-model/low-step configurations, seed-quality evidence, and billing reconciliation
 - [`benchmarks/bookforge-resolution-ab-2026-08-24.json`](benchmarks/bookforge-resolution-ab-2026-08-24.json): same-seed warm 896x512 versus 768x448 renderer A/B; the lower plate was rejected because a 25% pixel reduction saved only 18.8 ms and did not improve inference
+- [`benchmarks/bookforge-sana-sprint-one-step-ab-2026-08-24.json`](benchmarks/bookforge-sana-sprint-one-step-ab-2026-08-24.json): same-prompt, same-seed warm one-step versus two-step A/B; one step was rejected after a duplicate-subject regression for only 65.6 ms end-to-end gain
 - [`benchmarks/bookforge-render-delivery-optimization-2026-08-23.json`](benchmarks/bookforge-render-delivery-optimization-2026-08-23.json): JPEG delivery, adaptive projector exposure, and measured rejections for smaller renders, compilation, and prompt changes
 - [`benchmarks/bookforge-packaging-optimization-2026-08-24.json`](benchmarks/bookforge-packaging-optimization-2026-08-24.json): parallel packaging telemetry, depth-JPEG quality/transfer evidence, single-decode projector delivery, and reconciled spend
 - [`benchmarks/bookforge-sana-sprint-optimization-2026-08-24.json`](benchmarks/bookforge-sana-sprint-optimization-2026-08-24.json): six-image SANA-Sprint quality/speed sweep, exact 1.188-second production API acceptance, honest projected full-path boundary, and billing reconciliation

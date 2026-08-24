@@ -50,7 +50,11 @@ class Settings(BaseSettings):
     live_scene_output_dir: Path = Path("artifacts/live-scenes/generated")
     live_scene_master_width: int = 896
     live_scene_master_height: int = 512
-    live_scene_master_steps: Annotated[int, Field(ge=1, le=4)] = 2
+    # One-step SANA-Sprint is technically supported but failed the showcase
+    # duplicate-subject gate for only a 5.5% end-to-end gain. Production stays
+    # on the accepted two-to-four-step range; the finite CLI remains available
+    # for explicitly budgeted research.
+    live_scene_master_steps: Annotated[int, Field(ge=2, le=4)] = 2
     live_scene_master_guidance_scale: Annotated[float, Field(ge=0, le=12)] = 4.5
     live_scene_auto_prewarm_on_submit: bool = False
     live_scene_modal_session_gpu_cap_usd: Annotated[float, Field(gt=0, le=10)] = 1.0

@@ -85,6 +85,8 @@ def test_live_scene_model_planner_has_a_bounded_independent_timeout() -> None:
         Settings(_env_file=None, live_scene_master_width=900)
     with pytest.raises(ValidationError):
         Settings(_env_file=None, live_scene_master_height=480)
+    with pytest.raises(ValidationError):
+        Settings(_env_file=None, live_scene_master_steps=1)
 
 
 def test_general_model_output_default_remains_large_enough_for_story_compilation(

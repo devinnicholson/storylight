@@ -229,6 +229,10 @@ class FastSceneStudio:
         _validate_dimensions(width, height, minimum=512)
         if not 1 <= steps <= 4:
             raise ValueError("fast-scene steps must be between 1 and 4")
+        # Diffusers defaults SCM's intermediate timestep to 1.3, then rejects
+        # that value for every non-two-step request. Passing None is the
+        # documented one/three/four-step path; two-step keeps the tuned 1.3.
+        sprint_timing = {"intermediate_timesteps": None} if steps != 2 else {}
         started = time.perf_counter()
         with torch.inference_mode():
             master = self.image_pipe(
@@ -238,6 +242,7 @@ class FastSceneStudio:
                 guidance_scale=guidance_scale,
                 num_inference_steps=steps,
                 generator=torch.Generator(device="cuda").manual_seed(seed),
+                **sprint_timing,
             ).images[0]
         image_seconds = time.perf_counter() - started
         depth_started = time.perf_counter()

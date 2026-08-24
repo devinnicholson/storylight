@@ -73,6 +73,8 @@ def test_sana_sprint_is_the_pinned_production_fast_renderer() -> None:
     assert "diffusers.SanaSprintPipeline.from_pretrained(" in fast
     assert "if not 1 <= steps <= 4" in fast
     assert "num_inference_steps=steps" in fast
+    assert 'sprint_timing = {"intermediate_timesteps": None} if steps != 2 else {}' in fast
+    assert "**sprint_timing" in fast
     assert "class SprintSceneStudio" not in SOURCE
     assert "sprint_scene_experiment_cli" not in SOURCE
 
