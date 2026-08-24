@@ -116,42 +116,38 @@ def _summarize(cases: list[dict[str, object]]) -> dict[str, float | int]:
     }
 
 
-async def _run_contract(
-    client: OllamaClient,
+def _contract_order_for_case(
+    index: int,
+    contracts: tuple[Contract, ...],
+) -> tuple[Contract, ...]:
+    if len(contracts) < 2 or index % 2 == 0:
+        return contracts
+    return tuple(reversed(contracts))
+
+
+async def _run_case(
+    planner: StructuredLiveScenePlanner,
     *,
-    contract: Contract,
-    timeout_seconds: float,
-    model_revision: str,
+    case: BenchmarkCase,
 ) -> dict[str, object]:
-    planner = StructuredLiveScenePlanner(
-        client,
-        timeout_seconds=timeout_seconds,
-        model_revision=model_revision,
-        compact_wire=contract == "compact",
+    result = await planner.plan(
+        text=case.text,
+        visual_style=case.visual_style,
+        seed=case.seed,
     )
-    results: list[dict[str, object]] = []
-    for case in CASES:
-        result = await planner.plan(
-            text=case.text,
-            visual_style=case.visual_style,
-            seed=case.seed,
-        )
-        results.append(
-            {
-                "case_id": case.case_id,
-                "seed": case.seed,
-                "planning_ms": round(result.wall_ms, 3),
-                "model_total_ms": round(result.metrics.total_ms, 3),
-                "load_ms": round(result.metrics.load_ms, 3),
-                "input_tokens": result.metrics.input_tokens,
-                "output_tokens": result.metrics.output_tokens,
-                "scene_summary": result.plan.scene_summary,
-                "background": result.plan.background_prompt,
-                "focus": result.plan.focus.prompt,
-                "magic": result.plan.accent.prompt,
-            }
-        )
-    return {"contract": contract, "summary": _summarize(results), "cases": results}
+    return {
+        "case_id": case.case_id,
+        "seed": case.seed,
+        "planning_ms": round(result.wall_ms, 3),
+        "model_total_ms": round(result.metrics.total_ms, 3),
+        "load_ms": round(result.metrics.load_ms, 3),
+        "input_tokens": result.metrics.input_tokens,
+        "output_tokens": result.metrics.output_tokens,
+        "scene_summary": result.plan.scene_summary,
+        "background": result.plan.background_prompt,
+        "focus": result.plan.focus.prompt,
+        "magic": result.plan.accent.prompt,
+    }
 
 
 async def benchmark(args: argparse.Namespace) -> dict[str, object]:
@@ -186,13 +182,35 @@ async def benchmark(args: argparse.Namespace) -> dict[str, object]:
                 visual_style=CASES[0].visual_style,
                 seed=CASES[0].seed,
             )
-        results = [
-            await _run_contract(
+        planners = {
+            contract: StructuredLiveScenePlanner(
                 client,
-                contract=contract,
                 timeout_seconds=args.planner_timeout_seconds,
                 model_revision=args.model_revision,
+                compact_wire=contract == "compact",
             )
+            for contract in contracts
+        }
+        case_results: dict[Contract, list[dict[str, object]]] = {
+            contract: [] for contract in contracts
+        }
+        execution_order: list[dict[str, object]] = []
+        for index, case in enumerate(CASES):
+            order = _contract_order_for_case(index, contracts)
+            execution_order.append({"case_id": case.case_id, "contracts": list(order)})
+            for contract in order:
+                case_results[contract].append(
+                    await _run_case(
+                        planners[contract],
+                        case=case,
+                    )
+                )
+        results = [
+            {
+                "contract": contract,
+                "summary": _summarize(case_results[contract]),
+                "cases": case_results[contract],
+            }
             for contract in contracts
         ]
     finally:
@@ -221,6 +239,11 @@ async def benchmark(args: argparse.Namespace) -> dict[str, object]:
             "warmup_excluded": not args.skip_warmup,
         },
         "contracts": results,
+        "execution": {
+            "policy": "alternate_first_contract_by_case",
+            "order": execution_order,
+            "reason": "Counterbalances shared-prefix and immediately-prior-request cache effects.",
+        },
         "privacy": {
             "endpoint_loopback_only": True,
             "structured_plan_privacy_gate_exercised": True,

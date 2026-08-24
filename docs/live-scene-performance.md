@@ -83,9 +83,11 @@ The workbench provides **Prepare full path**. Appending `rehearsal=1` to its URL
 operator opt-in that starts preparation on page load, allowing the 30–50 second cold start and local
 Gemma planning to happen concurrently while the demo is being introduced. These remain two separate
 loopback requests: the Modal prewarm contains only a generated prewarm ID, motion flag, and bounded
-window; the passage and style go only to the local planner. The privacy-gated semantic result is held
+window; the passage goes only to the local planner, while style remains local deterministic SceneSpec
+input. The privacy-gated semantic result is held
 in a bounded in-memory LRU, so the unchanged Generate request records a near-zero-time planning cache
-hit. Duplicate preparations for the same passage/style are coalesced into one model inference, and a
+hit. Duplicate preparations for the same passage are coalesced into one model inference even across
+style changes, and a
 cancelled browser waiter does not cancel work still needed by another local client.
 
 An exact 180-second rehearsal-window acceptance prewarmed in 29.869 seconds. Its first scene used
@@ -169,8 +171,10 @@ can run semantic and truncation acceptance; these byte reductions are not presen
 latency savings.
 
 The structured edge planner also keeps a 32-entry in-memory LRU keyed by a SHA-256 digest of the
-passage, style, model revision, and wire contract. A hit bypasses model decode but revalidates the
-cached plan against the local outbound privacy gate and derives seed-specific SceneSpec geometry.
+passage, model revision, and wire contract. Style is applied only while the local SceneSpec is
+compiled, so alternate styles reuse the same semantic plan. A hit bypasses model decode but
+revalidates the cached plan against the local outbound privacy gate and derives styled,
+seed-specific SceneSpec geometry.
 Metrics expose `planning_cache_hit`; no raw passage is used as a cache key, and the cache is neither
 sent off-device nor persisted across process restarts. Set
 `BOOKFORGE_LIVE_SCENE_PLANNER_CACHE_ENTRIES=0` to disable it.

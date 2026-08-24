@@ -102,6 +102,49 @@ def test_short_key_wire_contract_preserves_semantics_with_less_decode_text() -> 
     assert len(compact.model_dump_json(by_alias=True)) < len(_wire_plan().model_dump_json())
 
 
+def test_wire_normalization_sanitizes_cross_field_summary_overlap() -> None:
+    source = "A moonlit turtle climbs a staircase made of clouds."
+    wire = LiveSceneWirePlan.model_validate(
+        {
+            "background_prompt": "moonlit clouds",
+            "focus": {
+                "kind": "character",
+                "subject": "moonlit turtle",
+                "action": "climbs staircase",
+            },
+            "magic": {"kind": "effect", "prompt": "cloud steps"},
+        }
+    )
+
+    plan = wire.privacy_sanitized(source_text=source).to_live_scene_plan(
+        context_text=source
+    )
+
+    validate_live_scene_plan_privacy(plan, source_text=source)
+    assert "moonlit turtle climbs" not in plan.scene_summary.lower()
+    assert "moonlit turtle climbs" not in plan.focus.prompt.lower()
+
+
+def test_wire_privacy_sanitizer_preserves_primary_subject_head_noun() -> None:
+    source = "A silver whale swims through a flooded library carrying a lantern."
+    wire = LiveSceneWirePlan.model_validate(
+        {
+            "background_prompt": "flooded library",
+            "focus": {
+                "kind": "character",
+                "subject": "silver whale swims through water",
+                "action": "carries lantern",
+            },
+            "magic": {"kind": "effect", "prompt": "books become bright fish"},
+        }
+    )
+
+    sanitized = wire.privacy_sanitized(source_text=source)
+
+    assert "silver whale" in sanitized.focus.subject
+    assert "silver whale swims" not in sanitized.focus.subject
+
+
 def test_wire_plan_repairs_possessive_body_fragment_to_complete_character() -> None:
     payload = _wire_plan().model_dump()
     payload["focus"]["subject"] = "child's hand"
@@ -120,6 +163,7 @@ def test_wire_plan_repairs_possessive_body_fragment_to_complete_character() -> N
         ("carries library", "carrying library"),
         ("plants brass seed", "planting brass seed"),
         ("climbs moonlit stairs", "climbing moonlit stairs"),
+        ("swims through water", "swimming through water"),
     ],
 )
 def test_wire_plan_normalizes_visible_character_action(
@@ -459,17 +503,14 @@ def test_structured_planner_uses_live_schema_and_records_model_revision() -> Non
     )
 
     assert result.plan == _wire_plan().to_live_scene_plan(
-        context_text=(
-            "A child opens a silent book and origami birds light the sky. "
-            "luminous watercolor paper theater"
-        )
+        context_text="A child opens a silent book and origami birds light the sky."
     )
     assert result.metrics.model == "gemma3:1b"
     assert result.model_revision == "sha256:gemma-fixture"
     assert result.wall_ms >= 0
     assert stub.calls[0]["output_type"] is LiveSceneWirePlan
     assert "origami birds light the sky" in str(stub.calls[0]["prompt"])
-    assert "luminous watercolor paper theater" in str(stub.calls[0]["prompt"])
+    assert "luminous watercolor paper theater" not in str(stub.calls[0]["prompt"])
     assert '"seed"' not in str(stub.calls[0]["prompt"])
     assert "focus.action must separately state the exact visible action" in str(
         stub.calls[0]["prompt"]
@@ -504,16 +545,13 @@ def test_structured_planner_can_use_opt_in_short_key_contract() -> None:
     assert result.plan.focus.prompt == (
         _wire_plan()
         .to_live_scene_plan(
-            context_text=(
-                "A child opens a quiet book while paper birds rise. "
-                "luminous watercolor paper theater"
-            )
+            context_text="A child opens a quiet book while paper birds rise."
         )
         .focus.prompt
     )
 
 
-def test_structured_planner_reuses_privacy_gated_semantics_for_new_seed() -> None:
+def test_structured_planner_reuses_privacy_gated_semantics_for_new_seed_and_style() -> None:
     stub = _ModelStub()
     planner = StructuredLiveScenePlanner(
         stub,  # type: ignore[arg-type]
@@ -526,7 +564,13 @@ def test_structured_planner_reuses_privacy_gated_semantics_for_new_seed() -> Non
     }
 
     first = asyncio.run(planner.plan(**request, seed=23))
-    second = asyncio.run(planner.plan(**request, seed=24))
+    second = asyncio.run(
+        planner.plan(
+            text=request["text"],
+            visual_style="bright clay animation",
+            seed=24,
+        )
+    )
 
     assert len(stub.calls) == 1
     assert first.cache_hit is False
@@ -538,7 +582,7 @@ def test_structured_planner_reuses_privacy_gated_semantics_for_new_seed() -> Non
     assert second.metrics.output_tokens == 0
 
 
-def test_structured_planner_cache_is_bounded_and_style_specific() -> None:
+def test_structured_planner_cache_is_bounded_by_passage_and_reuses_new_styles() -> None:
     stub = _ModelStub()
     planner = StructuredLiveScenePlanner(
         stub,  # type: ignore[arg-type]
@@ -547,11 +591,21 @@ def test_structured_planner_cache_is_bounded_and_style_specific() -> None:
     )
     text = "A child opens a quiet book while paper birds rise."
 
-    asyncio.run(planner.plan(text=text, visual_style="paper theater", seed=1))
-    asyncio.run(planner.plan(text=text, visual_style="oil pastel", seed=1))
+    first = asyncio.run(planner.plan(text=text, visual_style="paper theater", seed=1))
+    restyled = asyncio.run(planner.plan(text=text, visual_style="oil pastel", seed=1))
+    asyncio.run(
+        planner.plan(
+            text="A whale carries a lantern through a library.",
+            visual_style="paper theater",
+            seed=1,
+        )
+    )
     repeated = asyncio.run(planner.plan(text=text, visual_style="paper theater", seed=2))
 
     assert len(stub.calls) == 3
+    assert first.cache_hit is False
+    assert restyled.cache_hit is True
+    assert restyled.plan == first.plan
     assert repeated.cache_hit is False
 
 

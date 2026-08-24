@@ -108,7 +108,7 @@ function setRendererReadiness(state, title, detail, {buttonDisabled = false} = {
 }
 
 function currentPlanKey() {
-  return `${elements.story.value.trim()}\u0000${elements.style.value.trim() || "luminous paper theater"}`;
+  return elements.story.value.trim();
 }
 
 function markRendererReady(expiresInSeconds, planner = null, preparedKey = null) {
@@ -170,7 +170,7 @@ async function prewarmRenderer() {
     setRendererReadiness("error", "Add a story moment first", "The edge planner needs at least three characters.");
     return;
   }
-  const preparedKey = `${text}\u0000${visualStyle}`;
+  const preparedKey = text;
   rendererPrewarming = true;
   elements.prewarmButton.textContent = "Preparing…";
   setRendererReadiness(
@@ -230,7 +230,7 @@ function invalidatePreparation() {
   setRendererReadiness(
     Date.now() < rendererWarmUntil ? "ready" : "idle",
     Date.now() < rendererWarmUntil ? "Renderer ready; edge plan changed" : "Scene preparation changed",
-    "Prepare again to cache Gemma's private plan for this exact passage and style.",
+    "Prepare again only after the passage changes; visual-style auditions reuse the private semantic plan.",
   );
 }
 

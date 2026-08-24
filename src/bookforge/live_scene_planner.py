@@ -211,7 +211,9 @@ class LiveSceneWirePlan(FrozenStrictModel):
                 "focus": self.focus.model_copy(
                     update={
                         "subject": _remove_distinctive_source_overlap(
-                            self.focus.subject, source_text
+                            self.focus.subject,
+                            source_text,
+                            preserve_subject=True,
                         ),
                         "action": _remove_distinctive_source_overlap(
                             self.focus.action, source_text
@@ -229,8 +231,22 @@ class LiveSceneWirePlan(FrozenStrictModel):
     def to_live_scene_plan(self, *, context_text: str = "") -> LiveScenePlan:
         focus_prompt = _normalized_wire_focus(self.focus)
         accent_prompt = _bounded_words(self.magic.prompt, 8)
+        if context_text:
+            focus_prompt = _remove_distinctive_source_overlap(
+                focus_prompt,
+                context_text,
+            )
+        scene_summary = _derived_scene_summary(focus_prompt, accent_prompt)
+        if context_text:
+            # Sanitizing fields independently can still recreate a distinctive
+            # source phrase when subject and action are joined. Close that
+            # composition gap locally before the plan can reach a renderer.
+            scene_summary = _remove_distinctive_source_overlap(
+                scene_summary,
+                context_text,
+            )
         return LiveScenePlan(
-            scene_summary=_derived_scene_summary(focus_prompt, accent_prompt),
+            scene_summary=scene_summary,
             # The caller already supplies the visual style, including palette
             # and lighting. A fixed projection treatment avoids contradictory
             # tiny-model choices and saves two fields on the critical path.
@@ -571,6 +587,8 @@ def _normalized_action(value: str) -> str:
         "plants": "planting",
         "read": "reading",
         "reads": "reading",
+        "swim": "swimming",
+        "swims": "swimming",
         "unfold": "unfolding",
         "unfolds": "unfolding",
     }
@@ -862,7 +880,12 @@ def _contains_distinctive_source_phrase(
     )
 
 
-def _remove_distinctive_source_overlap(value: str, source_text: str) -> str:
+def _remove_distinctive_source_overlap(
+    value: str,
+    source_text: str,
+    *,
+    preserve_subject: bool = False,
+) -> str:
     """Minimally redact repeated source trigrams without inventing replacement text."""
 
     output_tokens = list(_privacy_tokens(value))
@@ -886,9 +909,16 @@ def _remove_distinctive_source_overlap(value: str, source_text: str) -> str:
         )
         if overlap_index is None:
             break
-        window = output_tokens[overlap_index : overlap_index + 3]
-        shortest_offset = min(range(3), key=lambda offset: len(window[offset]))
-        del output_tokens[overlap_index + shortest_offset]
+        if preserve_subject:
+            # Small models sometimes append the action to focus.subject. Remove
+            # the trailing token from an echoed trigram so the actor/head noun
+            # survives ("silver whale swims" -> "silver whale"). The dedicated
+            # action field still carries the visible verb.
+            deletion_offset = 2
+        else:
+            window = output_tokens[overlap_index : overlap_index + 3]
+            deletion_offset = min(range(3), key=lambda offset: len(window[offset]))
+        del output_tokens[overlap_index + deletion_offset]
         changed = True
     return (" ".join(output_tokens) if changed else value) or value
 
@@ -926,7 +956,11 @@ def live_scene_plan_prompt(
     # model only performs semantic extraction, so sending the seed wastes edge
     # input tokens and can introduce irrelevant variation.
     del seed
-    request = {"passage": text, "visual_style": visual_style}
+    # Visual style is applied deterministically when the final SceneSpec is
+    # compiled. Gemma extracts story semantics only, so sending style here
+    # wastes prompt tokens and prevents plan reuse across style auditions.
+    del visual_style
+    request = {"passage": text}
     compact_key_guide = (
         "\nCompact JSON keys: b=background_prompt; f={k=kind,s=subject,a=action}; "
         "m={k=kind,p=prompt}.\n"
@@ -1012,7 +1046,7 @@ class StructuredLiveScenePlanner:
         visual_style = _PLAN_STYLE_ADAPTER.validate_python(visual_style)
         if not 0 <= seed <= 2**32 - 1:
             raise ValueError("live-scene seed is outside uint32 range")
-        cache_key = self._cache_key(text=text, visual_style=visual_style)
+        cache_key = self._cache_key(text=text)
         cached = self._cache.pop(cache_key, None)
         if cached is not None:
             started = perf_counter()
@@ -1091,7 +1125,7 @@ class StructuredLiveScenePlanner:
         else:
             wire_plan = LiveSceneWirePlan.model_validate(plan.model_dump())
         sanitized_wire_plan = wire_plan.privacy_sanitized(source_text=text)
-        validated = sanitized_wire_plan.to_live_scene_plan(context_text=f"{text} {visual_style}")
+        validated = sanitized_wire_plan.to_live_scene_plan(context_text=text)
         validate_live_scene_plan_privacy(validated, source_text=text)
         if self.cache_entries:
             self._cache[cache_key] = (validated, metrics)
@@ -1113,11 +1147,10 @@ class StructuredLiveScenePlanner:
         if self._inflight.get(cache_key) is task:
             self._inflight.pop(cache_key, None)
 
-    def _cache_key(self, *, text: str, visual_style: str) -> str:
+    def _cache_key(self, *, text: str) -> str:
         payload = json.dumps(
             {
                 "text": text,
-                "visual_style": visual_style,
                 "model_revision": self.model_revision,
                 "compact_wire": self.compact_wire,
             },

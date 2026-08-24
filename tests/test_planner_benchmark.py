@@ -1,6 +1,10 @@
 import pytest
 
-from bookforge.planner_benchmark import _require_loopback, _summarize
+from bookforge.planner_benchmark import (
+    _contract_order_for_case,
+    _require_loopback,
+    _summarize,
+)
 
 
 def test_planner_benchmark_requires_loopback_model_endpoint() -> None:
@@ -26,3 +30,12 @@ def test_planner_benchmark_summary_preserves_latency_and_token_maxima() -> None:
         "mean_output_tokens": 112.0,
         "maximum_output_tokens": 116,
     }
+
+
+def test_planner_benchmark_counterbalances_contract_order() -> None:
+    contracts = ("standard", "compact")
+
+    assert _contract_order_for_case(0, contracts) == ("standard", "compact")
+    assert _contract_order_for_case(1, contracts) == ("compact", "standard")
+    assert _contract_order_for_case(2, contracts) == ("standard", "compact")
+    assert _contract_order_for_case(3, ("compact",)) == ("compact",)

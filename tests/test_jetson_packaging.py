@@ -656,6 +656,15 @@ def test_workbench_rehearsal_prepares_edge_plan_and_text_free_renderer_concurren
     assert "visual_style" not in renderer_body
     assert "include_motion: false" in prewarm_source
     assert "preparedPlanKey" in prewarm_source
+    assert "const preparedKey = text;" in prewarm_source
+    plan_key_source = controller[
+        controller.index("function currentPlanKey()") : controller.index(
+            "function markRendererReady"
+        )
+    ]
+    assert "elements.story.value.trim()" in plan_key_source
+    assert "elements.style" not in plan_key_source
+    assert "visual-style auditions reuse the private semantic plan" in controller
 
 
 def test_hardware_evidence_and_privacy_scripts_are_executable() -> None:

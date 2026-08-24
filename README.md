@@ -239,7 +239,9 @@ representative structured response from 272 to 226 bytes without changing the sc
 disabled by default because output size alone does not prove lower latency or equivalent semantics;
 the production switch requires a real multi-passage edge benchmark.
 
-Repeated passage/style pairs now reuse a bounded, content-addressed in-memory Gemma plan cache.
+Repeated passages now reuse a bounded, content-addressed in-memory Gemma plan cache even when the
+visual style changes. Style is applied later during local SceneSpec compilation, so it no longer
+consumes Gemma input tokens or invalidates the private semantic plan.
 The cache stores only the locally privacy-gated semantic plan, is invalidated by model revision or
 wire-contract changes, and still applies a new seed when the final SceneSpec is built. Rehearsals,
 rereads, and alternate-seed retries therefore skip the measured ~4.3-second edge decode; first-time
@@ -416,7 +418,7 @@ frame-streaming Jetson ASR engine—and the typed/manual paths remain the determ
 | `GET /v1/live-scene-sessions/{session_id}/events` | No | Stream the server epoch, current job, revisions, and same-session replacements |
 | `GET /v1/live-scene-provider/warm-status` | No | Inspect explicit Modal warm-provider readiness without allocating a GPU |
 | `POST /v1/live-scene-provider/prewarm` | Modal warm provider | Budget-check and intentionally prewarm the selected Modal classes |
-| `POST /v1/live-scene-planner/prepare` | Local Gemma | Privacy-gate and cache one passage/style semantic plan without starting a cloud render |
+| `POST /v1/live-scene-planner/prepare` | Local Gemma | Privacy-gate and cache one passage semantic plan without starting a cloud render; alternate styles reuse it |
 | `PUT /v1/reader-sessions/{id}` | No | Configure trusted page text for local alignment |
 | `GET /v1/reader-sessions/{id}` | No | Recover the current generation and aligned position after reconnect |
 | `POST /v1/reader-sessions/{id}:reset` | No | Rewind the aligner and every connected projector for another reading |
@@ -487,7 +489,7 @@ passes the real I/O and latency run on JetPack 7.2.1.
 - [`benchmarks/bookforge-exact-scene-replay-2026-08-24.json`](benchmarks/bookforge-exact-scene-replay-2026-08-24.json): exact request replay through POST/SSE in 4.73 ms client wall with full SHA-256 asset validation and zero new provider work
 - [`benchmarks/bookforge-projector-crossfade-2026-08-24.json`](benchmarks/bookforge-projector-crossfade-2026-08-24.json): live-browser burst test of the 320 ms crossfade and immediate replacement guard; minimum scene opacity 1.0, 30 fps, zero dropped frames
 - [`benchmarks/bookforge-projector-tone-mapping-2026-08-24.json`](benchmarks/bookforge-projector-tone-mapping-2026-08-24.json): zero-generation-cost adaptive gamma for dark masters; real WebGL browser pass at 31 fps with zero dropped frames, while physical-projector validation remains explicit
-- [`benchmarks/bookforge-mac-gemma-wire-ab-2026-08-24.json`](benchmarks/bookforge-mac-gemma-wire-ab-2026-08-24.json): offline five-scene standard-versus-compact Gemma contract A/B; compact was 15.0% faster with all tested semantics retained, but the exact Jetson acceptance remains required before enabling it
+- [`benchmarks/bookforge-mac-gemma-wire-ab-2026-08-24.json`](benchmarks/bookforge-mac-gemma-wire-ab-2026-08-24.json): counterbalanced offline five-scene standard-versus-compact Gemma contract A/B plus style-independent semantic caching; compact was 10.4% faster, and an alternate style reused the local plan in 0.218 ms with zero new model tokens, but the exact Jetson acceptance remains required before enabling compact mode
 - [`benchmarks/bookforge-render-delivery-optimization-2026-08-23.json`](benchmarks/bookforge-render-delivery-optimization-2026-08-23.json): JPEG delivery, adaptive projector exposure, and measured rejections for smaller renders, compilation, and prompt changes
 - [`benchmarks/bookforge-packaging-optimization-2026-08-24.json`](benchmarks/bookforge-packaging-optimization-2026-08-24.json): parallel packaging telemetry, depth-JPEG quality/transfer evidence, single-decode projector delivery, and reconciled spend
 - [`benchmarks/bookforge-sana-sprint-optimization-2026-08-24.json`](benchmarks/bookforge-sana-sprint-optimization-2026-08-24.json): six-image SANA-Sprint quality/speed sweep, exact 1.188-second production API acceptance, honest projected full-path boundary, and billing reconciliation

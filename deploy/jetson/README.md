@@ -216,9 +216,11 @@ OLLAMA_HOST=http://127.0.0.1:11434 \
 warm new-passage request was 4.57 seconds at roughly 27-29 generated tokens per second. The very
 first request took about 152 seconds while CUDA compiled and cached kernels; always prewarm before
 a live reading. Full evidence is in
-`benchmarks/jetson-gemma3-ollama-2026-08-23.json`. The optimized request fixture contains the actual
-compact `LiveSceneWirePlan` contract from `src/bookforge/live_scene_planner.py`; its canonical JSON
-Schema SHA-256 is `d08b410c34d519a12410e2b22beb89beb2ec9d89a06887c783d3a6ce44839c14`.
+`benchmarks/jetson-gemma3-ollama-2026-08-23.json`. The optimized request fixture preserves the
+hardware-accepted style-bound prompt and the still-current `LiveSceneWirePlan` schema; its canonical
+JSON Schema SHA-256 is `d08b410c34d519a12410e2b22beb89beb2ec9d89a06887c783d3a6ce44839c14`.
+Current code no longer sends visual style to the semantic planner, so the next exact Jetson report
+must come from the counterbalanced harness below rather than mutating this historical fixture.
 The earlier `jetson-gemma3-schema-request.json` remains immutable historical evidence for the first
 accepted end-to-end run and is not the current production contract.
 
@@ -252,8 +254,9 @@ prewarmed model; keep the independent
 20-second model-client timeout for
 diagnostics and ensure the prewarm completes before a live reading.
 
-The live planner keeps up to 32 privacy-gated semantic plans in memory. Identical passage/style
-rereads and alternate-seed retries skip Gemma decode while still deriving a new seeded SceneSpec;
+The live planner keeps up to 32 privacy-gated semantic plans in memory. Identical-passage rereads,
+visual-style auditions, and alternate-seed retries skip Gemma decode while still deriving a new
+styled, seeded SceneSpec;
 the workbench reports `local cache` instead of presenting that path as fresh inference. The digest
 also binds the model revision and wire contract, and nothing is persisted or sent off-device.
 
@@ -269,8 +272,10 @@ the passage to Modal. Full evidence is in
 `benchmarks/bookforge-speed-optimization-2026-08-23.json`.
 
 When the Jetson is available, compare the accepted and short-key contracts with the local-only
-five-passage harness. A warmup is run and excluded; the report fails technical acceptance when any
-case exceeds 12 seconds or 180 output tokens, and it still requires human semantic review:
+five-passage harness. A warmup is run and excluded, and which contract runs first alternates by
+passage so shared-prefix cache reuse cannot systematically favor one side. The report fails
+technical acceptance when any case exceeds 12 seconds or 180 output tokens, and it still requires
+human semantic review:
 
 ```bash
 python -m bookforge.planner_benchmark \
