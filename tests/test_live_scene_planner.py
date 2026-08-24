@@ -573,6 +573,35 @@ def test_structured_planner_coalesces_text_free_local_warmup() -> None:
     assert '{"ready":true}' in str(stub.calls[0]["prompt"])
 
 
+def test_structured_planner_does_not_spend_its_timeout_behind_warmup() -> None:
+    stub = _ModelStub(delay_seconds=0.01)
+    planner = StructuredLiveScenePlanner(
+        stub,  # type: ignore[arg-type]
+        timeout_seconds=1,
+    )
+
+    async def warm_then_plan():
+        warmup = asyncio.create_task(planner.warmup())
+        await asyncio.sleep(0)
+        plan = asyncio.create_task(
+            planner.plan(
+                text="A child opens a quiet book while paper birds rise.",
+                visual_style="luminous watercolor paper theater",
+                seed=23,
+            )
+        )
+        return await warmup, await plan
+
+    warmup, plan = asyncio.run(warm_then_plan())
+
+    assert warmup.metrics.output_tokens == 5
+    assert plan.plan.focus.prompt
+    assert [call["output_type"].__name__ for call in stub.calls] == [
+        "_LiveScenePlannerWarmupOutput",
+        "LiveSceneWirePlan",
+    ]
+
+
 def test_structured_planner_reuses_privacy_gated_semantics_for_new_seed_and_style() -> None:
     stub = _ModelStub()
     planner = StructuredLiveScenePlanner(

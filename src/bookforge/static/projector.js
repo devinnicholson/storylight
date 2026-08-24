@@ -87,12 +87,10 @@ const state = {
   pendingReaderEvents: [],
   depthRenderer: null,
   liveSceneChannel: null,
-  liveEventSource: null,
   liveSessionEventSource: null,
   liveSessionStreamHealthy: false,
   liveRendezvousTimer: null,
   liveRendezvousInFlight: false,
-  liveTransportEpoch: 0,
   liveServerInstanceId: null,
   liveSessionRevision: 0,
   liveSessionJobId: null,
@@ -1656,52 +1654,6 @@ function liveSnapshotIsTerminal(snapshot) {
     || snapshot?.stage === "failed";
 }
 
-function closeLiveJobEvents() {
-  state.liveTransportEpoch += 1;
-  state.liveEventSource?.close();
-  state.liveEventSource = null;
-}
-
-function connectLiveJobEvents(jobId, serverInstanceId, sessionRevision) {
-  closeLiveJobEvents();
-  const transportEpoch = state.liveTransportEpoch;
-  const source = new EventSource(`/v1/live-scenes/${encodeURIComponent(jobId)}/events`);
-  state.liveEventSource = source;
-  const receive = (event) => {
-    if (
-      transportEpoch !== state.liveTransportEpoch
-      || state.liveServerInstanceId !== serverInstanceId
-      || state.liveSessionRevision !== sessionRevision
-      || state.liveSessionJobId !== jobId
-    ) return;
-    try {
-      const snapshot = JSON.parse(event.data);
-      if (snapshot.job_id !== jobId) return;
-      if (snapshot.revision === undefined && event.lastEventId) {
-        snapshot.revision = Number(event.lastEventId);
-      }
-      queueLiveSceneSnapshot({
-        type: "bookforge.live-scene",
-        sessionId: SESSION_ID,
-        serverInstanceId,
-        sessionRevision,
-        sentAt: Date.now(),
-        snapshot,
-      });
-      if (liveSnapshotIsTerminal(snapshot)) closeLiveJobEvents();
-    } catch (_) {
-      setEvent("scene.stream-error", "Ignored an invalid live-scene event");
-    }
-  };
-  source.addEventListener("scene.job", receive);
-  source.addEventListener("message", receive);
-  source.addEventListener("error", () => {
-    if (transportEpoch === state.liveTransportEpoch) {
-      setEvent("scene.reconnecting", `job ${jobId}`);
-    }
-  });
-}
-
 function acceptLiveSceneSessionPointer(payload) {
   const serverInstanceId = payload?.server_instance_id;
   const sessionRevision = Number(payload?.session_revision);
@@ -1718,7 +1670,6 @@ function acceptLiveSceneSessionPointer(payload) {
   ) throw new Error("rendezvous returned an invalid session pointer");
 
   if (!state.liveServerInstanceId || state.liveServerInstanceId !== serverInstanceId) {
-    closeLiveJobEvents();
     state.liveRenderAbortController?.abort();
     state.liveRenderAbortController = null;
     state.liveServerInstanceId = serverInstanceId;
@@ -1740,8 +1691,6 @@ function acceptLiveSceneSessionPointer(payload) {
     && state.liveSessionJobId !== jobId
   ) return false;
 
-  const changedJob = sessionRevision > state.liveSessionRevision
-    || state.liveSessionJobId !== jobId;
   state.liveSessionRevision = sessionRevision;
   state.liveSessionJobId = jobId;
   queueLiveSceneSnapshot({
@@ -1752,14 +1701,6 @@ function acceptLiveSceneSessionPointer(payload) {
     sentAt: Date.now(),
     snapshot,
   });
-  if (changedJob) {
-    closeLiveJobEvents();
-    if (!liveSnapshotIsTerminal(snapshot)) {
-      connectLiveJobEvents(jobId, serverInstanceId, sessionRevision);
-    }
-  } else if (!state.liveEventSource && !liveSnapshotIsTerminal(snapshot)) {
-    connectLiveJobEvents(jobId, serverInstanceId, sessionRevision);
-  }
   return true;
 }
 
@@ -2115,7 +2056,6 @@ window.addEventListener("beforeunload", () => {
   stopLiveSceneRendezvous();
   state.liveSessionEventSource?.close();
   state.liveSessionStreamHealthy = false;
-  closeLiveJobEvents();
   state.depthRenderer?.destroy();
   state.liveSceneChannel?.close();
   state.socket?.close();

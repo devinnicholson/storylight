@@ -66,7 +66,6 @@ const LIVE_SCENE_CHANNEL = "bookforge.live-scenes";
 const liveSceneChannel = "BroadcastChannel" in window
   ? new BroadcastChannel(LIVE_SCENE_CHANNEL)
   : null;
-let liveEventSource = null;
 let liveSessionEventSource = null;
 let livePollTimer = null;
 let liveElapsedTimer = null;
@@ -696,8 +695,6 @@ function isTerminalSnapshot(snapshot) {
 }
 
 function stopLiveJobTransport() {
-  liveEventSource?.close();
-  liveEventSource = null;
   window.clearTimeout(livePollTimer);
   livePollTimer = null;
   window.clearInterval(liveElapsedTimer);
@@ -833,7 +830,6 @@ function trackLiveSceneSession(pointer, {restoreInputs = false} = {}) {
   renderLiveSnapshot(snapshot, epoch);
   if (!isTerminalSnapshot(snapshot)) {
     liveElapsedTimer = window.setInterval(updateElapsedClock, 100);
-    connectLiveSceneEvents(snapshot.job_id, epoch);
     pollLiveScene(snapshot.job_id, epoch);
   }
   return true;
@@ -896,29 +892,6 @@ function connectLiveSceneSessionEvents() {
   source.addEventListener("message", receive);
   source.addEventListener("error", () => {
     elements.interim.textContent = "Session updates reconnecting; status polling remains available.";
-  });
-}
-
-function connectLiveSceneEvents(jobId, epoch) {
-  liveEventSource?.close();
-  const source = new EventSource(`/v1/live-scenes/${encodeURIComponent(jobId)}/events`);
-  liveEventSource = source;
-  const receive = (event) => {
-    if (epoch !== liveRequestEpoch) return;
-    try {
-      const snapshot = JSON.parse(event.data);
-      if (snapshot.revision === undefined && event.lastEventId) snapshot.revision = Number(event.lastEventId);
-      renderLiveSnapshot(snapshot, epoch);
-    } catch (_) {
-      elements.interim.textContent = "Ignored an invalid generation update; polling remains active.";
-    }
-  };
-  source.addEventListener("scene.job", receive);
-  source.addEventListener("message", receive);
-  source.addEventListener("error", () => {
-    if (epoch === liveRequestEpoch && activeLiveJobId) {
-      elements.interim.textContent = "Live updates reconnecting; the scene status is also being polled.";
-    }
   });
 }
 

@@ -1085,6 +1085,13 @@ class StructuredLiveScenePlanner:
         visual_style: str,
         seed: int,
     ) -> LiveScenePlanningResult:
+        warmup_task = self._warmup_task
+        if warmup_task is not None:
+            # The browser may submit while its text-free warmup is still
+            # loading the one-slot Ollama runtime. Let that bounded task finish
+            # before starting the plan's independent timeout budget.
+            with suppress(LiveScenePlannerError):
+                await asyncio.shield(warmup_task)
         text = _PLAN_TEXT_ADAPTER.validate_python(text)
         visual_style = _PLAN_STYLE_ADAPTER.validate_python(visual_style)
         if not 0 <= seed <= 2**32 - 1:

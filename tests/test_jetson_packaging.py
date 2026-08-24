@@ -505,8 +505,12 @@ def test_live_scene_workbench_uses_progressive_job_contract() -> None:
     assert 'data-stage="motion_ready"' in markup
     assert "Later: Read it aloud" in markup
     assert 'fetch("/v1/live-scenes"' in controller
-    assert "new EventSource(`/v1/live-scenes/${encodeURIComponent(jobId)}/events`)" in controller
-    assert 'source.addEventListener("scene.job", receive)' in controller
+    assert "/v1/live-scene-sessions/${encodeURIComponent(readerSessionId)}/events" in controller
+    assert 'source.addEventListener("scene.session", receive)' in controller
+    assert (
+        "new EventSource(`/v1/live-scenes/${encodeURIComponent(jobId)}/events`)"
+        not in controller
+    )
     assert "response.status !== 202" in controller
     assert "snapshot.story_pack" in controller
     assert "broadcastLiveSnapshot" in controller
@@ -566,8 +570,8 @@ def test_server_rendezvous_synchronizes_separate_workbench_and_kiosk_browsers() 
     assert "function connectLiveSceneSessionEvents()" in projector
     assert 'source.addEventListener("scene.session", receive)' in projector
     assert "async function rendezvousLiveScene()" in projector
-    assert "connectLiveJobEvents(jobId, serverInstanceId, sessionRevision)" in projector
-    assert "new EventSource(`/v1/live-scenes/${encodeURIComponent(jobId)}/events`)" in projector
+    assert "connectLiveJobEvents" not in projector
+    assert "new EventSource(`/v1/live-scenes/${encodeURIComponent(jobId)}/events`)" not in projector
     assert "sessionRevision < state.liveSessionRevision" in projector
     assert "state.liveSessionJobId !== jobId" in projector
     assert "server_instance_id" in workbench
