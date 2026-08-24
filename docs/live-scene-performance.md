@@ -121,6 +121,13 @@ files were byte-identical to the FP32 baseline, while model load improved 8.4%, 
 improved 24.3%, and observed cold wall improved 726 ms (2.26%). Manifests pin the depth precision as
 `float16` rather than leaving it implicit.
 
+Projector activation is now decomposed into media-ready, renderer-setup, first-paint, reader-sync,
+and total client timing. In the isolated no-cost browser harness, replacing the nested two-frame
+crossfade wait with a forced incoming-style flush plus one display frame reduced motion-stage client
+activation from 81.6 ms to 23.6 ms (71.1%); first-paint wait fell from 61.3 ms to 3.5 ms. Frame-loss
+telemetry calibrates to the display's observed refresh interval instead of assuming 60 Hz. This is
+browser motion-handoff evidence; the physical Jetson depth-WebGL timing remains an acceptance gate.
+
 SANA-Sprint does not expose a separate negative-prompt input. Bookforge therefore carries no-text,
 no-logo, and projection constraints in the positive semantic visual direction and records
 `negative_prompt_supported=false` in the provider manifest instead of implying that a discarded

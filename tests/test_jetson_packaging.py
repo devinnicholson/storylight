@@ -259,10 +259,32 @@ def test_projector_wake_lock_is_visibility_scoped_and_never_bypasses_login() -> 
 def test_projector_does_not_count_background_tab_time_as_dropped_frames() -> None:
     projector = (ROOT / "src/bookforge/static/projector.js").read_text()
 
-    assert "function resetFrameSampling()" in projector
+    assert "function resetFrameSampling({resetDropped = false} = {})" in projector
     assert "monitorFrames.previous = null" in projector
     assert "monitorFrames.startedAt = null" in projector
     assert 'document.addEventListener("visibilitychange", resetFrameSampling)' in projector
+    assert "resetFrameSampling({resetDropped: true})" in projector
+    assert "state.droppedFrames = 0" in projector
+    assert "monitorFrames.baselineMs = calibration" in projector
+    assert "delta > baseline * 1.5" in projector
+    assert "Math.round(delta / baseline) - 1" in projector
+
+
+def test_projector_reports_asset_renderer_paint_and_reader_activation_timings() -> None:
+    projector = (ROOT / "src/bookforge/static/projector.js").read_text()
+
+    assert "timings.mediaReadyMs = performance.now() - mediaStartedAt" in projector
+    assert "timings.rendererSetupMs = performance.now() - rendererStartedAt" in projector
+    assert "await committedPaint.promise" in projector
+    assert "timings.firstPaintMs = Math.max(" in projector
+    assert "timings.readerSyncMs = performance.now() - readerSyncStartedAt" in projector
+    assert "void nextVersion.offsetWidth" in projector
+    assert "requestAnimationFrame(() => {" in projector
+    assert "activationBreakdown: state.liveActivationBreakdown" in projector
+    assert "dataset.mediaReadyMs" in projector
+    assert "dataset.rendererSetupMs" in projector
+    assert "dataset.firstPaintMs" in projector
+    assert "dataset.readerSyncMs" in projector
 
 
 def test_projector_uses_depth_webgl_and_enforces_offline_replay_boundary() -> None:
@@ -329,7 +351,7 @@ def test_projector_validates_and_navigates_every_story_page() -> None:
 
     assert "for (const page of pack.pages)" in projector
     assert "async function activatePage(nextIndex, renderToken = null)" in projector
-    assert "await renderPackLayers(state.pack, state.page, renderToken);" in projector
+    assert "await renderPackLayers(state.pack, state.page, renderToken, timings);" in projector
     assert "await configureReaderSession();" in projector
     assert 'currentUrl.searchParams.set("page", String(nextIndex + 1));' in projector
     assert 'event.key === "["' in projector
@@ -431,7 +453,10 @@ def test_projector_hot_swaps_generated_stages_without_reloading() -> None:
     assert 'query.get("live") === "1"' in controller
     assert 'new BroadcastChannel(LIVE_SCENE_CHANNEL)' in controller
     assert 'event.origin !== window.location.origin' in controller
-    assert "async function renderPackLayers(pack, page, renderToken = null)" in controller
+    assert (
+        "async function renderPackLayers(pack, page, renderToken = null, timings = null)"
+        in controller
+    )
     assert 'commitSceneVersion(version, "motion-composed", null, renderToken)' in controller
     assert "previousVersions.forEach" in controller
     assert "previousRenderer?.destroy();" in controller

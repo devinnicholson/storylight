@@ -107,10 +107,12 @@ const state = {
   liveStartedAt: 0,
   liveElapsedMs: 0,
   liveActivationMs: null,
+  liveActivationBreakdown: null,
   liveUpdatedAt: 0,
   liveTerminal: false,
   liveLastEnvelopeAt: 0,
   liveTransition: Promise.resolve(),
+  lastSceneCommitPaint: null,
   screenWakeLock: null,
   screenWakeLockRequest: null,
 };
@@ -681,18 +683,34 @@ function commitSceneVersion(nextVersion, mode, nextRenderer = null, renderToken 
       delete layer.dataset.layerId;
     });
   });
-  requestAnimationFrame(() => requestAnimationFrame(() => {
+  let resolveFirstPaint;
+  const firstPaint = new Promise((resolve) => {
+    resolveFirstPaint = resolve;
+  });
+  state.lastSceneCommitPaint = {
+    version: nextVersion,
+    committedAt: performance.now(),
+    promise: firstPaint,
+  };
+  // Flush the incoming state once, then transition on the next display frame.
+  // The former nested rAF added a full refresh interval to every scene upgrade.
+  void nextVersion.offsetWidth;
+  requestAnimationFrame(() => {
     nextVersion.classList.remove("incoming");
     nextVersion.classList.add("current");
-  }));
+    resolveFirstPaint(performance.now());
+  });
   window.setTimeout(() => {
     previousVersions.forEach((version) => version.remove());
     previousRenderer?.destroy();
   }, 760);
+  // Acceptance telemetry belongs to the scene currently on screen, not to the
+  // authoring tab's entire lifetime.
+  resetFrameSampling({resetDropped: true});
   return true;
 }
 
-async function renderPackLayers(pack, page, renderToken = null) {
+async function renderPackLayers(pack, page, renderToken = null, timings = null) {
   const readyAssets = (pack.assets || []).filter(
     (asset) => asset.page_id === page.page_id && asset.state === "ready" && asset.kind !== "procedural",
   );
@@ -715,8 +733,12 @@ async function renderPackLayers(pack, page, renderToken = null) {
     appendSceneHotspots(scene, page);
     version.append(scene);
     try {
+      const mediaStartedAt = performance.now();
       await waitForVideoFrame(video, renderToken?.signal);
+      if (timings) timings.mediaReadyMs = performance.now() - mediaStartedAt;
+      const commitStartedAt = performance.now();
       if (!commitSceneVersion(version, "motion-composed", null, renderToken)) return false;
+      if (timings) timings.commitMs = performance.now() - commitStartedAt;
       video.play().catch(() => setEvent("renderer.waiting", "Tap once to allow motion playback"));
       return "motion-composed";
     } catch (error) {
@@ -744,10 +766,12 @@ async function renderPackLayers(pack, page, renderToken = null) {
     try {
       // Load and decode each provider asset exactly once. The decoded master image
       // doubles as the always-visible fallback and the WebGL source texture.
+      const mediaStartedAt = performance.now();
       const [masterResult, depthResult] = await Promise.allSettled([
         loadSceneImage(masterAsset.local_uri, {signal: renderToken?.signal}),
         loadSceneImage(depthAsset.local_uri, {signal: renderToken?.signal}),
       ]);
+      if (timings) timings.mediaReadyMs = performance.now() - mediaStartedAt;
       if (masterResult.status === "rejected") throw masterResult.reason;
       const fallback = masterResult.value;
       fallback.className = "depth-scene-fallback";
@@ -758,14 +782,18 @@ async function renderPackLayers(pack, page, renderToken = null) {
       version.append(scene);
       if (depthResult.status === "rejected") throw depthResult.reason;
       const depthImage = depthResult.value;
+      const rendererStartedAt = performance.now();
       const renderer = await startDepthRenderer(
         canvas,
         fallback,
         depthImage,
         page.scene_spec,
       );
+      if (timings) timings.rendererSetupMs = performance.now() - rendererStartedAt;
       scene.style.setProperty("--projection-exposure", renderer.projectionExposure.toFixed(3));
+      const commitStartedAt = performance.now();
       if (!commitSceneVersion(version, "depth-composed", renderer, renderToken)) return false;
+      if (timings) timings.commitMs = performance.now() - commitStartedAt;
       return "depth-composed";
     } catch (error) {
       if (!liveRenderTokenIsCurrent(renderToken)) {
@@ -782,7 +810,9 @@ async function renderPackLayers(pack, page, renderToken = null) {
         "--projection-exposure",
         projectionExposureForImage(masterImage).toFixed(3),
       );
+      const commitStartedAt = performance.now();
       if (!commitSceneVersion(version, "depth-composed", null, renderToken)) return false;
+      if (timings) timings.commitMs = performance.now() - commitStartedAt;
       return "master-fallback";
     }
   }
@@ -861,12 +891,15 @@ async function renderPackLayers(pack, page, renderToken = null) {
   });
   appendAmbientEffects(version, page.scene_spec);
   const mode = bundledHero ? "hero-composed" : "draft-composed";
-  return commitSceneVersion(
+  const commitStartedAt = performance.now();
+  const committed = commitSceneVersion(
     version,
     mode,
     null,
     renderToken,
-  ) ? mode : false;
+  );
+  if (timings) timings.commitMs = performance.now() - commitStartedAt;
+  return committed ? mode : false;
 }
 
 function renderTimeline() {
@@ -1165,10 +1198,31 @@ async function activatePage(nextIndex, renderToken = null) {
   clearLayerState();
   renderTimeline();
   updatePageControls();
-  const renderedMode = await renderPackLayers(state.pack, state.page, renderToken);
+  const activationStartedAt = performance.now();
+  const timings = {
+    mediaReadyMs: 0,
+    rendererSetupMs: 0,
+    commitMs: 0,
+    firstPaintMs: 0,
+    readerSyncMs: 0,
+    visualReadyMs: 0,
+    totalMs: 0,
+  };
+  const renderedMode = await renderPackLayers(state.pack, state.page, renderToken, timings);
   if (!renderedMode || !liveRenderTokenIsCurrent(renderToken)) return false;
-  const session = await configureReaderSession();
+  const committedPaint = state.lastSceneCommitPaint;
+  const firstPaintAt = committedPaint?.version?.isConnected
+    ? await committedPaint.promise
+    : performance.now();
   if (!liveRenderTokenIsCurrent(renderToken)) return false;
+  timings.visualReadyMs = performance.now() - activationStartedAt;
+  timings.firstPaintMs = Math.max(0, firstPaintAt - (committedPaint?.committedAt || firstPaintAt));
+  const readerSyncStartedAt = performance.now();
+  const session = await configureReaderSession();
+  timings.readerSyncMs = performance.now() - readerSyncStartedAt;
+  timings.totalMs = performance.now() - activationStartedAt;
+  if (!liveRenderTokenIsCurrent(renderToken)) return false;
+  state.liveActivationBreakdown = timings;
   goToWord(session.last_reached_index ?? -1);
   const currentUrl = new URL(window.location.href);
   currentUrl.searchParams.set("page", String(nextIndex + 1));
@@ -1290,8 +1344,24 @@ function renderLiveGenerationBadge(snapshot, {activated = true, fallbackMode = n
   elements.liveGenerationDetail.textContent = evidence;
   if (Number.isFinite(state.liveActivationMs)) {
     elements.liveGenerationBadge.dataset.activationMs = state.liveActivationMs.toFixed(3);
+    const breakdown = state.liveActivationBreakdown;
+    if (breakdown) {
+      elements.liveGenerationBadge.dataset.mediaReadyMs = breakdown.mediaReadyMs.toFixed(3);
+      elements.liveGenerationBadge.dataset.rendererSetupMs = breakdown.rendererSetupMs.toFixed(3);
+      elements.liveGenerationBadge.dataset.firstPaintMs = breakdown.firstPaintMs.toFixed(3);
+      elements.liveGenerationBadge.dataset.readerSyncMs = breakdown.readerSyncMs.toFixed(3);
+    } else {
+      delete elements.liveGenerationBadge.dataset.mediaReadyMs;
+      delete elements.liveGenerationBadge.dataset.rendererSetupMs;
+      delete elements.liveGenerationBadge.dataset.firstPaintMs;
+      delete elements.liveGenerationBadge.dataset.readerSyncMs;
+    }
   } else {
     delete elements.liveGenerationBadge.dataset.activationMs;
+    delete elements.liveGenerationBadge.dataset.mediaReadyMs;
+    delete elements.liveGenerationBadge.dataset.rendererSetupMs;
+    delete elements.liveGenerationBadge.dataset.firstPaintMs;
+    delete elements.liveGenerationBadge.dataset.readerSyncMs;
   }
   elements.liveGenerationBadge.classList.toggle("has-warning", Boolean(warning));
   updateLiveGenerationClock();
@@ -1371,6 +1441,7 @@ function queueLiveSceneSnapshot(envelope) {
     state.liveRevision = -1;
     state.liveElapsedMs = 0;
     state.liveActivationMs = null;
+    state.liveActivationBreakdown = null;
     state.liveStartedAt = performance.now();
   } else if (revision === state.liveAcceptedRevision) {
     if (state.liveRenderPending) return;
@@ -1413,6 +1484,7 @@ function queueLiveSceneSnapshot(envelope) {
     if (state.liveAssetFingerprint === fingerprint) {
       state.page = nextPage;
       state.liveActivationMs = 0;
+      state.liveActivationBreakdown = null;
       state.liveRenderPending = false;
       state.liveCommittedJobId = jobId;
       state.liveCommittedRevision = revision;
@@ -1440,6 +1512,7 @@ function queueLiveSceneSnapshot(envelope) {
       stage: snapshot.stage,
       renderedMode,
       activationMs: state.liveActivationMs,
+      activationBreakdown: state.liveActivationBreakdown,
     });
     setEvent("scene.upgraded", `${snapshot.stage} · revision ${revision} · no reload`);
   }).catch((error) => {
@@ -1786,24 +1859,36 @@ function monitorFrames(timestamp) {
   const previous = monitorFrames.previous || timestamp;
   const delta = timestamp - previous;
   monitorFrames.previous = timestamp;
-  const sampling = timestamp - monitorFrames.startedAt > 1500 && document.visibilityState === "visible";
-  if (sampling && delta > 25) {
-    state.droppedFrames += Math.max(1, Math.round(delta / 16.67) - 1);
-  }
   state.frameSamples.push(delta);
   if (state.frameSamples.length > 60) state.frameSamples.shift();
+  const sampling = timestamp - monitorFrames.startedAt > 1500 && document.visibilityState === "visible";
+  if (sampling && !monitorFrames.baselineMs) {
+    const calibration = state.frameSamples
+      .filter((sample) => sample > 2 && sample < 100)
+      .sort((left, right) => left - right);
+    monitorFrames.baselineMs = calibration[Math.floor(calibration.length / 2)] || 16.67;
+  }
+  const baseline = monitorFrames.baselineMs || 16.67;
+  if (sampling && delta > baseline * 1.5) {
+    state.droppedFrames += Math.max(1, Math.round(delta / baseline) - 1);
+  }
   const average = state.frameSamples.reduce((sum, value) => sum + value, 0) / state.frameSamples.length;
   elements.frameRate.textContent = average > 0 ? `${Math.min(240, 1000 / average).toFixed(0)} fps` : "—";
   elements.droppedFrames.textContent = String(state.droppedFrames);
   requestAnimationFrame(monitorFrames);
 }
 
-function resetFrameSampling() {
+function resetFrameSampling({resetDropped = false} = {}) {
   // requestAnimationFrame pauses in a background tab. Do not count that pause
   // as millions of dropped display frames when the projector becomes visible.
   monitorFrames.previous = null;
   monitorFrames.startedAt = null;
+  monitorFrames.baselineMs = null;
   state.frameSamples = [];
+  if (resetDropped) {
+    state.droppedFrames = 0;
+    elements.droppedFrames.textContent = "0";
+  }
 }
 
 async function loadStoryPack() {
