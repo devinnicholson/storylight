@@ -748,7 +748,6 @@ def test_provider_factory_selects_fake_and_finite_modal_without_persistent_servi
         model_client=FakeModelClient(),
         planner_timeout_seconds=12,
         planner_model_revision="sha256:fixture",
-        planner_compact_wire=True,
         planner_cache_entries=7,
         planner_cache_dir=tmp_path / "plans",
     )
@@ -758,7 +757,7 @@ def test_provider_factory_selects_fake_and_finite_modal_without_persistent_servi
     assert modal.name == "modal-finite"
     assert modal_warm.name == "modal-finite"
     assert model_planned.planner.__class__.__name__ == "StructuredLiveScenePlanner"  # type: ignore[attr-defined]
-    assert model_planned.planner.compact_wire is True  # type: ignore[attr-defined]
+    assert model_planned.planner.compact_wire is False  # type: ignore[attr-defined]
     assert model_planned.planner.cache_entries == 7  # type: ignore[attr-defined]
     assert model_planned.planner.persistent_cache_dir == tmp_path / "plans"  # type: ignore[attr-defined]
     assert modal_warm.provider.__class__.__name__ == "WarmModalSceneProvider"  # type: ignore[attr-defined]

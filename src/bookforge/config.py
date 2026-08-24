@@ -22,6 +22,7 @@ class Settings(BaseSettings):
     model_keep_alive: str = "10m"
     model_context_tokens: Annotated[int, Field(ge=2_048, le=32_768)] = 8_192
     model_max_output_tokens: Annotated[int, Field(ge=64, le=8_192)] = 4_096
+    model_require_gpu: bool = False
     asset_backend: Literal["disabled", "modal", "mflux", "fake"] = "disabled"
     asset_model: str = "z-image-turbo"
     asset_command: str = "mflux-generate-z-image-turbo"
@@ -42,7 +43,6 @@ class Settings(BaseSettings):
         str,
         Field(min_length=1, max_length=200),
     ] = "configured-local-model"
-    live_scene_planner_compact_wire: bool = False
     live_scene_planner_cache_entries: Annotated[int, Field(ge=0, le=256)] = 32
     live_scene_planner_auto_warmup: bool = False
     live_scene_enable_motion: bool = False

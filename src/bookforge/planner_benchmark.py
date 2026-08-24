@@ -253,7 +253,7 @@ async def benchmark(args: argparse.Namespace) -> dict[str, object]:
         "acceptance": {
             "technical_pass": technical_pass,
             "human_semantic_review_required": True,
-            "enable_compact_wire_only_after_review": True,
+            "compact_contract_is_research_only": True,
         },
     }
 

@@ -1629,7 +1629,6 @@ def build_live_scene_provider(
     model_client: StructuredModelClient | None = None,
     planner_timeout_seconds: float = 12.0,
     planner_model_revision: str = "configured-local-model",
-    planner_compact_wire: bool = False,
     planner_cache_entries: int = 32,
     planner_cache_dir: Path | None = None,
     master_width: int = 896,
@@ -1648,7 +1647,6 @@ def build_live_scene_provider(
             model_client,
             timeout_seconds=planner_timeout_seconds,
             model_revision=planner_model_revision,
-            compact_wire=planner_compact_wire,
             cache_entries=planner_cache_entries,
             persistent_cache_dir=planner_cache_dir,
         )

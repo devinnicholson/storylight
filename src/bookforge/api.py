@@ -131,7 +131,6 @@ async def lifespan(app: FastAPI):
             model_client=client,
             planner_timeout_seconds=settings.live_scene_planner_timeout_seconds,
             planner_model_revision=settings.live_scene_planner_model_revision,
-            planner_compact_wire=settings.live_scene_planner_compact_wire,
             planner_cache_entries=settings.live_scene_planner_cache_entries,
             planner_cache_dir=settings.cache_dir / "live-scene-plans",
             master_width=settings.live_scene_master_width,

@@ -2,10 +2,11 @@ import asyncio
 import json
 
 import httpx
+import pytest
 from pydantic import BaseModel
 
 from bookforge.config import Settings
-from bookforge.model_client import OllamaClient, OpenAICompatibleClient
+from bookforge.model_client import ModelUnavailableError, OllamaClient, OpenAICompatibleClient
 
 
 class _Output(BaseModel):
@@ -59,6 +60,157 @@ def test_ollama_client_honors_bounded_configured_context_window() -> None:
         "num_ctx": 4_096,
         "num_predict": 320,
     }
+
+
+def test_ollama_client_verifies_required_gpu_offload_once() -> None:
+    requests: list[str] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        requests.append(request.url.path)
+        if request.url.path == "/api/ps":
+            return httpx.Response(
+                200,
+                json={
+                    "models": [
+                        {
+                            "name": "gemma3:1b-it-q4_K_M",
+                            "size_vram": 877_000_000,
+                        }
+                    ]
+                },
+            )
+        return httpx.Response(
+            200,
+            json={
+                "model": "gemma3:1b-it-q4_K_M",
+                "message": {"content": '{"value":"ready"}'},
+            },
+        )
+
+    async def run() -> None:
+        settings = Settings(
+            _env_file=None,
+            model_backend="ollama",
+            model_name="gemma3:1b-it-q4_K_M",
+            model_require_gpu=True,
+        )
+        client = OllamaClient(settings)
+        await client.client.aclose()
+        client.client = httpx.AsyncClient(
+            base_url="http://127.0.0.1:11434",
+            transport=httpx.MockTransport(handler),
+        )
+        try:
+            for _ in range(2):
+                await client.generate(
+                    system="Return JSON.",
+                    prompt="Plan a scene.",
+                    output_type=_Output,
+                )
+        finally:
+            await client.client.aclose()
+
+    asyncio.run(run())
+
+    assert requests == ["/api/chat", "/api/ps", "/api/chat"]
+
+
+def test_ollama_client_rejects_required_cpu_fallback() -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.url.path == "/api/ps":
+            return httpx.Response(
+                200,
+                json={
+                    "models": [
+                        {"model": "gemma3:1b-it-q4_K_M", "size_vram": 0}
+                    ]
+                },
+            )
+        return httpx.Response(
+            200,
+            json={
+                "model": "gemma3:1b-it-q4_K_M",
+                "message": {"content": '{"value":"ready"}'},
+            },
+        )
+
+    async def run() -> None:
+        settings = Settings(
+            _env_file=None,
+            model_backend="ollama",
+            model_name="gemma3:1b-it-q4_K_M",
+            model_require_gpu=True,
+        )
+        client = OllamaClient(settings)
+        await client.client.aclose()
+        client.client = httpx.AsyncClient(
+            base_url="http://127.0.0.1:11434",
+            transport=httpx.MockTransport(handler),
+        )
+        try:
+            with pytest.raises(ModelUnavailableError, match="running on CPU"):
+                await client.generate(
+                    system="Return JSON.",
+                    prompt="Plan a scene.",
+                    output_type=_Output,
+                )
+        finally:
+            await client.client.aclose()
+
+    asyncio.run(run())
+
+
+@pytest.mark.parametrize(
+    ("running_models", "expected_ready", "detail"),
+    [
+        ([], True, "will be verified after warmup"),
+        (
+            [{"name": "gemma3:1b-it-q4_K_M", "size_vram": 0}],
+            False,
+            "without required GPU offload",
+        ),
+        (
+            [{"name": "gemma3:1b-it-q4_K_M", "size_vram": 877_000_000}],
+            True,
+            "with required GPU offload",
+        ),
+    ],
+)
+def test_ollama_probe_reports_required_gpu_state(
+    running_models: list[dict[str, object]],
+    expected_ready: bool,
+    detail: str,
+) -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.url.path == "/api/ps":
+            return httpx.Response(200, json={"models": running_models})
+        return httpx.Response(
+            200,
+            json={"models": [{"name": "gemma3:1b-it-q4_K_M"}]},
+        )
+
+    async def run() -> tuple[bool, str]:
+        settings = Settings(
+            _env_file=None,
+            model_backend="ollama",
+            model_name="gemma3:1b-it-q4_K_M",
+            model_require_gpu=True,
+        )
+        client = OllamaClient(settings)
+        await client.client.aclose()
+        client.client = httpx.AsyncClient(
+            base_url="http://127.0.0.1:11434",
+            transport=httpx.MockTransport(handler),
+        )
+        try:
+            return await client.probe()
+        finally:
+            await client.client.aclose()
+
+    ready, observed_detail = asyncio.run(run())
+
+    assert ready is expected_ready
+    assert detail in observed_detail
 
 
 def test_openai_compatible_client_honors_bounded_output_tokens() -> None:

@@ -234,6 +234,7 @@ BOOKFORGE_MODEL_TIMEOUT_SECONDS=20
 BOOKFORGE_MODEL_KEEP_ALIVE=30m
 BOOKFORGE_MODEL_CONTEXT_TOKENS=4096
 BOOKFORGE_MODEL_MAX_OUTPUT_TOKENS=180
+BOOKFORGE_MODEL_REQUIRE_GPU=true
 BOOKFORGE_LIVE_SCENE_PLANNER=model
 BOOKFORGE_LIVE_SCENE_PLANNER_TIMEOUT_SECONDS=12
 BOOKFORGE_LIVE_SCENE_PLANNER_MODEL_REVISION=ollama-manifest-sha256:8648f39daa8fbf5b18c7b4e6a8fb4990c692751d49917417b8842ca5758e7ffc
@@ -242,12 +243,18 @@ BOOKFORGE_LIVE_SCENE_AUTO_PREWARM_ON_SUBMIT=true
 BOOKFORGE_LIVE_SCENE_PLANNER_AUTO_WARMUP=true
 ```
 
-An experimental short-key wire contract is available with
-`BOOKFORGE_LIVE_SCENE_PLANNER_COMPACT_WIRE=true`. It preserves the normalized plan while reducing a
-representative response from 221 to 142 bytes and its JSON Schema from 1,694 to 632 bytes. Two
-independent five-scene Mac runs were schema-valid and semantically faithful, reducing mean planning
-latency by 25.3%. Leave it off for a showcase until the same counterbalanced benchmark passes on the
-Jetson Gemma 3 runtime; the optimization is code-complete but not yet hardware-accepted.
+The experimental short-key tuple contract is deliberately unavailable in runtime configuration.
+Exact Jetson testing on the warmed 1B model reduced mean planning from 3.766 seconds to 1.398
+seconds, but four of five outputs echoed schema placeholders and all five missed their required
+transformation. The Mac-only candidate therefore failed the hardware semantic gate and was removed
+instead of exposing a dangerous speed switch. Its class remains only for the explicit offline
+benchmark harness and rejection evidence.
+
+`BOOKFORGE_MODEL_REQUIRE_GPU=true` verifies the warmed Ollama model has a nonzero VRAM allocation.
+This closes a failure seen after a boot where the kernel reported `ACR bootstrap failed`, the GPU
+device was absent, and Ollama silently fell back to `100% CPU` while the model-install probe still
+looked healthy. A clean reboot restored `/dev/nvhost-gpu` and `100% GPU`; Bookforge now fails the
+warmup/first generation instead of accepting that slow path.
 
 `BOOKFORGE_MODEL_MAX_OUTPUT_TOKENS` is a hard decode ceiling, not a target. The final compact contract
 removed redundant camera, lighting, palette, and region fields; its accepted hero repeats used

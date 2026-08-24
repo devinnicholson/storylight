@@ -54,6 +54,36 @@ class OllamaClient(StructuredModelClient):
             base_url=settings.model_base_url.rstrip("/"),
             timeout=settings.model_timeout_seconds,
         )
+        self._gpu_offload_verified = False
+
+    async def _verify_required_gpu_offload(self) -> None:
+        if not self.settings.model_require_gpu or self._gpu_offload_verified:
+            return
+        try:
+            response = await self.client.get("/api/ps")
+            response.raise_for_status()
+        except httpx.HTTPError as error:
+            raise ModelUnavailableError(
+                f"Ollama GPU-offload verification failed: {error}"
+            ) from error
+        configured = next(
+            (
+                model
+                for model in response.json().get("models", [])
+                if model.get("name") == self.settings.model_name
+                or model.get("model") == self.settings.model_name
+            ),
+            None,
+        )
+        if configured is None:
+            raise ModelUnavailableError(
+                "Ollama GPU-offload verification failed: configured model is not loaded"
+            )
+        if int(configured.get("size_vram") or 0) <= 0:
+            raise ModelUnavailableError(
+                "Ollama GPU offload is required, but the configured model is running on CPU"
+            )
+        self._gpu_offload_verified = True
 
     async def generate(
         self,
@@ -87,6 +117,8 @@ class OllamaClient(StructuredModelClient):
         except httpx.HTTPError as error:
             raise ModelUnavailableError(f"Ollama request failed: {error}") from error
 
+        await self._verify_required_gpu_offload()
+
         payload = response.json()
         content = payload.get("message", {}).get("content", "")
         try:
@@ -113,6 +145,27 @@ class OllamaClient(StructuredModelClient):
         names = {model.get("name") for model in response.json().get("models", [])}
         if self.settings.model_name not in names:
             return False, f"Ollama is running; pull {self.settings.model_name}"
+        if self.settings.model_require_gpu:
+            try:
+                running = await self.client.get("/api/ps")
+                running.raise_for_status()
+            except httpx.HTTPError as error:
+                return False, f"Ollama GPU-offload verification failed: {error}"
+            configured = next(
+                (
+                    model
+                    for model in running.json().get("models", [])
+                    if model.get("name") == self.settings.model_name
+                    or model.get("model") == self.settings.model_name
+                ),
+                None,
+            )
+            if configured is None:
+                return True, "Ollama model is installed; GPU offload will be verified after warmup"
+            if int(configured.get("size_vram") or 0) <= 0:
+                return False, "Ollama model is loaded without required GPU offload"
+            self._gpu_offload_verified = True
+            return True, "Ollama is running with required GPU offload"
         return True, "Ollama is running and the configured model is installed"
 
 

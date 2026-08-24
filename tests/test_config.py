@@ -58,15 +58,9 @@ def test_live_scene_model_planner_has_a_bounded_independent_timeout() -> None:
     assert settings.live_scene_planner == "model"
     assert settings.live_scene_planner_timeout_seconds == 12
     assert settings.live_scene_planner_model_revision == "sha256:gemma3-fixture"
-    assert settings.live_scene_planner_compact_wire is False
     assert settings.live_scene_planner_cache_entries == 32
     assert settings.live_scene_planner_auto_warmup is False
-    assert (
-        Settings(
-            _env_file=None, live_scene_planner_compact_wire=True
-        ).live_scene_planner_compact_wire
-        is True
-    )
+    assert settings.model_require_gpu is False
     assert (
         Settings(
             _env_file=None, live_scene_planner_auto_warmup=True
