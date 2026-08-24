@@ -178,9 +178,11 @@ class StubWarmInvoker:
             return {
                 "master": _jpeg(arguments["width"], arguments["height"]),
                 "master_media_type": "image/jpeg",
-                "depth": _png(arguments["width"], arguments["height"], value=128),
+                "depth": _jpeg(arguments["width"], arguments["height"]),
+                "depth_media_type": "image/jpeg",
                 "image_seconds": 3.0,
                 "depth_seconds": 0.2,
+                "packaging_seconds": 0.04,
                 "model_load_seconds": 2.5,
                 "container_age_seconds": 3.4,
             }
@@ -936,6 +938,7 @@ def test_live_scene_adapter_emits_progressive_checksum_cached_story_packs(
                         "remote_seconds": 5.0,
                         "inference_seconds": 4.5,
                         "provider_overhead_seconds": 0.5,
+                        "packaging_seconds": 0.04,
                         "image_seconds": 4.0,
                         "depth_seconds": 0.5,
                         "warm_state": "cold",
@@ -1028,6 +1031,7 @@ def test_live_scene_adapter_emits_progressive_checksum_cached_story_packs(
     assert updates[1].metrics.provider_ms == 5_000
     assert updates[1].metrics.inference_ms == 4_500
     assert updates[1].metrics.overhead_ms == 500
+    assert updates[1].metrics.packaging_ms == 40
     assert updates[1].metrics.warm_state is LiveSceneWarmState.COLD
     assert updates[1].metrics.cost_source is LiveSceneCostSource.PROVIDER_MANIFEST
     assert updates[1].metrics.planning_status.value == "deterministic"

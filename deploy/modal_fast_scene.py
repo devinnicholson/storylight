@@ -23,6 +23,7 @@ import io
 import json
 import sys
 import time
+from concurrent.futures import ThreadPoolExecutor
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
@@ -208,25 +209,50 @@ class FastSceneStudio:
                 (width, height), Image.Resampling.LANCZOS
             )
         depth_seconds = time.perf_counter() - depth_started
-        master_buffer = io.BytesIO()
-        depth_buffer = io.BytesIO()
-        # High-quality 4:4:4 JPEG is visually indistinguishable at projection
-        # distance, avoids PNG's CPU-heavy compression, and cuts transfer size.
-        master.convert("RGB").save(
-            master_buffer,
-            format="JPEG",
-            quality=95,
-            subsampling=0,
-            optimize=False,
-            progressive=False,
-        )
-        depth.save(depth_buffer, format="PNG", compress_level=1)
+        packaging_started = time.perf_counter()
+
+        def encode_master() -> bytes:
+            master_buffer = io.BytesIO()
+            # High-quality 4:4:4 JPEG is visually indistinguishable at projection
+            # distance, avoids PNG's CPU-heavy compression, and cuts transfer size.
+            master.convert("RGB").save(
+                master_buffer,
+                format="JPEG",
+                quality=95,
+                subsampling=0,
+                optimize=False,
+                progressive=False,
+            )
+            return master_buffer.getvalue()
+
+        def encode_depth() -> bytes:
+            depth_buffer = io.BytesIO()
+            depth.convert("L").save(
+                depth_buffer,
+                format="JPEG",
+                quality=95,
+                optimize=False,
+                progressive=False,
+            )
+            return depth_buffer.getvalue()
+
+        # The two images are independent and Pillow's native codecs release the
+        # GIL. Encoding them together removes serial CPU work after the GPU has
+        # already finished, without changing either model or generated pixels.
+        with ThreadPoolExecutor(max_workers=2, thread_name_prefix="bookforge-pack") as pool:
+            master_future = pool.submit(encode_master)
+            depth_future = pool.submit(encode_depth)
+            master_bytes = master_future.result()
+            depth_bytes = depth_future.result()
+        packaging_seconds = time.perf_counter() - packaging_started
         return {
-            "master": master_buffer.getvalue(),
+            "master": master_bytes,
             "master_media_type": "image/jpeg",
-            "depth": depth_buffer.getvalue(),
+            "depth": depth_bytes,
+            "depth_media_type": "image/jpeg",
             "image_seconds": image_seconds,
             "depth_seconds": depth_seconds,
+            "packaging_seconds": packaging_seconds,
             "model_load_seconds": self.model_load_seconds,
             "container_age_seconds": time.monotonic() - self.loaded_at,
         }
@@ -492,7 +518,7 @@ def fast_scene_cli(
     destination = Path(output_dir).resolve()
     manifest_path = destination / "scene.manifest.json"
     master_path = destination / "master.jpg"
-    depth_path = destination / "depth.png"
+    depth_path = destination / "depth.jpg"
     if any(path.exists() for path in (manifest_path, master_path, depth_path)):
         raise ValueError(f"scene output already exists: {destination}")
     identity = hashlib.sha256(
@@ -534,6 +560,8 @@ def fast_scene_cli(
     )
     if result.get("master_media_type") != "image/jpeg":
         raise RuntimeError("fast scene returned an unsupported master format")
+    if result.get("depth_media_type") != "image/jpeg":
+        raise RuntimeError("fast scene returned an unsupported depth format")
     remote_seconds = time.perf_counter() - remote_started
     estimated_gpu_usd = remote_seconds * GPU_USD_PER_SECOND
     if estimated_gpu_usd > maximum_gpu_usd + 1e-9:
@@ -583,6 +611,7 @@ def fast_scene_cli(
                 ),
                 "image_seconds": result["image_seconds"],
                 "depth_seconds": result["depth_seconds"],
+                "packaging_seconds": result["packaging_seconds"],
                 "model_load_seconds": result.get("model_load_seconds", 0),
                 "container_age_seconds": result.get("container_age_seconds", 0),
                 "warm_state": "cold",
@@ -602,7 +631,7 @@ def fast_scene_cli(
             "depth": _artifact_record(
                 path=depth_path,
                 root=destination,
-                mime_type="image/png",
+                mime_type="image/jpeg",
                 width=width,
                 height=height,
             ),

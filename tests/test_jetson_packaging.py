@@ -530,7 +530,10 @@ def test_projector_never_reveals_an_undrawn_or_lost_webgl_canvas() -> None:
     assert 'canvas.addEventListener("webglcontextlost", revealFallback);' in projector
     assert 'canvas.classList.remove("ready");' in projector
     assert "provider artwork remains visible" in projector
-    assert "await loadSceneImage(masterAsset.local_uri" in projector
+    assert "loadSceneImage(masterAsset.local_uri" in projector
+    decoded_call = "startDepthRenderer(\n        canvas,\n        fallback,\n        depthImage,"
+    assert decoded_call in projector
+    assert "The decoded master image" in projector
 
 
 def test_packaged_kiosk_defaults_join_the_canonical_live_session() -> None:
@@ -546,6 +549,7 @@ def test_live_ui_displays_backend_metrics_without_a_saved_local_fallback() -> No
     markup = (ROOT / "src/bookforge/static/workbench.html").read_text()
     controller = (ROOT / "src/bookforge/static/workbench.js").read_text()
     stylesheet = (ROOT / "src/bookforge/static/workbench.css").read_text()
+    assert "packaging ${formatBackendMs(metrics.packaging_ms)}" in controller
 
     assert 'id="generationMetrics"' in markup
     assert 'id="planningPrivacy"' in markup

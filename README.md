@@ -181,6 +181,13 @@ to both WebGL and still-image fallback; bright scenes remain unchanged and no ex
 is added. The linked delivery benchmark records the rejected smaller render, `torch.compile`, and
 prompt A/B experiments as well as their spend.
 
+The follow-up packaging pass also makes the depth plate a quality-95 grayscale JPEG. It cut the
+provider depth payload from 67,038 to 34,802 bytes (48.1%); an exact codec comparison measured
+0.9953 SSIM. Master and depth encoding now run concurrently and report `packaging_ms` through the
+live API. The projector loads and decodes each plate once, reusing the master image as both its
+WebGL texture and fail-safe still. Modal wall time was noisy, so this is a delivery/decoder win—not
+a replacement for the 6.971-second end-to-end record.
+
 For higher-quality offline scene R&D, `deploy/modal_visual_lab.py` provides finite `modal run`
 jobs on an NVIDIA L4. It pins SANA 1.5, SigLIP, and LTX-Video revisions; records prompts, seeds,
 checksums, generation time, and estimated GPU cost; and never deploys a persistent endpoint. The
@@ -380,3 +387,4 @@ passes the real I/O and latency run on JetPack 7.2.1.
 - [`benchmarks/jetson-gemma3-planner-optimization-2026-08-23.json`](benchmarks/jetson-gemma3-planner-optimization-2026-08-23.json): five-passage compact-planner acceptance with a 5.24-second mean plus two bounded warm visual comparisons; the fastest full Gemma-to-master result was 9.37 seconds, the selected character-preserving result was 10.55 seconds, and both paid comparisons cost $0.03883467 combined
 - [`benchmarks/bookforge-speed-optimization-2026-08-23.json`](benchmarks/bookforge-speed-optimization-2026-08-23.json): final 6.971-second Jetson Gemma → warm Modal SANA/depth acceptance, renderer sweep, rejected tiny-model/low-step configurations, seed-quality evidence, and billing reconciliation
 - [`benchmarks/bookforge-render-delivery-optimization-2026-08-23.json`](benchmarks/bookforge-render-delivery-optimization-2026-08-23.json): JPEG delivery, adaptive projector exposure, and measured rejections for smaller renders, compilation, and prompt changes
+- [`benchmarks/bookforge-packaging-optimization-2026-08-24.json`](benchmarks/bookforge-packaging-optimization-2026-08-24.json): parallel packaging telemetry, depth-JPEG quality/transfer evidence, single-decode projector delivery, and reconciled spend

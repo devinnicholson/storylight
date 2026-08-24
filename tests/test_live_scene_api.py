@@ -61,6 +61,7 @@ def test_live_scene_api_progresses_to_resolvable_motion_scene() -> None:
             "inference_ms",
             "cache_ms",
             "overhead_ms",
+            "packaging_ms",
             "planning_ms",
             "planning_status",
             "warm_state",

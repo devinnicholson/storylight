@@ -1522,6 +1522,7 @@ def _live_scene_metrics(
     provider_seconds = 0.0
     inference_seconds = 0.0
     overhead_seconds = 0.0
+    packaging_seconds = 0.0
     warm_states: list[LiveSceneWarmState] = []
     for stage in stages:
         fallback_inference = float(stage.get("image_seconds", 0)) + float(
@@ -1533,6 +1534,7 @@ def _live_scene_metrics(
         provider_seconds += remote
         inference_seconds += inference
         overhead_seconds += overhead
+        packaging_seconds += float(stage.get("packaging_seconds", 0))
         raw_warm_state = str(stage.get("warm_state", "unknown")).lower()
         if raw_warm_state in {"warm", "prewarmed"}:
             warm_states.append(LiveSceneWarmState.WARM)
@@ -1577,6 +1579,7 @@ def _live_scene_metrics(
         inference_ms=max(0.0, inference_seconds * 1000),
         cache_ms=cache_ms,
         overhead_ms=max(0.0, overhead_seconds * 1000),
+        packaging_ms=max(0.0, packaging_seconds * 1000),
         planning_ms=planning_ms,
         planning_status=planning.status,
         warm_state=warm_state,
@@ -1706,7 +1709,7 @@ def _write_warm_fast_bundle(
     reservation_id: str,
 ) -> FiniteSceneBundle:
     master_path = destination / "master.jpg"
-    depth_path = destination / "depth.png"
+    depth_path = destination / "depth.jpg"
     manifest_path = destination / "scene.manifest.json"
     if any(path.exists() for path in (master_path, depth_path, manifest_path)):
         raise FiniteModalProviderError(f"scene output already exists: {destination}")
@@ -1715,13 +1718,16 @@ def _write_warm_fast_bundle(
         depth = bytes(result["depth"])
         image_seconds = float(result["image_seconds"])
         depth_seconds = float(result["depth_seconds"])
+        packaging_seconds = float(result["packaging_seconds"])
     except (KeyError, TypeError, ValueError) as error:
         raise FiniteModalProviderError("warm fast class returned invalid output") from error
     if result.get("master_media_type") != "image/jpeg":
         raise FiniteModalProviderError("warm fast class returned an unsupported master format")
+    if result.get("depth_media_type") != "image/jpeg":
+        raise FiniteModalProviderError("warm fast class returned an unsupported depth format")
     if _jpeg_dimensions(master) != (request.width, request.height):
         raise FiniteModalProviderError("warm master dimensions do not match the request")
-    if _png_dimensions(depth) != (request.width, request.height):
+    if _jpeg_dimensions(depth) != (request.width, request.height):
         raise FiniteModalProviderError("warm depth dimensions do not match the request")
     _atomic_write(master_path, master)
     _atomic_write(depth_path, depth)
@@ -1761,6 +1767,7 @@ def _write_warm_fast_bundle(
                 "provider_overhead_seconds": max(0.0, remote_seconds - inference_seconds),
                 "image_seconds": image_seconds,
                 "depth_seconds": depth_seconds,
+                "packaging_seconds": packaging_seconds,
                 "model_load_seconds": float(result.get("model_load_seconds", 0)),
                 "container_age_seconds": float(result.get("container_age_seconds", 0)),
                 "warm_state": warm_state,
@@ -1780,7 +1787,7 @@ def _write_warm_fast_bundle(
             "depth": _local_artifact_payload(
                 depth_path,
                 root=destination,
-                mime_type="image/png",
+                mime_type="image/jpeg",
                 width=request.width,
                 height=request.height,
             ),

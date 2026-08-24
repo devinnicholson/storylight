@@ -141,6 +141,8 @@ def test_live_scene_metrics_are_strict_and_require_immutable_model_roles() -> No
     assert metrics.models[0].revision == "sha-123"
     with pytest.raises(ValidationError):
         LiveSceneMetrics(provider_ms=-1)
+    with pytest.raises(ValidationError):
+        LiveSceneMetrics(packaging_ms=-1)
     with pytest.raises(ValidationError, match="unavailable cost evidence"):
         LiveSceneMetrics(estimated_gpu_usd=0.01)
     with pytest.raises(ValidationError, match="model roles must be unique"):

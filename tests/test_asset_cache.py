@@ -101,6 +101,23 @@ def test_asset_cache_rejects_path_traversal(tmp_path: Path) -> None:
         cache.resolve("0" * 64, "../secret")
 
 
+def test_generated_depth_jpeg_is_checksum_addressed_and_resolvable(tmp_path: Path) -> None:
+    cache = AssetCache(tmp_path / "cache")
+    content = b"\xff\xd8depth-map\xff\xd9"
+
+    checksum, uri = asyncio.run(
+        cache.store_generated(
+            asset_id="scene-depth",
+            kind=AssetKind.DEPTH_MAP,
+            content=content,
+            suffix=".jpg",
+        )
+    )
+
+    assert uri == f"/v1/assets/{checksum}/scene-depth.jpg"
+    assert cache.resolve(checksum, "scene-depth.jpg").read_bytes() == content
+
+
 @pytest.mark.parametrize("local_uri", ["../secret.png", "file:///etc/passwd"])
 def test_offline_pack_installer_rejects_sources_outside_package(
     tmp_path: Path, local_uri: str

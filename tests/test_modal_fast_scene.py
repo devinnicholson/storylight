@@ -45,9 +45,13 @@ def test_fast_scene_uses_low_latency_projection_quality_packaging() -> None:
     assert 'format="JPEG"' in fast
     assert "quality=95" in fast
     assert "subsampling=0" in fast
+    assert "ThreadPoolExecutor(max_workers=2" in fast
+    assert '"packaging_seconds": packaging_seconds' in fast
     assert '"master_media_type": "image/jpeg"' in fast
+    assert '"depth_media_type": "image/jpeg"' in fast
     assert 'result.get("master_media_type") != "image/jpeg"' in SOURCE
-    assert 'depth.save(depth_buffer, format="PNG", compress_level=1)' in fast
+    assert 'result.get("depth_media_type") != "image/jpeg"' in SOURCE
+    assert 'depth.convert("L").save(' in fast
     assert "optimize=True" not in fast
     assert "torch.cuda.empty_cache()" not in fast
     assert "set_progress_bar_config(disable=True)" in fast

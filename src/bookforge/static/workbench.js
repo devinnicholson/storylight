@@ -463,6 +463,7 @@ function renderBackendMetrics(snapshot) {
     `edge plan ${formatBackendMs(metrics.planning_ms)} (${metrics.planning_status || "pending"})`,
     `provider remote ${formatBackendMs(metrics.provider_ms)}`,
     `inference ${formatBackendMs(metrics.inference_ms)}`,
+    `packaging ${formatBackendMs(metrics.packaging_ms)}`,
     `cache promotion ${formatBackendMs(metrics.cache_ms)}`,
     `provider overhead ${formatBackendMs(metrics.overhead_ms)}`,
     `${warmState} · ${gpu}`,

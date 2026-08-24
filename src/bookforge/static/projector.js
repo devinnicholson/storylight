@@ -430,11 +430,7 @@ function createTexture(gl, image, textureUnit) {
   return texture;
 }
 
-async function startDepthRenderer(canvas, masterUri, depthUri, sceneSpec, signal = null) {
-  const [masterImage, depthImage] = await Promise.all([
-    loadSceneImage(masterUri, {signal}),
-    loadSceneImage(depthUri, {signal}),
-  ]);
+async function startDepthRenderer(canvas, masterImage, depthImage, sceneSpec) {
   const gl = canvas.getContext("webgl2", {
     alpha: false,
     antialias: false,
@@ -740,25 +736,32 @@ async function renderPackLayers(pack, page, renderToken = null) {
     const version = createSceneVersion();
     const scene = document.createElement("div");
     scene.className = "depth-scene";
-    const fallback = document.createElement("img");
-    fallback.className = "depth-scene-fallback";
-    fallback.src = masterAsset.local_uri;
-    fallback.alt = page.scene_summary;
     const canvas = document.createElement("canvas");
     canvas.className = "depth-scene-canvas";
     canvas.width = LOGICAL_WIDTH;
     canvas.height = LOGICAL_HEIGHT;
-    scene.append(fallback, canvas);
-    appendAmbientEffects(scene, page.scene_spec);
-    appendSceneHotspots(scene, page);
-    version.append(scene);
     try {
+      // Load and decode each provider asset exactly once. The decoded master image
+      // doubles as the always-visible fallback and the WebGL source texture.
+      const [masterResult, depthResult] = await Promise.allSettled([
+        loadSceneImage(masterAsset.local_uri, {signal: renderToken?.signal}),
+        loadSceneImage(depthAsset.local_uri, {signal: renderToken?.signal}),
+      ]);
+      if (masterResult.status === "rejected") throw masterResult.reason;
+      const fallback = masterResult.value;
+      fallback.className = "depth-scene-fallback";
+      fallback.alt = page.scene_summary;
+      scene.append(fallback, canvas);
+      appendAmbientEffects(scene, page.scene_spec);
+      appendSceneHotspots(scene, page);
+      version.append(scene);
+      if (depthResult.status === "rejected") throw depthResult.reason;
+      const depthImage = depthResult.value;
       const renderer = await startDepthRenderer(
         canvas,
-        masterAsset.local_uri,
-        depthAsset.local_uri,
+        fallback,
+        depthImage,
         page.scene_spec,
-        renderToken?.signal,
       );
       scene.style.setProperty("--projection-exposure", renderer.projectionExposure.toFixed(3));
       if (!commitSceneVersion(version, "depth-composed", renderer, renderToken)) return false;
@@ -769,7 +772,11 @@ async function renderPackLayers(pack, page, renderToken = null) {
         return false;
       }
       setEvent("renderer.fallback", error.message);
-      const masterImage = await loadSceneImage(masterAsset.local_uri, {signal: renderToken?.signal});
+      const masterImage = scene.querySelector(".depth-scene-fallback");
+      if (!masterImage) {
+        discardSceneVersion(version);
+        throw error;
+      }
       scene.style.setProperty(
         "--projection-exposure",
         projectionExposureForImage(masterImage).toFixed(3),

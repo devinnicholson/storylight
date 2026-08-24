@@ -131,6 +131,7 @@ class LiveSceneMetrics(FrozenStrictModel):
     inference_ms: Annotated[float, Field(ge=0)] = 0
     cache_ms: Annotated[float, Field(ge=0)] = 0
     overhead_ms: Annotated[float, Field(ge=0)] = 0
+    packaging_ms: Annotated[float, Field(ge=0)] = 0
     planning_ms: Annotated[float, Field(ge=0)] = 0
     planning_status: LiveScenePlanningStatus = LiveScenePlanningStatus.PENDING
     warm_state: LiveSceneWarmState = LiveSceneWarmState.UNKNOWN
@@ -1025,6 +1026,7 @@ class LiveSceneJobRegistry:
             "inference_ms",
             "cache_ms",
             "overhead_ms",
+            "packaging_ms",
             "planning_ms",
             "estimated_gpu_usd",
         )

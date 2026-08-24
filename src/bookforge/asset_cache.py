@@ -14,7 +14,7 @@ CHECKSUM_PATTERN = re.compile(r"^[a-f0-9]{64}$")
 ALLOWED_SUFFIXES = {
     AssetKind.IMAGE: {".avif", ".jpeg", ".jpg", ".png", ".webp"},
     AssetKind.SPRITE: {".avif", ".jpeg", ".jpg", ".png", ".webp"},
-    AssetKind.DEPTH_MAP: {".png", ".webp"},
+    AssetKind.DEPTH_MAP: {".jpeg", ".jpg", ".png", ".webp"},
     AssetKind.MASK: {".png", ".webp"},
     AssetKind.VIDEO_LOOP: {".mp4", ".webm"},
 }
