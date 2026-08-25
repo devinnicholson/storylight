@@ -217,8 +217,15 @@ Projector activation is now decomposed into media-ready, renderer-setup, first-p
 and total client timing. In the isolated no-cost browser harness, replacing the nested two-frame
 crossfade wait with a forced incoming-style flush plus one display frame reduced motion-stage client
 activation from 81.6 ms to 23.6 ms (71.1%); first-paint wait fell from 61.3 ms to 3.5 ms. Frame-loss
-telemetry calibrates to the display's observed refresh interval instead of assuming 60 Hz. This is
-browser motion-handoff evidence; the physical Jetson depth-WebGL timing remains an acceptance gate.
+telemetry calibrates to the display's observed refresh interval instead of assuming 60 Hz.
+
+The physical gate is now closed on the Orin Nano and Yaber T1 Pro at 1920x1080/60. The Ubuntu
+Firefox Snap exposed WebGL as Mesa `llvmpipe`: a two-second 60 Hz framebuffer probe produced only
+19 distinct frames and Firefox pinned a CPU core while the NVIDIA GPU remained near idle. Mozilla's
+checksum-pinned native ARM64 Firefox exposed NVIDIA WebGL, held 60.48 internal fps at 17.10 ms
+median/17.14 ms p95, and produced 118 distinct frames in a 120-frame final capture. The runtime now
+targets 60 Hz, stops compositing the hidden image fallback after the first WebGL draw, and refuses
+known software WebGL implementations instead of silently presenting a stuttering showcase.
 
 SANA-Sprint does not expose a separate negative-prompt input. Bookforge therefore carries no-text,
 no-logo, and projection constraints in the positive semantic visual direction and records

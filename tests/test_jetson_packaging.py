@@ -158,15 +158,27 @@ def test_projector_renders_depth_at_source_resolution_before_display_upscale() -
     assert "canvas.height = LOGICAL_HEIGHT;" not in projector
 
 
-def test_projector_caps_only_the_continuous_depth_draw_pass_at_30_fps() -> None:
+def test_projector_runs_depth_at_60_fps_without_animating_hidden_fallback() -> None:
     projector = (ROOT / "src/bookforge/static/projector.js").read_text()
+    projector_css = (ROOT / "src/bookforge/static/projector.css").read_text()
 
-    assert "const DEPTH_RENDER_TARGET_FPS = 30;" in projector
+    assert "const DEPTH_RENDER_TARGET_FPS = 60;" in projector
     assert "const frameIntervalMs = 1000 / DEPTH_RENDER_TARGET_FPS;" in projector
     assert "timestamp - lastRenderedAt >= frameIntervalMs - 1" in projector
     assert "canvas.dataset.depthRenderedFrames = String(renderedFrames);" in projector
     assert "canvas.dataset.depthSkippedFrames = String(skippedFrames);" in projector
     assert "targetFps: DEPTH_RENDER_TARGET_FPS" in projector
+    assert 'masterImage.classList.add("renderer-covered");' in projector
+    assert 'masterImage.classList.remove("renderer-covered");' in projector
+    assert ".depth-scene-fallback.renderer-covered" in projector_css
+    assert "function webglRendererInfo(gl)" in projector
+    assert "llvmpipe|lavapipe|swiftshader|software rasterizer" in projector
+    assert (
+        'canvas.dataset.webglAcceleration = rendererInfo.software ? "software" : "hardware";'
+        in projector
+    )
+    assert "Software WebGL blocked" in projector
+    assert 'scene.dataset.webglAcceleration = "hardware";' in projector
 
 
 def test_projector_promotes_provisional_preview_without_calling_it_final() -> None:
@@ -204,9 +216,27 @@ def test_kiosk_launcher_shell_is_valid_and_browser_precedence_is_explicit() -> N
     )
     assert launcher.index("command -v chromium") < launcher.index("command -v firefox")
     assert '--private-window "$KIOSK_URL"' in launcher
+    assert 'export MOZ_WEBRENDER="${MOZ_WEBRENDER:-1}"' in launcher
+    assert 'export MOZ_X11_EGL="${MOZ_X11_EGL:-1}"' in launcher
     assert '"${SCRIPT_DIR}/check-kiosk-session.sh" || exit 78' in launcher
     assert "--what=sleep" in launcher
     assert "--what=idle:sleep" not in launcher
+
+
+def test_arm64_firefox_installer_is_pinned_and_checksum_verified() -> None:
+    installer = ROOT / "deploy/jetson/install-firefox-arm64.sh"
+    script = installer.read_text()
+
+    subprocess.run(["bash", "-n", str(installer)], check=True)
+    assert 'readonly FIREFOX_VERSION="153.0esr"' in script
+    assert (
+        'readonly FIREFOX_SHA256="17c523ed1af68e2204760c51bebd6354bb4c9172b5c09804c6679f3d0049a0fa"'
+        in script
+    )
+    assert 'if [[ "$(uname -m)" != "aarch64" ]]' in script
+    assert 'if [[ "$actual_sha256" != "$FIREFOX_SHA256" ]]' in script
+    assert 'ln -sfn "firefox-${FIREFOX_VERSION}" "$current_link"' in script
+    assert "sudo" not in script
 
 
 def test_kiosk_preflight_refuses_locked_idle_and_dark_sessions(tmp_path: Path) -> None:

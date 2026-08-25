@@ -11,7 +11,7 @@ const LIVE_MODE = query.get("live") === "1";
 const READER_MODE = query.get("reader") !== "0";
 const SCENE_CROSSFADE_MS = 320;
 const SCENE_RETIRE_GRACE_MS = 360;
-const DEPTH_RENDER_TARGET_FPS = 30;
+const DEPTH_RENDER_TARGET_FPS = 60;
 
 if (PRESENTATION_MODE) document.body.classList.add("hud-hidden");
 if (OFFLINE_REPLAY) document.body.dataset.replayBoundary = "loopback-only";
@@ -480,6 +480,16 @@ function createTexture(gl, image, textureUnit) {
   return texture;
 }
 
+function webglRendererInfo(gl) {
+  const debug = gl.getExtension("WEBGL_debug_renderer_info");
+  const renderer = String(gl.getParameter(debug ? debug.UNMASKED_RENDERER_WEBGL : gl.RENDERER));
+  const vendor = String(gl.getParameter(debug ? debug.UNMASKED_VENDOR_WEBGL : gl.VENDOR));
+  const software = /llvmpipe|lavapipe|swiftshader|software rasterizer/u.test(
+    `${renderer} ${vendor}`.toLocaleLowerCase(),
+  );
+  return {renderer, vendor, software};
+}
+
 async function startDepthRenderer(canvas, masterImage, depthImage, sceneSpec) {
   const gl = canvas.getContext("webgl2", {
     alpha: false,
@@ -488,6 +498,16 @@ async function startDepthRenderer(canvas, masterImage, depthImage, sceneSpec) {
     powerPreference: "high-performance",
   });
   if (!gl) throw new Error("WebGL 2 is unavailable; using the still-image fallback");
+  const rendererInfo = webglRendererInfo(gl);
+  canvas.dataset.webglRenderer = rendererInfo.renderer;
+  canvas.dataset.webglVendor = rendererInfo.vendor;
+  canvas.dataset.webglAcceleration = rendererInfo.software ? "software" : "hardware";
+  if (rendererInfo.software) {
+    gl.getExtension("WEBGL_lose_context")?.loseContext();
+    throw new Error(
+      `Software WebGL blocked (${rendererInfo.renderer}); use the accelerated Jetson kiosk browser`,
+    );
+  }
   const vertexSource = `#version 300 es
     in vec2 a_position;
     out vec2 v_uv;
@@ -581,6 +601,7 @@ async function startDepthRenderer(canvas, masterImage, depthImage, sceneSpec) {
   const revealFallback = () => {
     stopped = true;
     if (animationFrame !== null) cancelAnimationFrame(animationFrame);
+    masterImage.classList.remove("renderer-covered");
     canvas.classList.remove("ready");
     setEvent("renderer.fallback", "WebGL context was lost; provider artwork remains visible");
   };
@@ -615,11 +636,18 @@ async function startDepthRenderer(canvas, masterImage, depthImage, sceneSpec) {
     release();
     throw new Error(`WebGL first frame failed (${firstDrawError}); using the still-image fallback`);
   }
+  // The decoded image remains the instant context-loss fallback, but it must not
+  // keep animating and compositing behind an opaque WebGL canvas. On Jetson that
+  // invisible full-screen work pinned a CPU core and made otherwise cheap depth
+  // motion visibly stutter.
+  masterImage.classList.add("renderer-covered");
   canvas.classList.add("ready");
   return {
     projectionExposure: projectionTone.fallbackExposure,
     projectionGamma: projectionTone.gamma,
     projectionMeanLuma: projectionTone.meanLuma,
+    webglRenderer: rendererInfo.renderer,
+    webglVendor: rendererInfo.vendor,
     targetFps: DEPTH_RENDER_TARGET_FPS,
     destroy() {
       stopped = true;
@@ -910,6 +938,9 @@ async function renderPackLayers(pack, page, renderToken = null, timings = null) 
       if (timings) timings.rendererSetupMs = performance.now() - rendererStartedAt;
       scene.style.setProperty("--projection-exposure", renderer.projectionExposure.toFixed(3));
       scene.dataset.projectionGamma = renderer.projectionGamma.toFixed(3);
+      scene.dataset.webglRenderer = renderer.webglRenderer;
+      scene.dataset.webglVendor = renderer.webglVendor;
+      scene.dataset.webglAcceleration = "hardware";
       if (renderer.projectionMeanLuma !== null) {
         scene.dataset.projectionMeanLuma = renderer.projectionMeanLuma.toFixed(3);
       }

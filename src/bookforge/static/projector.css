@@ -86,6 +86,12 @@ body.blackout #projectionStage { opacity: 0; }
   filter: brightness(var(--projection-exposure, 1));
   animation: hero-breathe 18s ease-in-out infinite alternate;
 }
+.depth-scene-fallback.renderer-covered {
+  visibility: hidden;
+  transform: none;
+  filter: none;
+  animation: none;
+}
 .depth-scene-canvas { opacity: 0; transition: opacity 180ms ease; }
 .depth-scene-canvas.ready { opacity: 1; }
 .motion-scene { position: absolute; inset: 0; overflow: hidden; background: #02050a; }

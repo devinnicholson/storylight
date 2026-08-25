@@ -240,6 +240,12 @@ overlapping draft/master/motion upgrades and promotes the newest prepared scene 
 frame instead of stacking opacity transitions. Browser stress evidence held minimum combined opacity
 at 1.0, finished with one scene version at 30 fps/zero dropped frames, and never reloaded.
 
+Physical profiling then found that Ubuntu's Firefox Snap routed WebGL through Mesa `llvmpipe` on the
+Orin Nano, yielding only 19 distinct frames in a two-second 60 Hz capture. The checksum-pinned native
+Mozilla ARM64 browser moved WebGL to NVIDIA, measured 60.48 internal fps with a 17.14 ms p95 frame
+interval, and delivered 118/120 distinct framebuffer frames. The depth path now targets 60 Hz, pauses
+the covered fallback image, and blocks known software WebGL renderers rather than silently stuttering.
+
 Short-key Gemma response contracts were tested and rejected on the Jetson. The tuple form was 62.9%
 faster but echoed schema placeholders in four of five outputs and missed every required
 transformation. A later object-shaped alias form was directionally 9.2% faster but also failed all
@@ -527,6 +533,7 @@ passes the real I/O and latency run on JetPack 7.2.1.
 - [`benchmarks/bookforge-projector-tone-mapping-2026-08-24.json`](benchmarks/bookforge-projector-tone-mapping-2026-08-24.json): zero-generation-cost adaptive gamma for dark masters; real WebGL browser pass at 31 fps with zero dropped frames, while physical-projector validation remains explicit
 - [`benchmarks/bookforge-projector-native-resolution-2026-08-24.json`](benchmarks/bookforge-projector-native-resolution-2026-08-24.json): source-resolution WebGL rendering with full-size display compositing; browser pass at 30 fps/zero drops and 4.52× fewer render pixels for the then-current 896×512 plate, with Jetson power/FPS measurement pending
 - [`benchmarks/bookforge-projector-frame-pacing-2026-08-24.json`](benchmarks/bookforge-projector-frame-pacing-2026-08-24.json): 30 Hz pacing for only the continuous WebGL depth pass, retaining native-refresh CSS/video/compositing; browser validation measured 29.2 depth draws/sec with zero drops, while the expected 50% draw reduction on Jetson's 60 Hz output remains pending physical measurement
+- [`benchmarks/jetson-projector-gpu-acceleration-2026-08-24.json`](benchmarks/jetson-projector-gpu-acceleration-2026-08-24.json): physical projector performance root cause and repair; Snap llvmpipe at 19/119 distinct frames versus verified NVIDIA WebGL at 118/120, 60.48 internal fps, and 17.14 ms p95
 - [`benchmarks/bookforge-persistent-edge-plan-cache-2026-08-24.json`](benchmarks/bookforge-persistent-edge-plan-cache-2026-08-24.json): restart-safe, privacy-gated semantic plan caching; a fresh planner instance restored the synthetic plan in 0.541 ms with zero model calls, while the exact Jetson restart acceptance remains pending
 - [`benchmarks/bookforge-progressive-preview-smoke-2026-08-24.json`](benchmarks/bookforge-progressive-preview-smoke-2026-08-24.json): finite cold 512×288 baseline; strong visual quality and 1.475-second inference, but 31.892-second remote wall time proves cold calls are unsuitable for the live path
 - [`benchmarks/bookforge-progressive-preview-warm-2026-08-24.json`](benchmarks/bookforge-progressive-preview-warm-2026-08-24.json): authenticated warm preview acceptance; 0.972-second generated JPEG, 0.614-second inference, $0.00701723 reconciled cost, explicit `preview_ready` replacement contract, and physical-projector validation still pending

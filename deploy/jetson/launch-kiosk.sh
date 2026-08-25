@@ -77,6 +77,8 @@ until curl --fail --silent --max-time 2 "$READY_URL" >/dev/null 2>&1; do
 done
 
 if [[ "$BROWSER_KIND" == firefox ]]; then
+  export MOZ_WEBRENDER="${MOZ_WEBRENDER:-1}"
+  export MOZ_X11_EGL="${MOZ_X11_EGL:-1}"
   launch_browser "$BROWSER_BIN" \
     --kiosk \
     --private-window "$KIOSK_URL"

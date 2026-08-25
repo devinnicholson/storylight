@@ -478,6 +478,23 @@ a fallback. Set `BOOKFORGE_BROWSER_BIN` to choose either browser explicitly. The
 existing kiosk/app sandbox and background-network hardening flags; Firefox uses only its supported
 `--kiosk` and `--private-window` flags. This repository never silently installs a browser.
 
+On JetPack 7.2.1, the Ubuntu Firefox Snap was measured exposing WebGL as Mesa `llvmpipe`; Bookforge
+then pinned a CPU core and delivered only 19 distinct projector frames in two seconds. The verified
+Mozilla ARM64 build exposed NVIDIA WebGL and held 60.48 browser fps (17.10 ms median, 17.14 ms p95),
+with 118 distinct framebuffer frames in a 120-frame final capture. Install that pinned, checksum-
+verified build without sudo, then select its stable path explicitly:
+
+```bash
+./deploy/jetson/install-firefox-arm64.sh
+install -d -m 700 "${XDG_CONFIG_HOME:-${HOME}/.config}/bookforge"
+cp deploy/jetson/kiosk.env.example "${XDG_CONFIG_HOME:-${HOME}/.config}/bookforge/kiosk.env"
+# Edit kiosk.env and set:
+# BOOKFORGE_BROWSER_BIN=/home/your-user/.local/opt/firefox-bookforge/firefox
+```
+
+The Snap remains installed as rollback. The projector runtime also rejects known software WebGL
+renderers instead of silently starting a continuously animated depth shader on the CPU.
+
 Test the launcher inside the logged-in graphical desktop session:
 
 ```bash
