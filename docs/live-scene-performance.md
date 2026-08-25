@@ -40,7 +40,7 @@ The first cloud result is a 16:9 master plus depth sidecar. The existing WebGL r
 for a slow camera push, parallax, focus breathing, and ambient particles. This is already a moving
 generated scene and is the required live milestone.
 
-The accepted speed profile is 896x512 at two SANA-Sprint steps. Explicit prewarm runs the exact
+The accepted speed-and-detail profile is 1024x576 at two SANA-Sprint steps. Explicit prewarm runs the exact
 two-step SANA-Sprint shape and Depth Anything inference, not just model loading, and the
 authenticated class remains warm for 90 seconds before scaling to zero. The prior SANA 1.5 profile
 needed eight steps; seven saved only about 0.2 seconds and reduced anatomical stability, while six
@@ -49,11 +49,17 @@ cut the exact warm provider path from 2.673 seconds to 1.176 seconds. Master and
 bounded JPEG encodings, and the live request never empties the CUDA cache between scenes.
 
 One-step support was tested separately with Diffusers' required
-`intermediate_timesteps=None` override. On the exact same prompt, seed, 896x512 plate, and warm L4,
+`intermediate_timesteps=None` override. On the exact same prompt, seed, then-current 896x512 plate, and warm L4,
 it reduced image inference from 739.861 ms to 613.681 ms but reduced full API wall time by only
 65.631 ms (5.5%). The image also changed from one central figure to two, failing the duplicate-subject
 showcase gate. Runtime configuration therefore enforces at least two steps. The finite command keeps
 the explicit non-two-step override solely so future bounded research does not fail ambiguously.
+
+A later same-prompt, same-seed L40S A/B promoted the model-native 1024x576 plate. It retains 28.6%
+more source pixels than 896x512 for 18.9 ms more inference, and the exact prepared API delivered the
+complete master plus depth map in 499.6 ms. Real-browser acceptance decoded and rendered the native
+1024x576 assets with one scene version, no reload, and zero dropped frames. This is a browser result;
+physical projection remains a separate acceptance gate.
 
 Modal regional routing was tested independently because control/transfer overhead is now comparable
 to image inference. A separately named function used `routing_region=us-west` while leaving compute

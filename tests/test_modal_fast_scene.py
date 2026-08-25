@@ -97,8 +97,8 @@ def test_provisional_preview_is_explicitly_low_resolution_and_depth_free() -> No
 def test_fast_prewarm_executes_shape_matched_cuda_and_depth_work() -> None:
     fast = SOURCE.split("class FastSceneStudio:", 1)[1].split("class MotionUpgradeStudio:", 1)[0]
 
-    assert "FAST_PREWARM_WIDTH = 896" in SOURCE
-    assert "FAST_PREWARM_HEIGHT = 512" in SOURCE
+    assert "FAST_PREWARM_WIDTH = 1024" in SOURCE
+    assert "FAST_PREWARM_HEIGHT = 576" in SOURCE
     assert "if not self.inference_warmed:" in fast
     assert "num_inference_steps=2" in fast
     assert "self.depth_pipe(warmup_master)" in fast

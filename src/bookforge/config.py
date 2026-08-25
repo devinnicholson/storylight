@@ -48,8 +48,8 @@ class Settings(BaseSettings):
     live_scene_enable_motion: bool = False
     live_scene_enable_preview: bool = True
     live_scene_output_dir: Path = Path("artifacts/live-scenes/generated")
-    live_scene_master_width: int = 896
-    live_scene_master_height: int = 512
+    live_scene_master_width: int = 1024
+    live_scene_master_height: int = 576
     # One-step SANA-Sprint is technically supported but failed the showcase
     # duplicate-subject gate for only a 5.5% end-to-end gain. Production stays
     # on the accepted two-to-four-step range; the finite CLI remains available

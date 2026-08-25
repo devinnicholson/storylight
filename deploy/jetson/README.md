@@ -277,11 +277,11 @@ the workbench reports `local cache` instead of presenting that path as fresh inf
 also binds the model revision and wire contract, and nothing is persisted or sent off-device.
 
 The final speed acceptance kept Gemma 1B after rejecting the 270M model for invented settings and
-missing transformations. The prior 896x512, 8-step SANA 1.5 renderer produced the last exact full
-path: `master_ready` in 6.971 seconds, with 4.285 seconds planning, 2.673 seconds provider time, and
-2.7 ms cache promotion. The current 896x512, 2-step SANA-Sprint renderer must repeat that exact
-device acceptance. Its measured provider component is 1.176 seconds, projecting 5.464 seconds with
-the last Gemma measurement. The renderer's 90-second scale-down window is intentional: the earlier
+missing transformations. The prior 896x512, 8-step SANA 1.5 renderer produced `master_ready` in
+6.971 seconds. The current 1024x576, 2-step SANA-Sprint renderer has now passed the exact prepared
+API path in 499.6 ms after a privacy-gated Jetson plan cache hit; its same-prompt resolution A/B
+added 28.6% source pixels for 18.9 ms of inference. The renderer's 90-second scale-down window is
+intentional: the earlier
 30-second window expired during local planning/operator handoff and produced a 44.8-second cold
 request. Automatic prewarm overlaps its text-free preparation with Gemma planning; it does not send
 the passage to Modal. Full evidence is in
