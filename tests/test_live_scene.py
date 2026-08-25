@@ -52,6 +52,54 @@ def test_live_scene_request_is_strict_text_only() -> None:
         LiveSceneCreateRequest(text="valid text", seed=2**32)
 
 
+def test_cloud_safe_deterministic_plan_preserves_allowlisted_scene_semantics() -> None:
+    source = (
+        "Quenlora watches as a silver fox follows a floating lantern through a moonlit "
+        "cedar forest."
+    )
+    pack = build_live_scene_story_pack(
+        LiveSceneCreateRequest(
+            text=source,
+            visual_style="luminous watercolor paper theater",
+            seed=20260825,
+        ),
+        job_id="scene_000000000000000000000042",
+        seed=20260825,
+        assets=[],
+        compiler_model="deterministic-live-scene-planner-v1",
+        cloud_safe_prompts=True,
+    )
+
+    page = pack.pages[0]
+    assert page.scene_spec is not None
+    prompt = page.scene_spec.master_prompt
+    assert "Moss green woodland" in prompt
+    assert "one complete silver fox" in prompt
+    assert "one warm floating lantern" in prompt
+    assert "following the supporting detail" in prompt
+    assert "Quenlora" not in prompt
+    assert source not in prompt
+    assert page.source_text == source
+    assert page.layers[1].kind == "character"
+
+
+def test_cloud_safe_deterministic_plan_never_forwards_unknown_subject_names() -> None:
+    source = "Zorvella and Prenwick cross the glass causeway carrying a lantern."
+    pack = build_live_scene_story_pack(
+        LiveSceneCreateRequest(text=source, seed=17),
+        job_id="scene_000000000000000000000017",
+        seed=17,
+        assets=[],
+        compiler_model="deterministic-live-scene-planner-v1",
+        cloud_safe_prompts=True,
+    )
+
+    prompt = pack.pages[0].scene_spec.master_prompt  # type: ignore[union-attr]
+    assert "Zorvella" not in prompt
+    assert "Prenwick" not in prompt
+    assert "one warm floating lantern" in prompt
+
+
 def test_fake_provider_emits_valid_progressive_story_packs_and_cached_assets(
     tmp_path: Path,
 ) -> None:

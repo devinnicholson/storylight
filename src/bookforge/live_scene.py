@@ -1811,14 +1811,19 @@ def build_live_scene_story_pack(
     accent_x = 0.76 if focus_x < 0.5 else 0.24
     accent_y = 0.32 + ((seed >> 20) & 0xFF) / 255 * 0.28
     if cloud_safe_prompts:
+        cues = _passage_safe_visual_cues(request.text, theme=theme)
         prompt = (
-            f"{request.visual_style}. {theme['prompt']}. "
-            "One cohesive cinematic storybook moment with a clear central subject, "
-            "projection-ready silhouettes, layered depth, and no readable text."
+            f"{request.visual_style}. Setting: {theme['prompt']}. "
+            f"Main subject, visually dominant and shown exactly once: {cues['focus']}. "
+            f"Supporting detail, shown exactly once: {cues['accent']}. "
+            "Keep the main subject and supporting detail complete, clearly visible, and "
+            "spatially separated. One cohesive cinematic storybook moment, projection-ready "
+            "silhouettes, layered depth, no readable text."
         )
         background_prompt = str(theme["prompt"])
-        focus_prompt = "Clear central storytelling subject and action"
-        accent_prompt = str(theme["accent"])
+        focus_prompt = str(cues["focus"])
+        accent_prompt = str(cues["accent"])
+        focus_kind = str(cues["focus_kind"])
     else:
         prompt = (
             f"{request.visual_style}. {theme['prompt']}. "
@@ -1828,6 +1833,7 @@ def build_live_scene_story_pack(
         background_prompt = f"Environment and atmosphere for {request.text}"
         focus_prompt = f"Clear central storytelling subject from {request.text}"
         accent_prompt = f"{theme['accent']} inspired by {request.text}"
+        focus_kind = "character"
     layers = [
         VisualLayer(
             layer_id=background_id,
@@ -1838,7 +1844,7 @@ def build_live_scene_story_pack(
         ),
         VisualLayer(
             layer_id=focus_id,
-            kind="character",
+            kind=focus_kind,
             prompt=focus_prompt,
             z_index=5,
             motion="gentle breathing and cloth movement",
@@ -2002,7 +2008,18 @@ def _passage_draft_theme(text: str, seed: int) -> dict[str, object]:
         ),
         (
             "forest",
-            ("forest", "tree", "fox", "deer", "mushroom", "garden", "leaf", "wood"),
+            (
+                "forest",
+                "tree",
+                "fox",
+                "deer",
+                "mushroom",
+                "garden",
+                "leaf",
+                "wood",
+                "cedar",
+                "woodland",
+            ),
             {
                 "prompt": "Moss green woodland with pools of warm gold",
                 "accent": "a cluster of fireflies among leaves",
@@ -2064,9 +2081,14 @@ def _passage_draft_theme(text: str, seed: int) -> dict[str, object]:
             },
         ),
     )
-    for name, keywords, theme in rules:
-        if any(keyword in lowered for keyword in keywords):
-            return {"name": name, **theme}
+    tokens = _safe_visual_tokens(lowered)
+    scored_rules = [
+        (sum(keyword in tokens for keyword in keywords), -index, name, theme)
+        for index, (name, keywords, theme) in enumerate(rules)
+    ]
+    score, _, name, selected_theme = max(scored_rules, key=lambda candidate: candidate[:2])
+    if score:
+        return {"name": name, **selected_theme}
 
     fallback_colors = ("#82e6bd", "#f4d27d", "#8fb8ff", "#e79ad8")
     accent = fallback_colors[seed % len(fallback_colors)]
@@ -2085,6 +2107,94 @@ def _passage_draft_theme(text: str, seed: int) -> dict[str, object]:
         "scale_delta": 0.012,
         "ambience": [AmbientEffect(kind="dust", density=0.2, speed=0.26, color=accent)],
     }
+
+
+def _safe_visual_tokens(text: str) -> frozenset[str]:
+    """Return normalized words only; arbitrary source strings never leave this helper."""
+
+    words = "".join(character if character.isalpha() else " " for character in text).split()
+    tokens = {word.casefold() for word in words}
+    tokens.update(
+        word[:-1]
+        for word in tuple(tokens)
+        if len(word) > 3 and word.endswith("s") and not word.endswith("ss")
+    )
+    return frozenset(tokens)
+
+
+def _passage_safe_visual_cues(
+    text: str,
+    *,
+    theme: dict[str, object],
+) -> dict[str, str]:
+    """Compile useful renderer cues from a closed vocabulary, never raw passage spans."""
+
+    tokens = _safe_visual_tokens(text)
+    subject_rules = (
+        (("winged", "library"), "one fantastical winged library", "prop"),
+        (("fox",), "one complete silver fox", "character"),
+        (("deer",), "one complete gentle deer", "character"),
+        (("whale",), "one complete luminous whale", "character"),
+        (("owl",), "one complete storybook owl", "character"),
+        (("bird",), "one complete paper bird", "character"),
+        (("dragon",), "one complete friendly dragon", "character"),
+        (("robot",), "one complete friendly robot", "character"),
+        (("astronaut",), "one complete astronaut", "character"),
+        (("rabbit",), "one complete storybook rabbit", "character"),
+        (("bear",), "one complete storybook bear", "character"),
+        (("cat",), "one complete storybook cat", "character"),
+        (("dog",), "one complete storybook dog", "character"),
+        (("child",), "one complete child silhouette", "character"),
+        (("reader",), "one complete young reader", "character"),
+        (("student",), "one complete young learner", "character"),
+        (("library",), "one grand storybook library", "prop"),
+        (("rocket",), "one complete storybook rocket", "prop"),
+        (("boat",), "one complete storybook boat", "prop"),
+        (("castle",), "one complete storybook castle", "prop"),
+        (("book",), "one open storybook", "prop"),
+    )
+    prop_rules = (
+        ("lantern", "one warm floating lantern"),
+        ("key", "one luminous old key"),
+        ("book", "one open storybook"),
+        ("telescope", "one brass telescope"),
+        ("umbrella", "one bright umbrella"),
+        ("balloon", "one floating paper balloon"),
+        ("crown", "one small golden crown"),
+        ("map", "one illustrated map without readable text"),
+        ("mushroom", "one cluster of luminous mushrooms"),
+        ("flower", "one cluster of oversized paper flowers"),
+        ("moon", "one large paper moon"),
+    )
+    focus, focus_kind = "one complete storybook subject", "character"
+    for required, candidate, candidate_kind in subject_rules:
+        if all(token in tokens for token in required):
+            focus, focus_kind = candidate, candidate_kind
+            break
+    accent = str(theme["accent"])
+    for token, candidate in prop_rules:
+        if token in tokens and candidate.casefold() not in focus.casefold():
+            accent = candidate
+            break
+
+    if tokens & {"carry", "carried", "carrying", "carries", "hold", "holding", "holds"}:
+        focus = f"{focus}, visibly carrying the supporting detail"
+    elif tokens & {"follow", "followed", "following", "follows", "chase", "chasing"}:
+        focus = f"{focus}, oriented toward and following the supporting detail"
+    elif tokens & {"open", "opened", "opening", "opens"}:
+        focus = f"{focus}, visibly opening toward the viewer"
+    elif tokens & {"read", "reading", "reads"}:
+        focus = f"{focus}, visibly reading"
+    elif tokens & {"run", "running", "runs"}:
+        focus = f"{focus}, visibly running"
+    elif tokens & {"swim", "swimming", "swims"}:
+        focus = f"{focus}, visibly swimming"
+    elif tokens & {"fly", "flying", "flies"}:
+        focus = f"{focus}, visibly flying"
+    elif tokens & {"rise", "rises", "rising", "rose"}:
+        focus = f"{focus}, visibly rising"
+
+    return {"focus": focus, "focus_kind": focus_kind, "accent": accent}
 
 
 async def _fake_asset(
