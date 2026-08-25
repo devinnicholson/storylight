@@ -843,7 +843,8 @@ def test_workbench_rehearsal_prepares_edge_plan_and_text_free_renderer_concurren
     assert 'post("/v1/live-scene-planner/prepare"' in controller
     assert "Promise.allSettled" in controller
     assert "scaledown_window_seconds: 600" in controller
-    assert "if (rehearsalMode) prewarmRenderer();" in controller
+    assert "void initializeRendererPreparation().then" in controller
+    assert "if (rehearsalMode && currentPlanKey().length >= 3)" in controller
     prewarm_source = controller[
         controller.index("async function prewarmRenderer()") : controller.index(
             "function setSceneReady"
@@ -869,6 +870,20 @@ def test_workbench_rehearsal_prepares_edge_plan_and_text_free_renderer_concurren
     assert "elements.story.value.trim()" in plan_key_source
     assert "elements.style" not in plan_key_source
     assert "visual-style auditions reuse the private semantic plan" in controller
+
+
+def test_workbench_warms_text_free_renderer_on_open_for_ten_minutes() -> None:
+    controller = (ROOT / "src/bookforge/static/workbench.js").read_text()
+    preparation = controller.split(
+        "async function prepareRendererOnWorkbenchOpen()", 1
+    )[1].split("async function initializeRendererPreparation", 1)[0]
+
+    assert 'fetch("/v1/live-scene-provider/prewarm"' in preparation
+    assert "scaledown_window_seconds: 600" in preparation
+    assert "include_motion: false" in preparation
+    assert "elements.story" not in preparation
+    assert "visual_style" not in preparation
+    assert "initializeRendererPreparation()" in controller
 
 
 def test_workbench_starts_only_text_free_edge_warmup_in_background() -> None:

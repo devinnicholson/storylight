@@ -157,13 +157,14 @@ async function inspectRendererReadiness() {
     if (!response.ok) throw new Error(payload.detail || `Readiness failed (${response.status})`);
     if (payload.state === "prewarmed") {
       markRendererReady(payload.expires_in_seconds);
-      return;
+      return "ready";
     }
     setRendererReadiness(
       "idle",
       "Renderer sleeps between scenes",
       "Prepare the full path before a judged run.",
     );
+    return "idle";
   } catch (error) {
     setRendererReadiness(
       "error",
@@ -171,7 +172,51 @@ async function inspectRendererReadiness() {
       error.message,
       {buttonDisabled: true},
     );
+    return "unavailable";
   }
+}
+
+async function prepareRendererOnWorkbenchOpen() {
+  if (rendererPrewarming || Date.now() < rendererWarmUntil) return;
+  rendererPrewarming = true;
+  elements.prewarmButton.textContent = "Warming renderer…";
+  setRendererReadiness(
+    "warming",
+    "Waking the renderer while you write…",
+    "This text-free preparation is moved outside Generate and stays warm for ten minutes.",
+    {buttonDisabled: true},
+  );
+  try {
+    const response = await fetch("/v1/live-scene-provider/prewarm", {
+      method: "POST",
+      headers: {"Content-Type": "application/json"},
+      body: JSON.stringify({
+        prewarm_id: `workbench-${readerSessionId}-${Date.now().toString(36)}`,
+        include_motion: false,
+        scaledown_window_seconds: 600,
+      }),
+    });
+    const payload = await response.json().catch(() => ({}));
+    if (!response.ok) throw new Error(payload.detail || `Preparation failed (${response.status})`);
+    markRendererReady(payload.expires_in_seconds);
+  } catch (error) {
+    const recovered = await inspectRendererReadiness();
+    if (recovered !== "ready") {
+      elements.prewarmButton.textContent = "Retry renderer";
+      setRendererReadiness(
+        "error",
+        "Renderer background preparation failed",
+        error.message,
+      );
+    }
+  } finally {
+    rendererPrewarming = false;
+  }
+}
+
+async function initializeRendererPreparation() {
+  const state = await inspectRendererReadiness();
+  if (state === "idle") await prepareRendererOnWorkbenchOpen();
 }
 
 async function warmEdgePlanner() {
@@ -1203,8 +1248,9 @@ document.addEventListener("visibilitychange", () => {
     void warmEdgePlanner();
   }
 });
-if (rehearsalMode) prewarmRenderer();
-else inspectRendererReadiness();
+void initializeRendererPreparation().then(() => {
+  if (rehearsalMode && currentPlanKey().length >= 3) void prewarmRenderer();
+});
 window.addEventListener("beforeunload", () => {
   window.clearInterval(edgePlannerKeepWarmTimer);
   window.clearTimeout(rendererWarmExpiryTimer);

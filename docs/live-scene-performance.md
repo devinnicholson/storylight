@@ -125,6 +125,20 @@ only the later generation call receives the locally validated, privacy-gated vis
 The feature remains explicit because prewarm allocates a bounded GPU session and retains its full
 reservation after cancellation or an uncertain provider failure.
 
+The workbench now starts that same text-free master/depth preparation when it opens and requests a
+bounded ten-minute scale-down window. Cold model loading therefore happens while the operator types,
+not after Generate. It first reads provider status and reuses an existing session, so a reload does
+not knowingly launch a duplicate prewarm. Story text, style, audio, and camera data are absent from
+this preparation request. Manual preparation remains available for recovery and judged-run checks.
+
+The first isolated acceptance of this path reached a complete 1024×576 master plus depth map in
+973.852 ms after POST acceptance. The exact plan was a local cache hit in 0.072 ms; the warm L40S
+provider took 933.565 ms, including 322.714 ms of inference. The comparable cold submit took
+25.886 seconds, so moving preparation outside Generate reduced visible latency by 96.238% (26.581×).
+This is latency hiding, not deletion: the text-free renderer prewarm took 20.946 seconds and the
+uncached local plan took 10.518 seconds, both before the timed request. Reproducible evidence is in
+`benchmarks/bookforge-prepared-generation-2026-08-24.json`.
+
 Model-planner failure is fail-closed at the renderer boundary. A timeout, invalid schema, privacy
 violation, or unsafe semantic plan leaves the immediate local draft visible and returns a retryable
 error before any prompt-bearing cloud generation call. Completed deterministic fallback packs are
