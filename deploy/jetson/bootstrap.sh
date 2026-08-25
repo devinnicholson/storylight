@@ -9,6 +9,7 @@ VENV_PATH="${BOOKFORGE_VENV_PATH:-${REPO_ROOT}/.venv}"
 INSTALL_PACKAGES=0
 CREATE_VENV=0
 INSTALL_APP=0
+INSTALL_MODAL_RUNTIME=0
 STRICT_CHECK=0
 
 usage() {
@@ -22,6 +23,7 @@ Options:
   --install-system-packages Install only Bookforge's Ubuntu utilities with apt.
   --create-venv              Create or reuse BOOKFORGE_VENV_PATH (default: .venv).
   --install-app              Install this checkout into the existing virtualenv.
+  --install-modal-runtime    Include the authenticated Modal SDK runtime.
   -h, --help                 Show this help.
 
 This script never flashes Jetson Linux, installs a JetPack metapackage, changes
@@ -35,6 +37,7 @@ for argument in "$@"; do
     --install-system-packages) INSTALL_PACKAGES=1 ;;
     --create-venv) CREATE_VENV=1 ;;
     --install-app) INSTALL_APP=1 ;;
+    --install-modal-runtime) INSTALL_MODAL_RUNTIME=1 ;;
     -h|--help) usage; exit 0 ;;
     *) printf 'Unknown argument: %s\n' "$argument" >&2; usage >&2; exit 2 ;;
   esac
@@ -46,7 +49,7 @@ else
   "${SCRIPT_DIR}/check-device.sh"
 fi
 
-if ((INSTALL_PACKAGES == 0 && CREATE_VENV == 0 && INSTALL_APP == 0)); then
+if ((INSTALL_PACKAGES == 0 && CREATE_VENV == 0 && INSTALL_APP == 0 && INSTALL_MODAL_RUNTIME == 0)); then
   exit 0
 fi
 
@@ -81,14 +84,18 @@ if ((CREATE_VENV == 1)); then
   fi
 fi
 
-if ((INSTALL_APP == 1)); then
+if ((INSTALL_APP == 1 || INSTALL_MODAL_RUNTIME == 1)); then
   if [[ ! -x "${VENV_PATH}/bin/python" ]]; then
     printf 'Virtual environment is missing: %s\n' "$VENV_PATH" >&2
     printf 'Run again with --create-venv --install-app.\n' >&2
     exit 1
   fi
   "${VENV_PATH}/bin/python" -m pip install --upgrade pip
-  "${VENV_PATH}/bin/python" -m pip install --upgrade "$REPO_ROOT"
+  if ((INSTALL_MODAL_RUNTIME == 1)); then
+    "${VENV_PATH}/bin/python" -m pip install --upgrade "${REPO_ROOT}[modal-authoring]"
+  else
+    "${VENV_PATH}/bin/python" -m pip install --upgrade "$REPO_ROOT"
+  fi
 fi
 
 printf '\nSetup actions completed. Re-run %s to inspect readiness.\n' "${SCRIPT_DIR}/check-device.sh"

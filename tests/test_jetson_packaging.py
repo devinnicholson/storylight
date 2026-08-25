@@ -8,6 +8,8 @@ from bookforge.live_scene_planner import LiveSceneWirePlan
 ROOT = Path(__file__).parents[1]
 KIOSK_LAUNCHER = ROOT / "deploy/jetson/launch-kiosk.sh"
 KIOSK_PREFLIGHT = ROOT / "deploy/jetson/check-kiosk-session.sh"
+STANDALONE_INSTALLER = ROOT / "deploy/jetson/install-standalone.sh"
+PAIRING_HELPER = ROOT / "deploy/jetson/show-controller-pairing.sh"
 
 
 def _write_executable(path: Path, body: str) -> None:
@@ -126,6 +128,54 @@ def test_system_service_has_persistent_private_paths_and_preflight() -> None:
     assert "CacheDirectory=bookforge" in unit
     assert "UMask=0077" in unit
     assert "EnvironmentFile=/etc/bookforge/bookforge.env" in unit
+
+
+def test_standalone_gateway_is_the_only_lan_listener() -> None:
+    private_api = (ROOT / "deploy/jetson/systemd/bookforge@.service").read_text()
+    gateway = (
+        ROOT / "deploy/jetson/systemd/bookforge-controller@.service"
+    ).read_text()
+
+    assert "--host 127.0.0.1 --port 8080" in private_api
+    assert "Requires=bookforge@%i.service" in gateway
+    assert "EnvironmentFile=/etc/bookforge/controller.env" in gateway
+    assert "bookforge.controller_gateway:create_app_from_env --factory" in gateway
+    assert "--host 0.0.0.0 --port 8081 --no-proxy-headers" in gateway
+    assert "NoNewPrivileges=true" in gateway
+    assert "UMask=0077" in gateway
+
+
+def test_standalone_installer_preserves_secrets_and_device_configuration() -> None:
+    installer = STANDALONE_INSTALLER.read_text()
+    pairing_helper = PAIRING_HELPER.read_text()
+    controller_example = (ROOT / "deploy/jetson/controller.env.example").read_text()
+
+    subprocess.run(["bash", "-n", str(STANDALONE_INSTALLER)], check=True)
+    subprocess.run(["bash", "-n", str(PAIRING_HELPER)], check=True)
+    assert 'if [[ ! -e /etc/bookforge/bookforge.env ]]' in installer
+    assert 'if [[ ! -e /etc/bookforge/controller.env ]]' in installer
+    assert "openssl rand -hex 32" in installer
+    assert "systemctl enable" in installer
+    assert "apt-get" not in installer
+    assert "nmcli" not in installer
+    assert "mkfs" not in installer
+    assert "MODAL_TOKEN_ID=" not in controller_example
+    assert "BOOKFORGE_CONTROLLER_PAIRING_TOKEN=\n" in controller_example
+    assert "pair#${pairing_token}" in pairing_helper
+
+
+def test_standalone_profile_keeps_raw_story_planning_local() -> None:
+    profile = (ROOT / "deploy/jetson/bookforge.standalone.env.example").read_text()
+
+    assert "BOOKFORGE_MODEL_BACKEND=ollama" in profile
+    assert "BOOKFORGE_MODEL_BASE_URL=http://127.0.0.1:11434" in profile
+    assert "BOOKFORGE_MODEL_REQUIRE_GPU=true" in profile
+    assert "BOOKFORGE_LIVE_SCENE_PLANNER=model" in profile
+    assert "BOOKFORGE_LIVE_SCENE_BACKEND=modal_warm" in profile
+    assert "BOOKFORGE_LIVE_SCENE_ENABLE_MOTION=false" in profile
+    assert "BOOKFORGE_ASR_BACKEND=disabled" in profile
+    assert "MODAL_TOKEN_ID=\n" in profile
+    assert "MODAL_TOKEN_SECRET=\n" in profile
 
 
 def test_projector_adapts_dark_scenes_without_an_extra_generation_pass() -> None:
@@ -954,6 +1004,8 @@ def test_hardware_evidence_and_privacy_scripts_are_executable() -> None:
         "check-device.sh",
         "check-kiosk-session.sh",
         "warm-asr.sh",
+        "install-standalone.sh",
+        "show-controller-pairing.sh",
     ):
         path = ROOT / "deploy/jetson" / name
         assert path.stat().st_mode & 0o111
@@ -979,6 +1031,8 @@ def test_bootstrap_keeps_jetpack_python_packages_visible() -> None:
 
     assert "python3 -m venv --system-site-packages" in bootstrap
     assert 'pip install --upgrade "$REPO_ROOT"' in bootstrap
+    assert "--install-modal-runtime" in bootstrap
+    assert 'pip install --upgrade "${REPO_ROOT}[modal-authoring]"' in bootstrap
 
 
 def test_api_launchers_bound_shutdown_with_long_lived_scene_streams() -> None:

@@ -16,6 +16,10 @@ explicit device-administration task that must follow NVIDIA's documentation.
   camera, microphone, display, projector browser, and thermal zones.
 - `bootstrap.sh`: diagnostic-first setup; mutation requires an explicit option.
 - `bookforge.env.example`: conservative API environment with ASR disabled by default.
+- `bookforge.standalone.env.example`: local-Gemma/Modal profile for portable operation.
+- `controller.env.example`: paired phone-gateway configuration without a committed secret.
+- `install-standalone.sh`: guarded service installer for an already-staged `/opt/bookforge` tree.
+- `show-controller-pairing.sh`: prints the private pairing URL and an optional terminal QR code.
 - `check-kiosk-session.sh`: fail-closed, read-only lock/idle/DPMS preflight for the X11 projector
   session.
 - `launch-kiosk.sh`: Chromium-first projector launcher with a Firefox fallback and no privilege
@@ -24,10 +28,91 @@ explicit device-administration task that must follow NVIDIA's documentation.
 - `check-privacy.sh`: fail-closed process socket audit for listeners plus active TCP/UDP traffic.
 - `warm-asr.sh`: supervised-service-safe Whisper checkpoint and TensorRT engine warmup.
 - `systemd/bookforge@.service`: system API service parameterized by the Linux user.
+- `systemd/bookforge-controller@.service`: authenticated, allowlisted phone gateway on port 8081.
 - `systemd/bookforge-kiosk.service`: graphical-session user service for the projector browser.
 - `systemd/bookforge-gemma.service`: loopback-only, user-scoped Ollama service for the local Gemma
   scene planner.
 - `kiosk.env.example`: kiosk URL/browser overrides.
+
+## Standalone portable topology
+
+Bookforge can run without a Mac. The Jetson hosts the private API, local Gemma planner, cached
+artwork, and attached-projector browser. A phone on the same **private WPA2/WPA3 network** controls
+generation through a separate paired gateway:
+
+```text
+phone :8081 -> paired allowlisted gateway -> Jetson loopback API :8080
+                                             |-> local Gemma :11434
+                                             |-> authenticated Modal renderer
+projector browser --------------------------> Jetson loopback API :8080
+```
+
+The story API, local model, audio routes, camera routes, diagnostics, and projector are never bound
+to the LAN. The gateway exposes only the workbench, scene status/assets, planner preparation, and
+scene-generation routes. A 256-bit token is exchanged for a temporary HttpOnly, SameSite session;
+the token remains in the pairing URL fragment and is neither sent in an HTTP URL nor forwarded to
+the story API or renderer.
+
+For a portable demo, connect the Jetson and phone to a small travel router. The router can use
+Wi-Fi or phone tethering as its upstream internet connection, while keeping the demo devices on a
+stable private network. Cloud artwork requires upstream internet; the projector, cached scenes,
+procedural draft, and local Gemma remain device-local. Do not expose port 8081 on public Wi-Fi or
+configure router port forwarding. Pairing is access control, not transport encryption; this HTTP
+profile is intentionally limited to a private, operator-controlled WLAN.
+
+After staging the committed repository at `/opt/bookforge`, create the venv with the Modal runtime:
+
+```bash
+cd /opt/bookforge
+./deploy/jetson/bootstrap.sh --create-venv --install-modal-runtime
+sudo ./deploy/jetson/install-standalone.sh --user "$USER" --deploy-renderer
+```
+
+The installer refuses non-Jetson hosts and any checkout outside `/opt/bookforge`. It does not
+change Wi-Fi, JetPack, power mode, storage, display, login, or browser settings. It preserves any
+existing API environment and pairing secret. On the first run it creates root-only environment
+files; add `MODAL_TOKEN_ID` and `MODAL_TOKEN_SECRET` to `/etc/bookforge/bookforge.env`, then rerun
+the installer to start the services. Never paste those credentials into the phone or browser.
+It installs and enables the existing local-Gemma and kiosk user units, but deliberately does not
+enable autologin or user lingering. Sign in on the attached projector after a reboot; that normal
+graphical login starts Gemma and the projector kiosk without requiring a Mac.
+`--deploy-renderer` is explicit because it changes the authenticated Modal app definition. The app
+has zero minimum containers, so deployment allocates no idle GPU; the existing per-call billing
+gate still runs before any prewarm or scene. Omit the flag when the exact app revision is already
+deployed.
+
+Show the private pairing URL only when the operator is ready to connect the phone:
+
+```bash
+sudo /opt/bookforge/deploy/jetson/show-controller-pairing.sh
+```
+
+Open or scan the printed URL. The phone will land on
+`/workbench?session=bookforge-live`; the attached projector continues using the same canonical
+session on `127.0.0.1:8080`. `jetson.local` requires working mDNS on the private network. If the
+phone cannot resolve it, use the router's reserved Jetson address by running:
+
+```bash
+sudo BOOKFORGE_CONTROLLER_HOST=192.168.8.20 \
+  /opt/bookforge/deploy/jetson/show-controller-pairing.sh
+```
+
+The override accepts a DNS name or IPv4 address. A travel-router DHCP reservation is preferred over
+hard-coding an address on the Jetson.
+
+Verify the boundary from the Jetson:
+
+```bash
+curl -fsS http://127.0.0.1:8080/readyz
+curl -fsS http://127.0.0.1:8081/healthz
+ss -ltn | grep -E '127\.0\.0\.1:8080|0\.0\.0\.0:8081|127\.0\.0\.1:11434'
+systemctl status "bookforge@${USER}.service" --no-pager
+systemctl status "bookforge-controller@${USER}.service" --no-pager
+```
+
+Only the controller gateway should listen on all interfaces. If the network is not private, stop
+it immediately with `sudo systemctl stop "bookforge-controller@${USER}.service"`; local projector
+operation remains available.
 
 ## 1. Inspect the device
 

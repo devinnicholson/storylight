@@ -160,6 +160,15 @@ classes with no public web endpoint and no permanently warm container. LTX-Video
 opt-in upgrade; it is off by default so every typed sentence does not silently start a slower,
 costlier video job.
 
+### Run without a Mac
+
+The portable topology runs the API, local Gemma planner, scene cache, and projector on the
+Jetson. A phone on the same private travel-router network controls it through a paired, route-
+allowlisted gateway; the core API and Gemma remain loopback-only. The phone never receives Modal
+credentials and the gateway does not expose microphone, camera, compilation, or diagnostics
+routes. See [the standalone Jetson runbook](deploy/jetson/README.md#standalone-portable-topology)
+for installation, pairing, private-network requirements, and rollback.
+
 ```bash
 modal profile current
 BOOKFORGE_MODEL_BACKEND=fake \
