@@ -48,7 +48,8 @@ class GenerateRequest(StrictModel):
     seed: Annotated[int, Field(ge=0, le=2**32 - 1)]
     width: Annotated[int, Field(ge=512, le=1536, multiple_of=32)]
     height: Annotated[int, Field(ge=512, le=1536, multiple_of=32)]
-    steps: Annotated[int, Field(ge=2, le=4)]
+    # Sana Sprint's SCM scheduler only supports its native two-step path.
+    steps: Annotated[int, Field(ge=2, le=2)]
     guidance_scale: Annotated[float, Field(ge=0, le=12)]
 
 
@@ -63,6 +64,9 @@ class SceneRuntime:
         self.inference_warmed = False
         self.loaded_at = 0.0
         self.gpu = "unloaded"
+        self.gpu_compute_capability = "unloaded"
+        self.torch_version = "unloaded"
+        self.torch_cuda_version = "unloaded"
 
     async def ensure_loaded(self) -> None:
         if self.image_pipe is not None:
@@ -75,29 +79,14 @@ class SceneRuntime:
     def _load(self) -> None:
         import diffusers
         import torch
+        from huggingface_hub import snapshot_download
         from transformers import pipeline
 
         started = time.perf_counter()
-        self.image_pipe = diffusers.SanaSprintPipeline.from_pretrained(
-            FAST_MODEL,
-            revision=FAST_MODEL_REVISION,
-            cache_dir=MODEL_CACHE,
-            local_files_only=True,
-            torch_dtype=torch.bfloat16,
-        ).to("cuda")
-        self.image_pipe.vae.to(torch.bfloat16)
-        self.image_pipe.text_encoder.to(torch.bfloat16)
-        self.image_pipe.set_progress_bar_config(disable=True)
-        self.depth_pipe = pipeline(
-            task="depth-estimation",
-            model=DEPTH_MODEL,
-            revision=DEPTH_MODEL_REVISION,
-            cache_dir=MODEL_CACHE,
-            local_files_only=True,
-            dtype=torch.float16,
-            device=0,
-        )
         gpu_name = torch.cuda.get_device_name(0).upper()
+        compute_capability = torch.cuda.get_device_capability(0)
+        expected_arch = f"sm_{compute_capability[0]}{compute_capability[1]}"
+        supported_arches = torch.cuda.get_arch_list()
         matches = {
             "L4": "L4" in gpu_name,
             "RTX_PRO_6000": "RTX PRO 6000" in gpu_name,
@@ -106,7 +95,36 @@ class SceneRuntime:
             raise RuntimeError(
                 f"Bookforge Cloud Run worker requires {EXPECTED_GPU}, got {gpu_name}"
             )
+        if expected_arch not in supported_arches:
+            raise RuntimeError(
+                "PyTorch CUDA build does not support the attached GPU architecture: "
+                f"requires {expected_arch}, supports {supported_arches}"
+            )
         self.gpu = EXPECTED_GPU
+        self.gpu_compute_capability = f"{compute_capability[0]}.{compute_capability[1]}"
+        self.torch_version = torch.__version__
+        self.torch_cuda_version = torch.version.cuda or "unknown"
+        self.image_pipe = diffusers.SanaSprintPipeline.from_pretrained(
+            FAST_MODEL,
+            revision=FAST_MODEL_REVISION,
+            cache_dir=MODEL_CACHE,
+            local_files_only=True,
+            torch_dtype=torch.bfloat16,
+        ).to("cuda")
+        self.image_pipe.set_progress_bar_config(disable=True)
+        depth_model_path = snapshot_download(
+            repo_id=DEPTH_MODEL,
+            revision=DEPTH_MODEL_REVISION,
+            cache_dir=MODEL_CACHE,
+            local_files_only=True,
+        )
+        self.depth_pipe = pipeline(
+            task="depth-estimation",
+            model=depth_model_path,
+            image_processor=depth_model_path,
+            dtype=torch.float16,
+            device=0,
+        )
         self.model_load_seconds = time.perf_counter() - started
         self.loaded_at = time.monotonic()
 
@@ -214,6 +232,9 @@ class SceneRuntime:
         return {
             "provider": PROVIDER_NAME,
             "gpu": self.gpu,
+            "gpu_compute_capability": self.gpu_compute_capability,
+            "torch_version": self.torch_version,
+            "torch_cuda_version": self.torch_cuda_version,
             "fast_model": FAST_MODEL,
             "fast_model_revision": FAST_MODEL_REVISION,
             "depth_model": DEPTH_MODEL,
@@ -260,8 +281,8 @@ runtime = SceneRuntime()
 app = FastAPI(title="Bookforge GCP Live Scene Worker", version="1.0.0")
 
 
-@app.get("/healthz")
-async def healthz() -> dict[str, Any]:
+@app.get("/health")
+async def health() -> dict[str, Any]:
     return {
         "provider": PROVIDER_NAME,
         "fast_model_revision": FAST_MODEL_REVISION,

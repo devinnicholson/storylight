@@ -1,4 +1,4 @@
-FROM nvidia/cuda:12.4.1-cudnn-runtime-ubuntu22.04
+FROM nvidia/cuda:12.8.1-cudnn-runtime-ubuntu22.04
 
 ENV DEBIAN_FRONTEND=noninteractive \
     PYTHONDONTWRITEBYTECODE=1 \
@@ -16,10 +16,10 @@ COPY requirements.txt ./
 RUN python3 -m pip install --no-cache-dir -r requirements.txt
 COPY download_models.py ./
 RUN python3 download_models.py
-COPY app.py ./
 
 RUN useradd --create-home --uid 65532 bookforge \
-    && chown -R bookforge:bookforge /app /models
+    && chown -R bookforge:bookforge /app
+COPY --chown=65532:65532 app.py ./
 USER 65532:65532
 
 EXPOSE 8080

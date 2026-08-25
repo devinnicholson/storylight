@@ -6,9 +6,9 @@ The production migration keeps the privacy and latency split explicit:
 
 - Jetson Gemma converts the passage into bounded visual direction locally. Raw reading text,
   microphone audio, and camera frames do not enter the renderer request.
-- A private Cloud Run service uses one NVIDIA L4 for pinned SANA-Sprint master generation and
-  Depth Anything V2. It scales from zero to at most one instance and accepts only IAM-authenticated
-  requests.
+- A private Cloud Run service uses one NVIDIA RTX PRO 6000 by default for pinned SANA-Sprint master
+  generation and Depth Anything V2. It scales from zero to at most one instance and accepts only
+  IAM-authenticated requests.
 - Nemotron is a separate asynchronous visual critic. It is not placed on the first-image critical
   path and must not be presented as pixel-aware until its multimodal deployment is enabled.
 - The Jetson validates checksum-addressed output and performs depth-aware motion locally.
@@ -20,7 +20,7 @@ and retains only two recent images while deleting images older than 30 days.
 ```bash
 export GOOGLE_CLOUD_PROJECT=your-gcp-project
 export BOOKFORGE_GCP_REGION=us-central1
-export BOOKFORGE_IMAGE_TAG=20260824-2
+export BOOKFORGE_IMAGE_TAG=YYYYMMDD-N
 
 # Inspect the exact scope; creates nothing.
 ./infra/gcp/cloud-run/deploy-live-scene.sh
@@ -54,11 +54,12 @@ Cloud Run verifies the Google-signed identity token; the browser and Jetson proj
 GCP credentials or the private service URL. Keep minimum instances at zero outside a supervised
 demo. The project-scoped billing guard below remains the last-resort containment layer.
 
-The 2026-08-25 RTX deployment is control-plane healthy, but its default HTTPS endpoint is affected
-by an upstream Google Frontend route-provisioning defect: both URL forms return a 1,568-byte Google
-404, and the revision has zero request logs. Do not prewarm or generate until `/healthz` reaches the
+Cloud Run reserves some URL paths ending in `z`, so the worker intentionally exposes `/health`
+rather than `/healthz`. Do not prewarm or generate until authenticated `GET /health` reaches the
 worker. Evidence and the exact immutable revision are recorded in
 [`benchmarks/gcp-rtx-cloud-run-deployment-2026-08-25.json`](../../benchmarks/gcp-rtx-cloud-run-deployment-2026-08-25.json).
+SANA Sprint uses its native two-step SCM path; the Bookforge GCP adapter rejects any other step
+count locally before a paid request, and the worker validates the same constraint.
 
 ### Nemotron visual critic
 

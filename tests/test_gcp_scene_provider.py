@@ -89,6 +89,37 @@ def test_private_cloud_run_provider_writes_checksum_bound_bundle(tmp_path: Path)
     assert bundle.estimated_gpu_usd > 0
 
 
+def test_private_cloud_run_probe_avoids_reserved_healthz_path() -> None:
+    observed: list[str] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        observed.append(request.url.path)
+        return httpx.Response(
+            200,
+            json={
+                "provider": "gcp-cloud-run",
+                "fast_model_revision": FAST_MODEL_REVISION,
+                "depth_model_revision": DEPTH_MODEL_REVISION,
+                "loaded": False,
+            },
+        )
+
+    async def token_source(audience: str) -> str:
+        return "token"
+
+    provider = GcpCloudRunSceneProvider(
+        base_url="https://renderer.example.run.app",
+        audience="https://renderer.example.run.app",
+        token_source=token_source,
+        client_factory=lambda **kwargs: httpx.AsyncClient(
+            transport=httpx.MockTransport(handler), **kwargs
+        ),
+    )
+
+    assert asyncio.run(provider.probe())[0] is True
+    assert observed == ["/health"]
+
+
 def test_private_cloud_run_provider_attests_rtx_pro_6000(tmp_path: Path) -> None:
     payload = _payload(scene_id="rtx-scene")
     payload["gpu"] = "RTX_PRO_6000"
@@ -115,6 +146,43 @@ def test_private_cloud_run_provider_attests_rtx_pro_6000(tmp_path: Path) -> None
 
     assert bundle.manifest["stages"]["fast"]["gpu"] == "RTX_PRO_6000"
     assert bundle.estimated_gpu_usd > 0
+
+
+def test_cloud_run_provider_rejects_non_native_sana_steps_without_remote_call(
+    tmp_path: Path,
+) -> None:
+    calls = 0
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        nonlocal calls
+        calls += 1
+        return httpx.Response(200, json=_payload())
+
+    async def token_source(audience: str) -> str:
+        return "token"
+
+    provider = GcpCloudRunSceneProvider(
+        base_url="https://renderer.example.run.app",
+        audience="https://renderer.example.run.app",
+        token_source=token_source,
+        client_factory=lambda **kwargs: httpx.AsyncClient(
+            transport=httpx.MockTransport(handler), **kwargs
+        ),
+    )
+
+    with pytest.raises(GcpSceneProviderError, match="exactly 2 inference steps"):
+        asyncio.run(
+            provider.generate_fast(
+                FastSceneRequest(
+                    scene_id="invalid-steps",
+                    prompt="A luminous paper fox.",
+                    steps=4,
+                ),
+                output_dir=tmp_path / "invalid-steps",
+            )
+        )
+
+    assert calls == 0
 
 
 def test_cloud_run_provider_rejects_tampered_artifacts_without_writing(tmp_path: Path) -> None:

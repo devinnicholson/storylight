@@ -99,13 +99,21 @@ gcloud iam service-accounts create bookforge-renderer \
   --project "${PROJECT_ID}" \
   --display-name "Bookforge private live-scene renderer"
 
+CACHE_IMAGE="$(
+  gcloud run services describe "${SERVICE}" \
+    --project "${PROJECT_ID}" \
+    --region "${REGION}" \
+    --format 'value(spec.template.spec.containers[0].image)' 2>/dev/null || true
+)"
+if [[ -z "${CACHE_IMAGE}" ]]; then
+  CACHE_IMAGE="${IMAGE}"
+fi
+
 gcloud builds submit deploy/gcp_live_scene_worker \
   --project "${PROJECT_ID}" \
   --region "${REGION}" \
-  --tag "${IMAGE}" \
-  --timeout 3600s \
-  --machine-type e2-highcpu-8 \
-  --disk-size 100
+  --config infra/gcp/cloud-run/cloudbuild-live-scene.yaml \
+  --substitutions "_IMAGE=${IMAGE},_CACHE_IMAGE=${CACHE_IMAGE}"
 
 IMAGE_DIGEST="$(
   gcloud artifacts docker images describe "${IMAGE}" \
@@ -135,7 +143,7 @@ gcloud run deploy "${SERVICE}" \
   --cpu-boost \
   --no-cpu-throttling \
   --no-allow-unauthenticated \
-  --set-env-vars "BOOKFORGE_EXPECTED_GPU=${EXPECTED_GPU}" \
+  --set-env-vars "BOOKFORGE_EXPECTED_GPU=${EXPECTED_GPU},HF_HUB_OFFLINE=1,HF_HUB_DISABLE_XET=1,TRANSFORMERS_OFFLINE=1" \
   --labels app=bookforge,component=live-scene,model=sana-sprint \
   --quiet
 

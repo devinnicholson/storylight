@@ -133,10 +133,12 @@ credentials and the private renderer URL never enter browser state. The output i
 dimension-checked, and SHA-256-verified before it becomes a Story Pack asset. See
 `infra/gcp/README.md` for the quota-first guarded deployment and teardown details.
 
-The private RTX revision deployed successfully on 2026-08-25, but both generated `run.app` URLs
-currently return Google's 1,568-byte frontend 404 before any request reaches the healthy container.
-Keep `gcp_cloud_run` disabled for the live demo until the endpoint gate in the linked GCP benchmark
-passes; the accepted Modal renderer remains the working production fallback.
+Cloud Run reserves some URL paths ending in `z`, so the private renderer uses `/health`, not
+`/healthz`, for its authenticated endpoint gate. Enable `gcp_cloud_run` only after that gate and one
+bounded synthetic generation pass. The accepted RTX path generated a checksum-bound 1024x576
+master and depth map in 0.627 seconds authenticated client wall time (0.277 seconds inside Cloud
+Run); the exact revisions, failure history, visual review, and cost scopes are recorded in the GCP
+benchmark below.
 
 Nemotron is intentionally the asynchronous fidelity path, not another delay before the first image.
 A multimodal Nemotron critic can inspect the generated synthetic plate against the privacy-safe
@@ -569,7 +571,7 @@ passes the real I/O and latency run on JetPack 7.2.1.
 - [`benchmarks/jetson-gemma3-ollama-2026-08-23.json`](benchmarks/jetson-gemma3-ollama-2026-08-23.json): pinned Jetson Gemma runtime, GPU/memory/privacy evidence, exact planning latency, and the complete Gemma-to-SANA-to-depth acceptance
 - [`benchmarks/jetson-gemma3-planner-optimization-2026-08-23.json`](benchmarks/jetson-gemma3-planner-optimization-2026-08-23.json): five-passage compact-planner acceptance with a 5.24-second mean plus two bounded warm visual comparisons; the fastest full Gemma-to-master result was 9.37 seconds, the selected character-preserving result was 10.55 seconds, and both paid comparisons cost $0.03883467 combined
 - [`benchmarks/nemotron-hosted-critic-2026-08-25.json`](benchmarks/nemotron-hosted-critic-2026-08-25.json): privacy-minimized hosted Nemotron VL acceptance on a synthetic generated plate; fidelity 0.80, composition 0.90, no unintended text, and 150.1-second latency that keeps criticism off the live path
-- [`benchmarks/gcp-rtx-cloud-run-deployment-2026-08-25.json`](benchmarks/gcp-rtx-cloud-run-deployment-2026-08-25.json): immutable private RTX PRO 6000 deployment pass plus a fail-closed record of the upstream Google Frontend 404 that currently prevents requests from reaching the healthy worker
+- [`benchmarks/gcp-rtx-cloud-run-deployment-2026-08-25.json`](benchmarks/gcp-rtx-cloud-run-deployment-2026-08-25.json): private RTX PRO 6000 SANA/depth acceptance at 0.627 seconds authenticated client wall, exact artifact checksums and visual review, resolved routing/CUDA/offline-cache/timestep defects, and the fail-closed record for a stricter image whose platform rollout remains pending
 - [`benchmarks/bookforge-speed-optimization-2026-08-23.json`](benchmarks/bookforge-speed-optimization-2026-08-23.json): final 6.971-second Jetson Gemma → warm Modal SANA/depth acceptance, renderer sweep, rejected tiny-model/low-step configurations, seed-quality evidence, and billing reconciliation
 - [`benchmarks/bookforge-resolution-ab-2026-08-24.json`](benchmarks/bookforge-resolution-ab-2026-08-24.json): same-seed warm 896x512 versus 768x448 renderer A/B; the lower plate was rejected because a 25% pixel reduction saved only 18.8 ms and did not improve inference
 - [`benchmarks/bookforge-native-1024-acceptance-2026-08-24.json`](benchmarks/bookforge-native-1024-acceptance-2026-08-24.json): same-prompt, same-seed 896×512 versus 1024×576 L40S A/B plus exact prepared API/browser acceptance; the native plate adds 28.6% pixels and reaches the complete moving master in 499.6 ms

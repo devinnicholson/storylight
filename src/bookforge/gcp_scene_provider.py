@@ -166,7 +166,9 @@ class GcpCloudRunSceneProvider:
 
     async def probe(self) -> tuple[bool, str]:
         try:
-            payload, _ = await self._request("GET", "/healthz")
+            # Cloud Run reserves some paths ending in "z", including common
+            # healthz variants, before requests reach the container.
+            payload, _ = await self._request("GET", "/health")
             _require_equal(payload, "provider", PROVIDER_NAME)
             _require_equal(payload, "fast_model_revision", FAST_MODEL_REVISION)
             _require_equal(payload, "depth_model_revision", DEPTH_MODEL_REVISION)
@@ -245,6 +247,10 @@ class GcpCloudRunSceneProvider:
         *,
         output_dir: Path,
     ) -> FiniteSceneBundle:
+        if request.steps != 2:
+            raise GcpSceneProviderError(
+                "the GCP SANA Sprint renderer requires exactly 2 inference steps"
+            )
         destination = output_dir.resolve()
         if destination.exists():
             raise GcpSceneProviderError(f"scene output already exists: {destination}")
