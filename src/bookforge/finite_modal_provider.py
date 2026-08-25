@@ -19,6 +19,7 @@ from typing import Any, Protocol
 from bookforge.asset_cache import AssetCache
 from bookforge.domain import AssetKind, AssetRecord, AssetRole, AssetState, StoryPack
 from bookforge.live_scene import (
+    DETERMINISTIC_LIVE_SCENE_COMPILER_MODEL,
     LiveSceneArtifact,
     LiveSceneArtifactKind,
     LiveSceneCostSource,
@@ -1570,7 +1571,7 @@ class FiniteModalLiveSceneProvider:
         job_id: str,
     ) -> AsyncIterator[LiveSceneUpdate]:
         seed = live_scene_request_seed(request)
-        deterministic_compiler = "deterministic-live-scene-planner-v1"
+        deterministic_compiler = DETERMINISTIC_LIVE_SCENE_COMPILER_MODEL
         draft = build_live_scene_story_pack(
             request,
             job_id=job_id,
@@ -1818,7 +1819,7 @@ class FiniteModalLiveSceneProvider:
             job_id=job_id,
             seed=seed,
             assets=[],
-            compiler_model="deterministic-live-scene-planner-v1",
+            compiler_model=DETERMINISTIC_LIVE_SCENE_COMPILER_MODEL,
             cloud_safe_prompts=True,
         )
         page = cloud_safe_pack.pages[0]

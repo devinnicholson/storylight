@@ -63,6 +63,7 @@ VisualStyle = Annotated[
     StringConstraints(strip_whitespace=True, min_length=1, max_length=300),
 ]
 Checksum = Annotated[str, StringConstraints(pattern=r"^[a-f0-9]{64}$")]
+DETERMINISTIC_LIVE_SCENE_COMPILER_MODEL = "deterministic-live-scene-planner-v3"
 
 
 class FrozenStrictModel(BaseModel):
@@ -1817,8 +1818,11 @@ def build_live_scene_story_pack(
             f"Main subject, visually dominant and shown exactly once: {cues['focus']}. "
             f"Supporting detail, shown exactly once: {cues['accent']}. "
             "Keep the main subject and supporting detail complete, clearly visible, and "
-            "spatially separated. One cohesive cinematic storybook moment, projection-ready "
-            "silhouettes, layered depth, no readable text."
+            "spatially separated. Show no duplicate, reflection, silhouette, mural, or shadow "
+            "copy of the main subject. Add no unrequested characters or symbolic objects. "
+            "Render the setting literally rather than as a book portal or abstract fantasy "
+            "backdrop. One cohesive cinematic storybook moment, projection-ready silhouettes, "
+            "layered depth, no readable text."
         )
         background_prompt = str(theme["prompt"])
         focus_prompt = str(cues["focus"])
@@ -1964,6 +1968,67 @@ def _passage_draft_theme(text: str, seed: int) -> dict[str, object]:
     """Fast, deterministic passage cues for the pre-inference animated draft."""
 
     lowered = text.casefold()
+    tokens = _safe_visual_tokens(lowered)
+    cafe_tokens = {"cafe", "coffee", "espresso", "barista"}
+    highland_tokens = {"edinburgh", "highland", "scotland", "scottish"}
+    if tokens & cafe_tokens and tokens & highland_tokens:
+        return {
+            "name": "highland_cafe",
+            "prompt": (
+                "Cozy stone-walled Scottish Highland coffee shop interior with wooden tables, "
+                "warm lamps, and broad windows overlooking misty heather hills"
+            ),
+            "accent": "one broad cafe window framing misty heather hills",
+            "layer_kind": "prop",
+            "motion": "warm window light shifts gently across the room",
+            "camera": "slow_push",
+            "travel_x": 0.004,
+            "travel_y": -0.003,
+            "ambient_motion": "pulse",
+            "amplitude_x": 0.006,
+            "amplitude_y": -0.004,
+            "scale_delta": 0.008,
+            "ambience": [
+                AmbientEffect(kind="dust", density=0.16, speed=0.18, color="#ffd59a"),
+                AmbientEffect(kind="fog", density=0.06, speed=0.08, color="#b8d3d0"),
+            ],
+        }
+    if tokens & cafe_tokens:
+        return {
+            "name": "cafe",
+            "prompt": "Cozy coffee shop interior with wooden tables, warm lamps, and broad windows",
+            "accent": "one broad cafe window glowing with warm light",
+            "layer_kind": "prop",
+            "motion": "warm window light shifts gently across the room",
+            "camera": "slow_push",
+            "travel_x": 0.004,
+            "travel_y": -0.003,
+            "ambient_motion": "pulse",
+            "amplitude_x": 0.006,
+            "amplitude_y": -0.004,
+            "scale_delta": 0.008,
+            "ambience": [
+                AmbientEffect(kind="dust", density=0.16, speed=0.18, color="#ffd59a"),
+            ],
+        }
+    if tokens & highland_tokens:
+        return {
+            "name": "highlands",
+            "prompt": "Misty Scottish Highland hills with heather, stone, and deep blue distance",
+            "accent": "one winding path crossing the heather",
+            "layer_kind": "prop",
+            "motion": "mist drifts slowly along the hills",
+            "camera": "pan_right",
+            "travel_x": 0.012,
+            "travel_y": -0.004,
+            "ambient_motion": "drift",
+            "amplitude_x": 0.012,
+            "amplitude_y": -0.006,
+            "scale_delta": 0.006,
+            "ambience": [
+                AmbientEffect(kind="fog", density=0.2, speed=0.16, color="#b8d3d0"),
+            ],
+        }
     rules = (
         (
             "space",
@@ -2081,7 +2146,6 @@ def _passage_draft_theme(text: str, seed: int) -> dict[str, object]:
             },
         ),
     )
-    tokens = _safe_visual_tokens(lowered)
     scored_rules = [
         (sum(keyword in tokens for keyword in keywords), -index, name, theme)
         for index, (name, keywords, theme) in enumerate(rules)
@@ -2109,11 +2173,22 @@ def _passage_draft_theme(text: str, seed: int) -> dict[str, object]:
     }
 
 
+def _safe_visual_words(text: str) -> tuple[str, ...]:
+    """Return normalized words while retaining only local ordering information."""
+
+    return tuple(
+        word.casefold()
+        for word in "".join(
+            character if character.isalpha() else " " for character in text
+        ).split()
+    )
+
+
 def _safe_visual_tokens(text: str) -> frozenset[str]:
     """Return normalized words only; arbitrary source strings never leave this helper."""
 
-    words = "".join(character if character.isalpha() else " " for character in text).split()
-    tokens = {word.casefold() for word in words}
+    words = _safe_visual_words(text)
+    tokens = set(words)
     tokens.update(
         word[:-1]
         for word in tuple(tokens)
@@ -2129,29 +2204,30 @@ def _passage_safe_visual_cues(
 ) -> dict[str, str]:
     """Compile useful renderer cues from a closed vocabulary, never raw passage spans."""
 
+    words = _safe_visual_words(text)
     tokens = _safe_visual_tokens(text)
     subject_rules = (
-        (("winged", "library"), "one fantastical winged library", "prop"),
-        (("fox",), "one complete silver fox", "character"),
-        (("deer",), "one complete gentle deer", "character"),
-        (("whale",), "one complete luminous whale", "character"),
-        (("owl",), "one complete storybook owl", "character"),
-        (("bird",), "one complete paper bird", "character"),
-        (("dragon",), "one complete friendly dragon", "character"),
-        (("robot",), "one complete friendly robot", "character"),
-        (("astronaut",), "one complete astronaut", "character"),
-        (("rabbit",), "one complete storybook rabbit", "character"),
-        (("bear",), "one complete storybook bear", "character"),
-        (("cat",), "one complete storybook cat", "character"),
-        (("dog",), "one complete storybook dog", "character"),
-        (("child",), "one complete child silhouette", "character"),
-        (("reader",), "one complete young reader", "character"),
-        (("student",), "one complete young learner", "character"),
-        (("library",), "one grand storybook library", "prop"),
-        (("rocket",), "one complete storybook rocket", "prop"),
-        (("boat",), "one complete storybook boat", "prop"),
-        (("castle",), "one complete storybook castle", "prop"),
-        (("book",), "one open storybook", "prop"),
+        (("winged", "library"), "fantastical winged library", "prop"),
+        (("fox",), "fox", "character"),
+        (("deer",), "gentle deer", "character"),
+        (("whale",), "luminous whale", "character"),
+        (("owl",), "storybook owl", "character"),
+        (("bird",), "paper bird", "character"),
+        (("dragon",), "friendly dragon", "character"),
+        (("robot",), "friendly robot", "character"),
+        (("astronaut",), "astronaut", "character"),
+        (("rabbit",), "storybook rabbit", "character"),
+        (("bear",), "storybook bear", "character"),
+        (("cat",), "storybook cat", "character"),
+        (("dog",), "storybook dog", "character"),
+        (("child",), "child silhouette", "character"),
+        (("reader",), "young reader", "character"),
+        (("student",), "young learner", "character"),
+        (("library",), "grand storybook library", "prop"),
+        (("rocket",), "storybook rocket", "prop"),
+        (("boat",), "storybook boat", "prop"),
+        (("castle",), "storybook castle", "prop"),
+        (("book",), "open storybook", "prop"),
     )
     prop_rules = (
         ("lantern", "one warm floating lantern"),
@@ -2167,9 +2243,35 @@ def _passage_safe_visual_cues(
         ("moon", "one large paper moon"),
     )
     focus, focus_kind = "one complete storybook subject", "character"
+    visual_colors = {
+        "black",
+        "white",
+        "silver",
+        "golden",
+        "gold",
+        "red",
+        "orange",
+        "yellow",
+        "green",
+        "blue",
+        "indigo",
+        "violet",
+        "purple",
+        "pink",
+        "brown",
+        "gray",
+        "grey",
+    }
     for required, candidate, candidate_kind in subject_rules:
         if all(token in tokens for token in required):
-            focus, focus_kind = candidate, candidate_kind
+            color = ""
+            subject_token = required[-1]
+            for index, word in enumerate(words):
+                if word == subject_token and index and words[index - 1] in visual_colors:
+                    color = f"{words[index - 1]} "
+                    break
+            focus = f"one complete {color}{candidate}"
+            focus_kind = candidate_kind
             break
     accent = str(theme["accent"])
     for token, candidate in prop_rules:
@@ -2193,6 +2295,19 @@ def _passage_safe_visual_cues(
         focus = f"{focus}, visibly flying"
     elif tokens & {"rise", "rises", "rising", "rose"}:
         focus = f"{focus}, visibly rising"
+    elif tokens & {"wag", "wagged", "wagging"} and "tail" in tokens:
+        focus = (
+            f"{focus} in full-body side profile, with its long tail raised in a wide S-curve "
+            "and visibly caught mid-wag"
+        )
+    elif tokens & {"sit", "sits", "sitting", "sat"}:
+        focus = f"{focus}, visibly sitting"
+    elif tokens & {"rest", "rests", "resting", "rested"}:
+        focus = f"{focus}, visibly resting"
+    elif tokens & {"walk", "walks", "walking", "walked"}:
+        focus = f"{focus}, visibly walking"
+    elif tokens & {"dance", "dances", "dancing", "danced"}:
+        focus = f"{focus}, visibly dancing"
 
     return {"focus": focus, "focus_kind": focus_kind, "accent": accent}
 

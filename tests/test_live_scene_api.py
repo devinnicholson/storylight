@@ -16,6 +16,7 @@ from bookforge.finite_modal_provider import (  # noqa: E402
     WarmPrewarmReport,
     WarmProviderStatus,
 )
+from bookforge.live_scene import DETERMINISTIC_LIVE_SCENE_COMPILER_MODEL  # noqa: E402
 from bookforge.nemotron_critic import (  # noqa: E402
     NemotronCriticEvidence,
     NemotronCriticVerdict,
@@ -40,12 +41,22 @@ def _sse_data(response_text: str) -> list[dict[str, object]]:
 
 
 def test_model_planner_rejects_completed_deterministic_fallback_cache() -> None:
-    deterministic = SimpleNamespace(compiler_model="deterministic-live-scene-planner-v1")
+    stale_deterministic = SimpleNamespace(compiler_model="deterministic-live-scene-planner-v1")
+    current_deterministic = SimpleNamespace(
+        compiler_model=DETERMINISTIC_LIVE_SCENE_COMPILER_MODEL
+    )
     model_planned = SimpleNamespace(compiler_model="gemma3:1b-it-q4_K_M")
 
-    assert not _completed_pack_matches_planner_mode(deterministic, planner_mode="model")
+    assert not _completed_pack_matches_planner_mode(stale_deterministic, planner_mode="model")
     assert _completed_pack_matches_planner_mode(model_planned, planner_mode="model")
-    assert _completed_pack_matches_planner_mode(deterministic, planner_mode="deterministic")
+    assert not _completed_pack_matches_planner_mode(
+        stale_deterministic,
+        planner_mode="deterministic",
+    )
+    assert _completed_pack_matches_planner_mode(
+        current_deterministic,
+        planner_mode="deterministic",
+    )
 
 
 def test_live_scene_api_progresses_to_resolvable_motion_scene() -> None:

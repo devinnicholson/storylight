@@ -100,6 +100,49 @@ def test_cloud_safe_deterministic_plan_never_forwards_unknown_subject_names() ->
     assert "one warm floating lantern" in prompt
 
 
+def test_cloud_safe_fallback_preserves_attribute_action_and_literal_setting() -> None:
+    source = "a black cat wagging its tail in a coffee shop in the edinburgh highlands"
+    pack = build_live_scene_story_pack(
+        LiveSceneCreateRequest(
+            text=source,
+            visual_style="luminous cut-paper story theater",
+            seed=2010298545,
+        ),
+        job_id="scene_000000000000000000000019",
+        seed=2010298545,
+        assets=[],
+        compiler_model="deterministic-live-scene-planner-v1",
+        cloud_safe_prompts=True,
+    )
+
+    page = pack.pages[0]
+    assert page.scene_spec is not None
+    prompt = page.scene_spec.master_prompt
+    assert "Scottish Highland coffee shop interior" in prompt
+    assert "one complete black storybook cat" in prompt
+    assert "long tail raised in a wide S-curve and visibly caught mid-wag" in prompt
+    assert "one broad cafe window framing misty heather hills" in prompt
+    assert "symbolic glowing keepsake" not in prompt
+    assert "Show no duplicate, reflection, silhouette, mural, or shadow copy" in prompt
+    assert source not in prompt
+    assert page.source_text == source
+
+
+def test_cloud_safe_fallback_associates_color_only_with_adjacent_subject() -> None:
+    pack = build_live_scene_story_pack(
+        LiveSceneCreateRequest(text="A cat watches a blue lantern in a quiet cafe.", seed=21),
+        job_id="scene_000000000000000000000021",
+        seed=21,
+        assets=[],
+        compiler_model="deterministic-live-scene-planner-v1",
+        cloud_safe_prompts=True,
+    )
+
+    prompt = pack.pages[0].scene_spec.master_prompt  # type: ignore[union-attr]
+    assert "one complete storybook cat" in prompt
+    assert "one complete blue storybook cat" not in prompt
+
+
 def test_fake_provider_emits_valid_progressive_story_packs_and_cached_assets(
     tmp_path: Path,
 ) -> None:

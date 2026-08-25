@@ -49,6 +49,7 @@ from bookforge.event_hub import (
 )
 from bookforge.gcp_scene_provider import google_identity_token
 from bookforge.live_scene import (
+    DETERMINISTIC_LIVE_SCENE_COMPILER_MODEL,
     LiveSceneArtifactKind,
     LiveSceneCapacityError,
     LiveSceneCreateRequest,
@@ -98,10 +99,14 @@ def _completed_pack_matches_planner_mode(
 ) -> bool:
     """Prevent an old generic fallback from shadowing a real model-planned retry."""
 
-    if planner_mode != "model":
-        return True
     compiler = pack.compiler_model.casefold()
-    return not any(marker in compiler for marker in ("deterministic", "fallback", "fixture"))
+    if planner_mode == "model":
+        return not any(
+            marker in compiler for marker in ("deterministic", "fallback", "fixture")
+        )
+    if compiler.startswith("deterministic-live-scene-planner-"):
+        return compiler == DETERMINISTIC_LIVE_SCENE_COMPILER_MODEL
+    return True
 
 
 @asynccontextmanager

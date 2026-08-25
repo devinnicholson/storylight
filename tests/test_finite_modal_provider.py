@@ -1721,7 +1721,7 @@ def test_live_scene_adapter_emits_progressive_checksum_cached_story_packs(
     ]
     assert len(updates[-1].story_pack.assets) == 3
     assert peak_promotions == 2
-    assert updates[-1].story_pack.compiler_model == "deterministic-live-scene-planner-v1"
+    assert updates[-1].story_pack.compiler_model == "deterministic-live-scene-planner-v3"
     assert updates[1].metrics is not None
     assert updates[1].metrics.provider_ms == 5_000
     assert updates[1].metrics.inference_ms == 4_500
@@ -1842,7 +1842,7 @@ def test_live_scene_adapter_uses_model_plan_after_immediate_deterministic_draft(
     draft, master, planner, finite = asyncio.run(run())
 
     assert draft.stage is LiveSceneStage.DRAFT_READY
-    assert draft.story_pack.compiler_model == "deterministic-live-scene-planner-v1"
+    assert draft.story_pack.compiler_model == "deterministic-live-scene-planner-v3"
     assert planner.calls == 1
     assert finite.request is not None
     assert _gemma_live_plan().art_direction in finite.request.prompt
