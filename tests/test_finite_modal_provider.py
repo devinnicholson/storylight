@@ -42,6 +42,7 @@ from bookforge.live_scene import (
     LiveSceneArtifactKind,
     LiveSceneCostSource,
     LiveSceneCreateRequest,
+    LiveSceneProviderUnavailableError,
     LiveSceneStage,
     LiveSceneUpdate,
     LiveSceneWarmState,
@@ -1886,7 +1887,7 @@ def test_live_scene_adapter_uses_model_plan_after_immediate_deterministic_draft(
     ]
 
 
-def test_live_scene_adapter_explicitly_reports_deterministic_planner_fallback(
+def test_live_scene_adapter_stops_before_cloud_render_when_model_planner_fails(
     tmp_path: Path,
 ) -> None:
     class FailingPlanner:
@@ -1940,33 +1941,24 @@ def test_live_scene_adapter_explicitly_reports_deterministic_planner_fallback(
             output_root=tmp_path / "fallback-output",
             planner=FailingPlanner(),  # type: ignore[arg-type]
         )
-        updates = [
-            update
+        updates = []
+        with pytest.raises(
+            LiveSceneProviderUnavailableError,
+            match="no cloud render was started",
+        ):
             async for update in adapter.generate(
                 LiveSceneCreateRequest(text="A whale carries a library over the ocean.", seed=9),
                 job_id="scene_000000000000000000000009",
-            )
-        ]
+            ):
+                updates.append(update)
         return updates, finite
 
     updates, finite = asyncio.run(run())
-    master = updates[-1]
-
-    assert master.stage is LiveSceneStage.MASTER_READY
-    assert master.complete is True
-    assert finite.request is not None
-    assert "A whale carries a library over the ocean" not in finite.request.prompt
-    assert "Layered teal water and caustic aqua light" in finite.request.prompt
-    assert master.story_pack.compiler_model == "deterministic-live-scene-planner-v1"
-    assert master.metrics is not None
-    assert master.metrics.planning_status.value == "fallback"
-    assert master.metrics.planning_ms >= 0
-    assert master.metrics.models[0].role == "scene_plan"
-    assert master.metrics.models[0].model == "deterministic-live-scene-planner-v1"
-    assert master.metrics.models[0].revision == "v1-fallback"
+    assert [update.stage for update in updates] == [LiveSceneStage.DRAFT_READY]
+    assert finite.request is None
 
 
-def test_live_scene_adapter_fails_closed_to_safe_fallback_for_unsafe_model_plan(
+def test_live_scene_adapter_stops_before_cloud_render_for_unsafe_model_plan(
     tmp_path: Path,
 ) -> None:
     class UnsafePlanner:
@@ -2004,19 +1996,15 @@ def test_live_scene_adapter_fails_closed_to_safe_fallback_for_unsafe_model_plan(
             cache=AssetCache(tmp_path / "privacy-fallback-cache"),
             planner=UnsafePlanner(),  # type: ignore[arg-type]
         )
-        return request, await adapter._resolve_plan(
-            request,
-            job_id="scene_000000000000000000000041",
-            seed=41,
-            draft=draft,
-        )
+        with pytest.raises(
+            LiveSceneProviderUnavailableError,
+            match="no cloud render was started",
+        ):
+            await adapter._resolve_plan(
+                request,
+                job_id="scene_000000000000000000000041",
+                seed=41,
+                draft=draft,
+            )
 
-    request, resolved = asyncio.run(run())
-    page = resolved.pack.pages[0]
-
-    assert resolved.status.value == "fallback"
-    assert resolved.provenance.model == "deterministic-live-scene-planner-v1"
-    assert page.source_text == request.text
-    assert page.scene_spec is not None
-    assert "Quenlora" not in page.scene_spec.master_prompt
-    assert "secret amber gate" not in page.scene_spec.master_prompt
+    asyncio.run(run())

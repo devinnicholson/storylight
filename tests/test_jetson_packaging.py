@@ -881,6 +881,10 @@ def test_workbench_starts_only_text_free_edge_warmup_in_background() -> None:
     )[0]
     assert "elements.story" not in warmup
     assert "JSON.stringify" not in warmup
+    assert "EDGE_PLANNER_KEEP_WARM_MS = 8 * 60 * 1000" in controller
+    assert "window.setInterval" in controller
+    assert 'document.visibilityState === "visible"' in controller
+    assert "window.clearInterval(edgePlannerKeepWarmTimer)" in controller
 
 
 def test_workbench_prepares_private_edge_plan_after_typing_pause() -> None:
@@ -905,6 +909,9 @@ def test_workbench_prepares_private_edge_plan_after_typing_pause() -> None:
     )[0]
     assert compile_story.index("window.clearTimeout(edgePlanPreparationTimer);") < (
         compile_story.index('fetch("/v1/live-scenes"')
+    )
+    assert compile_story.index("await warmEdgePlanner();") < compile_story.index(
+        'fetch("/v1/live-scenes"'
     )
 
 

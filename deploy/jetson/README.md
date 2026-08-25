@@ -266,6 +266,10 @@ diagnostics and ensure the prewarm completes before a live reading.
 
 The optional workbench warmup sends only a fixed `{"ready":true}` readiness task to the local
 model while the user types. It never includes the textarea, visual style, audio, or a renderer call.
+While the visible workbench remains open, it refreshes that text-free readiness task every eight
+minutes and when a stale tab becomes visible again, staying inside Ollama's ten-minute keep-alive.
+If Gemma still times out or fails privacy/validation, the job now stops before the paid renderer;
+it never promotes a generic fallback as if it were the requested scene.
 The Mac A/B converted a 12-second cold planner timeout into a 3.53-second uncached plan after a
 6.39-second background warmup. Keep it opt-in until the same unload/warmup/plan sequence passes on
 Jetson with the projector browser running and the service memory limits enforced.
@@ -275,6 +279,9 @@ visual-style auditions, and alternate-seed retries skip Gemma decode while still
 styled, seeded SceneSpec;
 the workbench reports `local cache` instead of presenting that path as fresh inference. The digest
 also binds the model revision and wire contract, and nothing is persisted or sent off-device.
+Common breeds/species, plants, objects, and actions remain explicit while a local normalizer removes
+duplicate actors across background/support layers. Open landscape plans also reject unrequested
+walls, caves, portals, frames, monoliths, and giant abstract structures before rendering.
 
 The final speed acceptance kept Gemma 1B after rejecting the 270M model for invented settings and
 missing transformations. The prior 896x512, 8-step SANA 1.5 renderer produced `master_ready` in

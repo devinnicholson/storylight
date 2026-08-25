@@ -11,7 +11,7 @@ os.environ["BOOKFORGE_CACHE_DIR"] = "/tmp/bookforge-live-scene-api-tests/cache"
 
 from fastapi.testclient import TestClient  # noqa: E402
 
-from bookforge.api import app  # noqa: E402
+from bookforge.api import _completed_pack_matches_planner_mode, app  # noqa: E402
 from bookforge.finite_modal_provider import (  # noqa: E402
     WarmPrewarmReport,
     WarmProviderStatus,
@@ -33,6 +33,15 @@ def _sse_data(response_text: str) -> list[dict[str, object]]:
         for line in response_text.splitlines()
         if line.startswith("data: ")
     ]
+
+
+def test_model_planner_rejects_completed_deterministic_fallback_cache() -> None:
+    deterministic = SimpleNamespace(compiler_model="deterministic-live-scene-planner-v1")
+    model_planned = SimpleNamespace(compiler_model="gemma3:1b-it-q4_K_M")
+
+    assert not _completed_pack_matches_planner_mode(deterministic, planner_mode="model")
+    assert _completed_pack_matches_planner_mode(model_planned, planner_mode="model")
+    assert _completed_pack_matches_planner_mode(deterministic, planner_mode="deterministic")
 
 
 def test_live_scene_api_progresses_to_resolvable_motion_scene() -> None:

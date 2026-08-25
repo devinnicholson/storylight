@@ -66,7 +66,7 @@ def test_wire_plan_is_compact_and_normalizes_safe_geometry_and_motion() -> None:
 
     assert len(wire.model_dump_json()) < 620
     assert plan.scene_summary == (
-        "A complete visible child in profile, holding a luminous open storybook."
+        "A complete visible child in profile, shown holding a luminous open storybook."
     )
     assert plan.art_direction == ("clear silhouettes, projection-bright midtones, tactile depth")
     assert plan.focus.anchor == (0.5, 0.55, 0.4, 0.62)
@@ -196,8 +196,73 @@ def test_wire_plan_repairs_possessive_body_fragment_to_complete_character() -> N
 
     plan = LiveSceneWirePlan.model_validate(payload).to_live_scene_plan()
 
-    assert plan.focus.prompt == ("a complete visible child, opening a book beneath rising birds")
+    assert plan.focus.prompt == (
+        "a complete visible child, shown opening a book beneath rising birds"
+    )
     assert "hand" not in plan.focus.prompt
+
+
+def test_wire_plan_preserves_safe_common_breed_action_and_flower() -> None:
+    source = "golden retriever running around a field of daisies"
+    wire = LiveSceneWirePlan(
+        background_prompt="green field of daisies",
+        focus=LiveSceneWireFocus(
+            kind="character",
+            subject="golden retriever",
+            action="running around field",
+        ),
+        magic=LiveSceneWireMagic(kind="prop", prompt="daisies"),
+    )
+
+    plan = wire.privacy_sanitized(source_text=source).to_live_scene_plan(
+        context_text=source
+    )
+    validate_live_scene_plan_privacy(plan, source_text=source)
+
+    assert "golden retriever" in plan.focus.prompt
+    assert "shown running" in plan.focus.prompt
+    assert plan.accent.prompt == "daisies"
+
+
+def test_wire_plan_removes_duplicated_actor_and_invented_action_from_support() -> None:
+    source = "golden retriever running around a field of daisies"
+    wire = LiveSceneWirePlan(
+        background_prompt="field of daisies",
+        focus=LiveSceneWireFocus(
+            kind="character",
+            subject="golden retriever",
+            action="running around",
+        ),
+        magic=LiveSceneWireMagic(
+            kind="effect",
+            prompt="golden retriever leaps into a field daisies daisies",
+        ),
+    )
+
+    sanitized = wire.privacy_sanitized(source_text=source)
+
+    assert sanitized.magic.prompt == "field daisies"
+    assert "retriever" not in sanitized.magic.prompt
+    assert "leaps" not in sanitized.magic.prompt
+
+
+def test_wire_plan_removes_main_actor_and_action_from_background() -> None:
+    source = "golden retriever running around a field of daisies"
+    wire = LiveSceneWirePlan(
+        background_prompt="vast green field wildflowers retriever running",
+        focus=LiveSceneWireFocus(
+            kind="character",
+            subject="golden retriever",
+            action="running around",
+        ),
+        magic=LiveSceneWireMagic(kind="prop", prompt="daisies"),
+    )
+
+    sanitized = wire.privacy_sanitized(source_text=source)
+
+    assert sanitized.background_prompt == "vast green field wildflowers"
+    assert "retriever" not in sanitized.background_prompt
+    assert "running" not in sanitized.background_prompt
 
 
 @pytest.mark.parametrize(
@@ -220,7 +285,7 @@ def test_wire_plan_normalizes_visible_character_action(
 
     plan = LiveSceneWirePlan.model_validate(payload).to_live_scene_plan()
 
-    assert plan.focus.prompt == f"a complete visible child, {expected}"
+    assert plan.focus.prompt == f"a complete visible child, shown {expected}"
 
 
 @pytest.mark.parametrize(
@@ -287,6 +352,7 @@ def test_compact_plan_normalizes_to_canonical_scene_spec_and_layers() -> None:
         page.scene_spec.master_prompt
     )
     assert "exactly one main actor performing the action once" in (page.scene_spec.master_prompt)
+    assert "visually dominant single subject" in page.scene_spec.master_prompt
     assert "duplicate person" in page.scene_spec.negative_prompt
     assert "main subject at left" in page.scene_spec.master_prompt
     assert "supporting detail at upper right" in page.scene_spec.master_prompt
@@ -302,6 +368,21 @@ def test_compact_plan_normalizes_to_canonical_scene_spec_and_layers() -> None:
     focus = page.scene_spec.composition[1]
     assert (focus.center_x, focus.center_y, focus.depth) == (0.32, 0.58, 4)
     assert focus.ambient_motion.kind == "breathe"
+
+
+def test_open_landscape_prompt_rejects_giant_unrequested_structures() -> None:
+    plan = _plan().model_copy(update={"background_prompt": "green field of daisies"})
+
+    page = plan.to_page(
+        source_text="A retriever runs through daisies.",
+        visual_style="luminous layered paper theater",
+        seed=23,
+    )
+
+    assert page.scene_spec is not None
+    prompt = page.scene_spec.master_prompt
+    assert "outdoor setting open and unobstructed" in prompt
+    assert "walls, caves, portals, stage frames, monoliths" in prompt
 
 
 def test_background_drops_repeated_foreground_actor_or_tool() -> None:
@@ -598,9 +679,10 @@ def test_structured_planner_uses_live_schema_and_records_model_revision() -> Non
         )
     )
 
-    assert result.plan == _wire_plan().to_live_scene_plan(
-        context_text="A child opens a silent book and origami birds light the sky."
-    )
+    source = "A child opens a silent book and origami birds light the sky."
+    assert result.plan == _wire_plan().privacy_sanitized(
+        source_text=source
+    ).to_live_scene_plan(context_text=source)
     assert result.metrics.model == "gemma3:1b"
     assert result.model_revision == "sha256:gemma-fixture"
     assert result.wall_ms >= 0

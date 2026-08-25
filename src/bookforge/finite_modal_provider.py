@@ -1933,7 +1933,6 @@ class FiniteModalLiveSceneProvider:
                 ),
             )
 
-        started = time.perf_counter()
         try:
             result = await self.planner.plan(
                 text=request.text,
@@ -1945,25 +1944,15 @@ class FiniteModalLiveSceneProvider:
                 visual_style=request.visual_style,
                 seed=seed,
             )
-        except LiveScenePlannerError:
-            cloud_safe_pack = build_live_scene_story_pack(
-                request,
-                job_id=job_id,
-                seed=seed,
-                assets=[],
-                compiler_model=draft.compiler_model,
-                cloud_safe_prompts=True,
-            )
-            return _ResolvedLiveScenePlan(
-                pack=cloud_safe_pack,
-                planning_ms=(time.perf_counter() - started) * 1_000,
-                status=LiveScenePlanningStatus.FALLBACK,
-                provenance=LiveSceneModelProvenance(
-                    role="scene_plan",
-                    model=draft.compiler_model,
-                    revision="v1-fallback",
-                ),
-            )
+        except LiveScenePlannerError as error:
+            # A generic privacy-safe prompt is useful for deterministic fixtures,
+            # but it is not a faithful substitute for a requested live scene. In
+            # model-planner mode, stop before the paid renderer rather than turn a
+            # local timeout into polished, semantically unrelated artwork.
+            raise LiveSceneProviderUnavailableError(
+                "Local scene planning failed, so no cloud render was started: "
+                f"{error}. Warm the edge planner and retry."
+            ) from error
 
         pack = build_planned_live_scene_story_pack(
             request,

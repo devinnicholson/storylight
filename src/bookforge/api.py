@@ -83,6 +83,19 @@ from bookforge.service import BookforgeService
 from bookforge.story_store import StoryPackCorruptError, StoryPackNotFoundError, StoryPackStore
 
 
+def _completed_pack_matches_planner_mode(
+    pack: StoryPack,
+    *,
+    planner_mode: str,
+) -> bool:
+    """Prevent an old generic fallback from shadowing a real model-planned retry."""
+
+    if planner_mode != "model":
+        return True
+    compiler = pack.compiler_model.casefold()
+    return not any(marker in compiler for marker in ("deterministic", "fallback", "fixture"))
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     settings = get_settings()
@@ -101,12 +114,18 @@ async def lifespan(app: FastAPI):
     await app.state.asset_cache.initialize()
 
     async def find_completed_live_scene(payload: LiveSceneCreateRequest) -> StoryPack | None:
-        return await app.state.story_store.find_live_scene(
+        pack = await app.state.story_store.find_live_scene(
             text=payload.text,
             visual_style=payload.visual_style,
             seed=live_scene_request_seed(payload),
             session_id=payload.session_id,
         )
+        if pack is not None and not _completed_pack_matches_planner_mode(
+            pack,
+            planner_mode=settings.live_scene_planner,
+        ):
+            return None
+        return pack
 
     async def validate_completed_live_scene(pack: StoryPack) -> StoryPack:
         return await app.state.asset_cache.install_pack(pack, Path("."))

@@ -67,7 +67,7 @@ _LEADING_ARTICLE = re.compile(r"^(?:a|an|the)\s+", re.IGNORECASE)
 _SEMANTIC_WORD = re.compile(r"[A-Za-z][A-Za-z'-]*")
 _PLACEMENT_MARGIN = 0.04
 _PLAN_CACHE_SCHEMA_VERSION = "1"
-_PLAN_CACHE_CONTRACT_REVISION = "semantic-v3-action-object-repair-privacy-gated"
+_PLAN_CACHE_CONTRACT_REVISION = "semantic-v6-layer-dedup-privacy-gated"
 _EMAIL = re.compile(r"\b[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}\b", re.IGNORECASE)
 _PHONE = re.compile(r"(?<!\w)(?:\+?\d[\d\s()./-]{6,}\d)(?!\w)")
 _URL = re.compile(r"\b(?:https?://|www\.)\S+", re.IGNORECASE)
@@ -214,10 +214,21 @@ class LiveSceneWirePlan(FrozenStrictModel):
             self.focus.action,
             source_text=source_text,
         )
+        repaired_magic = _repair_duplicated_focus_in_supporting_prompt(
+            self.magic.prompt,
+            focus_subject=self.focus.subject,
+            focus_action=recovered_action,
+            source_text=source_text,
+        )
+        repaired_background = _remove_focus_from_background_prompt(
+            self.background_prompt,
+            focus_subject=self.focus.subject,
+            focus_action=recovered_action,
+        )
         return self.model_copy(
             update={
                 "background_prompt": _remove_distinctive_source_overlap(
-                    self.background_prompt, source_text
+                    repaired_background, source_text
                 ),
                 "focus": self.focus.model_copy(
                     update={
@@ -231,7 +242,10 @@ class LiveSceneWirePlan(FrozenStrictModel):
                 ),
                 "magic": self.magic.model_copy(
                     update={
-                        "prompt": _remove_distinctive_source_overlap(self.magic.prompt, source_text)
+                        "prompt": _remove_distinctive_source_overlap(
+                            repaired_magic,
+                            source_text,
+                        )
                     }
                 ),
             }
@@ -395,6 +409,7 @@ class LiveScenePlan(FrozenStrictModel):
             if _semantically_redundant(background_prompt, art_direction)
             else f" Background: {_prompt_fragment(background_prompt)}."
         )
+        setting_guard = _open_setting_guard(background_prompt)
         composition_clause = (
             "Composition: place the main subject "
             f"{_placement_label(focus_placement)}, clearly larger and nearer; place the "
@@ -407,7 +422,9 @@ class LiveScenePlan(FrozenStrictModel):
             f"Required supporting visual: {_prompt_fragment(accent_prompt)}. "
             "Render exactly one main actor performing the action once; do not duplicate the "
             "actor or its tool. "
+            "Make the main actor the visually dominant single subject. "
             "Show the background, subject, and supporting visual simultaneously. "
+            f"{setting_guard}"
             f"{composition_clause} "
             "Full-bleed cinematic 16:9 storybook projection with clear foreground/background "
             "depth, clean silhouettes, and no readable text, captions, logos, borders, or UI."
@@ -575,6 +592,18 @@ def _wire_ambience(background_prompt: str) -> list[LiveSceneAmbience]:
     return ["dust"]
 
 
+def _open_setting_guard(background_prompt: str) -> str:
+    tokens = {token.casefold() for token in _SEMANTIC_WORD.findall(background_prompt)}
+    if not tokens.intersection(
+        {"beach", "daisies", "field", "garden", "meadow", "prairie", "shore"}
+    ):
+        return ""
+    return (
+        "Keep this outdoor setting open and unobstructed with a readable horizon; do not add "
+        "walls, caves, portals, stage frames, monoliths, or giant abstract structures. "
+    )
+
+
 def _normalized_wire_focus(layer: LiveSceneWireFocus) -> str:
     subject = _bounded_words(layer.subject, 8)
     action = _normalized_action(_bounded_words(layer.action, 6))
@@ -584,7 +613,11 @@ def _normalized_wire_focus(layer: LiveSceneWireFocus) -> str:
     # Preserve the model's subject word and action while restoring a complete figure.
     subject = _POSSESSIVE_BODY_FRAGMENT.sub(r"\1", subject, count=1)
     subject = _LEADING_ARTICLE.sub("", subject).strip(" ,")
-    return f"a complete visible {subject}, {action}".strip(" ,")
+    # The neutral bridge preserves a safe one- or two-word common subject and
+    # its exact action without recreating a distinctive source trigram when the
+    # independently generated fields are joined (for example, "golden
+    # retriever running").
+    return f"a complete visible {subject}, shown {action}".strip(" ,")
 
 
 def _recover_missing_action_object(action: str, *, source_text: str) -> str:
@@ -621,6 +654,63 @@ def _recover_missing_action_object(action: str, *, source_text: str) -> str:
         if len(detail) >= (3 if detail and detail[0].casefold() in directional else 2):
             break
     return " ".join([action, *detail]) if detail else action
+
+
+def _repair_duplicated_focus_in_supporting_prompt(
+    prompt: str,
+    *,
+    focus_subject: str,
+    focus_action: str,
+    source_text: str,
+) -> str:
+    """Replace a duplicated main actor with distinct source-grounded details."""
+
+    prompt_tokens = _privacy_tokens(prompt)
+    subject_tokens = {
+        token for token in _privacy_tokens(focus_subject) if token not in _PHRASE_STOPWORDS
+    }
+    if not subject_tokens.intersection(prompt_tokens):
+        return prompt
+
+    excluded = subject_tokens | {
+        token for token in _privacy_tokens(focus_action) if token not in _PHRASE_STOPWORDS
+    }
+    supporting: list[str] = []
+    for token in _privacy_tokens(source_text):
+        if token in _PHRASE_STOPWORDS or token in excluded or token in supporting:
+            continue
+        supporting.append(token)
+    if supporting:
+        return " ".join(supporting[-4:])
+
+    repaired = [
+        token
+        for token in prompt_tokens
+        if token not in subject_tokens and token not in _PHRASE_STOPWORDS
+    ]
+    return " ".join(dict.fromkeys(repaired)) or "supporting story detail"
+
+
+def _remove_focus_from_background_prompt(
+    prompt: str,
+    *,
+    focus_subject: str,
+    focus_action: str,
+) -> str:
+    """Keep the setting layer from asking the renderer for a second main actor."""
+
+    excluded = {
+        token
+        for value in (focus_subject, focus_action)
+        for token in _privacy_tokens(value)
+        if token not in _PHRASE_STOPWORDS
+    }
+    repaired = [
+        token
+        for token in _privacy_tokens(prompt)
+        if token not in excluded and token not in _PHRASE_STOPWORDS
+    ]
+    return " ".join(dict.fromkeys(repaired)) or "open layered storybook setting"
 
 
 def _normalized_action(value: str) -> str:
@@ -1048,6 +1138,9 @@ Requirements:
   personal information from the passage.
 - Reuse ordinary visual nouns and the exact visible action from the passage when needed. This is
   safer and more faithful than replacing them with a different action or invented object.
+- Preserve explicitly named common animal breeds/species, flowers/plants, objects, and settings.
+  Keep safe one- or two-word common terms such as "golden retriever" and "daisies" instead of
+  generalizing them to "dog", "flowers", "wildflowers", or an unrelated visual substitute.
 - Never copy three adjacent words from the passage into any output field. Keep the action verb and
   essential ordinary nouns, but remove or paraphrase neighboring modifiers.
 - Never request readable writing, captions, signs, logos, watermarks, borders, panels, or UI.

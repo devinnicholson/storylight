@@ -86,6 +86,8 @@ let rendererWarmUntil = 0;
 let preparedPlanKey = null;
 let edgePlanPreparationTimer = null;
 let edgePlanPreparingKey = null;
+let edgePlannerWarmUntil = 0;
+const EDGE_PLANNER_KEEP_WARM_MS = 8 * 60 * 1000;
 
 const LIVE_STAGES = [
   "queued",
@@ -176,14 +178,20 @@ async function warmEdgePlanner() {
   try {
     // Fixed synthetic input only. This can load the private Jetson model while
     // the reader types, but never transmits or stores the story textarea.
-    await fetch("/v1/live-scene-planner/warmup", {
+    const response = await fetch("/v1/live-scene-planner/warmup", {
       method: "POST",
       cache: "no-store",
     });
+    const payload = await response.json().catch(() => ({}));
+    if (response.ok && payload.ready === true) {
+      edgePlannerWarmUntil = Date.now() + EDGE_PLANNER_KEEP_WARM_MS;
+      return true;
+    }
   } catch (_) {
-    // Warmup is latency hiding, not a prerequisite. Generate retains its
-    // normal bounded planner call and deterministic fallback.
+    // The generation path will fail closed before cloud rendering if the
+    // configured local planner is unavailable.
   }
+  return false;
 }
 
 function scheduleEdgePlanPreparation() {
@@ -1080,6 +1088,11 @@ async function compileStory() {
   ensureProjectionPreview();
 
   try {
+    if (text !== preparedPlanKey && Date.now() >= edgePlannerWarmUntil) {
+      elements.compileButton.textContent = "Warming local Gemma…";
+      await warmEdgePlanner();
+      elements.compileButton.textContent = "Starting live generation…";
+    }
     const response = await fetch("/v1/live-scenes", {
       method: "POST",
       headers: {"Content-Type": "application/json"},
@@ -1182,9 +1195,18 @@ if (!canRecordAudio) {
 connectLiveSceneSessionEvents();
 restoreInitialScene();
 void warmEdgePlanner();
+const edgePlannerKeepWarmTimer = window.setInterval(() => {
+  if (document.visibilityState === "visible") void warmEdgePlanner();
+}, EDGE_PLANNER_KEEP_WARM_MS);
+document.addEventListener("visibilitychange", () => {
+  if (document.visibilityState === "visible" && Date.now() >= edgePlannerWarmUntil) {
+    void warmEdgePlanner();
+  }
+});
 if (rehearsalMode) prewarmRenderer();
 else inspectRendererReadiness();
 window.addEventListener("beforeunload", () => {
+  window.clearInterval(edgePlannerKeepWarmTimer);
   window.clearTimeout(rendererWarmExpiryTimer);
   window.clearTimeout(edgePlanPreparationTimer);
   liveSessionEventSource?.close();

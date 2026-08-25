@@ -125,6 +125,11 @@ only the later generation call receives the locally validated, privacy-gated vis
 The feature remains explicit because prewarm allocates a bounded GPU session and retains its full
 reservation after cancellation or an uncertain provider failure.
 
+Model-planner failure is fail-closed at the renderer boundary. A timeout, invalid schema, privacy
+violation, or unsafe semantic plan leaves the immediate local draft visible and returns a retryable
+error before any prompt-bearing cloud generation call. Completed deterministic fallback packs are
+not eligible for exact-scene replay when the configured planner mode is `model`.
+
 LTX-Video is an optional refinement. It must preserve identity and composition, pass endpoint and
 motion-stability checks, and arrive without interrupting the depth scene. A failed or malformed
 video leaves the accepted depth scene in place.
