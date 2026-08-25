@@ -36,7 +36,14 @@ class Settings(BaseSettings):
     asset_quantize: Literal[3, 4, 5, 6, 8] = 4
     asset_timeout_seconds: float = 1_800.0
     asset_low_ram: bool = True
-    live_scene_backend: Literal["auto", "disabled", "fake", "modal", "modal_warm"] = "auto"
+    live_scene_backend: Literal[
+        "auto",
+        "disabled",
+        "fake",
+        "modal",
+        "modal_warm",
+        "gcp_cloud_run",
+    ] = "auto"
     live_scene_planner: Literal["deterministic", "model"] = "deterministic"
     live_scene_planner_timeout_seconds: Annotated[float, Field(gt=0, le=60)] = 12.0
     live_scene_planner_model_revision: Annotated[
@@ -58,6 +65,16 @@ class Settings(BaseSettings):
     live_scene_master_guidance_scale: Annotated[float, Field(ge=0, le=12)] = 4.5
     live_scene_auto_prewarm_on_submit: bool = False
     live_scene_modal_session_gpu_cap_usd: Annotated[float, Field(gt=0, le=10)] = 1.0
+    live_scene_gcp_url: str = ""
+    live_scene_gcp_audience: str = ""
+    live_scene_gcp_timeout_seconds: Annotated[float, Field(gt=0, le=600)] = 180.0
+    live_scene_gcp_session_gpu_cap_usd: Annotated[float, Field(gt=0, le=10)] = 0.50
+    live_scene_critic_backend: Literal["disabled", "nemotron"] = "disabled"
+    live_scene_critic_url: str = ""
+    live_scene_critic_audience: str = ""
+    live_scene_critic_api_key: str = ""
+    live_scene_critic_model: str = "nvidia/llama-3.1-nemotron-nano-vl-8b-v1"
+    live_scene_critic_timeout_seconds: Annotated[float, Field(gt=0, le=300)] = 90.0
     live_scene_max_active_jobs: Annotated[int, Field(ge=1, le=16)] = 2
     live_scene_max_retained_jobs: Annotated[int, Field(ge=1, le=256)] = 64
     live_scene_event_queue_size: Annotated[int, Field(ge=1, le=128)] = 8

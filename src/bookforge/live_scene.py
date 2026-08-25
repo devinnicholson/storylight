@@ -1625,6 +1625,10 @@ def build_live_scene_provider(
     enable_motion: bool = False,
     enable_preview: bool = True,
     modal_session_gpu_cap_usd: float = 1.0,
+    gcp_url: str = "",
+    gcp_audience: str = "",
+    gcp_timeout_seconds: float = 180.0,
+    gcp_session_gpu_cap_usd: float = 0.50,
     planner_mode: str = "deterministic",
     model_client: StructuredModelClient | None = None,
     planner_timeout_seconds: float = 12.0,
@@ -1703,6 +1707,33 @@ def build_live_scene_provider(
             master_steps=master_steps,
             master_guidance_scale=master_guidance_scale,
             auto_prewarm_on_submit=auto_prewarm_on_submit,
+        )
+    if selected == "gcp_cloud_run":
+        if cache is None:
+            raise ValueError("The GCP Cloud Run live-scene provider requires an AssetCache")
+        if not gcp_url.strip():
+            raise ValueError("BOOKFORGE_LIVE_SCENE_GCP_URL is required for gcp_cloud_run")
+        from bookforge.finite_modal_provider import FiniteModalLiveSceneProvider
+        from bookforge.gcp_scene_provider import GcpCloudRunSceneProvider
+
+        return FiniteModalLiveSceneProvider(
+            GcpCloudRunSceneProvider(
+                base_url=gcp_url,
+                audience=gcp_audience or gcp_url,
+                timeout_seconds=gcp_timeout_seconds,
+                session_gpu_cap_usd=gcp_session_gpu_cap_usd,
+            ),
+            cache=cache,
+            output_root=output_root,
+            enable_motion=False,
+            enable_preview=False,
+            planner=planner,
+            master_width=master_width,
+            master_height=master_height,
+            master_steps=master_steps,
+            master_guidance_scale=master_guidance_scale,
+            auto_prewarm_on_submit=auto_prewarm_on_submit,
+            provider_name="gcp-cloud-run",
         )
     return DisabledLiveSceneProvider(
         f"No live-scene provider is configured for backend {selected!r}"

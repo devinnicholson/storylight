@@ -751,11 +751,22 @@ def test_provider_factory_selects_fake_and_finite_modal_without_persistent_servi
         planner_cache_entries=7,
         planner_cache_dir=tmp_path / "plans",
     )
+    gcp = build_live_scene_provider(
+        "gcp_cloud_run",
+        asset_backend="disabled",
+        cache=cache,
+        output_root=tmp_path / "gcp-generated",
+        gcp_url="https://renderer.example.run.app",
+        planner_mode="model",
+        model_client=FakeModelClient(),
+    )
 
     assert fake.name == "fake"
     assert explicit_fake.name == "fake"
     assert modal.name == "modal-finite"
     assert modal_warm.name == "modal-finite"
+    assert gcp.name == "gcp-cloud-run"
+    assert gcp.provider.__class__.__name__ == "GcpCloudRunSceneProvider"  # type: ignore[attr-defined]
     assert model_planned.planner.__class__.__name__ == "StructuredLiveScenePlanner"  # type: ignore[attr-defined]
     assert model_planned.planner.compact_wire is False  # type: ignore[attr-defined]
     assert model_planned.planner.cache_entries == 7  # type: ignore[attr-defined]

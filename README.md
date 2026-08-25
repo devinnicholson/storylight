@@ -100,7 +100,46 @@ Use Space or Right Arrow to advance, Left Arrow to rewind, `R` to reset, `F` for
 calibration, `B` for blackout, and `H` to hide controls. Calibration is saved locally as the
 `yaber-t1-pro` profile.
 
-### Generate live scenes on Modal while GCP is pending
+### Generate live scenes on Google Cloud
+
+The GCP path preserves the accepted division of work: Gemma plans locally on the Jetson, while a
+private scale-to-zero Cloud Run L4 service receives only privacy-gated visual direction and returns
+a pinned SANA-Sprint master plus Depth Anything map. The service has no public invoker, uses a
+dedicated role-free service account, runs at concurrency one, and cannot scale above one GPU.
+
+```bash
+uv sync --extra gcp
+gcloud auth application-default login
+
+BOOKFORGE_MODEL_BACKEND=ollama \
+BOOKFORGE_MODEL_NAME=gemma3:1b-it-q4_K_M \
+BOOKFORGE_MODEL_BASE_URL=http://127.0.0.1:11435 \
+BOOKFORGE_MODEL_CONTEXT_TOKENS=4096 \
+BOOKFORGE_MODEL_MAX_OUTPUT_TOKENS=320 \
+BOOKFORGE_LIVE_SCENE_PLANNER=model \
+BOOKFORGE_LIVE_SCENE_BACKEND=gcp_cloud_run \
+BOOKFORGE_LIVE_SCENE_GCP_URL=https://SERVICE_HASH.us-central1.run.app \
+BOOKFORGE_LIVE_SCENE_GCP_AUDIENCE=https://SERVICE_HASH.us-central1.run.app \
+BOOKFORGE_LIVE_SCENE_ENABLE_PREVIEW=false \
+BOOKFORGE_LIVE_SCENE_ENABLE_MOTION=false \
+BOOKFORGE_ASR_BACKEND=disabled \
+make dev
+```
+
+The API obtains a short-lived Google-signed identity token from Application Default Credentials;
+credentials and the private renderer URL never enter browser state. The output is decoded,
+dimension-checked, and SHA-256-verified before it becomes a Story Pack asset. See
+`infra/gcp/README.md` for the quota-first guarded deployment and teardown details.
+
+Nemotron is intentionally the asynchronous fidelity path, not another delay before the first image.
+A multimodal Nemotron critic can inspect the generated synthetic plate against the privacy-safe
+visual plan, record a score, and propose a correction for a later refinement. It is not allowed to
+receive the raw passage, microphone audio, webcam frames, or child identity data. Until that critic
+is deployed and its evidence is returned, the UI must not claim Nemotron visually verified a scene.
+Cosmos remains outside the primary path because world-model video would cost much more latency than
+the depth-aware local motion that already runs on the Jetson.
+
+### Generate live scenes on Modal
 
 The authenticated warm live backend selects a budget-checked NVIDIA L40S variant for its SANA-Sprint
 16:9 master and Depth Anything V2 sidecar. The deployable base class and finite CLI remain on L4 so

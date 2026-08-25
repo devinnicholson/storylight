@@ -1492,6 +1492,7 @@ class FiniteModalLiveSceneProvider:
         master_steps: int = 2,
         master_guidance_scale: float = 4.5,
         auto_prewarm_on_submit: bool = False,
+        provider_name: str = PROVIDER_NAME,
     ) -> None:
         self.provider = provider
         self.cache = cache
@@ -1502,6 +1503,7 @@ class FiniteModalLiveSceneProvider:
         self.motion_gate = motion_gate or MotionTechnicalGate()
         self.motion_evaluator = motion_evaluator or _evaluate_motion_technical
         self.auto_prewarm_on_submit = auto_prewarm_on_submit
+        self.provider_name = provider_name
         # Validate the complete render profile once at construction time.
         profile = FastSceneRequest(
             scene_id="render-profile",
@@ -1520,7 +1522,7 @@ class FiniteModalLiveSceneProvider:
 
     @property
     def name(self) -> str:
-        return PROVIDER_NAME
+        return self.provider_name
 
     async def generate(
         self,
@@ -2043,7 +2045,7 @@ class FiniteModalLiveSceneProvider:
             generation_ms = float(stage.get("depth_seconds", 0)) * 1000
         else:
             generation_ms = float(stage.get("inference_seconds", 0)) * 1000
-        provider_label = f"{PROVIDER_NAME}:{model}@{revision}"
+        provider_label = f"{self.provider_name}:{model}@{revision}"
         record = AssetRecord(
             asset_id=artifact_id,
             page_id="page-01",
@@ -2067,7 +2069,7 @@ class FiniteModalLiveSceneProvider:
             uri=uri,
             checksum_sha256=digest,
             media_type=source.mime_type,
-            provider=PROVIDER_NAME,
+            provider=self.provider_name,
             model=f"{model}@{revision}",
             seed=seed,
             width=source.width,

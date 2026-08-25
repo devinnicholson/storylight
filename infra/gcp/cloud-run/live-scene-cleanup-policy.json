@@ -1,0 +1,17 @@
+[
+  {
+    "name": "delete-live-scene-images-after-30-days",
+    "action": {"type": "Delete"},
+    "condition": {
+      "tagState": "any",
+      "olderThan": "30d"
+    }
+  },
+  {
+    "name": "keep-two-live-scene-images",
+    "action": {"type": "Keep"},
+    "mostRecentVersions": {
+      "keepCount": 2
+    }
+  }
+]

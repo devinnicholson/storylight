@@ -1,4 +1,77 @@
-# Google Cloud development environment
+# Google Cloud deployment
+
+## Current live-scene path: private Cloud Run GPU
+
+The production migration keeps the privacy and latency split explicit:
+
+- Jetson Gemma converts the passage into bounded visual direction locally. Raw reading text,
+  microphone audio, and camera frames do not enter the renderer request.
+- A private Cloud Run service uses one NVIDIA L4 for pinned SANA-Sprint master generation and
+  Depth Anything V2. It scales from zero to at most one instance and accepts only IAM-authenticated
+  requests.
+- Nemotron is a separate asynchronous visual critic. It is not placed on the first-image critical
+  path and must not be presented as pixel-aware until its multimodal deployment is enabled.
+- The Jetson validates checksum-addressed output and performs depth-aware motion locally.
+
+The guarded deployment is in `cloud-run/deploy-live-scene.sh`. It fails before building if the
+regional non-zonal L4 quota is below one, pins the deployed revision to an immutable image digest,
+and retains only two recent images while deleting images older than 30 days.
+
+```bash
+export GOOGLE_CLOUD_PROJECT=your-gcp-project
+export BOOKFORGE_GCP_REGION=us-central1
+export BOOKFORGE_IMAGE_TAG=20260824-1
+
+# Inspect the exact scope; creates nothing.
+./infra/gcp/cloud-run/deploy-live-scene.sh
+
+# Explicitly authorize the bounded billable deployment.
+export BOOKFORGE_GCP_APPLY=I_UNDERSTAND_THIS_CREATES_BILLABLE_RESOURCES
+./infra/gcp/cloud-run/deploy-live-scene.sh
+```
+
+The service configuration is one L4, 8 vCPU, 32 GiB, concurrency one, minimum zero, maximum one,
+and no unauthenticated access. The renderer service account receives no project-wide role. The
+operator account receives only `roles/run.invoker` on this service.
+
+Run Bookforge against the deployed URL with Application Default Credentials:
+
+```bash
+export BOOKFORGE_LIVE_SCENE_BACKEND=gcp_cloud_run
+export BOOKFORGE_LIVE_SCENE_GCP_URL='https://SERVICE_HASH.us-central1.run.app'
+export BOOKFORGE_LIVE_SCENE_GCP_AUDIENCE="${BOOKFORGE_LIVE_SCENE_GCP_URL}"
+export BOOKFORGE_LIVE_SCENE_ENABLE_MOTION=false
+export BOOKFORGE_LIVE_SCENE_ENABLE_PREVIEW=false
+```
+
+Cloud Run verifies the Google-signed identity token; the browser and Jetson projector never receive
+GCP credentials or the private service URL. Keep minimum instances at zero outside a supervised
+demo. The project-scoped billing guard below remains the last-resort containment layer.
+
+### Nemotron visual critic
+
+Bookforge's optional critic client targets NVIDIA's OpenAI-compatible
+[`llama-3.1-nemotron-nano-vl-8b-v1`](https://build.nvidia.com/nvidia/llama-3.1-nemotron-nano-vl-8b-v1)
+NIM. It runs only after `master_ready`, so a critic cold start cannot delay the first projected image.
+For a private GCP-hosted NIM, configure its IAM-authenticated URL and audience:
+
+```bash
+export BOOKFORGE_LIVE_SCENE_CRITIC_BACKEND=nemotron
+export BOOKFORGE_LIVE_SCENE_CRITIC_URL='https://NEMOTRON_HASH.us-central1.run.app'
+export BOOKFORGE_LIVE_SCENE_CRITIC_AUDIENCE="${BOOKFORGE_LIVE_SCENE_CRITIC_URL}"
+
+curl -sS -X POST \
+  "http://127.0.0.1:8080/v1/live-scenes/SCENE_JOB_ID:critique"
+```
+
+The endpoint retrieves the already-generated master from the local checksum cache. Its request
+schema contains only the synthetic image, the privacy-gated visual brief, expected subjects, and
+forbidden visual content. A deterministic/fallback scene is rejected rather than sent because such
+legacy packs may still contain source text. NIM deployment is a separate resource and requires an
+NGC API key plus appropriate GPU quota; do not put either credential in browser configuration or
+commit it to the repository.
+
+## Legacy compiler experiment: GKE Gemma
 
 This creates the first cloud Story Compiler path:
 
@@ -63,6 +136,8 @@ Deleting the full cluster stops cluster and workload charges:
 gcloud container clusters delete bookforge-dev --region us-central1
 ```
 
-The E2B/L4 deployment is a plumbing and evaluation baseline. Once the complete Story Pack schema
+The GKE E2B/L4 deployment is retained only as a plumbing and evaluation baseline. The accepted
+architecture now keeps Gemma on the Jetson for privacy and uses Cloud Run only for visual rendering.
+Once the complete Story Pack schema
 is stable, benchmark a larger Gemma model for cloud compilation instead of increasing model size
 before the output can be measured.

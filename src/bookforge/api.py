@@ -47,7 +47,9 @@ from bookforge.event_hub import (
     ReaderEventPublishRequest,
     SessionId,
 )
+from bookforge.gcp_scene_provider import google_identity_token
 from bookforge.live_scene import (
+    LiveSceneArtifactKind,
     LiveSceneCapacityError,
     LiveSceneCreateRequest,
     LiveSceneJob,
@@ -67,6 +69,12 @@ from bookforge.live_scene import (
     live_scene_request_seed,
 )
 from bookforge.model_client import ModelUnavailableError, build_model_client
+from bookforge.nemotron_critic import (
+    NemotronCriticEvidence,
+    NemotronCriticRequest,
+    NemotronCriticUnavailableError,
+    NemotronVisionCritic,
+)
 from bookforge.reader_runtime import (
     ReaderSessionConfigureRequest,
     ReaderSessionGenerationMismatchError,
@@ -112,6 +120,25 @@ async def lifespan(app: FastAPI):
     settings.cache_dir.chmod(0o700)
     app.state.asset_cache = AssetCache(settings.cache_dir / "assets")
     await app.state.asset_cache.initialize()
+    app.state.live_scene_critic = None
+    if settings.live_scene_critic_backend == "nemotron":
+        if not settings.live_scene_critic_url:
+            raise ValueError("BOOKFORGE_LIVE_SCENE_CRITIC_URL is required for Nemotron")
+        token_source = None
+        if settings.live_scene_critic_audience:
+            audience = settings.live_scene_critic_audience
+
+            async def critic_token_source() -> str:
+                return await google_identity_token(audience)
+
+            token_source = critic_token_source
+        app.state.live_scene_critic = NemotronVisionCritic(
+            base_url=settings.live_scene_critic_url,
+            model=settings.live_scene_critic_model,
+            timeout_seconds=settings.live_scene_critic_timeout_seconds,
+            api_key=settings.live_scene_critic_api_key,
+            token_source=token_source,
+        )
 
     async def find_completed_live_scene(payload: LiveSceneCreateRequest) -> StoryPack | None:
         pack = await app.state.story_store.find_live_scene(
@@ -146,6 +173,10 @@ async def lifespan(app: FastAPI):
             enable_motion=settings.live_scene_enable_motion,
             enable_preview=settings.live_scene_enable_preview,
             modal_session_gpu_cap_usd=settings.live_scene_modal_session_gpu_cap_usd,
+            gcp_url=settings.live_scene_gcp_url,
+            gcp_audience=settings.live_scene_gcp_audience,
+            gcp_timeout_seconds=settings.live_scene_gcp_timeout_seconds,
+            gcp_session_gpu_cap_usd=settings.live_scene_gcp_session_gpu_cap_usd,
             planner_mode=settings.live_scene_planner,
             model_client=client,
             planner_timeout_seconds=settings.live_scene_planner_timeout_seconds,
@@ -571,6 +602,80 @@ async def live_scene_status(
         return await registry.get(job_id)
     except LiveSceneNotFoundError as error:
         raise HTTPException(status_code=404, detail=str(error)) from error
+
+
+@app.post(
+    "/v1/live-scenes/{job_id}:critique",
+    response_model=NemotronCriticEvidence,
+)
+async def critique_live_scene(
+    job_id: LiveSceneJobId,
+    request: Request,
+) -> NemotronCriticEvidence:
+    """Evaluate an already-visible synthetic plate without delaying first-image delivery."""
+
+    if not _is_local_connection(request):
+        raise HTTPException(status_code=403, detail="Live-scene criticism is local-only")
+    critic: NemotronVisionCritic | None = request.app.state.live_scene_critic
+    if critic is None:
+        raise HTTPException(
+            status_code=409,
+            detail="BOOKFORGE_LIVE_SCENE_CRITIC_BACKEND is disabled",
+        )
+    registry: LiveSceneJobRegistry = request.app.state.live_scenes
+    cache: AssetCache = request.app.state.asset_cache
+    try:
+        job = await registry.get(job_id)
+    except LiveSceneNotFoundError as error:
+        raise HTTPException(status_code=404, detail=str(error)) from error
+    if not job.complete or job.story_pack is None:
+        raise HTTPException(status_code=409, detail="Scene master is not complete")
+    if job.metrics.planning_status.value != "model":
+        raise HTTPException(
+            status_code=409,
+            detail="Nemotron requires a locally privacy-gated model scene plan",
+        )
+    master = next(
+        (artifact for artifact in job.artifacts if artifact.kind is LiveSceneArtifactKind.MASTER),
+        None,
+    )
+    if master is None:
+        raise HTTPException(status_code=409, detail="Scene has no master artifact")
+    parts = master.uri.split("/")
+    if len(parts) != 5 or parts[1:3] != ["v1", "assets"]:
+        raise HTTPException(status_code=500, detail="Scene master has an invalid cache URI")
+    try:
+        master_path = cache.resolve(parts[3], parts[4])
+        image_bytes = await asyncio.to_thread(master_path.read_bytes)
+    except (AssetCacheError, OSError) as error:
+        raise HTTPException(status_code=500, detail=str(error)) from error
+    page = job.story_pack.pages[0]
+    if page.scene_spec is None:
+        raise HTTPException(status_code=500, detail="Scene master has no visual specification")
+    normalized_source = " ".join(job.request.text.casefold().split())
+    normalized_brief = " ".join(page.scene_spec.master_prompt.casefold().split())
+    if normalized_source and normalized_source in normalized_brief:
+        raise HTTPException(
+            status_code=409,
+            detail="Nemotron visual brief failed the outbound privacy boundary",
+        )
+    expected_subjects = [layer.prompt[:300] for layer in page.layers if layer.kind != "background"][
+        :8
+    ]
+    critic_request = NemotronCriticRequest(
+        visual_brief=page.scene_spec.master_prompt,
+        expected_subjects=expected_subjects,
+        forbidden_content=["readable text", "duplicate principal subject", "interface chrome"],
+    )
+    media_type = "image/png" if master_path.suffix.lower() == ".png" else "image/jpeg"
+    try:
+        return await critic.evaluate(
+            critic_request,
+            image_bytes=image_bytes,
+            media_type=media_type,
+        )
+    except (NemotronCriticUnavailableError, ValueError) as error:
+        raise HTTPException(status_code=503, detail=str(error)) from error
 
 
 @app.get(

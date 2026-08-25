@@ -16,6 +16,10 @@ from bookforge.finite_modal_provider import (  # noqa: E402
     WarmPrewarmReport,
     WarmProviderStatus,
 )
+from bookforge.nemotron_critic import (  # noqa: E402
+    NemotronCriticEvidence,
+    NemotronCriticVerdict,
+)
 
 
 def _payload() -> dict[str, object]:
@@ -185,6 +189,7 @@ def test_live_scene_api_rejects_raw_media_unknown_jobs_and_remote_clients() -> N
             json={"text": "A fox waits.", "visual_style": "paper theater"},
         )
         disabled_planner_warmup = client.post("/v1/live-scene-planner/warmup")
+        disabled_critic = client.post(f"/v1/live-scenes/{unknown_id}:critique")
     with TestClient(app, client=("203.0.113.8", 50000)) as remote:
         remote_create = remote.post("/v1/live-scenes", json=_payload())
         remote_status = remote.get(f"/v1/live-scenes/{unknown_id}")
@@ -200,6 +205,7 @@ def test_live_scene_api_rejects_raw_media_unknown_jobs_and_remote_clients() -> N
             json={"text": "A fox waits.", "visual_style": "paper theater"},
         )
         remote_planner_warmup = remote.post("/v1/live-scene-planner/warmup")
+        remote_critic = remote.post(f"/v1/live-scenes/{unknown_id}:critique")
 
     assert raw_media.status_code == 422
     assert missing.status_code == 404
@@ -216,6 +222,7 @@ def test_live_scene_api_rejects_raw_media_unknown_jobs_and_remote_clients() -> N
         "input_tokens": 0,
         "output_tokens": 0,
     }
+    assert disabled_critic.status_code == 409
     assert remote_create.status_code == 403
     assert remote_status.status_code == 403
     assert remote_events.status_code == 403
@@ -224,6 +231,52 @@ def test_live_scene_api_rejects_raw_media_unknown_jobs_and_remote_clients() -> N
     assert remote_prewarm.status_code == 403
     assert remote_planner_prepare.status_code == 403
     assert remote_planner_warmup.status_code == 403
+    assert remote_critic.status_code == 403
+
+
+def test_nemotron_critic_rejects_non_privacy_gated_fallback_scene() -> None:
+    calls: list[dict[str, object]] = []
+
+    class StubCritic:
+        async def evaluate(self, request, *, image_bytes: bytes, media_type: str):
+            calls.append(
+                {
+                    "request": request,
+                    "image_bytes": image_bytes,
+                    "media_type": media_type,
+                }
+            )
+            return NemotronCriticEvidence(
+                verdict=NemotronCriticVerdict(
+                    fidelity_score=0.91,
+                    composition_score=0.88,
+                    projection_legibility_score=0.86,
+                    identity_consistent=True,
+                    unintended_text=False,
+                    decision="accept",
+                    reason="The expected visual subjects are present and projection-readable.",
+                ),
+                model="nvidia/llama-3.1-nemotron-nano-vl-8b-v1",
+                latency_ms=81.5,
+            )
+
+    secret_passage = "Quenlora whispered the private amber sentence beside a folded map."
+    payload = {
+        **_payload(),
+        "text": secret_passage,
+        "seed": 814_225,
+        "session_id": "nemotron-critic-api-test",
+    }
+    with TestClient(app) as client:
+        created = client.post("/v1/live-scenes", json=payload).json()
+        terminal = _sse_data(client.get(f"/v1/live-scenes/{created['job_id']}/events").text)[-1]
+        client.app.state.live_scene_critic = StubCritic()
+        response = client.post(f"/v1/live-scenes/{created['job_id']}:critique")
+
+    assert terminal["complete"] is True
+    assert response.status_code == 409
+    assert response.json()["detail"] == "Nemotron requires a locally privacy-gated model scene plan"
+    assert calls == []
 
 
 def test_live_scene_planner_prepare_primes_only_the_local_planner() -> None:
