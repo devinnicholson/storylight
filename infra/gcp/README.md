@@ -20,7 +20,7 @@ and retains only two recent images while deleting images older than 30 days.
 ```bash
 export GOOGLE_CLOUD_PROJECT=your-gcp-project
 export BOOKFORGE_GCP_REGION=us-central1
-export BOOKFORGE_IMAGE_TAG=20260824-1
+export BOOKFORGE_IMAGE_TAG=20260824-2
 
 # Inspect the exact scope; creates nothing.
 ./infra/gcp/cloud-run/deploy-live-scene.sh
@@ -30,9 +30,13 @@ export BOOKFORGE_GCP_APPLY=I_UNDERSTAND_THIS_CREATES_BILLABLE_RESOURCES
 ./infra/gcp/cloud-run/deploy-live-scene.sh
 ```
 
-The service configuration is one L4, 8 vCPU, 32 GiB, concurrency one, minimum zero, maximum one,
-and no unauthenticated access. The renderer service account receives no project-wide role. The
-operator account receives only `roles/run.invoker` on this service.
+The default service configuration is one RTX PRO 6000, 20 vCPU, 80 GiB, concurrency one, minimum
+zero, maximum one, and no unauthenticated access. RTX quota is measured in milliGPUs, so exactly one
+GPU requires a quota value of 1,000. Set `BOOKFORGE_GCP_GPU_TYPE=nvidia-l4` to use the lower-cost
+8-vCPU/32-GiB L4 profile instead. The renderer service account receives no project-wide role. The
+operator account receives only `roles/run.invoker` on this service. For local keyless invocation,
+grant the operator the narrower `roles/iam.serviceAccountOpenIdTokenCreator` role on this dedicated
+account and grant the account `roles/run.invoker` on the service; no service-account key is created.
 
 Run Bookforge against the deployed URL with Application Default Credentials:
 
@@ -40,6 +44,8 @@ Run Bookforge against the deployed URL with Application Default Credentials:
 export BOOKFORGE_LIVE_SCENE_BACKEND=gcp_cloud_run
 export BOOKFORGE_LIVE_SCENE_GCP_URL='https://SERVICE_HASH.us-central1.run.app'
 export BOOKFORGE_LIVE_SCENE_GCP_AUDIENCE="${BOOKFORGE_LIVE_SCENE_GCP_URL}"
+export BOOKFORGE_LIVE_SCENE_GCP_IMPERSONATE_SERVICE_ACCOUNT='bookforge-renderer@your-gcp-project.iam.gserviceaccount.com'
+export BOOKFORGE_LIVE_SCENE_GCP_GPU=RTX_PRO_6000
 export BOOKFORGE_LIVE_SCENE_ENABLE_MOTION=false
 export BOOKFORGE_LIVE_SCENE_ENABLE_PREVIEW=false
 ```
@@ -47,6 +53,12 @@ export BOOKFORGE_LIVE_SCENE_ENABLE_PREVIEW=false
 Cloud Run verifies the Google-signed identity token; the browser and Jetson projector never receive
 GCP credentials or the private service URL. Keep minimum instances at zero outside a supervised
 demo. The project-scoped billing guard below remains the last-resort containment layer.
+
+The 2026-08-25 RTX deployment is control-plane healthy, but its default HTTPS endpoint is affected
+by an upstream Google Frontend route-provisioning defect: both URL forms return a 1,568-byte Google
+404, and the revision has zero request logs. Do not prewarm or generate until `/healthz` reaches the
+worker. Evidence and the exact immutable revision are recorded in
+[`benchmarks/gcp-rtx-cloud-run-deployment-2026-08-25.json`](../../benchmarks/gcp-rtx-cloud-run-deployment-2026-08-25.json).
 
 ### Nemotron visual critic
 

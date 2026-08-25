@@ -21,6 +21,7 @@ PROVIDER_NAME = "gcp-cloud-run"
 MASTER_JPEG_QUALITY = 95
 DEPTH_JPEG_QUALITY = 85
 MODEL_CACHE = os.environ.get("BOOKFORGE_MODEL_CACHE", "/models/huggingface")
+EXPECTED_GPU = os.environ.get("BOOKFORGE_EXPECTED_GPU", "L4")
 
 
 class StrictModel(BaseModel):
@@ -97,9 +98,15 @@ class SceneRuntime:
             device=0,
         )
         gpu_name = torch.cuda.get_device_name(0).upper()
-        if "L4" not in gpu_name:
-            raise RuntimeError(f"Bookforge Cloud Run worker requires NVIDIA L4, got {gpu_name}")
-        self.gpu = "L4"
+        matches = {
+            "L4": "L4" in gpu_name,
+            "RTX_PRO_6000": "RTX PRO 6000" in gpu_name,
+        }
+        if EXPECTED_GPU not in matches or not matches[EXPECTED_GPU]:
+            raise RuntimeError(
+                f"Bookforge Cloud Run worker requires {EXPECTED_GPU}, got {gpu_name}"
+            )
+        self.gpu = EXPECTED_GPU
         self.model_load_seconds = time.perf_counter() - started
         self.loaded_at = time.monotonic()
 

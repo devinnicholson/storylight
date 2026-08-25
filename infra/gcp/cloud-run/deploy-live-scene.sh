@@ -4,10 +4,32 @@ set -euo pipefail
 PROJECT_ID="${GOOGLE_CLOUD_PROJECT:-your-gcp-project}"
 REGION="${BOOKFORGE_GCP_REGION:-us-central1}"
 REPOSITORY="${BOOKFORGE_GCP_REPOSITORY:-bookforge}"
-SERVICE="${BOOKFORGE_GCP_SCENE_SERVICE:-bookforge-live-scene}"
+SERVICE="${BOOKFORGE_GCP_SCENE_SERVICE:-bookforge-scene-rtx}"
 SERVICE_ACCOUNT="bookforge-renderer@${PROJECT_ID}.iam.gserviceaccount.com"
 IMAGE="${REGION}-docker.pkg.dev/${PROJECT_ID}/${REPOSITORY}/live-scene:${BOOKFORGE_IMAGE_TAG:-latest}"
-QUOTA_ID="NvidiaL4GpuAllocNoZonalRedundancyPerProjectRegion"
+GPU_TYPE="${BOOKFORGE_GCP_GPU_TYPE:-nvidia-rtx-pro-6000}"
+
+case "${GPU_TYPE}" in
+  nvidia-l4)
+    QUOTA_ID="NvidiaL4GpuAllocNoZonalRedundancyPerProjectRegion"
+    REQUIRED_QUOTA=1
+    CPU=8
+    MEMORY=32Gi
+    EXPECTED_GPU=L4
+    ;;
+  nvidia-rtx-pro-6000)
+    QUOTA_ID="NvidiaRtxPro6000GpuAllocNoZonalRedundancyPerProjectRegion"
+    # RTX PRO 6000 quota is expressed in milliGPUs.
+    REQUIRED_QUOTA=1000
+    CPU=20
+    MEMORY=80Gi
+    EXPECTED_GPU=RTX_PRO_6000
+    ;;
+  *)
+    echo "Unsupported BOOKFORGE_GCP_GPU_TYPE: ${GPU_TYPE}" >&2
+    exit 1
+    ;;
+esac
 
 if [[ "${BOOKFORGE_GCP_APPLY:-}" != "I_UNDERSTAND_THIS_CREATES_BILLABLE_RESOURCES" ]]; then
   echo "Dry guard active. This script would create/update:"
@@ -15,7 +37,7 @@ if [[ "${BOOKFORGE_GCP_APPLY:-}" != "I_UNDERSTAND_THIS_CREATES_BILLABLE_RESOURCE
   echo "  region:        ${REGION}"
   echo "  image:         ${IMAGE}"
   echo "  service:       ${SERVICE}"
-  echo "  GPU:           one NVIDIA L4, no zonal redundancy"
+  echo "  GPU:           one ${GPU_TYPE}, no zonal redundancy"
   echo "  autoscaling:   zero to one instance, concurrency one"
   echo "  access:        IAM authenticated only"
   echo
@@ -44,8 +66,8 @@ QUOTA_VALUE="$(
     '[.dimensionsInfos[] | select(.dimensions.region == $region) | ((.details.value // "0") | tonumber)] | max // 0' \
     <<<"${QUOTA_JSON}"
 )"
-if (( QUOTA_VALUE < 1 )); then
-  echo "Cloud Run non-zonal L4 quota is ${QUOTA_VALUE} in ${REGION}; one is required." >&2
+if (( QUOTA_VALUE < REQUIRED_QUOTA )); then
+  echo "Cloud Run ${GPU_TYPE} quota is ${QUOTA_VALUE} in ${REGION}; ${REQUIRED_QUOTA} is required." >&2
   echo "No build or deployment was started." >&2
   exit 3
 fi
@@ -102,10 +124,10 @@ gcloud run deploy "${SERVICE}" \
   --image "${IMMUTABLE_IMAGE}" \
   --service-account "${SERVICE_ACCOUNT}" \
   --gpu 1 \
-  --gpu-type nvidia-l4 \
+  --gpu-type "${GPU_TYPE}" \
   --no-gpu-zonal-redundancy \
-  --cpu 8 \
-  --memory 32Gi \
+  --cpu "${CPU}" \
+  --memory "${MEMORY}" \
   --concurrency 1 \
   --min 0 \
   --max 1 \
@@ -113,14 +135,32 @@ gcloud run deploy "${SERVICE}" \
   --cpu-boost \
   --no-cpu-throttling \
   --no-allow-unauthenticated \
+  --set-env-vars "BOOKFORGE_EXPECTED_GPU=${EXPECTED_GPU}" \
   --labels app=bookforge,component=live-scene,model=sana-sprint \
   --quiet
 
 ACTIVE_ACCOUNT="$(gcloud auth list --filter=status:ACTIVE --format='value(account)' | head -n 1)"
+if [[ -z "${ACTIVE_ACCOUNT}" || "${ACTIVE_ACCOUNT}" == *gserviceaccount.com ]]; then
+  echo "Deployment requires an active human Google account for the narrow token-mint binding." >&2
+  exit 4
+fi
+gcloud iam service-accounts add-iam-policy-binding "${SERVICE_ACCOUNT}" \
+  --project "${PROJECT_ID}" \
+  --member "user:${ACTIVE_ACCOUNT}" \
+  --role roles/iam.serviceAccountOpenIdTokenCreator \
+  --quiet
+
 gcloud run services add-iam-policy-binding "${SERVICE}" \
   --project "${PROJECT_ID}" \
   --region "${REGION}" \
   --member "user:${ACTIVE_ACCOUNT}" \
+  --role roles/run.invoker \
+  --quiet
+
+gcloud run services add-iam-policy-binding "${SERVICE}" \
+  --project "${PROJECT_ID}" \
+  --region "${REGION}" \
+  --member "serviceAccount:${SERVICE_ACCOUNT}" \
   --role roles/run.invoker \
   --quiet
 

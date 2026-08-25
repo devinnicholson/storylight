@@ -24,7 +24,7 @@ modal-authoring = [
     "modal>=1.4,<2",
 ]
 gcp = [
-    "google-auth>=2.40,<3",
+    "google-auth[requests]>=2.40,<3",
 ]
 
 [dependency-groups]

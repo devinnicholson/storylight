@@ -31,8 +31,10 @@ from bookforge.finite_modal_provider import (
 )
 
 PROVIDER_NAME = "gcp-cloud-run"
-GPU_NAME = "L4"
-GPU_USD_PER_SECOND = 0.0001867
+GPU_USD_PER_SECOND = {
+    "L4": 0.0001867,
+    "RTX_PRO_6000": 0.00036522,
+}
 DEFAULT_SCALEDOWN_WINDOW_SECONDS = 90
 MAX_SCALEDOWN_WINDOW_SECONDS = 900
 
@@ -56,14 +58,73 @@ class _RemoteArtifact:
     height: int
 
 
+class GoogleImpersonatedIdentityTokenSource:
+    """Mint and cache short-lived Cloud Run ID tokens without a service-account key."""
+
+    def __init__(
+        self,
+        target_principal: str,
+        *,
+        source_access_token: Callable[[], str] | None = None,
+        client_factory: Callable[..., httpx.AsyncClient] = httpx.AsyncClient,
+    ) -> None:
+        normalized = target_principal.strip()
+        if (
+            not normalized
+            or "@" not in normalized
+            or not normalized.endswith(".iam.gserviceaccount.com")
+        ):
+            raise ValueError("GCP impersonation target must be a service-account email")
+        self.target_principal = normalized
+        self._lock = asyncio.Lock()
+        self._token = ""
+        self._audience = ""
+        self._expires_at = 0.0
+        self._source_access_token = source_access_token or _google_source_access_token
+        self._client_factory = client_factory
+
+    async def __call__(self, audience: str) -> str:
+        async with self._lock:
+            if self._token and audience == self._audience and time.time() < self._expires_at - 60:
+                return self._token
+            access_token = await asyncio.to_thread(self._source_access_token)
+            try:
+                async with self._client_factory(
+                    timeout=httpx.Timeout(30),
+                    follow_redirects=False,
+                ) as client:
+                    response = await client.post(
+                        "https://iamcredentials.googleapis.com/v1/projects/-/"
+                        f"serviceAccounts/{self.target_principal}:generateIdToken",
+                        headers={
+                            "Authorization": f"Bearer {access_token}",
+                            "Content-Type": "application/json",
+                        },
+                        json={"audience": audience, "includeEmail": True},
+                    )
+                    response.raise_for_status()
+                    token = response.json()["token"]
+                expires_at = _jwt_expiration(token)
+            except (httpx.HTTPError, json.JSONDecodeError, KeyError, ValueError) as error:
+                raise GcpSceneUnavailableError(
+                    f"Google service-account ID token mint failed: {error}"
+                ) from error
+            self._token = token
+            self._audience = audience
+            self._expires_at = expires_at
+            return token
+
+
 class GcpCloudRunSceneProvider:
-    """Private, bounded Cloud Run L4 adapter for SANA master and depth generation."""
+    """Private, bounded Cloud Run GPU adapter for SANA master and depth generation."""
 
     def __init__(
         self,
         *,
         base_url: str,
         audience: str,
+        impersonate_service_account: str = "",
+        gpu: str = "L4",
         timeout_seconds: float = 180,
         session_gpu_cap_usd: float = 0.50,
         token_source: IdentityTokenSource | None = None,
@@ -75,15 +136,27 @@ class GcpCloudRunSceneProvider:
             raise ValueError("Cloud Run scene URL must use HTTPS")
         if not normalized_audience.startswith("https://"):
             raise ValueError("Cloud Run audience must use HTTPS")
+        if gpu not in GPU_USD_PER_SECOND:
+            raise ValueError("Cloud Run scene GPU must be L4 or RTX_PRO_6000")
         if not math.isfinite(timeout_seconds) or not 1 <= timeout_seconds <= 600:
             raise ValueError("Cloud Run timeout must be 1-600 seconds")
         if not math.isfinite(session_gpu_cap_usd) or not 0 < session_gpu_cap_usd <= 10:
             raise ValueError("GCP scene session cap must be between $0 and $10")
+        if impersonate_service_account and token_source is not None:
+            raise ValueError(
+                "configure either GCP service-account impersonation or a token source, not both"
+            )
         self.base_url = normalized_url
         self.audience = normalized_audience
+        self.gpu = gpu
+        self.gpu_usd_per_second = GPU_USD_PER_SECOND[gpu]
         self.timeout_seconds = timeout_seconds
         self.session_gpu_cap_usd = session_gpu_cap_usd
-        self._token_source = token_source or google_identity_token
+        self._token_source = token_source or (
+            GoogleImpersonatedIdentityTokenSource(impersonate_service_account)
+            if impersonate_service_account
+            else google_identity_token
+        )
         self._client_factory = client_factory
         self._estimated_gpu_usd = 0.0
         self._prewarm_id: str | None = None
@@ -99,7 +172,7 @@ class GcpCloudRunSceneProvider:
             _require_equal(payload, "depth_model_revision", DEPTH_MODEL_REVISION)
         except Exception as error:
             return False, f"private Cloud Run renderer is unreachable: {error}"
-        return True, "Private Cloud Run L4 renderer is reachable with pinned models"
+        return True, (f"Private Cloud Run {self.gpu} renderer is reachable with pinned models")
 
     async def prewarm(
         self,
@@ -121,7 +194,7 @@ class GcpCloudRunSceneProvider:
                 "/v1/prewarm",
                 json_body={"prewarm_id": prewarm_id},
             )
-            _validate_runtime_identity(payload)
+            _validate_runtime_identity(payload, expected_gpu=self.gpu)
             self._prewarm_id = prewarm_id
             self._scaledown_window_seconds = scaledown_window_seconds
             self._prewarm_deadline = time.monotonic() + scaledown_window_seconds
@@ -190,13 +263,13 @@ class GcpCloudRunSceneProvider:
                     "guidance_scale": request.guidance_scale,
                 },
             )
-            _validate_runtime_identity(payload)
+            _validate_runtime_identity(payload, expected_gpu=self.gpu)
             _require_equal(payload, "scene_id", request.scene_id)
             master = _decode_artifact(payload, "master", request.width, request.height)
             depth = _decode_artifact(payload, "depth", request.width, request.height)
             if master.media_type != "image/jpeg" or depth.media_type != "image/jpeg":
                 raise GcpSceneProviderError("Cloud Run returned unsupported scene media")
-            estimated_gpu_usd = remote_seconds * GPU_USD_PER_SECOND
+            estimated_gpu_usd = remote_seconds * self.gpu_usd_per_second
             return await asyncio.to_thread(
                 _write_bundle,
                 request,
@@ -252,7 +325,7 @@ class GcpCloudRunSceneProvider:
         *,
         json_body: Mapping[str, Any],
     ) -> tuple[dict[str, Any], float]:
-        worst_case = self.timeout_seconds * GPU_USD_PER_SECOND
+        worst_case = self.timeout_seconds * self.gpu_usd_per_second
         self._ensure_estimate_capacity(worst_case)
         try:
             payload, remote_seconds = await self._request(
@@ -266,7 +339,7 @@ class GcpCloudRunSceneProvider:
             # before another session can reuse that uncertain headroom.
             self._reserve_estimate(worst_case)
             raise
-        self._reserve_estimate(remote_seconds * GPU_USD_PER_SECOND)
+        self._reserve_estimate(remote_seconds * self.gpu_usd_per_second)
         return payload, remote_seconds
 
     def _ensure_estimate_capacity(self, amount: float) -> None:
@@ -284,6 +357,42 @@ class GcpCloudRunSceneProvider:
         self._estimated_gpu_usd = projected
 
 
+def _google_source_access_token() -> str:
+    try:
+        import google.auth
+        from google.auth.transport.requests import Request
+    except ImportError as error:
+        raise GcpSceneUnavailableError(
+            "Google authentication is unavailable; install bookforge[gcp]"
+        ) from error
+    try:
+        credentials, _ = google.auth.default(
+            scopes=["https://www.googleapis.com/auth/cloud-platform"]
+        )
+        credentials.refresh(Request())
+    except Exception as error:
+        raise GcpSceneUnavailableError(
+            f"Google source credential refresh failed: {error}"
+        ) from error
+    token = credentials.token
+    if not isinstance(token, str) or not token:
+        raise GcpSceneUnavailableError("Google source credentials returned no access token")
+    return token
+
+
+def _jwt_expiration(token: str) -> float:
+    parts = token.split(".")
+    if len(parts) != 3:
+        raise ValueError("Google ID token is not a JWT")
+    encoded = parts[1]
+    encoded += "=" * (-len(encoded) % 4)
+    payload = json.loads(base64.urlsafe_b64decode(encoded))
+    expiration = payload.get("exp")
+    if not isinstance(expiration, int) or expiration <= time.time():
+        raise ValueError("Google ID token has no valid expiration")
+    return float(expiration)
+
+
 async def google_identity_token(audience: str) -> str:
     def fetch() -> str:
         try:
@@ -298,9 +407,9 @@ async def google_identity_token(audience: str) -> str:
     return await asyncio.to_thread(fetch)
 
 
-def _validate_runtime_identity(payload: Mapping[str, Any]) -> None:
+def _validate_runtime_identity(payload: Mapping[str, Any], *, expected_gpu: str) -> None:
     _require_equal(payload, "provider", PROVIDER_NAME)
-    _require_equal(payload, "gpu", GPU_NAME)
+    _require_equal(payload, "gpu", expected_gpu)
     _require_equal(payload, "fast_model", FAST_MODEL)
     _require_equal(payload, "fast_model_revision", FAST_MODEL_REVISION)
     _require_equal(payload, "depth_model", DEPTH_MODEL)
@@ -380,7 +489,7 @@ def _write_bundle(
                 "additional_models": [
                     {"model": DEPTH_MODEL, "model_revision": DEPTH_MODEL_REVISION}
                 ],
-                "gpu": GPU_NAME,
+                "gpu": str(remote["gpu"]),
                 "remote_seconds": remote_seconds,
                 "inference_seconds": inference_seconds,
                 "provider_overhead_seconds": max(0.0, remote_seconds - inference_seconds),

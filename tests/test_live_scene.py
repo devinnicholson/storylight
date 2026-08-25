@@ -208,9 +208,7 @@ def test_fake_provider_is_deterministic_for_the_same_request() -> None:
 
 def test_fake_provider_can_finish_at_master_when_motion_is_disabled() -> None:
     async def exercise() -> LiveSceneJob:
-        registry = LiveSceneJobRegistry(
-            DeterministicFakeLiveSceneProvider(enable_motion=False)
-        )
+        registry = LiveSceneJobRegistry(DeterministicFakeLiveSceneProvider(enable_motion=False))
         submitted = await registry.submit(
             LiveSceneCreateRequest(text="A moonlit paper whale crosses the library.")
         )
@@ -757,6 +755,7 @@ def test_provider_factory_selects_fake_and_finite_modal_without_persistent_servi
         cache=cache,
         output_root=tmp_path / "gcp-generated",
         gcp_url="https://renderer.example.run.app",
+        gcp_impersonate_service_account="renderer@example.iam.gserviceaccount.com",
         planner_mode="model",
         model_client=FakeModelClient(),
     )
@@ -767,6 +766,9 @@ def test_provider_factory_selects_fake_and_finite_modal_without_persistent_servi
     assert modal_warm.name == "modal-finite"
     assert gcp.name == "gcp-cloud-run"
     assert gcp.provider.__class__.__name__ == "GcpCloudRunSceneProvider"  # type: ignore[attr-defined]
+    assert (  # type: ignore[attr-defined]
+        gcp.provider._token_source.__class__.__name__ == "GoogleImpersonatedIdentityTokenSource"
+    )
     assert model_planned.planner.__class__.__name__ == "StructuredLiveScenePlanner"  # type: ignore[attr-defined]
     assert model_planned.planner.compact_wire is False  # type: ignore[attr-defined]
     assert model_planned.planner.cache_entries == 7  # type: ignore[attr-defined]

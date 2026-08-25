@@ -234,10 +234,13 @@ class LiveScenePlannerWarmupResponse(FrozenStrictModel):
 
     ready: bool
     warmup_ms: Annotated[float, Field(ge=0)] = 0
-    model: Annotated[
-        str,
-        StringConstraints(strip_whitespace=True, min_length=1, max_length=200),
-    ] | None = None
+    model: (
+        Annotated[
+            str,
+            StringConstraints(strip_whitespace=True, min_length=1, max_length=200),
+        ]
+        | None
+    ) = None
     input_tokens: Annotated[int, Field(ge=0)] = 0
     output_tokens: Annotated[int, Field(ge=0)] = 0
 
@@ -963,9 +966,7 @@ class LiveSceneJobRegistry:
                 return False
             pack = await self.completed_pack_validator(pack)
             story_prefix = request.session_id or "live-scene"
-            pack = pack.model_copy(
-                update={"story_id": f"{story_prefix}-{job_id[-12:]}"}
-            )
+            pack = pack.model_copy(update={"story_id": f"{story_prefix}-{job_id[-12:]}"})
             artifacts = _cached_live_scene_artifacts(pack, provider=self.provider.name)
         except Exception:
             # A stale/corrupt/incompatible cache is only a missed optimization.
@@ -985,9 +986,7 @@ class LiveSceneJobRegistry:
             master_asset_ids = {artifact.artifact_id for artifact in master_artifacts}
             master_pack = pack.model_copy(
                 update={
-                    "assets": [
-                        asset for asset in pack.assets if asset.asset_id in master_asset_ids
-                    ]
+                    "assets": [asset for asset in pack.assets if asset.asset_id in master_asset_ids]
                 }
             )
             draft_pack = master_pack.model_copy(update={"assets": []})
@@ -1627,6 +1626,8 @@ def build_live_scene_provider(
     modal_session_gpu_cap_usd: float = 1.0,
     gcp_url: str = "",
     gcp_audience: str = "",
+    gcp_impersonate_service_account: str = "",
+    gcp_gpu: str = "L4",
     gcp_timeout_seconds: float = 180.0,
     gcp_session_gpu_cap_usd: float = 0.50,
     planner_mode: str = "deterministic",
@@ -1720,6 +1721,8 @@ def build_live_scene_provider(
             GcpCloudRunSceneProvider(
                 base_url=gcp_url,
                 audience=gcp_audience or gcp_url,
+                impersonate_service_account=gcp_impersonate_service_account,
+                gpu=gcp_gpu,
                 timeout_seconds=gcp_timeout_seconds,
                 session_gpu_cap_usd=gcp_session_gpu_cap_usd,
             ),

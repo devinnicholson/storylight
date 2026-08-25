@@ -175,6 +175,10 @@ async def lifespan(app: FastAPI):
             modal_session_gpu_cap_usd=settings.live_scene_modal_session_gpu_cap_usd,
             gcp_url=settings.live_scene_gcp_url,
             gcp_audience=settings.live_scene_gcp_audience,
+            gcp_impersonate_service_account=(
+                settings.live_scene_gcp_impersonate_service_account
+            ),
+            gcp_gpu=settings.live_scene_gcp_gpu,
             gcp_timeout_seconds=settings.live_scene_gcp_timeout_seconds,
             gcp_session_gpu_cap_usd=settings.live_scene_gcp_session_gpu_cap_usd,
             planner_mode=settings.live_scene_planner,

@@ -67,6 +67,8 @@ class Settings(BaseSettings):
     live_scene_modal_session_gpu_cap_usd: Annotated[float, Field(gt=0, le=10)] = 1.0
     live_scene_gcp_url: str = ""
     live_scene_gcp_audience: str = ""
+    live_scene_gcp_impersonate_service_account: str = ""
+    live_scene_gcp_gpu: Literal["L4", "RTX_PRO_6000"] = "L4"
     live_scene_gcp_timeout_seconds: Annotated[float, Field(gt=0, le=600)] = 180.0
     live_scene_gcp_session_gpu_cap_usd: Annotated[float, Field(gt=0, le=10)] = 0.50
     live_scene_critic_backend: Literal["disabled", "nemotron"] = "disabled"
