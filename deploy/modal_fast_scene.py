@@ -168,9 +168,11 @@ def _encode_scene_assets(master: Any, depth: Any) -> tuple[bytes, bytes, float]:
     max_containers=1,
     scaledown_window=SCALEDOWN_WINDOW_SECONDS,
     volumes={CACHE_DIR: model_cache},
+    enable_memory_snapshot=True,
+    experimental_options={"enable_gpu_snapshot": True},
 )
 class FastSceneStudio:
-    @modal.enter()
+    @modal.enter(snap=True)
     def load(self) -> None:
         from transformers import pipeline
 
@@ -194,24 +196,36 @@ class FastSceneStudio:
         self.gpu = _runtime_gpu_name()
         self.inference_warmup_seconds = 0.0
         self.inference_warmed = False
+        self._warm_inference()
         self.loaded_at = time.monotonic()
+
+    @modal.enter(snap=False)
+    def restore(self) -> None:
+        # Snapshot state includes the warmed CUDA pipelines. Reset only the
+        # per-container clock after restore; request seeds remain explicit.
+        self.loaded_at = time.monotonic()
+
+    def _warm_inference(self) -> None:
+        if self.inference_warmed:
+            return
+        warmup_started = time.perf_counter()
+        with torch.inference_mode():
+            warmup_master = self.image_pipe(
+                prompt="bright layered paper theater with one simple lantern",
+                width=FAST_PREWARM_WIDTH,
+                height=FAST_PREWARM_HEIGHT,
+                guidance_scale=4.5,
+                num_inference_steps=2,
+                generator=torch.Generator(device="cuda").manual_seed(1),
+            ).images[0]
+            self.depth_pipe(warmup_master)
+        torch.cuda.synchronize()
+        self.inference_warmup_seconds = time.perf_counter() - warmup_started
+        self.inference_warmed = True
 
     @modal.method()
     def prewarm(self) -> dict[str, Any]:
-        if not self.inference_warmed:
-            warmup_started = time.perf_counter()
-            with torch.inference_mode():
-                warmup_master = self.image_pipe(
-                    prompt="bright layered paper theater with one simple lantern",
-                    width=FAST_PREWARM_WIDTH,
-                    height=FAST_PREWARM_HEIGHT,
-                    guidance_scale=4.5,
-                    num_inference_steps=2,
-                    generator=torch.Generator(device="cuda").manual_seed(1),
-                ).images[0]
-                self.depth_pipe(warmup_master)
-            self.inference_warmup_seconds = time.perf_counter() - warmup_started
-            self.inference_warmed = True
+        self._warm_inference()
         return {
             "model": FAST_MODEL,
             "model_revision": FAST_MODEL_REVISION,
@@ -223,6 +237,7 @@ class FastSceneStudio:
             "inference_warmed": self.inference_warmed,
             "container_age_seconds": time.monotonic() - self.loaded_at,
             "gpu": self.gpu,
+            "gpu_memory_snapshot": True,
         }
 
     @modal.method()

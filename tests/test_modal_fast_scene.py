@@ -99,11 +99,25 @@ def test_fast_prewarm_executes_shape_matched_cuda_and_depth_work() -> None:
 
     assert "FAST_PREWARM_WIDTH = 1024" in SOURCE
     assert "FAST_PREWARM_HEIGHT = 576" in SOURCE
-    assert "if not self.inference_warmed:" in fast
+    assert "if self.inference_warmed:" in fast
     assert "num_inference_steps=2" in fast
     assert "self.depth_pipe(warmup_master)" in fast
     assert "dtype=torch.float16" in fast
     assert '"inference_warmup_seconds"' in fast
+
+
+def test_fast_renderer_snapshots_warmed_cuda_state_for_cold_start_latency() -> None:
+    decorator = SOURCE.split("@app.cls(", 1)[1].split("class FastSceneStudio:", 1)[0]
+    fast = SOURCE.split("class FastSceneStudio:", 1)[1].split(
+        "class MotionUpgradeStudio:", 1
+    )[0]
+
+    assert "enable_memory_snapshot=True" in decorator
+    assert 'experimental_options={"enable_gpu_snapshot": True}' in decorator
+    assert "@modal.enter(snap=True)" in fast
+    assert fast.index("self._warm_inference()") < fast.index("@modal.enter(snap=False)")
+    assert "torch.cuda.synchronize()" in fast
+    assert '"gpu_memory_snapshot": True' in fast
 
 
 def test_motion_is_projection_native_and_exactly_seamless() -> None:
