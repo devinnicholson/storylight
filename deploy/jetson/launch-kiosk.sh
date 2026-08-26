@@ -5,6 +5,8 @@ set -euo pipefail
 SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 KIOSK_URL="${BOOKFORGE_KIOSK_URL:-http://127.0.0.1:8080/projector?pack=latest&session=bookforge-live&live=1}"
 PROFILE_DIR="${BOOKFORGE_CHROMIUM_PROFILE:-${XDG_STATE_HOME:-${HOME}/.local/state}/bookforge/chromium}"
+FIREFOX_PROFILE_DIR="${BOOKFORGE_FIREFOX_PROFILE:-${XDG_STATE_HOME:-${HOME}/.local/state}/bookforge/firefox}"
+BOOKFORGE_FIREFOX_BIN="${HOME}/.local/opt/firefox-bookforge/firefox"
 STARTUP_TIMEOUT="${BOOKFORGE_KIOSK_STARTUP_TIMEOUT:-90}"
 
 if [[ ! "$STARTUP_TIMEOUT" =~ ^[0-9]+$ ]]; then
@@ -37,6 +39,11 @@ elif command -v chromium >/dev/null 2>&1; then
   BROWSER_BIN="$(command -v chromium)"
 elif command -v chromium-browser >/dev/null 2>&1; then
   BROWSER_BIN="$(command -v chromium-browser)"
+elif [[ -x "$BOOKFORGE_FIREFOX_BIN" ]]; then
+  # Prefer the verified native archive over Ubuntu's Snap wrapper. The Snap
+  # launcher moves Firefox into a separate scope and exits, which makes a
+  # supervising systemd service restart forever while the browser is alive.
+  BROWSER_BIN="$BOOKFORGE_FIREFOX_BIN"
 elif command -v firefox >/dev/null 2>&1; then
   BROWSER_BIN="$(command -v firefox)"
 elif command -v firefox-esr >/dev/null 2>&1; then
@@ -77,9 +84,44 @@ until curl --fail --silent --max-time 2 "$READY_URL" >/dev/null 2>&1; do
 done
 
 if [[ "$BROWSER_KIND" == firefox ]]; then
+  FIREFOX_INSTALL_DIR="$(dirname -- "$(readlink -f -- "$BROWSER_BIN")")"
+  FIREFOX_POLICY_SOURCE="${SCRIPT_DIR}/firefox-policies.json"
+  FIREFOX_POLICY_TARGET="${FIREFOX_INSTALL_DIR}/distribution/policies.json"
+  if [[ -f "$FIREFOX_POLICY_SOURCE" && -w "$FIREFOX_INSTALL_DIR" ]]; then
+    mkdir -p "${FIREFOX_INSTALL_DIR}/distribution"
+    install -m 0644 "$FIREFOX_POLICY_SOURCE" "$FIREFOX_POLICY_TARGET"
+  fi
+  if [[ ! -r "$FIREFOX_POLICY_TARGET" ]] \
+    || ! grep -Eq '"SkipTermsOfUse"[[:space:]]*:[[:space:]]*true' "$FIREFOX_POLICY_TARGET"; then
+    printf 'Firefox kiosk policy is missing: %s. Re-run the pinned Firefox installer.\n' "$FIREFOX_POLICY_TARGET" >&2
+    exit 1
+  fi
+  mkdir -p "$FIREFOX_PROFILE_DIR"
+  chmod 700 "$FIREFOX_PROFILE_DIR"
+  # A dedicated deterministic kiosk profile prevents Firefox's first-run,
+  # privacy-policy, default-browser, and telemetry prompts from ever covering
+  # the projection. Do not reuse or modify the operator's normal profile.
+  printf '%s\n' \
+    'user_pref("browser.aboutwelcome.enabled", false);' \
+    'user_pref("browser.aboutwelcome.didSeeFinalScreen", true);' \
+    'user_pref("browser.startup.firstrunSkipsHomepage", true);' \
+    'user_pref("browser.startup.homepage_override.mstone", "ignore");' \
+    'user_pref("browser.shell.checkDefaultBrowser", false);' \
+    'user_pref("datareporting.policy.dataSubmissionEnabled", false);' \
+    'user_pref("datareporting.healthreport.uploadEnabled", false);' \
+    'user_pref("toolkit.telemetry.enabled", false);' \
+    'user_pref("toolkit.telemetry.unified", false);' \
+    'user_pref("toolkit.telemetry.reportingpolicy.firstRun", false);' \
+    'user_pref("app.shield.optoutstudies.enabled", false);' \
+    'user_pref("browser.newtabpage.activity-stream.telemetry", false);' \
+    >"${FIREFOX_PROFILE_DIR}/user.js"
+  chmod 600 "${FIREFOX_PROFILE_DIR}/user.js"
   export MOZ_WEBRENDER="${MOZ_WEBRENDER:-1}"
   export MOZ_X11_EGL="${MOZ_X11_EGL:-1}"
+  export MOZ_DISABLE_DEFAULT_BROWSER_AGENT=1
   launch_browser "$BROWSER_BIN" \
+    --profile "$FIREFOX_PROFILE_DIR" \
+    --new-instance \
     --kiosk \
     --private-window "$KIOSK_URL"
 fi

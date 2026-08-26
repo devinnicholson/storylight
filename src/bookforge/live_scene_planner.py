@@ -67,7 +67,7 @@ _LEADING_ARTICLE = re.compile(r"^(?:a|an|the)\s+", re.IGNORECASE)
 _SEMANTIC_WORD = re.compile(r"[A-Za-z][A-Za-z'-]*")
 _PLACEMENT_MARGIN = 0.04
 _PLAN_CACHE_SCHEMA_VERSION = "1"
-_PLAN_CACHE_CONTRACT_REVISION = "semantic-v11-visual-fidelity-label"
+_PLAN_CACHE_CONTRACT_REVISION = "semantic-v12-supporting-relation-repair"
 _EMAIL = re.compile(r"\b[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}\b", re.IGNORECASE)
 _PHONE = re.compile(r"(?<!\w)(?:\+?\d[\d\s()./-]{6,}\d)(?!\w)")
 _URL = re.compile(r"\b(?:https?://|www\.)\S+", re.IGNORECASE)
@@ -222,14 +222,23 @@ class LiveSceneWirePlan(FrozenStrictModel):
             self.magic.prompt,
             source_text=source_text,
         )
-        recovered_magic = _rephrase_distinctive_supporting_action(
-            recovered_magic,
-            source_text=source_text,
-        )
         repaired_magic = _repair_duplicated_focus_in_supporting_prompt(
             recovered_magic,
             focus_subject=recovered_subject,
             focus_action=recovered_action,
+            source_text=source_text,
+        )
+        repaired_magic_kind = self.magic.kind
+        if repaired_magic != recovered_magic and repaired_magic_kind == "character":
+            # The duplicate main actor was removed. Its replacement is a
+            # supporting transformation/detail, not a second character.
+            repaired_magic_kind = "effect"
+        repaired_magic = _recover_malformed_transformation(
+            repaired_magic,
+            source_text=source_text,
+        )
+        repaired_magic = _rephrase_distinctive_supporting_action(
+            repaired_magic,
             source_text=source_text,
         )
         recovered_background = _recover_generic_background_prompt(
@@ -264,11 +273,12 @@ class LiveSceneWirePlan(FrozenStrictModel):
                 ),
                 "magic": self.magic.model_copy(
                     update={
+                        "kind": repaired_magic_kind,
                         "prompt": _remove_distinctive_source_overlap(
                             repaired_magic,
                             source_text,
                             preserve_tail=True,
-                        )
+                        ),
                     }
                 ),
             }
@@ -810,6 +820,57 @@ def _recover_missing_supporting_subject(prompt: str, *, source_text: str) -> str
     return prompt
 
 
+def _recover_malformed_transformation(prompt: str, *, source_text: str) -> str:
+    """Replace a tiny-model trailing pronoun with its source-grounded result."""
+
+    prompt_words = _SEMANTIC_WORD.findall(prompt)
+    if not prompt_words or prompt_words[-1].casefold() not in {
+        "he",
+        "her",
+        "him",
+        "it",
+        "she",
+        "them",
+        "they",
+    }:
+        return prompt
+
+    prompt_tokens = {word.casefold() for word in prompt_words[:-1]}
+    clauses = re.split(
+        r"(?:[,;]|\b(?:and|as|then|when|while)\b)",
+        source_text,
+        flags=re.IGNORECASE,
+    )
+    for clause in clauses:
+        words = _SEMANTIC_WORD.findall(clause)
+        lowered = [word.casefold() for word in words]
+        verb_index = next(
+            (
+                index
+                for index, word in enumerate(lowered)
+                if word
+                in {
+                    "bloom",
+                    "blooms",
+                    "rise",
+                    "rises",
+                }
+            ),
+            None,
+        )
+        if verb_index is None or verb_index == 0:
+            continue
+        subject = words[:verb_index]
+        while subject and subject[0].casefold() in {"a", "an", "the"}:
+            subject.pop(0)
+        subject_tokens = {word.casefold() for word in subject}
+        if not subject or not subject_tokens.intersection(prompt_tokens):
+            continue
+        repaired = " ".join([*subject[-6:], _normalized_action(words[verb_index])])
+        return _bounded_words(repaired, 8)
+    return " ".join(prompt_words[:-1]) or prompt
+
+
 def _rephrase_distinctive_supporting_action(prompt: str, *, source_text: str) -> str:
     """Keep a supporting noun while breaking a verb-ending source trigram locally."""
 
@@ -934,6 +995,12 @@ def _normalized_action(value: str) -> str:
         "climbs": "climbing",
         "create": "creating",
         "creates": "creating",
+        "drift": "drifting",
+        "drifts": "drifting",
+        "float": "floating",
+        "floats": "floating",
+        "form": "forming",
+        "forms": "forming",
         "hold": "holding",
         "holds": "holding",
         "lift": "lifting",
@@ -944,6 +1011,12 @@ def _normalized_action(value: str) -> str:
         "plants": "planting",
         "read": "reading",
         "reads": "reading",
+        "rise": "rising",
+        "rises": "rising",
+        "bloom": "blooming",
+        "blooms": "blooming",
+        "spiral": "spiraling",
+        "spirals": "spiraling",
         "skate": "skating",
         "skates": "skating",
         "steer": "steering",

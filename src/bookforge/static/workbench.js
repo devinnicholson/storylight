@@ -264,6 +264,7 @@ async function prepareEdgePlan(text) {
       body: JSON.stringify({
         text,
         visual_style: elements.style.value.trim() || "luminous paper theater",
+        session_id: readerSessionId,
       }),
     });
     const planner = await response.json().catch(() => ({}));
@@ -323,7 +324,11 @@ async function prewarmRenderer() {
         });
     const [rendererResult, plannerResult] = await Promise.allSettled([
       rendererPreparation,
-      post("/v1/live-scene-planner/prepare", {text, visual_style: visualStyle}),
+      post("/v1/live-scene-planner/prepare", {
+        text,
+        visual_style: visualStyle,
+        session_id: readerSessionId,
+      }),
     ]);
     const renderer = rendererResult.status === "fulfilled" ? rendererResult.value : null;
     const planner = plannerResult.status === "fulfilled" ? plannerResult.value : null;

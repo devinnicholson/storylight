@@ -1087,3 +1087,30 @@ def test_session_stream_subscribes_before_first_job_and_follows_replacement() ->
         await registry.close()
 
     asyncio.run(exercise())
+
+
+def test_session_stream_balances_overlapping_planner_activity() -> None:
+    async def exercise() -> None:
+        registry = LiveSceneJobRegistry(DeterministicFakeLiveSceneProvider())
+        subscription = await registry.subscribe_session("projector-yield")
+        async with subscription:
+            initial = await subscription.receive()
+            assert initial.planner_active is False
+
+            await registry.set_session_planner_active("projector-yield", True)
+            active = await subscription.receive()
+            assert active.planner_active is True
+            assert active.job is None
+
+            # Two callers may overlap; the first completion must not resume the GPU.
+            await registry.set_session_planner_active("projector-yield", True)
+            await registry.set_session_planner_active("projector-yield", False)
+            with pytest.raises(TimeoutError):
+                await asyncio.wait_for(subscription.receive(), timeout=0.01)
+
+            await registry.set_session_planner_active("projector-yield", False)
+            inactive = await subscription.receive()
+            assert inactive.planner_active is False
+        await registry.close()
+
+    asyncio.run(exercise())

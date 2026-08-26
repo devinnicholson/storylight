@@ -10,6 +10,7 @@ KIOSK_LAUNCHER = ROOT / "deploy/jetson/launch-kiosk.sh"
 KIOSK_PREFLIGHT = ROOT / "deploy/jetson/check-kiosk-session.sh"
 STANDALONE_INSTALLER = ROOT / "deploy/jetson/install-standalone.sh"
 PAIRING_HELPER = ROOT / "deploy/jetson/show-controller-pairing.sh"
+PORTABLE_NETWORK_HELPER = ROOT / "deploy/jetson/configure-portable-network.sh"
 
 
 def _write_executable(path: Path, body: str) -> None:
@@ -194,6 +195,22 @@ def test_standalone_installer_preserves_secrets_and_device_configuration() -> No
     assert "pair#${pairing_token}" in pairing_helper
 
 
+def test_portable_network_helper_is_explicit_bounded_and_reversible() -> None:
+    helper = PORTABLE_NETWORK_HELPER.read_text()
+
+    subprocess.run(["bash", "-n", str(PORTABLE_NETWORK_HELPER)], check=True)
+    assert "Run this configuration helper with sudo" in helper
+    assert "--dry-run" in helper
+    assert "connection.autoconnect yes" in helper
+    assert "connection.autoconnect-retries 0" in helper
+    assert "802-11-wireless.powersave 2" in helper
+    assert 'desired = {"allow-interfaces": interface, "use-ipv6": "no"}' in helper
+    assert "avahi-daemon.conf.bookforge-backup" in helper
+    assert "nmcli connection down" not in helper
+    assert "nmcli connection delete" not in helper
+    assert "wifi-sec" not in helper
+
+
 def test_standalone_profile_keeps_raw_story_planning_local() -> None:
     profile = (ROOT / "deploy/jetson/bookforge.standalone.env.example").read_text()
 
@@ -258,11 +275,11 @@ def test_projector_renders_depth_at_source_resolution_before_display_upscale() -
     assert "canvas.height = LOGICAL_HEIGHT;" not in projector
 
 
-def test_projector_runs_depth_at_60_fps_without_animating_hidden_fallback() -> None:
+def test_projector_runs_depth_at_30_fps_without_animating_hidden_fallback() -> None:
     projector = (ROOT / "src/bookforge/static/projector.js").read_text()
     projector_css = (ROOT / "src/bookforge/static/projector.css").read_text()
 
-    assert "const DEPTH_RENDER_TARGET_FPS = 60;" in projector
+    assert "const DEPTH_RENDER_TARGET_FPS = 30;" in projector
     assert "const frameIntervalMs = 1000 / DEPTH_RENDER_TARGET_FPS;" in projector
     assert "timestamp - lastRenderedAt >= frameIntervalMs - 1" in projector
     assert "canvas.dataset.depthRenderedFrames = String(renderedFrames);" in projector
@@ -279,6 +296,16 @@ def test_projector_runs_depth_at_60_fps_without_animating_hidden_fallback() -> N
     )
     assert "Software WebGL blocked" in projector
     assert 'scene.dataset.webglAcceleration = "hardware";' in projector
+
+
+def test_depth_renderer_avoids_parallel_compositor_ambient_animations() -> None:
+    projector = (ROOT / "src/bookforge/static/projector.js").read_text()
+    depth_branch = projector.split('masterAsset?.local_uri?.startsWith("/v1/assets/")', 1)[1].split(
+        "const depthImage = depthResult.value;", 1
+    )[0]
+
+    assert "appendAmbientEffects(scene, page.scene_spec);" not in depth_branch
+    assert "appendSceneHotspots(scene, page);" in depth_branch
 
 
 def test_projector_promotes_provisional_preview_without_calling_it_final() -> None:
@@ -336,7 +363,25 @@ def test_arm64_firefox_installer_is_pinned_and_checksum_verified() -> None:
     assert 'if [[ "$(uname -m)" != "aarch64" ]]' in script
     assert 'if [[ "$actual_sha256" != "$FIREFOX_SHA256" ]]' in script
     assert 'ln -sfn "firefox-${FIREFOX_VERSION}" "$current_link"' in script
+    assert '"$SCRIPT_DIR/firefox-policies.json"' in script
+    assert '"$target_dir/distribution/policies.json"' in script
     assert "sudo" not in script
+
+
+def test_firefox_enterprise_policy_skips_terms_and_prompts() -> None:
+    policy_path = ROOT / "deploy/jetson/firefox-policies.json"
+    policy = json.loads(policy_path.read_text())["policies"]
+
+    assert policy["SkipTermsOfUse"] is True
+    assert policy["DisableTelemetry"] is True
+    assert policy["DisableFirefoxStudies"] is True
+    assert policy["DontCheckDefaultBrowser"] is True
+    assert policy["OverrideFirstRunPage"] == ""
+    assert policy["OverridePostUpdatePage"] == ""
+    assert policy["Preferences"]["browser.aboutwelcome.enabled"] == {
+        "Value": False,
+        "Status": "locked",
+    }
 
 
 def test_kiosk_preflight_refuses_locked_idle_and_dark_sessions(tmp_path: Path) -> None:
@@ -401,6 +446,9 @@ def test_preferred_firefox_override_uses_only_supported_kiosk_flags(tmp_path: Pa
     assert "browser=firefox" in result.stdout
     assert "inhibitor=sleep" in result.stdout
     assert "arg=--kiosk" in result.stdout
+    assert "arg=--profile" in result.stdout
+    assert f"arg={tmp_path / 'state' / 'bookforge' / 'firefox'}" in result.stdout
+    assert "arg=--new-instance" in result.stdout
     assert "arg=--private-window" in result.stdout
     assert "arg=http://127.0.0.1:18081/projector?live=1" in result.stdout
     assert "--app=" not in result.stdout
@@ -434,6 +482,48 @@ def test_browser_autodetection_prefers_chromium_and_accepts_firefox(tmp_path: Pa
     assert "browser=firefox" not in preferred.stdout
     assert "browser=firefox" in fallback.stdout
     assert "arg=--private-window" in fallback.stdout
+
+
+def test_kiosk_prefers_native_bookforge_firefox_before_snap_wrapper() -> None:
+    launcher = (ROOT / "deploy/jetson/launch-kiosk.sh").read_text()
+
+    native = 'elif [[ -x "$BOOKFORGE_FIREFOX_BIN" ]]; then'
+    system_firefox = "elif command -v firefox >/dev/null 2>&1; then"
+    assert native in launcher
+    assert launcher.index(native) < launcher.index(system_firefox)
+    assert 'BOOKFORGE_FIREFOX_BIN="${HOME}/.local/opt/firefox-bookforge/firefox"' in launcher
+
+
+def test_firefox_kiosk_profile_disables_first_run_and_telemetry(tmp_path: Path) -> None:
+    _run_fake_kiosk(tmp_path, "firefox")
+    profile = tmp_path / "state" / "bookforge" / "firefox"
+    preferences = (profile / "user.js").read_text()
+
+    assert 'browser.aboutwelcome.enabled", false' in preferences
+    assert 'browser.startup.homepage_override.mstone", "ignore"' in preferences
+    assert 'browser.shell.checkDefaultBrowser", false' in preferences
+    assert 'datareporting.policy.dataSubmissionEnabled", false' in preferences
+    assert 'toolkit.telemetry.enabled", false' in preferences
+    assert (profile / "user.js").stat().st_mode & 0o777 == 0o600
+
+
+def test_kiosk_restart_loop_is_rate_limited() -> None:
+    unit = (ROOT / "deploy/jetson/systemd/bookforge-kiosk.service").read_text()
+
+    assert "Restart=always" in unit
+    assert "StartLimitIntervalSec=60" in unit
+    assert "StartLimitBurst=5" in unit
+
+
+def test_live_waiting_stage_is_static_to_leave_the_gpu_for_edge_planning() -> None:
+    stylesheet = (ROOT / "src/bookforge/static/projector.css").read_text()
+    waiting = stylesheet.split(".scene.live-waiting::before,", 1)[1].split(
+        ".depth-scene",
+        1,
+    )[0]
+
+    assert "live-waiting-breathe" not in waiting
+    assert "animation:" not in waiting
 
 
 def test_projector_only_loads_assets_from_the_loopback_cache() -> None:
@@ -1041,6 +1131,7 @@ def test_workbench_prepares_private_edge_plan_after_typing_pause() -> None:
     assert "text.length < 3" in scheduler
     assert "text === preparedPlanKey" in scheduler
     assert 'fetch("/v1/live-scene-planner/prepare"' in preparation
+    assert "session_id: readerSessionId" in preparation
     assert 'fetch("/v1/live-scene-provider/prewarm"' not in preparation
     assert "preparedPlanKey = text" in preparation
     assert 'elements.story.addEventListener("input", scheduleEdgePlanPreparation);' in controller
@@ -1054,6 +1145,19 @@ def test_workbench_prepares_private_edge_plan_after_typing_pause() -> None:
     assert compile_story.index("await warmEdgePlanner();") < compile_story.index(
         'fetch("/v1/live-scenes"'
     )
+
+
+def test_projector_yields_depth_renderer_during_private_edge_planning() -> None:
+    projector = (ROOT / "src/bookforge/static/projector.js").read_text()
+
+    assert "livePlannerActive: false" in projector
+    assert "function setLivePlannerActive(active)" in projector
+    assert "if (active) state.depthRenderer?.pause();" in projector
+    assert "else state.depthRenderer?.resume();" in projector
+    assert "setLivePlannerActive(plannerActive);" in projector
+    assert "if (state.livePlannerActive) nextRenderer?.pause();" in projector
+    assert "pause() {" in projector
+    assert "resume() {" in projector
 
 
 def test_workbench_explicit_variation_changes_only_the_renderer_seed() -> None:

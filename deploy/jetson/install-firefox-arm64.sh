@@ -6,6 +6,7 @@ readonly FIREFOX_VERSION="153.0esr"
 readonly FIREFOX_ARCHIVE="firefox-${FIREFOX_VERSION}.tar.xz"
 readonly FIREFOX_SHA256="17c523ed1af68e2204760c51bebd6354bb4c9172b5c09804c6679f3d0049a0fa"
 readonly FIREFOX_URL="https://ftp.mozilla.org/pub/firefox/releases/${FIREFOX_VERSION}/linux-aarch64/en-US/${FIREFOX_ARCHIVE}"
+readonly SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 
 if [[ "$(uname -m)" != "aarch64" ]]; then
   printf 'The Bookforge Firefox installer is pinned for Jetson aarch64, not %s.\n' "$(uname -m)" >&2
@@ -42,6 +43,10 @@ if [[ ! -x "${target_dir}/firefox" ]]; then
   mv "${staging_dir}/firefox" "$target_dir"
   rmdir "$staging_dir"
 fi
+
+install -D -m 0644 \
+  "$SCRIPT_DIR/firefox-policies.json" \
+  "$target_dir/distribution/policies.json"
 
 if [[ -e "$current_link" && ! -L "$current_link" ]]; then
   printf 'Refusing to replace non-symlink browser path: %s\n' "$current_link" >&2

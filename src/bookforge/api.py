@@ -574,6 +574,8 @@ async def prepare_live_scene_planner(
             status_code=409,
             detail="BOOKFORGE_LIVE_SCENE_PLANNER is not configured as model",
         )
+    if payload.session_id is not None:
+        await registry.set_session_planner_active(payload.session_id, True)
     try:
         result = await planner.plan(
             text=payload.text,
@@ -582,6 +584,9 @@ async def prepare_live_scene_planner(
         )
     except RuntimeError as error:
         raise HTTPException(status_code=503, detail=str(error)) from error
+    finally:
+        if payload.session_id is not None:
+            await registry.set_session_planner_active(payload.session_id, False)
     return LiveScenePlannerPrepareResponse(
         planning_ms=result.wall_ms,
         cache_hit=result.cache_hit,

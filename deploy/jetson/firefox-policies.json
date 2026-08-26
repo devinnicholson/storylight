@@ -1,0 +1,16 @@
+{
+  "policies": {
+    "SkipTermsOfUse": true,
+    "DisableTelemetry": true,
+    "DisableFirefoxStudies": true,
+    "DontCheckDefaultBrowser": true,
+    "OverrideFirstRunPage": "",
+    "OverridePostUpdatePage": "",
+    "Preferences": {
+      "browser.aboutwelcome.enabled": {
+        "Value": false,
+        "Status": "locked"
+      }
+    }
+  }
+}

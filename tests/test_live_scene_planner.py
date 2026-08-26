@@ -444,9 +444,35 @@ def test_wire_plan_redacts_distinctive_source_phrase_without_inventing_text() ->
 
     assert "glowing" in plan.accent.prompt
     assert "jellyfish" in plan.accent.prompt
-    assert "glowing jellyfish drift" not in plan.accent.prompt
+    assert "drifting" in plan.accent.prompt
+    assert "stars" in plan.accent.prompt
+    assert "drift" not in plan.accent.prompt.split()
     validate_live_scene_plan_privacy(plan, source_text=source)
     assert plan.ambience == ["stars"]
+
+
+def test_wire_plan_recovers_transformation_subject_before_trailing_pronoun() -> None:
+    source = (
+        "A clockwork fox plants a brass seed in the snow, and a transparent forest "
+        "of glass branches rises around it."
+    )
+    payload = _wire_plan().model_dump()
+    payload["focus"] = {
+        "kind": "character",
+        "subject": "clockwork fox",
+        "action": "plants seed",
+    }
+    payload["magic"] = {"kind": "character", "prompt": "clockwork fox branches rises it"}
+
+    wire = LiveSceneWirePlan.model_validate(payload).privacy_sanitized(source_text=source)
+    plan = wire.to_live_scene_plan(context_text=source)
+
+    assert "forest" in plan.accent.prompt
+    assert "branches" in plan.accent.prompt
+    assert "rising" in plan.accent.prompt
+    assert not plan.accent.prompt.endswith(" it")
+    assert plan.accent.kind == "effect"
+    validate_live_scene_plan_privacy(plan, source_text=source)
 
 
 def test_compact_plan_normalizes_to_canonical_scene_spec_and_layers() -> None:

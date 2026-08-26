@@ -42,9 +42,7 @@ def _sse_data(response_text: str) -> list[dict[str, object]]:
 
 def test_model_planner_rejects_completed_deterministic_fallback_cache() -> None:
     stale_deterministic = SimpleNamespace(compiler_model="deterministic-live-scene-planner-v1")
-    current_deterministic = SimpleNamespace(
-        compiler_model=DETERMINISTIC_LIVE_SCENE_COMPILER_MODEL
-    )
+    current_deterministic = SimpleNamespace(compiler_model=DETERMINISTIC_LIVE_SCENE_COMPILER_MODEL)
     model_planned = SimpleNamespace(compiler_model="gemma3:1b-it-q4_K_M")
 
     assert not _completed_pack_matches_planner_mode(stale_deterministic, planner_mode="model")
@@ -314,6 +312,7 @@ def test_live_scene_planner_prepare_primes_only_the_local_planner() -> None:
             json={
                 "text": "A silver fox waits below the cedar trees.",
                 "visual_style": "luminous paper theater",
+                "session_id": "projector-yield",
             },
         )
 

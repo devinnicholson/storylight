@@ -64,19 +64,15 @@ body.blackout #projectionStage { opacity: 0; }
   border: 1px solid rgba(126, 207, 255, .16);
   border-radius: 50%;
   filter: blur(.2px);
-  animation: live-waiting-breathe 5.6s ease-in-out infinite alternate;
+  opacity: .52;
+  transform: rotate(-2deg);
 }
 
 .scene.live-waiting::after {
   inset: 30%;
   border-color: rgba(255, 205, 116, .18);
-  animation-delay: -2.8s;
-  animation-duration: 4.8s;
-}
-
-@keyframes live-waiting-breathe {
-  from { opacity: .28; transform: scale(.84) rotate(-3deg); }
-  to { opacity: .72; transform: scale(1.08) rotate(3deg); }
+  opacity: .42;
+  transform: rotate(2deg);
 }
 
 .depth-scene { position: absolute; inset: 0; overflow: hidden; background: #02050a; }

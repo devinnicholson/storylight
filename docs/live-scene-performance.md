@@ -264,8 +264,43 @@ Firefox Snap exposed WebGL as Mesa `llvmpipe`: a two-second 60 Hz framebuffer pr
 19 distinct frames and Firefox pinned a CPU core while the NVIDIA GPU remained near idle. Mozilla's
 checksum-pinned native ARM64 Firefox exposed NVIDIA WebGL, held 60.48 internal fps at 17.10 ms
 median/17.14 ms p95, and produced 118 distinct frames in a 120-frame final capture. The runtime now
-targets 60 Hz, stops compositing the hidden image fallback after the first WebGL draw, and refuses
-known software WebGL implementations instead of silently presenting a stuttering showcase.
+uses the display's native refresh for presentation and media compositing, stops compositing the
+hidden image fallback after the first WebGL draw, and refuses known software WebGL implementations
+instead of silently presenting a stuttering showcase. The continuous depth pass uses the accepted
+30 Hz pacing described below.
+
+The final standalone contention pass found that a continuously moving depth scene still consumed
+53-60% GPU and roughly 86% of one Firefox CPU core when the WebGL pass and redundant DOM ambience
+both ran at 60 Hz. The storybook camera motion is deliberately slow, so the accepted runtime draws
+the depth pass at 30 Hz and leaves the display compositor at its native refresh. It also removes the
+duplicate CSS-particle field from depth scenes because the shader already supplies camera push,
+parallax, focus breathing, and ambient light. The measured device settled near 6.9-7.1 W and mostly
+2-39% GPU, while an eight-second 1920x1080 capture retained 240 frames at 30 fps and measurable
+frame-to-frame motion without a freeze.
+
+Local planning is now an explicit projector scheduling event. The session SSE publishes bounded
+`planner_active` state; the projector freezes the current WebGL canvas while Gemma owns the shared
+Orin GPU and resumes it automatically afterward. Five uncached, semantically gated plans while the
+real cached scene remained on screen averaged 2.701 seconds and never exceeded 2.880 seconds. The
+same test before coordination averaged 3.286 seconds and reached 3.503 seconds. The image does not
+blank or reload during that pause, so this recovers 17.8% planner latency without changing model
+weights, schema, output quality, or the privacy boundary.
+
+The accepted warm renderer manifest is likewise no longer the limiting edge component. Its
+prewarmed L40S call recorded 1.082 seconds for the two-step 896x512 SANA-Sprint master, 107 ms for
+Depth Anything, 376 ms for parallel JPEG packaging, and 1.993 seconds remote wall. The next
+material latency/availability step is therefore the managed cloud renderer lifecycle—not a larger
+Jetson power mode or another smaller local schema. GCP should preserve the existing provider
+contract while supplying persistent or predictably warm NVIDIA capacity; Nemotron remains an
+asynchronous fidelity critic so it cannot delay first projection.
+
+The exact GCP handoff is bounded and does not require another image build: retry immutable strict
+worker digest `sha256:d9bda0e00acd3889eb214b10841dac00105a18676953708be9621359736481ad`,
+which previously reached Cloud Run's GPU startup gate before application logging. After it starts,
+measure scale-to-zero and a separately authorized bounded minimum-instance judged window through
+the same authenticated client. That is the first remaining optimization that changes the dominant
+availability term; further local work would optimize a component already hidden during typing and
+renderer preparation.
 
 SANA-Sprint does not expose a separate negative-prompt input. Bookforge therefore carries no-text,
 no-logo, and projection constraints in the positive semantic visual direction and records

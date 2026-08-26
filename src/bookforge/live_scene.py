@@ -212,6 +212,7 @@ class LiveScenePlannerPrepareRequest(FrozenStrictModel):
     text: SceneText
     visual_style: VisualStyle = "luminous watercolor paper theater"
     seed: Annotated[int, Field(ge=0, le=2**32 - 1)] = 0
+    session_id: SessionId | None = None
 
 
 class LiveScenePlannerPrepareResponse(FrozenStrictModel):
@@ -489,6 +490,7 @@ class LiveSceneSessionEvent(FrozenStrictModel):
     session_id: SessionId
     server_instance_id: LiveSceneServerInstanceId
     session_revision: Annotated[int, Field(ge=0)]
+    planner_active: bool = False
     job: LiveSceneJob | None = None
 
     @model_validator(mode="after")
@@ -688,6 +690,7 @@ class LiveSceneJobRegistry:
         self._jobs: OrderedDict[str, _JobRecord] = OrderedDict()
         self._session_jobs: dict[str, tuple[int, str]] = {}
         self._session_subscribers: dict[str, set[LiveSceneSessionSubscription]] = {}
+        self._session_planner_activity: dict[str, int] = {}
         self._session_revision_sequence = 0
         self._tasks: dict[str, asyncio.Task[None]] = {}
         self._lock = asyncio.Lock()
@@ -830,6 +833,21 @@ class LiveSceneJobRegistry:
             self._put_session_event(queue, self._session_event_locked(session_id))
         return subscription
 
+    async def set_session_planner_active(self, session_id: str, active: bool) -> None:
+        """Publish bounded local-planner activity so a projector can yield its GPU."""
+
+        async with self._lock:
+            if self._closed:
+                raise LiveSceneRegistryClosedError("Live-scene job registry is closed")
+            previous = self._session_planner_activity.get(session_id, 0)
+            current = previous + 1 if active else max(0, previous - 1)
+            if current:
+                self._session_planner_activity[session_id] = current
+            else:
+                self._session_planner_activity.pop(session_id, None)
+            if bool(previous) != bool(current):
+                self._publish_session_locked(session_id)
+
     async def unsubscribe(self, subscription: LiveSceneSubscription) -> None:
         async with self._lock:
             record = self._jobs.get(subscription.job_id)
@@ -888,6 +906,7 @@ class LiveSceneJobRegistry:
                 record.subscribers.clear()
             self._tasks.clear()
             self._session_subscribers.clear()
+            self._session_planner_activity.clear()
         close_provider = getattr(self.provider, "aclose", None)
         if callable(close_provider):
             await close_provider()
@@ -1316,12 +1335,14 @@ class LiveSceneJobRegistry:
                 self._publish_session_locked(session_id)
 
     def _session_event_locked(self, session_id: str) -> LiveSceneSessionEvent:
+        planner_active = self._session_planner_activity.get(session_id, 0) > 0
         pointer = self._session_jobs.get(session_id)
         if pointer is None:
             return LiveSceneSessionEvent(
                 session_id=session_id,
                 server_instance_id=self.server_instance_id,
                 session_revision=0,
+                planner_active=planner_active,
             )
         session_revision, job_id = pointer
         record = self._jobs.get(job_id)
@@ -1330,11 +1351,13 @@ class LiveSceneJobRegistry:
                 session_id=session_id,
                 server_instance_id=self.server_instance_id,
                 session_revision=0,
+                planner_active=planner_active,
             )
         return LiveSceneSessionEvent(
             session_id=session_id,
             server_instance_id=self.server_instance_id,
             session_revision=session_revision,
+            planner_active=planner_active,
             job=record.snapshot,
         )
 

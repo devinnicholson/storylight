@@ -258,3 +258,4 @@ printf 'Standalone Bookforge is ready. Show the private pairing URL with:\n'
 printf '  sudo /opt/bookforge/deploy/jetson/show-controller-pairing.sh\n'
 printf 'Gemma and the projector start after %s signs in graphically.\n' "$TARGET_USER"
 printf 'Start or refresh the projector now with: systemctl --user restart bookforge-kiosk.service\n'
+printf 'For stable cable-free discovery, run once: sudo /opt/bookforge/deploy/jetson/configure-portable-network.sh\n'

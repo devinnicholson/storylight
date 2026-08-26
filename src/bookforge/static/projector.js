@@ -11,7 +11,11 @@ const LIVE_MODE = query.get("live") === "1";
 const READER_MODE = query.get("reader") !== "0";
 const SCENE_CROSSFADE_MS = 320;
 const SCENE_RETIRE_GRACE_MS = 360;
-const DEPTH_RENDER_TARGET_FPS = 60;
+// Storybook parallax is deliberately slow. Rendering it at the projector's
+// 60 Hz refresh rate doubled Jetson GPU/CPU work without adding perceptible
+// motion detail, and starved local scene planning. Thirty frames per second
+// remains smooth at 1080p while leaving headroom for Gemma and scene swaps.
+const DEPTH_RENDER_TARGET_FPS = 30;
 
 if (PRESENTATION_MODE) document.body.classList.add("hud-hidden");
 if (OFFLINE_REPLAY) document.body.dataset.replayBoundary = "loopback-only";
@@ -87,6 +91,7 @@ const state = {
   resyncAfterCurrent: false,
   pendingReaderEvents: [],
   depthRenderer: null,
+  livePlannerActive: false,
   liveSessionEventSource: null,
   liveSessionStreamHealthy: false,
   liveClockTimer: null,
@@ -578,6 +583,7 @@ async function startDepthRenderer(canvas, masterImage, depthImage, sceneSpec) {
   gl.viewport(0, 0, canvas.width, canvas.height);
   let animationFrame = null;
   let stopped = false;
+  let paused = false;
   let renderedFrames = 0;
   let skippedFrames = 0;
   let lastRenderedAt = null;
@@ -615,7 +621,7 @@ async function startDepthRenderer(canvas, masterImage, depthImage, sceneSpec) {
     updateRenderTelemetry(timestamp);
   };
   const render = (timestamp) => {
-    if (stopped) return;
+    if (stopped || paused) return;
     if (lastRenderedAt === null || timestamp - lastRenderedAt >= frameIntervalMs - 1) {
       draw(timestamp);
     } else {
@@ -649,6 +655,18 @@ async function startDepthRenderer(canvas, masterImage, depthImage, sceneSpec) {
     webglRenderer: rendererInfo.renderer,
     webglVendor: rendererInfo.vendor,
     targetFps: DEPTH_RENDER_TARGET_FPS,
+    pause() {
+      if (stopped || paused) return;
+      paused = true;
+      if (animationFrame !== null) cancelAnimationFrame(animationFrame);
+      animationFrame = null;
+    },
+    resume() {
+      if (stopped || !paused) return;
+      paused = false;
+      lastRenderedAt = null;
+      animationFrame = requestAnimationFrame(render);
+    },
     destroy() {
       stopped = true;
       if (animationFrame !== null) cancelAnimationFrame(animationFrame);
@@ -772,6 +790,7 @@ function commitSceneVersion(nextVersion, mode, nextRenderer = null, renderToken 
     (version) => version.classList.contains("incoming") || version.classList.contains("retiring"),
   );
   const previousRenderer = state.depthRenderer;
+  if (state.livePlannerActive) nextRenderer?.pause();
   state.depthRenderer = nextRenderer;
   elements.scene.classList.remove("live-waiting");
   elements.generatedScene.classList.remove(
@@ -923,7 +942,12 @@ async function renderPackLayers(pack, page, renderToken = null, timings = null) 
       fallback.alt = page.scene_summary;
       const renderSize = sizeDepthCanvasToSource(canvas, fallback);
       scene.append(fallback, canvas);
-      appendAmbientEffects(scene, page.scene_spec);
+      // The depth shader already supplies continuous camera/parallax/breathing
+      // motion in a single GPU pass. Stacking dozens of full-screen composited
+      // CSS particles on top kept Firefox's compositor at 60 Hz and consumed
+      // half of the Orin GPU even after the WebGL pass was capped at 30 fps.
+      // Preserve semantic trigger hotspots, but reserve DOM ambience for the
+      // lightweight draft/preview and prerecorded-motion renderers.
       appendSceneHotspots(scene, page);
       version.append(scene);
       if (depthResult.status === "rejected") throw depthResult.reason;
@@ -1736,10 +1760,17 @@ function liveSnapshotIsTerminal(snapshot) {
     || snapshot?.stage === "failed";
 }
 
+function setLivePlannerActive(active) {
+  state.livePlannerActive = active;
+  if (active) state.depthRenderer?.pause();
+  else state.depthRenderer?.resume();
+}
+
 function acceptLiveSceneSessionPointer(payload) {
   const serverInstanceId = payload?.server_instance_id;
   const sessionRevision = Number(payload?.session_revision);
   const snapshot = payload?.job || null;
+  const plannerActive = payload?.planner_active ?? false;
   const jobId = snapshot?.job_id || null;
   if (
     payload?.session_id !== SESSION_ID
@@ -1747,9 +1778,12 @@ function acceptLiveSceneSessionPointer(payload) {
     || !serverInstanceId
     || !Number.isInteger(sessionRevision)
     || sessionRevision < 0
+    || typeof plannerActive !== "boolean"
     || (snapshot && (!jobId || sessionRevision < 1))
     || (!snapshot && sessionRevision !== 0)
   ) throw new Error("rendezvous returned an invalid session pointer");
+
+  setLivePlannerActive(plannerActive);
 
   if (!state.liveServerInstanceId || state.liveServerInstanceId !== serverInstanceId) {
     state.liveRenderAbortController?.abort();

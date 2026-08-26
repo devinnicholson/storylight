@@ -60,6 +60,21 @@ procedural draft, and local Gemma remain device-local. Do not expose port 8081 o
 configure router port forwarding. Pairing is access control, not transport encryption; this HTTP
 profile is intentionally limited to a private, operator-controlled WLAN.
 
+After the Jetson has successfully joined that WLAN once, apply the bounded portable-network
+profile:
+
+```bash
+sudo /opt/bookforge/deploy/jetson/configure-portable-network.sh
+```
+
+The helper keeps the active saved Wi-Fi connection on autoconnect, disables client power saving,
+enables mDNS for that connection, and limits Avahi advertisements to the active Wi-Fi interface
+over IPv4. It never changes the SSID credential, address, route, or DNS configuration. This avoids
+`jetson.local` resolving to the USB gadget, Docker bridge, or stale IPv6 address when the unit is
+running cable-free. It stores the original Avahi file once at
+`/etc/avahi/avahi-daemon.conf.bookforge-backup`; restore that file and restart Avahi to roll the
+discovery policy back. A travel-router DHCP reservation remains the most deterministic fallback.
+
 After staging the committed repository at `/opt/bookforge`, create the venv with the Modal runtime:
 
 ```bash

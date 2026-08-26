@@ -314,8 +314,10 @@ at 1.0, finished with one scene version at 30 fps/zero dropped frames, and never
 Physical profiling then found that Ubuntu's Firefox Snap routed WebGL through Mesa `llvmpipe` on the
 Orin Nano, yielding only 19 distinct frames in a two-second 60 Hz capture. The checksum-pinned native
 Mozilla ARM64 browser moved WebGL to NVIDIA, measured 60.48 internal fps with a 17.14 ms p95 frame
-interval, and delivered 118/120 distinct framebuffer frames. The depth path now targets 60 Hz, pauses
-the covered fallback image, and blocks known software WebGL renderers rather than silently stuttering.
+interval, and delivered 118/120 distinct framebuffer frames. The display still composites at native
+refresh, while the slow depth-parallax pass now targets 30 Hz, pauses the covered fallback image,
+and blocks known software WebGL renderers rather than silently stuttering. The physical 30 Hz pass
+retained real motion while materially reducing projector CPU, GPU, and power demand.
 
 Short-key Gemma response contracts were tested and rejected on the Jetson. The tuple form was 62.9%
 faster but echoed schema placeholders in four of five outputs and missed every required
@@ -635,3 +637,4 @@ passes the real I/O and latency run on JetPack 7.2.1.
 - [`benchmarks/bookforge-jetson-planner-semantic-hardening-2026-08-24.json`](benchmarks/bookforge-jetson-planner-semantic-hardening-2026-08-24.json): five-passage Jetson GPU acceptance of the 2.661-second faithful planner, zero-token action/object repairs, and rejection of a 9.2%-faster short-key object format that failed every semantic gate
 - [`benchmarks/bookforge-modal-concurrent-model-load-rejection-2026-08-24.json`](benchmarks/bookforge-modal-concurrent-model-load-rejection-2026-08-24.json): isolated L40S cold-start A/B; concurrent SANA/depth loading was reverted after a 23.3% prewarm regression, with the sequential app restored, zero tasks, and billing reconciled
 - [`benchmarks/bookforge-master-jpeg-quality-rejection-2026-08-24.json`](benchmarks/bookforge-master-jpeg-quality-rejection-2026-08-24.json): exact Pillow 4:4:4 quality sweep on the accepted whale scene; quality 94 missed the 0.995 SSIM gate for only 4.4% savings, so presentation-quality 95 remains locked
+- [`benchmarks/bookforge-pre-gcp-acceptance-2026-08-26.json`](benchmarks/bookforge-pre-gcp-acceptance-2026-08-26.json): final standalone edge pass; 30 Hz physical depth motion, planner/projector GPU coordination, stable kiosk and service soak, portable mDNS hardening, and the measured boundary where persistent GCP rendering becomes the next optimization
