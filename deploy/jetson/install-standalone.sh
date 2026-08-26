@@ -236,8 +236,23 @@ fi
 
 systemctl restart "bookforge@${TARGET_USER}.service"
 systemctl restart "bookforge-controller@${TARGET_USER}.service"
-curl --fail --silent --show-error --max-time 10 http://127.0.0.1:8080/readyz >/dev/null
-curl --fail --silent --show-error --max-time 10 http://127.0.0.1:8081/healthz >/dev/null
+
+standalone_ready=0
+for _ in $(seq 1 30); do
+  if curl --fail --silent --max-time 1 http://127.0.0.1:8080/readyz >/dev/null 2>&1 \
+    && curl --fail --silent --max-time 1 http://127.0.0.1:8081/healthz >/dev/null 2>&1; then
+    standalone_ready=1
+    break
+  fi
+  sleep 1
+done
+if ((standalone_ready == 0)); then
+  printf 'Bookforge API and controller did not become ready within 30 seconds.\n' >&2
+  systemctl --no-pager --full status \
+    "bookforge@${TARGET_USER}.service" \
+    "bookforge-controller@${TARGET_USER}.service" >&2 || true
+  exit 1
+fi
 
 printf 'Standalone Bookforge is ready. Show the private pairing URL with:\n'
 printf '  sudo /opt/bookforge/deploy/jetson/show-controller-pairing.sh\n'

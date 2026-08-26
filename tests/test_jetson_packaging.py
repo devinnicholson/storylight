@@ -23,7 +23,24 @@ def _write_kiosk_system_fakes(
     locked_hint: str,
     idle_hint: str,
     monitor_state: str,
+    nongraphical_session_id: str | None = None,
 ) -> None:
+    nongraphical_case = ""
+    if nongraphical_session_id:
+        nongraphical_case = f"""
+    if [ "$2" = "{nongraphical_session_id}" ]; then
+      case "$property" in
+        User) printf '{os.getuid()}\\n' ;;
+        Type) printf 'tty\\n' ;;
+        Remote) printf 'yes\\n' ;;
+        Active) printf 'yes\\n' ;;
+        State) printf 'active\\n' ;;
+        LockedHint|IdleHint) printf 'no\\n' ;;
+        *) exit 1 ;;
+      esac
+      exit 0
+    fi
+"""
     loginctl = f"""
 property=
 for argument in "$@"; do
@@ -34,6 +51,7 @@ done
 case "$1" in
   list-sessions) printf '2 {os.getuid()} tester seat0 tty2 active yes 1h\\n' ;;
   show-session)
+{nongraphical_case}
     case "$property" in
       User) printf '{os.getuid()}\\n' ;;
       Type) printf 'x11\\n' ;;
@@ -74,6 +92,8 @@ def _run_fake_kiosk(
     locked_hint: str = "no",
     idle_hint: str = "no",
     monitor_state: str = "On",
+    xdg_session_id: str = "2",
+    nongraphical_session_id: str | None = None,
     check: bool = True,
 ) -> subprocess.CompletedProcess[str]:
     fake_bin = tmp_path / "bin"
@@ -84,6 +104,7 @@ def _run_fake_kiosk(
         locked_hint=locked_hint,
         idle_hint=idle_hint,
         monitor_state=monitor_state,
+        nongraphical_session_id=nongraphical_session_id,
     )
     for browser_name in browser_names:
         _write_executable(
@@ -99,7 +120,7 @@ def _run_fake_kiosk(
             "PATH": f"{fake_bin}:/usr/bin:/bin",
             "HOME": str(tmp_path / "home"),
             "XDG_STATE_HOME": str(tmp_path / "state"),
-            "XDG_SESSION_ID": "2",
+            "XDG_SESSION_ID": xdg_session_id,
             "DISPLAY": ":1",
             "XAUTHORITY": str(tmp_path / "Xauthority"),
             "BOOKFORGE_KIOSK_URL": "http://127.0.0.1:18081/projector?live=1",
@@ -128,6 +149,10 @@ def test_system_service_has_persistent_private_paths_and_preflight() -> None:
     assert "CacheDirectory=bookforge" in unit
     assert "UMask=0077" in unit
     assert "EnvironmentFile=/etc/bookforge/bookforge.env" in unit
+    assert (
+        "Environment=PATH=/opt/bookforge/.venv/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin"
+        in unit
+    )
 
 
 def test_standalone_gateway_is_the_only_lan_listener() -> None:
@@ -177,10 +202,21 @@ def test_standalone_profile_keeps_raw_story_planning_local() -> None:
     assert "BOOKFORGE_MODEL_REQUIRE_GPU=true" in profile
     assert "BOOKFORGE_LIVE_SCENE_PLANNER=model" in profile
     assert "BOOKFORGE_LIVE_SCENE_BACKEND=modal_warm" in profile
+    assert "BOOKFORGE_ASSET_MODAL_COMMAND=/opt/bookforge/.venv/bin/modal" in profile
     assert "BOOKFORGE_LIVE_SCENE_ENABLE_MOTION=false" in profile
     assert "BOOKFORGE_ASR_BACKEND=disabled" in profile
     assert "MODAL_TOKEN_ID=\n" in profile
     assert "MODAL_TOKEN_SECRET=\n" in profile
+
+
+def test_standalone_installer_waits_for_both_local_services() -> None:
+    installer = STANDALONE_INSTALLER.read_text()
+
+    assert "for _ in $(seq 1 30)" in installer
+    assert "http://127.0.0.1:8080/readyz" in installer
+    assert "http://127.0.0.1:8081/healthz" in installer
+    assert "standalone_ready=1" in installer
+    assert "did not become ready within 30 seconds" in installer
 
 
 def test_projector_adapts_dark_scenes_without_an_extra_generation_pass() -> None:
@@ -311,6 +347,33 @@ def test_kiosk_preflight_refuses_locked_idle_and_dark_sessions(tmp_path: Path) -
         assert result.returncode == 78
         assert expected_error in result.stderr
         assert "browser=firefox" not in result.stdout
+
+
+def test_kiosk_ignores_inherited_ssh_session_and_finds_local_x11(tmp_path: Path) -> None:
+    result = _run_fake_kiosk(
+        tmp_path,
+        "firefox",
+        xdg_session_id="45",
+        nongraphical_session_id="45",
+    )
+
+    assert result.returncode == 0
+    assert "browser=firefox" in result.stdout
+
+
+def test_unattended_kiosk_can_explicitly_allow_idle_but_unlocked_x11(
+    tmp_path: Path,
+) -> None:
+    result = _run_fake_kiosk(
+        tmp_path,
+        "firefox",
+        idle_hint="yes",
+        overrides={"BOOKFORGE_KIOSK_ALLOW_IDLE": "true"},
+    )
+
+    assert result.returncode == 0
+    assert "browser=firefox" in result.stdout
+    assert "allow_idle=true" in result.stdout
 
 
 def test_preferred_firefox_override_uses_only_supported_kiosk_flags(tmp_path: Path) -> None:

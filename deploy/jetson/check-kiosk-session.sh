@@ -13,6 +13,9 @@ for tool in loginctl xset; do
 done
 
 CURRENT_UID="$(id -u)"
+ALLOW_IDLE="${BOOKFORGE_KIOSK_ALLOW_IDLE:-false}"
+[[ "$ALLOW_IDLE" == true || "$ALLOW_IDLE" == false ]] \
+  || fail "BOOKFORGE_KIOSK_ALLOW_IDLE must be true or false"
 
 session_property() {
   loginctl show-session "$SESSION_ID" --property="$1" --value 2>/dev/null
@@ -21,11 +24,24 @@ session_property() {
 find_graphical_session() {
   local candidate candidate_uid candidate_type candidate_active candidate_remote
 
+  candidate_is_graphical() {
+    local session_id="$1"
+    local session_uid session_type session_active session_remote
+    session_uid="$(loginctl show-session "$session_id" --property=User --value 2>/dev/null || true)"
+    session_type="$(loginctl show-session "$session_id" --property=Type --value 2>/dev/null || true)"
+    session_active="$(loginctl show-session "$session_id" --property=Active --value 2>/dev/null || true)"
+    session_remote="$(loginctl show-session "$session_id" --property=Remote --value 2>/dev/null || true)"
+    [[ "$session_uid" == "$CURRENT_UID" \
+      && "$session_type" == x11 \
+      && "$session_active" == yes \
+      && "$session_remote" == no ]]
+  }
+
   if [[ -n "${BOOKFORGE_KIOSK_SESSION_ID:-}" ]]; then
     printf '%s\n' "$BOOKFORGE_KIOSK_SESSION_ID"
     return
   fi
-  if [[ -n "${XDG_SESSION_ID:-}" ]]; then
+  if [[ -n "${XDG_SESSION_ID:-}" ]] && candidate_is_graphical "$XDG_SESSION_ID"; then
     printf '%s\n' "$XDG_SESSION_ID"
     return
   fi
@@ -51,7 +67,9 @@ SESSION_ID="$(find_graphical_session)"
 [[ "$(session_property Active)" == yes ]] || fail "session $SESSION_ID is not active"
 [[ "$(session_property State)" == active ]] || fail "session $SESSION_ID state is not active"
 [[ "$(session_property LockedHint)" == no ]] || fail "session $SESSION_ID is locked; unlock it physically and retry"
-[[ "$(session_property IdleHint)" == no ]] || fail "session $SESSION_ID is idle; interact with the physical desktop and retry"
+if [[ "$(session_property IdleHint)" != no && "$ALLOW_IDLE" != true ]]; then
+  fail "session $SESSION_ID is idle; interact with the physical desktop and retry"
+fi
 
 [[ -n "${DISPLAY:-}" ]] || fail "DISPLAY is unset"
 [[ -n "${XAUTHORITY:-}" && -r "$XAUTHORITY" ]] || fail "XAUTHORITY is unset or unreadable"
@@ -59,4 +77,5 @@ SESSION_ID="$(find_graphical_session)"
 XSET_STATUS="$(xset q 2>/dev/null)" || fail "the X11 display cannot be queried"
 grep -q 'Monitor is On' <<<"$XSET_STATUS" || fail "the projector display is off; wake it without bypassing the lock, then retry"
 
-printf 'Kiosk session %s is active, unlocked, non-idle, and visible on %s.\n' "$SESSION_ID" "$DISPLAY"
+printf 'Kiosk session %s is active, unlocked, and visible on %s (allow_idle=%s).\n' \
+  "$SESSION_ID" "$DISPLAY" "$ALLOW_IDLE"

@@ -2910,15 +2910,33 @@ async def _read_authoritative_modal_total(
             f"Modal billing report failed ({process.returncode}): {detail}"
         )
     try:
-        entries = json.loads(output)
-        if not isinstance(entries, list):
-            raise ValueError("billing report is not a list")
-        costs = [float(entry["Cost"]) for entry in entries]
-    except (KeyError, TypeError, ValueError, json.JSONDecodeError) as error:
+        total = _parse_modal_billing_total(output)
+    except (TypeError, ValueError, json.JSONDecodeError) as error:
         raise FiniteModalBudgetError("Modal billing report returned invalid JSON") from error
-    if any(not math.isfinite(cost) or cost < 0 for cost in costs):
-        raise FiniteModalBudgetError("Modal billing report contains an invalid cost")
-    return sum(costs)
+    return total
+
+
+def _parse_modal_billing_total(payload: bytes | str) -> float:
+    """Parse current and legacy Modal CLI billing report JSON strictly."""
+    entries = json.loads(payload)
+    if not isinstance(entries, list):
+        raise ValueError("billing report is not a list")
+
+    costs: list[float] = []
+    for entry in entries:
+        if not isinstance(entry, Mapping):
+            raise ValueError("billing report entry is not an object")
+        current = entry.get("cost")
+        legacy = entry.get("Cost")
+        if current is None and legacy is None:
+            raise ValueError("billing report entry has no cost")
+        if current is not None and legacy is not None and str(current) != str(legacy):
+            raise ValueError("billing report entry has conflicting costs")
+        cost = float(current if current is not None else legacy)
+        if not math.isfinite(cost) or cost < 0:
+            raise ValueError("billing report entry has an invalid cost")
+        costs.append(cost)
+    return math.fsum(costs)
 
 
 def _terminate_process_group(process: asyncio.subprocess.Process) -> None:

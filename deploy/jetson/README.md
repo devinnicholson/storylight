@@ -613,6 +613,11 @@ restart-loop on that status. Restart it manually after the physical session pass
 systemctl --user restart bookforge-kiosk.service
 ```
 
+For a dedicated unattended demo account whose automatic lock and blanking policies have already
+been disabled, set `BOOKFORGE_KIOSK_ALLOW_IDLE=true` in the private kiosk environment. This permits
+only the idle hint: the preflight still rejects a locked, remote, inactive, non-X11, unreadable, or
+display-off session. The default remains fail-closed for ordinary accounts.
+
 When the Mac hosts the development API on port 18081 through the loopback-only reverse SSH tunnel,
 override the projector and readiness URLs together. Changing only the kiosk URL can falsely report
 readiness from the Jetson's separate port-8080 fallback service:

@@ -477,6 +477,35 @@ def test_authoritative_workspace_total_blocks_paid_call_before_runner(tmp_path: 
     assert called is False
 
 
+def test_modal_billing_parser_accepts_current_and_legacy_cli_fields() -> None:
+    parse = finite_modal_provider_module._parse_modal_billing_total
+
+    current = '[{"description":"scene","cost":"0.125"},{"cost":"1.25"}]'
+    legacy = '[{"Description":"scene","Cost":"0.125"},{"Cost":"1.25"}]'
+
+    assert parse(current) == pytest.approx(1.375)
+    assert parse(legacy) == pytest.approx(1.375)
+    assert parse("[]") == 0
+
+
+@pytest.mark.parametrize(
+    "payload",
+    [
+        "{}",
+        "[null]",
+        '[{"description":"missing"}]',
+        '[{"cost":"not-a-number"}]',
+        '[{"cost":"NaN"}]',
+        '[{"cost":"Infinity"}]',
+        '[{"cost":"-0.01"}]',
+        '[{"cost":"1.0","Cost":"2.0"}]',
+    ],
+)
+def test_modal_billing_parser_rejects_ambiguous_or_unsafe_reports(payload: str) -> None:
+    with pytest.raises((TypeError, ValueError, json.JSONDecodeError)):
+        finite_modal_provider_module._parse_modal_billing_total(payload)
+
+
 def test_request_profiles_are_projection_native_and_bounded() -> None:
     fast = FastSceneRequest(scene_id="scene", prompt="A fox")
     motion = MotionUpgradeRequest()
