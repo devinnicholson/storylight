@@ -67,7 +67,7 @@ _LEADING_ARTICLE = re.compile(r"^(?:a|an|the)\s+", re.IGNORECASE)
 _SEMANTIC_WORD = re.compile(r"[A-Za-z][A-Za-z'-]*")
 _PLACEMENT_MARGIN = 0.04
 _PLAN_CACHE_SCHEMA_VERSION = "1"
-_PLAN_CACHE_CONTRACT_REVISION = "semantic-v7-supporting-actor-recovery"
+_PLAN_CACHE_CONTRACT_REVISION = "semantic-v8-supporting-actor-privacy"
 _EMAIL = re.compile(r"\b[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}\b", re.IGNORECASE)
 _PHONE = re.compile(r"(?<!\w)(?:\+?\d[\d\s()./-]{6,}\d)(?!\w)")
 _URL = re.compile(r"\b(?:https?://|www\.)\S+", re.IGNORECASE)
@@ -216,6 +216,10 @@ class LiveSceneWirePlan(FrozenStrictModel):
         )
         recovered_magic = _recover_missing_supporting_subject(
             self.magic.prompt,
+            source_text=source_text,
+        )
+        recovered_magic = _rephrase_distinctive_supporting_action(
+            recovered_magic,
             source_text=source_text,
         )
         repaired_magic = _repair_duplicated_focus_in_supporting_prompt(
@@ -691,6 +695,27 @@ def _recover_missing_supporting_subject(prompt: str, *, source_text: str) -> str
         if any(word.casefold() in prompt_tokens for word in subject):
             continue
         return " ".join([*subject, _normalized_action(prompt)])
+    return prompt
+
+
+def _rephrase_distinctive_supporting_action(prompt: str, *, source_text: str) -> str:
+    """Keep a supporting noun while breaking a verb-ending source trigram locally."""
+
+    words = _SEMANTIC_WORD.findall(prompt)
+    output_tokens = [word.casefold() for word in words]
+    source_tokens = _privacy_tokens(source_text)
+    source_phrases = {
+        source_tokens[index : index + 3]
+        for index in range(len(source_tokens) - 2)
+        if _distinctive_phrase(source_tokens[index : index + 3])
+    }
+    for index in range(len(words) - 2):
+        if tuple(output_tokens[index : index + 3]) not in source_phrases:
+            continue
+        suffix = " ".join(words[index + 2 :])
+        normalized = _normalized_action(suffix)
+        if normalized.casefold() != suffix.casefold():
+            return " ".join([*words[: index + 2], normalized])
     return prompt
 
 

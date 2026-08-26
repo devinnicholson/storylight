@@ -206,6 +206,30 @@ def test_wire_plan_restores_supporting_creature_omitted_by_small_model() -> None
     validate_live_scene_plan_privacy(plan, source_text=source)
 
 
+def test_wire_plan_preserves_supporting_creature_during_privacy_rephrase() -> None:
+    source = "A red fox skates in circles while a tiny owl watches from a snow-covered pine."
+    wire = LiveSceneWirePlan(
+        background_prompt="frozen lake under aurora",
+        focus=LiveSceneWireFocus(
+            kind="character",
+            subject="red fox",
+            action="skates circles",
+        ),
+        magic=LiveSceneWireMagic(
+            kind="character",
+            prompt="tiny owl watches from snow-covered pine",
+        ),
+    )
+
+    sanitized = wire.privacy_sanitized(source_text=source)
+    plan = sanitized.to_live_scene_plan(context_text=source)
+
+    assert sanitized.magic.prompt == "tiny owl watching from covered pine"
+    assert "tiny owl" in plan.accent.prompt
+    assert "watching" in plan.accent.prompt
+    validate_live_scene_plan_privacy(plan, source_text=source)
+
+
 def test_wire_privacy_sanitizer_does_not_rewrite_complete_action() -> None:
     payload = _wire_plan().model_dump()
     payload["focus"]["action"] = "lifts folded butterfly"
