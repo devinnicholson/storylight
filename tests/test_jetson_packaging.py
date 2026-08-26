@@ -157,9 +157,7 @@ def test_system_service_has_persistent_private_paths_and_preflight() -> None:
 
 def test_standalone_gateway_is_the_only_lan_listener() -> None:
     private_api = (ROOT / "deploy/jetson/systemd/bookforge@.service").read_text()
-    gateway = (
-        ROOT / "deploy/jetson/systemd/bookforge-controller@.service"
-    ).read_text()
+    gateway = (ROOT / "deploy/jetson/systemd/bookforge-controller@.service").read_text()
 
     assert "--host 127.0.0.1 --port 8080" in private_api
     assert "Requires=bookforge@%i.service" in gateway
@@ -177,13 +175,13 @@ def test_standalone_installer_preserves_secrets_and_device_configuration() -> No
 
     subprocess.run(["bash", "-n", str(STANDALONE_INSTALLER)], check=True)
     subprocess.run(["bash", "-n", str(PAIRING_HELPER)], check=True)
-    assert 'if [[ ! -e /etc/bookforge/bookforge.env ]]' in installer
-    assert 'if [[ ! -e /etc/bookforge/controller.env ]]' in installer
+    assert "if [[ ! -e /etc/bookforge/bookforge.env ]]" in installer
+    assert "if [[ ! -e /etc/bookforge/controller.env ]]" in installer
     assert "openssl rand -hex 32" in installer
     assert "--import-modal-profile" in installer
     assert 'modal_profile="$TARGET_HOME/.modal.toml"' in installer
-    assert 'os.chmod(temporary_name, 0o600)' in installer
-    assert 'os.replace(temporary_name, environment_path)' in installer
+    assert "os.chmod(temporary_name, 0o600)" in installer
+    assert "os.replace(temporary_name, environment_path)" in installer
     assert "token_secret" not in pairing_helper
     assert "systemctl enable" in installer
     assert "apt-get" not in installer
@@ -201,6 +199,7 @@ def test_standalone_profile_keeps_raw_story_planning_local() -> None:
     assert "BOOKFORGE_MODEL_BASE_URL=http://127.0.0.1:11434" in profile
     assert "BOOKFORGE_MODEL_REQUIRE_GPU=true" in profile
     assert "BOOKFORGE_LIVE_SCENE_PLANNER=model" in profile
+    assert "BOOKFORGE_LIVE_SCENE_PLANNER_COMPACT_WIRE=false" in profile
     assert "BOOKFORGE_LIVE_SCENE_BACKEND=modal_warm" in profile
     assert "BOOKFORGE_ASSET_MODAL_COMMAND=/opt/bookforge/.venv/bin/modal" in profile
     assert (
@@ -671,8 +670,7 @@ def test_live_scene_workbench_uses_progressive_job_contract() -> None:
     assert "/v1/live-scene-sessions/${encodeURIComponent(readerSessionId)}/events" in controller
     assert 'source.addEventListener("scene.session", receive)' in controller
     assert (
-        "new EventSource(`/v1/live-scenes/${encodeURIComponent(jobId)}/events`)"
-        not in controller
+        "new EventSource(`/v1/live-scenes/${encodeURIComponent(jobId)}/events`)" not in controller
     )
     assert "response.status !== 202" in controller
     assert "snapshot.story_pack" in controller
@@ -829,7 +827,7 @@ def test_new_live_session_skips_unrelated_latest_story_pack() -> None:
     assert "else await loadStoryPack();" in startup
     assert 'elements.scene.classList.add("live-waiting")' in projector
     assert 'elements.scene.classList.remove("live-waiting")' in projector
-    assert 'elements.fixtureScene.hidden = true' in projector
+    assert "elements.fixtureScene.hidden = true" in projector
 
 
 def test_explicit_new_workbench_session_skips_unrelated_latest_story_pack() -> None:
@@ -875,7 +873,7 @@ def test_presentation_projector_disables_hidden_frame_diagnostics() -> None:
     projector = (ROOT / "src/bookforge/static/projector.js").read_text()
 
     startup = projector.rsplit("setupProjectorWakeLock();", 1)[1]
-    assert 'if (PRESENTATION_MODE) {' in startup
+    assert "if (PRESENTATION_MODE) {" in startup
     assert 'document.body.dataset.frameMonitor = "disabled";' in startup
     assert 'document.body.dataset.frameMonitor = "active";' in startup
     assert "requestAnimationFrame(monitorFrames);" in startup
@@ -1000,9 +998,9 @@ def test_workbench_rehearsal_prepares_edge_plan_and_text_free_renderer_concurren
 
 def test_workbench_warms_text_free_renderer_on_open_for_ten_minutes() -> None:
     controller = (ROOT / "src/bookforge/static/workbench.js").read_text()
-    preparation = controller.split(
-        "async function prepareRendererOnWorkbenchOpen()", 1
-    )[1].split("async function initializeRendererPreparation", 1)[0]
+    preparation = controller.split("async function prepareRendererOnWorkbenchOpen()", 1)[1].split(
+        "async function initializeRendererPreparation", 1
+    )[0]
 
     assert 'fetch("/v1/live-scene-provider/prewarm"' in preparation
     assert "scaledown_window_seconds: 600" in preparation
@@ -1017,9 +1015,9 @@ def test_workbench_starts_only_text_free_edge_warmup_in_background() -> None:
 
     assert 'fetch("/v1/live-scene-planner/warmup"' in controller
     assert "void warmEdgePlanner();" in controller
-    warmup = controller.split("async function warmEdgePlanner()", 1)[1].split(
-        "async function", 1
-    )[0]
+    warmup = controller.split("async function warmEdgePlanner()", 1)[1].split("async function", 1)[
+        0
+    ]
     assert "elements.story" not in warmup
     assert "JSON.stringify" not in warmup
     assert "EDGE_PLANNER_KEEP_WARM_MS = 8 * 60 * 1000" in controller
