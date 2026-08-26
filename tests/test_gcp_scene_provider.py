@@ -120,6 +120,46 @@ def test_private_cloud_run_probe_avoids_reserved_healthz_path() -> None:
     assert observed == ["/health"]
 
 
+def test_cloud_run_provider_reuses_and_closes_one_http_client() -> None:
+    clients: list[httpx.AsyncClient] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(
+            200,
+            json={
+                "provider": "gcp-cloud-run",
+                "fast_model_revision": FAST_MODEL_REVISION,
+                "depth_model_revision": DEPTH_MODEL_REVISION,
+                "loaded": True,
+            },
+        )
+
+    def client_factory(**kwargs: object) -> httpx.AsyncClient:
+        client = httpx.AsyncClient(transport=httpx.MockTransport(handler), **kwargs)
+        clients.append(client)
+        return client
+
+    async def token_source(audience: str) -> str:
+        return "token"
+
+    provider = GcpCloudRunSceneProvider(
+        base_url="https://renderer.example.run.app",
+        audience="https://renderer.example.run.app",
+        token_source=token_source,
+        client_factory=client_factory,
+    )
+
+    async def exercise() -> None:
+        assert (await provider.probe())[0] is True
+        assert (await provider.probe())[0] is True
+        assert len(clients) == 1
+        assert clients[0].is_closed is False
+        await provider.aclose()
+
+    asyncio.run(exercise())
+    assert clients[0].is_closed is True
+
+
 def test_private_cloud_run_provider_attests_rtx_pro_6000(tmp_path: Path) -> None:
     payload = _payload(scene_id="rtx-scene")
     payload["gpu"] = "RTX_PRO_6000"

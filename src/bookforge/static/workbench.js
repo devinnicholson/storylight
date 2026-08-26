@@ -239,15 +239,19 @@ async function warmEdgePlanner() {
   return false;
 }
 
-function scheduleEdgePlanPreparation() {
+function scheduleEdgePlanPreparation(event) {
   window.clearTimeout(edgePlanPreparationTimer);
   edgePlanPreparationTimer = null;
   const text = currentPlanKey();
   if (text.length < 3 || text === preparedPlanKey || text === edgePlanPreparingKey) return;
+  // Paste commonly supplies the complete passage in one operation, so begin
+  // immediately. Normal typing keeps a short quiet period to avoid spending
+  // the Jetson's single model slot on incomplete phrases.
+  const delayMs = event?.inputType === "insertFromPaste" ? 0 : 450;
   edgePlanPreparationTimer = window.setTimeout(() => {
     edgePlanPreparationTimer = null;
     void prepareEdgePlan(text);
-  }, 1200);
+  }, delayMs);
 }
 
 async function prepareEdgePlan(text) {

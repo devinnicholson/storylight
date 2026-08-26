@@ -158,6 +158,8 @@ class GcpCloudRunSceneProvider:
             else google_identity_token
         )
         self._client_factory = client_factory
+        self._client: httpx.AsyncClient | None = None
+        self._client_lock = asyncio.Lock()
         self._estimated_gpu_usd = 0.0
         self._prewarm_id: str | None = None
         self._prewarm_deadline = 0.0
@@ -306,23 +308,45 @@ class GcpCloudRunSceneProvider:
         headers = {"Authorization": f"Bearer {token}"}
         started = time.perf_counter()
         try:
-            async with self._client_factory(
-                timeout=httpx.Timeout(self.timeout_seconds),
-                follow_redirects=False,
-            ) as client:
-                response = await client.request(
-                    method,
-                    f"{self.base_url}{path}",
-                    headers=headers,
-                    json=dict(json_body) if json_body is not None else None,
-                )
-                response.raise_for_status()
-                payload = response.json()
+            client = await self._get_client()
+            response = await client.request(
+                method,
+                f"{self.base_url}{path}",
+                headers=headers,
+                json=dict(json_body) if json_body is not None else None,
+            )
+            response.raise_for_status()
+            payload = response.json()
         except (httpx.HTTPError, json.JSONDecodeError, ValueError) as error:
             raise GcpSceneUnavailableError(f"Cloud Run scene request failed: {error}") from error
         if not isinstance(payload, dict):
             raise GcpSceneProviderError("Cloud Run scene response must be a JSON object")
         return payload, time.perf_counter() - started
+
+    async def _get_client(self) -> httpx.AsyncClient:
+        client = self._client
+        if client is not None:
+            return client
+        async with self._client_lock:
+            if self._client is None:
+                self._client = self._client_factory(
+                    timeout=httpx.Timeout(self.timeout_seconds),
+                    follow_redirects=False,
+                    http2=True,
+                    limits=httpx.Limits(
+                        max_connections=1,
+                        max_keepalive_connections=1,
+                        keepalive_expiry=300,
+                    ),
+                )
+            return self._client
+
+    async def aclose(self) -> None:
+        async with self._client_lock:
+            client = self._client
+            self._client = None
+        if client is not None:
+            await client.aclose()
 
     async def _paid_request(
         self,

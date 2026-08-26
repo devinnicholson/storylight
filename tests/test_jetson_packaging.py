@@ -1030,14 +1030,14 @@ def test_workbench_starts_only_text_free_edge_warmup_in_background() -> None:
 
 def test_workbench_prepares_private_edge_plan_after_typing_pause() -> None:
     controller = (ROOT / "src/bookforge/static/workbench.js").read_text()
-    scheduler = controller.split("function scheduleEdgePlanPreparation()", 1)[1].split(
+    scheduler = controller.split("function scheduleEdgePlanPreparation(event)", 1)[1].split(
         "async function prepareEdgePlan", 1
     )[0]
     preparation = controller.split("async function prepareEdgePlan", 1)[1].split(
         "async function prewarmRenderer", 1
     )[0]
 
-    assert "1200" in scheduler
+    assert 'event?.inputType === "insertFromPaste" ? 0 : 450' in scheduler
     assert "text.length < 3" in scheduler
     assert "text === preparedPlanKey" in scheduler
     assert 'fetch("/v1/live-scene-planner/prepare"' in preparation

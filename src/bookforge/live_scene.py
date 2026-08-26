@@ -888,6 +888,9 @@ class LiveSceneJobRegistry:
                 record.subscribers.clear()
             self._tasks.clear()
             self._session_subscribers.clear()
+        close_provider = getattr(self.provider, "aclose", None)
+        if callable(close_provider):
+            await close_provider()
 
     async def _run(self, job_id: str) -> None:
         try:
@@ -1639,6 +1642,7 @@ def build_live_scene_provider(
     planner_model_revision: str = "configured-local-model",
     planner_cache_entries: int = 32,
     planner_cache_dir: Path | None = None,
+    planner_compact_wire: bool = False,
     master_width: int = 1024,
     master_height: int = 576,
     master_steps: int = 2,
@@ -1657,6 +1661,7 @@ def build_live_scene_provider(
             model_revision=planner_model_revision,
             cache_entries=planner_cache_entries,
             persistent_cache_dir=planner_cache_dir,
+            compact_wire=planner_compact_wire,
         )
     elif planner_mode != "deterministic":
         raise ValueError(f"unknown live-scene planner mode {planner_mode!r}")

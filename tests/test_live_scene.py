@@ -841,6 +841,7 @@ def test_provider_factory_selects_fake_and_finite_modal_without_persistent_servi
         planner_model_revision="sha256:fixture",
         planner_cache_entries=7,
         planner_cache_dir=tmp_path / "plans",
+        planner_compact_wire=True,
     )
     gcp = build_live_scene_provider(
         "gcp_cloud_run",
@@ -863,7 +864,7 @@ def test_provider_factory_selects_fake_and_finite_modal_without_persistent_servi
         gcp.provider._token_source.__class__.__name__ == "GoogleImpersonatedIdentityTokenSource"
     )
     assert model_planned.planner.__class__.__name__ == "StructuredLiveScenePlanner"  # type: ignore[attr-defined]
-    assert model_planned.planner.compact_wire is False  # type: ignore[attr-defined]
+    assert model_planned.planner.compact_wire is True  # type: ignore[attr-defined]
     assert model_planned.planner.cache_entries == 7  # type: ignore[attr-defined]
     assert model_planned.planner.persistent_cache_dir == tmp_path / "plans"  # type: ignore[attr-defined]
     assert modal_warm.provider.__class__.__name__ == "WarmModalSceneProvider"  # type: ignore[attr-defined]

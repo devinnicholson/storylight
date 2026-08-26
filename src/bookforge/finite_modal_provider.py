@@ -1525,6 +1525,11 @@ class FiniteModalLiveSceneProvider:
     def name(self) -> str:
         return self.provider_name
 
+    async def aclose(self) -> None:
+        close = getattr(self.provider, "aclose", None)
+        if callable(close):
+            await close()
+
     async def generate(
         self,
         request: LiveSceneCreateRequest,
