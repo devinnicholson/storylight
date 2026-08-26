@@ -81,8 +81,8 @@ def test_wire_plan_is_compact_and_normalizes_safe_geometry_and_motion() -> None:
 def test_short_key_wire_contract_preserves_semantics_with_less_decode_text() -> None:
     compact = LiveSceneCompactWirePlan(
         background_prompt=_wire_plan().background_prompt,
-        focus=("c", _wire_plan().focus.subject, _wire_plan().focus.action),
-        magic=("e", _wire_plan().magic.prompt),
+        focus=("character", _wire_plan().focus.subject, _wire_plan().focus.action),
+        magic=("effect", _wire_plan().magic.prompt),
     )
 
     assert compact.to_wire_plan() == _wire_plan()
@@ -92,6 +92,30 @@ def test_short_key_wire_contract_preserves_semantics_with_less_decode_text() -> 
         "m",
     }
     assert len(compact.model_dump_json(by_alias=True)) < len(_wire_plan().model_dump_json())
+
+
+def test_compact_wire_preserves_actor_setting_and_supporting_object() -> None:
+    source = (
+        "In a moonlit orchard, a striped badger carries a glowing pear while "
+        "a small paper kite circles above the apple trees."
+    )
+    compact = LiveSceneCompactWirePlan.model_validate(
+        {
+            "b": "background",
+            "f": ["character", "striped badger", "carries glowing pear"],
+            "m": ["prop", "small paper kite"],
+        }
+    )
+
+    sanitized = compact.to_wire_plan().privacy_sanitized(source_text=source)
+    plan = sanitized.to_live_scene_plan(context_text=source)
+
+    assert sanitized.background_prompt == "moonlit orchard"
+    assert sanitized.focus.kind == "character"
+    assert "badger" in plan.focus.prompt
+    assert sanitized.magic.prompt == "paper kite"
+    assert "kite" in plan.accent.prompt
+    validate_live_scene_plan_privacy(plan, source_text=source)
 
 
 def test_wire_normalization_sanitizes_cross_field_summary_overlap() -> None:
@@ -108,9 +132,7 @@ def test_wire_normalization_sanitizes_cross_field_summary_overlap() -> None:
         }
     )
 
-    plan = wire.privacy_sanitized(source_text=source).to_live_scene_plan(
-        context_text=source
-    )
+    plan = wire.privacy_sanitized(source_text=source).to_live_scene_plan(context_text=source)
 
     validate_live_scene_plan_privacy(plan, source_text=source)
     assert "moonlit turtle climbs" not in plan.scene_summary.lower()
@@ -266,9 +288,7 @@ def test_wire_plan_preserves_safe_common_breed_action_and_flower() -> None:
         magic=LiveSceneWireMagic(kind="prop", prompt="daisies"),
     )
 
-    plan = wire.privacy_sanitized(source_text=source).to_live_scene_plan(
-        context_text=source
-    )
+    plan = wire.privacy_sanitized(source_text=source).to_live_scene_plan(context_text=source)
     validate_live_scene_plan_privacy(plan, source_text=source)
 
     assert "golden retriever" in plan.focus.prompt
@@ -694,11 +714,11 @@ class _ModelStub:
                 {
                     "b": plan.background_prompt,
                     "f": [
-                        "c" if plan.focus.kind == "character" else "p",
+                        plan.focus.kind,
                         plan.focus.subject,
                         plan.focus.action,
                     ],
-                    "m": ["p" if plan.magic.kind == "prop" else "e", plan.magic.prompt],
+                    "m": [plan.magic.kind, plan.magic.prompt],
                 }
             )
         else:
@@ -732,9 +752,9 @@ def test_structured_planner_uses_live_schema_and_records_model_revision() -> Non
     )
 
     source = "A child opens a silent book and origami birds light the sky."
-    assert result.plan == _wire_plan().privacy_sanitized(
-        source_text=source
-    ).to_live_scene_plan(context_text=source)
+    assert result.plan == _wire_plan().privacy_sanitized(source_text=source).to_live_scene_plan(
+        context_text=source
+    )
     assert result.metrics.model == "gemma3:1b"
     assert result.model_revision == "sha256:gemma-fixture"
     assert result.wall_ms >= 0
@@ -776,9 +796,7 @@ def test_structured_planner_can_use_opt_in_short_key_contract() -> None:
     assert "f=[kind,subject,action]" in str(stub.calls[0]["prompt"])
     assert result.plan.focus.prompt == (
         _wire_plan()
-        .to_live_scene_plan(
-            context_text="A child opens a quiet book while paper birds rise."
-        )
+        .to_live_scene_plan(context_text="A child opens a quiet book while paper birds rise.")
         .focus.prompt
     )
 
@@ -922,9 +940,7 @@ def test_private_persistent_plan_cache_survives_restart_without_storing_source(
         persistent_cache_dir=cache_dir,
     )
 
-    first = asyncio.run(
-        first_planner.plan(text=text, visual_style="paper theater", seed=1)
-    )
+    first = asyncio.run(first_planner.plan(text=text, visual_style="paper theater", seed=1))
     cached_files = list(cache_dir.glob("*.json"))
 
     assert first.cache_hit is False
@@ -942,9 +958,7 @@ def test_private_persistent_plan_cache_survives_restart_without_storing_source(
         cache_entries=2,
         persistent_cache_dir=cache_dir,
     )
-    restored = asyncio.run(
-        restarted_planner.plan(text=text, visual_style="bright clay", seed=2)
-    )
+    restored = asyncio.run(restarted_planner.plan(text=text, visual_style="bright clay", seed=2))
 
     assert restored.cache_hit is True
     assert restored.plan == first.plan

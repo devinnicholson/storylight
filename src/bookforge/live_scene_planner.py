@@ -67,7 +67,7 @@ _LEADING_ARTICLE = re.compile(r"^(?:a|an|the)\s+", re.IGNORECASE)
 _SEMANTIC_WORD = re.compile(r"[A-Za-z][A-Za-z'-]*")
 _PLACEMENT_MARGIN = 0.04
 _PLAN_CACHE_SCHEMA_VERSION = "1"
-_PLAN_CACHE_CONTRACT_REVISION = "semantic-v8-supporting-actor-privacy"
+_PLAN_CACHE_CONTRACT_REVISION = "semantic-v9-compact-fidelity"
 _EMAIL = re.compile(r"\b[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}\b", re.IGNORECASE)
 _PHONE = re.compile(r"(?<!\w)(?:\+?\d[\d\s()./-]{6,}\d)(?!\w)")
 _URL = re.compile(r"\b(?:https?://|www\.)\S+", re.IGNORECASE)
@@ -228,15 +228,21 @@ class LiveSceneWirePlan(FrozenStrictModel):
             focus_action=recovered_action,
             source_text=source_text,
         )
-        repaired_background = _remove_focus_from_background_prompt(
+        recovered_background = _recover_generic_background_prompt(
             self.background_prompt,
+            source_text=source_text,
+        )
+        repaired_background = _remove_focus_from_background_prompt(
+            recovered_background,
             focus_subject=self.focus.subject,
             focus_action=recovered_action,
         )
         return self.model_copy(
             update={
                 "background_prompt": _remove_distinctive_source_overlap(
-                    repaired_background, source_text
+                    repaired_background,
+                    source_text,
+                    preserve_tail=True,
                 ),
                 "focus": self.focus.model_copy(
                     update={
@@ -253,6 +259,7 @@ class LiveSceneWirePlan(FrozenStrictModel):
                         "prompt": _remove_distinctive_source_overlap(
                             repaired_magic,
                             source_text,
+                            preserve_tail=True,
                         )
                     }
                 ),
@@ -317,8 +324,15 @@ CompactMagicPrompt = Annotated[
     str,
     StringConstraints(strip_whitespace=True, min_length=1, max_length=110),
 ]
-CompactFocusTuple = tuple[Literal["c", "p"], CompactFocusSubject, CompactFocusAction]
-CompactMagicTuple = tuple[Literal["c", "p", "e"], CompactMagicPrompt]
+CompactFocusTuple = tuple[
+    Literal["character", "prop"],
+    CompactFocusSubject,
+    CompactFocusAction,
+]
+CompactMagicTuple = tuple[
+    Literal["character", "prop", "effect"],
+    CompactMagicPrompt,
+]
 
 
 class LiveSceneCompactWirePlan(FrozenStrictModel):
@@ -344,12 +358,12 @@ class LiveSceneCompactWirePlan(FrozenStrictModel):
         return LiveSceneWirePlan(
             background_prompt=self.background_prompt,
             focus=LiveSceneWireFocus(
-                kind="character" if focus_kind == "c" else "prop",
+                kind=focus_kind,
                 subject=subject,
                 action=action,
             ),
             magic=LiveSceneWireMagic(
-                kind={"c": "character", "p": "prop", "e": "effect"}[magic_kind],
+                kind=magic_kind,
                 prompt=prompt,
             ),
         )
@@ -680,11 +694,7 @@ def _recover_missing_supporting_subject(prompt: str, *, source_text: str) -> str
         while words and words[0].casefold() in {"a", "an", "the"}:
             words.pop(0)
         overlap_index = next(
-            (
-                index
-                for index, word in enumerate(words[:4])
-                if word.casefold() in prompt_tokens
-            ),
+            (index for index, word in enumerate(words[:4]) if word.casefold() in prompt_tokens),
             None,
         )
         if overlap_index is None or not 1 <= overlap_index <= 3:
@@ -774,6 +784,40 @@ def _remove_focus_from_background_prompt(
         if token not in excluded and token not in _PHRASE_STOPWORDS
     ]
     return " ".join(dict.fromkeys(repaired)) or "open layered storybook setting"
+
+
+def _recover_generic_background_prompt(prompt: str, *, source_text: str) -> str:
+    """Recover an explicit local setting when a tiny model emits a placeholder."""
+
+    prompt_tokens = set(_privacy_tokens(prompt))
+    generic_tokens = {
+        "background",
+        "environment",
+        "layered",
+        "open",
+        "scene",
+        "setting",
+        "storybook",
+    }
+    if not prompt_tokens or not prompt_tokens.issubset(generic_tokens):
+        return prompt
+
+    setting_match = re.search(
+        r"\b(?:in|inside|within|beneath|under|on|at|across|beside|near)\b"
+        r"\s+(?P<setting>[^,.;!?]{1,80})",
+        source_text,
+        flags=re.IGNORECASE,
+    )
+    if setting_match is None:
+        return prompt
+    setting = re.split(
+        r"\b(?:and|as|when|while|then)\b",
+        setting_match.group("setting"),
+        maxsplit=1,
+        flags=re.IGNORECASE,
+    )[0]
+    setting = _LEADING_ARTICLE.sub("", setting).strip(" ,-:")
+    return _bounded_words(setting, 8) or prompt
 
 
 def _normalized_action(value: str) -> str:
@@ -1109,6 +1153,7 @@ def _remove_distinctive_source_overlap(
     source_text: str,
     *,
     preserve_subject: bool = False,
+    preserve_tail: bool = False,
 ) -> str:
     """Minimally redact repeated source trigrams without inventing replacement text."""
 
@@ -1139,6 +1184,21 @@ def _remove_distinctive_source_overlap(
             # survives ("silver whale swims" -> "silver whale"). The dedicated
             # action field still carries the visible verb.
             deletion_offset = 2
+        elif preserve_tail:
+            # Background and supporting-object phrases usually end in their
+            # visual head noun ("small paper kite"). For one overlapping
+            # trigram, drop its leading modifier. For a longer echoed run,
+            # remove the third token once so adjacent subject/detail pairs
+            # survive ("glowing jellyfish drift between stars" keeps both
+            # "glowing jellyfish" and "between stars").
+            has_adjacent_overlap = any(
+                tuple(output_tokens[index : index + 3]) in source_phrases
+                for index in range(
+                    overlap_index + 1,
+                    min(overlap_index + 3, len(output_tokens) - 2),
+                )
+            )
+            deletion_offset = 2 if has_adjacent_overlap else 0
         else:
             window = output_tokens[overlap_index : overlap_index + 3]
             deletion_offset = min(range(3), key=lambda offset: len(window[offset]))
@@ -1186,8 +1246,8 @@ def live_scene_plan_prompt(
     del visual_style
     request = {"passage": text}
     compact_key_guide = (
-        "\nCompact JSON: b=background; f=[kind,subject,action], where kind c=character or "
-        "p=prop; m=[kind,prompt], where kind c=character, p=prop, or e=effect.\n"
+        "\nCompact JSON: b=background; f=[kind,subject,action], where kind is character or "
+        "prop; m=[kind,prompt], where kind is character, prop, or effect.\n"
         if compact_wire
         else ""
     )
