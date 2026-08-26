@@ -11,6 +11,11 @@ KIOSK_PREFLIGHT = ROOT / "deploy/jetson/check-kiosk-session.sh"
 STANDALONE_INSTALLER = ROOT / "deploy/jetson/install-standalone.sh"
 PAIRING_HELPER = ROOT / "deploy/jetson/show-controller-pairing.sh"
 PORTABLE_NETWORK_HELPER = ROOT / "deploy/jetson/configure-portable-network.sh"
+EDGELLM_INSTALLER = ROOT / "deploy/jetson/install-tensorrt-edge-llm.sh"
+EDGELLM_ENGINE_BUILDER = ROOT / "deploy/jetson/build-tensorrt-edge-engine.sh"
+EDGELLM_BENCHMARK = ROOT / "deploy/jetson/benchmark-tensorrt-edge-llm.py"
+EDGELLM_BENCHMARK_RUNNER = ROOT / "deploy/jetson/run-tensorrt-edge-benchmark.sh"
+EDGELLM_EXPORTER = ROOT / "deploy/modal_tensorrt_edge_export.py"
 
 
 def _write_executable(path: Path, body: str) -> None:
@@ -213,9 +218,12 @@ def test_portable_network_helper_is_explicit_bounded_and_reversible() -> None:
 
 def test_standalone_profile_keeps_raw_story_planning_local() -> None:
     profile = (ROOT / "deploy/jetson/bookforge.standalone.env.example").read_text()
+    gemma_unit = (ROOT / "deploy/jetson/systemd/bookforge-gemma.service").read_text()
 
     assert "BOOKFORGE_MODEL_BACKEND=ollama" in profile
     assert "BOOKFORGE_MODEL_BASE_URL=http://127.0.0.1:11434" in profile
+    assert "BOOKFORGE_MODEL_KEEP_ALIVE=-1m" in profile
+    assert "Environment=OLLAMA_KEEP_ALIVE=-1m" in gemma_unit
     assert "BOOKFORGE_MODEL_REQUIRE_GPU=true" in profile
     assert "BOOKFORGE_LIVE_SCENE_PLANNER=model" in profile
     assert "BOOKFORGE_LIVE_SCENE_PLANNER_COMPACT_WIRE=false" in profile
@@ -233,6 +241,57 @@ def test_standalone_profile_keeps_raw_story_planning_local() -> None:
     assert "BOOKFORGE_ASR_BACKEND=disabled" in profile
     assert "MODAL_TOKEN_ID=\n" in profile
     assert "MODAL_TOKEN_SECRET=\n" in profile
+
+
+def test_tensorrt_edge_llm_candidate_is_pinned_local_and_fail_closed() -> None:
+    installer = EDGELLM_INSTALLER.read_text()
+    engine_builder = EDGELLM_ENGINE_BUILDER.read_text()
+    benchmark = EDGELLM_BENCHMARK.read_text()
+    benchmark_runner = EDGELLM_BENCHMARK_RUNNER.read_text()
+    exporter = EDGELLM_EXPORTER.read_text()
+
+    subprocess.run(["bash", "-n", str(EDGELLM_INSTALLER)], check=True)
+    subprocess.run(["bash", "-n", str(EDGELLM_ENGINE_BUILDER)], check=True)
+    subprocess.run(["bash", "-n", str(EDGELLM_BENCHMARK_RUNNER)], check=True)
+    assert 'readonly EDGELLM_VERSION="v0.10.0"' in installer
+    assert 'readonly EDGELLM_REVISION="71dd1bae032e70771265917ec74d3ff4cad07a10"' in installer
+    assert "JetPack 7.2.1 / L4T 39.2.1" in installer
+    assert "-DEMBEDDED_TARGET=jetson-orin" in installer
+    assert "-DCUDA_CTK_VERSION=13.2" in installer
+    assert "-DENABLE_CUTE_DSL=ALL" in installer
+    assert "--target NvInfer_edgellm_plugin llm_build llm_inference llm_bench -j1" in installer
+    assert 'test -s "$BUILD_DIR/libNvInfer_edgellm_plugin.so"' in installer
+    assert "Run this installer as the Bookforge user, not root" in installer
+
+    assert 'readonly EDGELLM_REVISION="71dd1bae032e70771265917ec74d3ff4cad07a10"' in engine_builder
+    assert 'readonly GEMMA_MODEL="${BOOKFORGE_GEMMA_MODEL:-gemma3:1b-it-q4_K_M}"' in engine_builder
+    assert '"$OLLAMA_BIN" stop "$GEMMA_MODEL"' in engine_builder
+    assert 'export EDGELLM_PLUGIN_PATH="$EDGELLM_PLUGIN"' in engine_builder
+    assert "--maxBatchSize 1" in engine_builder
+    assert "--maxInputLen 1024" in engine_builder
+    assert "--maxKVCacheCapacity 1536" in engine_builder
+    assert '\\"keep_alive\\":\\"-1m\\"' in engine_builder
+    assert "trap restore_runtime EXIT INT TERM" in engine_builder
+
+    assert "LiveSceneWirePlan.model_validate_json(output_text)" in benchmark
+    assert "validate_live_scene_plan_privacy(plan, source_text=case.text)" in benchmark
+    assert '"candidate_not_promoted_by_this_benchmark": True' in benchmark
+    assert '"modal_or_cloud_called": False' in benchmark
+    assert "subprocess.run(command, check=False" in benchmark
+    assert (
+        'readonly PROMPT_PROFILE="${BOOKFORGE_EDGELLM_PROMPT_PROFILE:-production}"'
+        in benchmark_runner
+    )
+    assert 'readonly REPORT_PATH="$EVIDENCE_DIR/benchmark-$PROMPT_PROFILE.json"' in benchmark_runner
+    assert '"$OLLAMA_BIN" stop "$GEMMA_MODEL"' in benchmark_runner
+    assert '\\"keep_alive\\":\\"-1m\\"' in benchmark_runner
+    assert "trap restore_runtime EXIT INT TERM" in benchmark_runner
+
+    assert 'EDGELLM_VERSION = "v0.10.0"' in exporter
+    assert 'EDGELLM_REVISION = "71dd1bae032e70771265917ec74d3ff4cad07a10"' in exporter
+    assert 'MODEL_REVISION = "db09cd27ead7fee40cdee309693cf83601b9c899"' in exporter
+    assert "revision=MODEL_REVISION" in exporter
+    assert '"model_revision": MODEL_REVISION' in exporter
 
 
 def test_standalone_installer_waits_for_both_local_services() -> None:

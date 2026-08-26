@@ -27,6 +27,12 @@ explicit device-administration task that must follow NVIDIA's documentation.
 - `collect-evidence.sh`: one-command JSON acceptance artifact, with optional real I/O exercises.
 - `check-privacy.sh`: fail-closed process socket audit for listeners plus active TCP/UDP traffic.
 - `warm-asr.sh`: supervised-service-safe Whisper checkpoint and TensorRT engine warmup.
+- `install-tensorrt-edge-llm.sh`: pinned, user-owned TensorRT Edge-LLM v0.10.0 build for Jetson
+  Orin and JetPack 7.2.1.
+- `build-tensorrt-edge-engine.sh`: bounded target-device INT4 engine build with automatic Gemma
+  unload/restore and thermal evidence.
+- `benchmark-tensorrt-edge-llm.py` and `run-tensorrt-edge-benchmark.sh`: local-only five-passage
+  schema, privacy, fidelity, latency, memory, and power acceptance; never auto-promotes a model.
 - `systemd/bookforge@.service`: system API service parameterized by the Linux user.
 - `systemd/bookforge-controller@.service`: authenticated, allowlisted phone gateway on port 8081.
 - `systemd/bookforge-kiosk.service`: graphical-session user service for the projector browser.
@@ -237,6 +243,41 @@ model, not a fake backend. Its 815 MB Q4_K_M weights leave enough unified memory
 projector desktop on an 8 GB board. Do not substitute Gemma 4 E2B or another model larger than
 1B without a separate memory and latency acceptance run; this device has no swap.
 
+#### TensorRT Edge-LLM evaluation
+
+The pinned NVIDIA TensorRT Edge-LLM v0.10.0 runtime and its official plugin now build natively on
+this Orin Nano. The target engine build is deliberately separate from the accepted Gemma service:
+it unloads the resident model, builds or benchmarks one candidate, and restores Gemma with infinite
+judged-demo residency on every exit path. Checkpoint export may run CPU-only on Modal, but the
+hardware-specific TensorRT engine is always built and executed locally.
+
+The first public control used `Qwen/Qwen2.5-0.5B-Instruct-AWQ` only to validate the toolchain. Its
+465,500,604-byte INT4 engine built in 88.034 seconds, peaked at 916 MiB of TensorRT GPU allocation,
+and stayed below 51.2°C GPU temperature. Inference reached 97.45 generated tokens/second on the
+exact production prompt and 101.43 tokens/second on a 76% shorter prompt—roughly 3.4–3.6 times the
+accepted Gemma decode throughput. It nevertheless returned zero valid JSON plans across both
+five-passage runs. The control is therefore rejected and is not selectable by production.
+
+The result is useful: TensorRT has enough performance to change the live experience, but the next
+candidate must preserve Gemma-level understanding. NVIDIA lists `google/gemma-4-E2B-it` as supported
+by this pinned runtime. That gated checkpoint is the next candidate after its Hugging Face license
+is accepted and an access token is supplied to a temporary Modal secret. It still requires a
+separate 8 GB memory, projector-concurrency, schema, privacy, and semantic acceptance before any
+runtime switch. Full measured evidence is in
+`benchmarks/bookforge-tensorrt-edge-llm-2026-08-26.json`.
+
+Reproduce the already-pinned control only when validating a new JetPack image:
+
+```bash
+deploy/jetson/install-tensorrt-edge-llm.sh
+deploy/jetson/build-tensorrt-edge-engine.sh
+BOOKFORGE_EDGELLM_PROMPT_PROFILE=production \
+  deploy/jetson/run-tensorrt-edge-benchmark.sh
+```
+
+The benchmark exits nonzero when any output misses the strict wire schema. A high token rate is not
+an acceptance result.
+
 Download the pinned official ARM64 archive into a versioned, user-owned directory. Verify the
 release digest before extracting it; do not pipe an unverified installer into a shell:
 
@@ -342,7 +383,7 @@ BOOKFORGE_MODEL_BACKEND=ollama
 BOOKFORGE_MODEL_NAME=gemma3:1b-it-q4_K_M
 BOOKFORGE_MODEL_BASE_URL=http://127.0.0.1:11434
 BOOKFORGE_MODEL_TIMEOUT_SECONDS=20
-BOOKFORGE_MODEL_KEEP_ALIVE=30m
+BOOKFORGE_MODEL_KEEP_ALIVE=-1m
 BOOKFORGE_MODEL_CONTEXT_TOKENS=4096
 BOOKFORGE_MODEL_MAX_OUTPUT_TOKENS=180
 BOOKFORGE_MODEL_REQUIRE_GPU=true
