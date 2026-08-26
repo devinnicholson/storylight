@@ -67,7 +67,7 @@ _LEADING_ARTICLE = re.compile(r"^(?:a|an|the)\s+", re.IGNORECASE)
 _SEMANTIC_WORD = re.compile(r"[A-Za-z][A-Za-z'-]*")
 _PLACEMENT_MARGIN = 0.04
 _PLAN_CACHE_SCHEMA_VERSION = "1"
-_PLAN_CACHE_CONTRACT_REVISION = "semantic-v6-layer-dedup-privacy-gated"
+_PLAN_CACHE_CONTRACT_REVISION = "semantic-v7-supporting-actor-recovery"
 _EMAIL = re.compile(r"\b[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}\b", re.IGNORECASE)
 _PHONE = re.compile(r"(?<!\w)(?:\+?\d[\d\s()./-]{6,}\d)(?!\w)")
 _URL = re.compile(r"\b(?:https?://|www\.)\S+", re.IGNORECASE)
@@ -185,7 +185,7 @@ class LiveSceneWireFocus(FrozenStrictModel):
 class LiveSceneWireMagic(FrozenStrictModel):
     """Most visually surprising story element selected by the edge model."""
 
-    kind: Literal["prop", "effect"]
+    kind: Literal["character", "prop", "effect"]
     prompt: Annotated[
         str,
         StringConstraints(strip_whitespace=True, min_length=1, max_length=110),
@@ -214,8 +214,12 @@ class LiveSceneWirePlan(FrozenStrictModel):
             self.focus.action,
             source_text=source_text,
         )
-        repaired_magic = _repair_duplicated_focus_in_supporting_prompt(
+        recovered_magic = _recover_missing_supporting_subject(
             self.magic.prompt,
+            source_text=source_text,
+        )
+        repaired_magic = _repair_duplicated_focus_in_supporting_prompt(
+            recovered_magic,
             focus_subject=self.focus.subject,
             focus_action=recovered_action,
             source_text=source_text,
@@ -310,7 +314,7 @@ CompactMagicPrompt = Annotated[
     StringConstraints(strip_whitespace=True, min_length=1, max_length=110),
 ]
 CompactFocusTuple = tuple[Literal["c", "p"], CompactFocusSubject, CompactFocusAction]
-CompactMagicTuple = tuple[Literal["p", "e"], CompactMagicPrompt]
+CompactMagicTuple = tuple[Literal["c", "p", "e"], CompactMagicPrompt]
 
 
 class LiveSceneCompactWirePlan(FrozenStrictModel):
@@ -341,7 +345,7 @@ class LiveSceneCompactWirePlan(FrozenStrictModel):
                 action=action,
             ),
             magic=LiveSceneWireMagic(
-                kind="prop" if magic_kind == "p" else "effect",
+                kind={"c": "character", "p": "prop", "e": "effect"}[magic_kind],
                 prompt=prompt,
             ),
         )
@@ -656,6 +660,40 @@ def _recover_missing_action_object(action: str, *, source_text: str) -> str:
     return " ".join([action, *detail]) if detail else action
 
 
+def _recover_missing_supporting_subject(prompt: str, *, source_text: str) -> str:
+    """Restore a short clause subject when a tiny model returns only its action."""
+
+    prompt_tokens = set(_privacy_tokens(prompt))
+    if not prompt_tokens:
+        return prompt
+    for match in re.finditer(
+        r"(?=(?:\bwhile\b|\band\b|\bas\b|\bwhen\b|\bthen\b|,)\s*"
+        r"([^,.;!?]{1,100}))",
+        source_text,
+        flags=re.IGNORECASE,
+    ):
+        words = _SEMANTIC_WORD.findall(match.group(1))
+        while words and words[0].casefold() in {"a", "an", "the"}:
+            words.pop(0)
+        overlap_index = next(
+            (
+                index
+                for index, word in enumerate(words[:4])
+                if word.casefold() in prompt_tokens
+            ),
+            None,
+        )
+        if overlap_index is None or not 1 <= overlap_index <= 3:
+            continue
+        subject = words[:overlap_index]
+        if any(word.casefold() in {"he", "her", "him", "it", "she", "they"} for word in subject):
+            continue
+        if any(word.casefold() in prompt_tokens for word in subject):
+            continue
+        return " ".join([*subject, _normalized_action(prompt)])
+    return prompt
+
+
 def _repair_duplicated_focus_in_supporting_prompt(
     prompt: str,
     *,
@@ -735,10 +773,14 @@ def _normalized_action(value: str) -> str:
         "plants": "planting",
         "read": "reading",
         "reads": "reading",
+        "skate": "skating",
+        "skates": "skating",
         "swim": "swimming",
         "swims": "swimming",
         "unfold": "unfolding",
         "unfolds": "unfolding",
+        "watch": "watching",
+        "watches": "watching",
     }
     if verb in gerunds:
         words[0] = gerunds[verb]
@@ -1120,7 +1162,7 @@ def live_scene_plan_prompt(
     request = {"passage": text}
     compact_key_guide = (
         "\nCompact JSON: b=background; f=[kind,subject,action], where kind c=character or "
-        "p=prop; m=[kind,prompt], where kind p=prop or e=effect.\n"
+        "p=prop; m=[kind,prompt], where kind c=character, p=prop, or e=effect.\n"
         if compact_wire
         else ""
     )
@@ -1153,6 +1195,8 @@ Requirements:
   verb. Stop the action before a later magical transformation; that result belongs in magic.prompt.
   Never return an isolated body part, gaze, expression, or adjective list.
 - magic must name the passage's most visually surprising transformation, creature, or object.
+  If magic is a creature or person, set kind to character and begin magic.prompt with that
+  complete creature or person before its action. Never return an action without its actor.
   If the passage has a later independent clause introduced by and, while, as, when, then, or a
   comma, inspect that clause first: its new creature, transformed result, or impossible event is
   usually magic. Include both that concrete subject and its visible action or destination.

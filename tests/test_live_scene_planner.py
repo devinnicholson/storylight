@@ -178,6 +178,34 @@ def test_wire_privacy_sanitizer_recovers_missing_action_object_locally(
     validate_live_scene_plan_privacy(plan, source_text=source)
 
 
+def test_wire_plan_restores_supporting_creature_omitted_by_small_model() -> None:
+    source = (
+        "On a frozen lake beneath the northern lights, a red fox skates in circles "
+        "while a tiny owl watches from a snow-covered pine."
+    )
+    wire = LiveSceneWirePlan(
+        background_prompt="covered pine frost shimmering winter scene",
+        focus=LiveSceneWireFocus(
+            kind="character",
+            subject="red fox",
+            action="skates circles",
+        ),
+        magic=LiveSceneWireMagic(
+            kind="effect",
+            prompt="watches covered pine",
+        ),
+    )
+
+    sanitized = wire.privacy_sanitized(source_text=source)
+    plan = sanitized.to_live_scene_plan(context_text=source)
+
+    assert sanitized.magic.prompt == "tiny owl watching covered pine"
+    assert "red fox" in plan.focus.prompt
+    assert "skating circles" in plan.focus.prompt
+    assert "tiny owl" in plan.accent.prompt
+    validate_live_scene_plan_privacy(plan, source_text=source)
+
+
 def test_wire_privacy_sanitizer_does_not_rewrite_complete_action() -> None:
     payload = _wire_plan().model_dump()
     payload["focus"]["action"] = "lifts folded butterfly"
