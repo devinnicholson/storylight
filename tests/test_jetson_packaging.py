@@ -155,6 +155,11 @@ def test_standalone_installer_preserves_secrets_and_device_configuration() -> No
     assert 'if [[ ! -e /etc/bookforge/bookforge.env ]]' in installer
     assert 'if [[ ! -e /etc/bookforge/controller.env ]]' in installer
     assert "openssl rand -hex 32" in installer
+    assert "--import-modal-profile" in installer
+    assert 'modal_profile="$TARGET_HOME/.modal.toml"' in installer
+    assert 'os.chmod(temporary_name, 0o600)' in installer
+    assert 'os.replace(temporary_name, environment_path)' in installer
+    assert "token_secret" not in pairing_helper
     assert "systemctl enable" in installer
     assert "apt-get" not in installer
     assert "nmcli" not in installer

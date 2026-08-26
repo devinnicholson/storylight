@@ -65,7 +65,10 @@ After staging the committed repository at `/opt/bookforge`, create the venv with
 ```bash
 cd /opt/bookforge
 ./deploy/jetson/bootstrap.sh --create-venv --install-modal-runtime
-sudo ./deploy/jetson/install-standalone.sh --user "$USER" --deploy-renderer
+sudo ./deploy/jetson/install-standalone.sh \
+  --user "$USER" \
+  --import-modal-profile \
+  --deploy-renderer
 ```
 
 The installer refuses non-Jetson hosts and any checkout outside `/opt/bookforge`. It does not
@@ -80,6 +83,10 @@ graphical login starts Gemma and the projector kiosk without requiring a Mac.
 has zero minimum containers, so deployment allocates no idle GPU; the existing per-call billing
 gate still runs before any prewarm or scene. Omit the flag when the exact app revision is already
 deployed.
+`--import-modal-profile` reads the one active profile from the service user's mode-0600
+`~/.modal.toml`, validates both credential fields without displaying them, and atomically writes
+them into the root-only service environment. Omit it when the service environment is already
+configured or when the Jetson should not retain cloud-renderer credentials.
 
 Show the private pairing URL only when the operator is ready to connect the phone:
 

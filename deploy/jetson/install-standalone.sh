@@ -8,15 +8,21 @@ REPO_ROOT="$(cd -- "${SCRIPT_DIR}/../.." && pwd)"
 TARGET_USER="${BOOKFORGE_SERVICE_USER:-${SUDO_USER:-${USER:-}}}"
 DRY_RUN=0
 DEPLOY_RENDERER=0
+IMPORT_MODAL_PROFILE=0
 
 usage() {
   cat <<'EOF'
-Usage: sudo ./deploy/jetson/install-standalone.sh [--user USER] [--deploy-renderer] [--dry-run]
+Usage: sudo ./deploy/jetson/install-standalone.sh [options]
+
+Options:
+  --user USER             Select the non-root Bookforge service user.
+  --import-modal-profile  Copy the active user's Modal token into the root-only service env.
+  --deploy-renderer       Update the authenticated, scale-to-zero Modal app definition.
+  --dry-run               Validate the staged runtime without changing files or services.
 
 Installs Bookforge's API and paired phone gateway services from /opt/bookforge.
 It never changes Wi-Fi, JetPack, power mode, storage, display, or login settings.
 Existing environment files and pairing secrets are never overwritten.
---deploy-renderer updates the authenticated, scale-to-zero Modal app definition.
 EOF
 }
 
@@ -28,6 +34,7 @@ while (($#)); do
       shift 2
       ;;
     --dry-run) DRY_RUN=1; shift ;;
+    --import-modal-profile) IMPORT_MODAL_PROFILE=1; shift ;;
     --deploy-renderer) DEPLOY_RENDERER=1; shift ;;
     -h|--help) usage; exit 0 ;;
     *) printf 'Unknown option: %s\n' "$1" >&2; usage >&2; exit 2 ;;
@@ -92,6 +99,64 @@ if [[ ! -e /etc/bookforge/controller.env ]]; then
     printf 'BOOKFORGE_CONTROLLER_COOKIE_SECURE=false\n'
     printf 'BOOKFORGE_CONTROLLER_PUBLIC_NAME=Bookforge\n'
   } > /etc/bookforge/controller.env
+fi
+
+if ((IMPORT_MODAL_PROFILE == 1)); then
+  modal_profile="$TARGET_HOME/.modal.toml"
+  if [[ ! -r "$modal_profile" ]]; then
+    printf 'Cannot read the Modal profile at %s.\n' "$modal_profile" >&2
+    exit 1
+  fi
+  "$PYTHON" - "$modal_profile" /etc/bookforge/bookforge.env <<'PY'
+import os
+import re
+import sys
+import tempfile
+import tomllib
+from pathlib import Path
+
+profile_path = Path(sys.argv[1])
+environment_path = Path(sys.argv[2])
+with profile_path.open("rb") as stream:
+    configuration = tomllib.load(stream)
+active = [value for value in configuration.values() if isinstance(value, dict) and value.get("active")]
+if len(active) != 1:
+    raise SystemExit("Expected exactly one active Modal profile")
+token_id = active[0].get("token_id", "")
+token_secret = active[0].get("token_secret", "")
+token_pattern = re.compile(r"^[A-Za-z0-9_-]{8,256}$")
+if not token_pattern.fullmatch(token_id) or not token_pattern.fullmatch(token_secret):
+    raise SystemExit("The active Modal profile contains malformed credentials")
+
+lines = environment_path.read_text().splitlines()
+replacements = {
+    "MODAL_TOKEN_ID": token_id,
+    "MODAL_TOKEN_SECRET": token_secret,
+}
+found = set()
+for index, line in enumerate(lines):
+    name, separator, _ = line.partition("=")
+    if separator and name in replacements:
+        lines[index] = f"{name}={replacements[name]}"
+        found.add(name)
+if found != replacements.keys():
+    raise SystemExit("The Bookforge environment lacks Modal credential placeholders")
+
+descriptor, temporary_name = tempfile.mkstemp(
+    dir=environment_path.parent,
+    prefix=".bookforge.env.",
+)
+try:
+    with os.fdopen(descriptor, "w") as stream:
+        stream.write("\n".join(lines) + "\n")
+        stream.flush()
+        os.fsync(stream.fileno())
+    os.chmod(temporary_name, 0o600)
+    os.replace(temporary_name, environment_path)
+finally:
+    if os.path.exists(temporary_name):
+        os.unlink(temporary_name)
+PY
 fi
 
 install -o root -g root -m 0644 \
