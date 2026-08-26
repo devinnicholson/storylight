@@ -277,6 +277,13 @@ actions, then tries exactly one deterministic next seed. A real two-candidate L4
 selected the valid retry in 1.530 seconds. The gate does not claim to understand material identity
 or prove an action pose; those remain explicit human/showcase checks.
 
+The action-object label retains visual identity instead of collapsing to a generic noun: for
+example, local `walnut boat` direction becomes the cloud-safe detector phrase `walnut shell boat`.
+The same box-overlap gate then rejects a tiny unrelated walnut-like detail and requires the compound
+object to contain or overlap the actor. A relative SigLIP candidate ranker was also calibrated and
+worked in 45–61 ms once warm, but it was rejected from production after increasing the observed
+snapshot restore path to roughly 21 seconds. Bookforge keeps the faster detector-only snapshot.
+
 A same-prompt, same-seed one-step experiment was rejected. Diffusers' documented non-two-step
 override reduced image inference by 17.1%, but provider end-to-end improved only 65.6 ms (5.5%) and
 the central subject duplicated from one figure to two. Production settings therefore reject fewer
@@ -624,6 +631,7 @@ passes the real I/O and latency run on JetPack 7.2.1.
 - [`benchmarks/bookforge-jetson-l40s-e2e-speed-2026-08-24.json`](benchmarks/bookforge-jetson-l40s-e2e-speed-2026-08-24.json): current Jetson-Gemma → L40S master/depth acceptance; 0.641-second prepared and 4.857-second uncached masters, semantic-fidelity and duplicate-actor fixes, checksum/browser evidence, and reconciled teardown
 - [`benchmarks/bookforge-inference-critical-path-2026-08-26.json`](benchmarks/bookforge-inference-critical-path-2026-08-26.json): faithful Jetson planning and Modal GPU-snapshot acceptance; a 1.634-second compact candidate failed all five semantic gates, the selected schema averaged 2.773 seconds, cold renderer restore fell from 20.608 to 6.424 seconds, and prepared faithful masters completed in 0.805–2.039 seconds with explicit visual-fidelity findings
 - [`benchmarks/bookforge-visual-fidelity-gate-2026-08-26.json`](benchmarks/bookforge-visual-fidelity-gate-2026-08-26.json): calibrated Grounding DINO subject/object/overlap gate; a duplicate-prone request selected its bounded retry in 1.530 seconds, while human review and a rejected 5.656-second SANA 1.5 A/B keep material and action fidelity honestly pending
+- [`benchmarks/bookforge-semantic-candidate-ranking-2026-08-26.json`](benchmarks/bookforge-semantic-candidate-ranking-2026-08-26.json): rejected SigLIP candidate-ranking A/B; warm decisions were only 45–61 ms and ranked the stronger plate, but the added snapshot state pushed observed restore calls to roughly 21 seconds, so production retained the compound-label Grounding DINO gate
 - [`benchmarks/bookforge-jetson-planner-semantic-hardening-2026-08-24.json`](benchmarks/bookforge-jetson-planner-semantic-hardening-2026-08-24.json): five-passage Jetson GPU acceptance of the 2.661-second faithful planner, zero-token action/object repairs, and rejection of a 9.2%-faster short-key object format that failed every semantic gate
 - [`benchmarks/bookforge-modal-concurrent-model-load-rejection-2026-08-24.json`](benchmarks/bookforge-modal-concurrent-model-load-rejection-2026-08-24.json): isolated L40S cold-start A/B; concurrent SANA/depth loading was reverted after a 23.3% prewarm regression, with the sequential app restored, zero tasks, and billing reconciled
 - [`benchmarks/bookforge-master-jpeg-quality-rejection-2026-08-24.json`](benchmarks/bookforge-master-jpeg-quality-rejection-2026-08-24.json): exact Pillow 4:4:4 quality sweep on the accepted whale scene; quality 94 missed the 0.995 SSIM gate for only 4.4% savings, so presentation-quality 95 remains locked

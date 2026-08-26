@@ -11,7 +11,9 @@ Environment=HOME=/var/cache/bookforge/home
 Environment=PATH=/opt/bookforge/.venv/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin
 ExecStartPre=/opt/bookforge/.venv/bin/python -m bookforge.edge_preflight
 ExecStart=/opt/bookforge/.venv/bin/python -m uvicorn bookforge.api:app --host 127.0.0.1 --port 8080 --timeout-graceful-shutdown 3
-Restart=on-failure
+# This is an appliance service: a graceful process exit is still unexpected.
+# `systemctl stop` remains authoritative and does not trigger Restart=always.
+Restart=always
 RestartSec=3
 TimeoutStopSec=20
 NoNewPrivileges=true

@@ -149,6 +149,8 @@ def test_system_service_has_persistent_private_paths_and_preflight() -> None:
     assert "CacheDirectory=bookforge" in unit
     assert "UMask=0077" in unit
     assert "EnvironmentFile=/etc/bookforge/bookforge.env" in unit
+    assert "Restart=always" in unit
+    assert "Restart=on-failure" not in unit
     assert (
         "Environment=PATH=/opt/bookforge/.venv/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin"
         in unit

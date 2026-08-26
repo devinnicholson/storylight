@@ -567,8 +567,33 @@ def test_fidelity_contract_extracts_action_object_and_overlap_requirement() -> N
         seed=27,
     )
 
-    assert finite_modal_provider_module._fidelity_action_object(page.layers) == "boat"
+    assert (
+        finite_modal_provider_module._fidelity_action_object(page.layers)
+        == "walnut shell boat"
+    )
     assert finite_modal_provider_module._fidelity_requires_overlap(page.layers) is True
+    assert (
+        finite_modal_provider_module._fidelity_focus_prompt(page.layers)
+        == "a complete visible young otter, shown steering walnut boat"
+    )
+
+
+@pytest.mark.parametrize(
+    ("prompt", "expected"),
+    [
+        ("one child, shown holding brass key", "brass key"),
+        ("one rabbit, shown carrying lantern", "lantern"),
+        ("one rider, shown riding red bicycle", "red bicycle"),
+        ("one otter, shown paddling coconut boat", "coconut shell boat"),
+    ],
+)
+def test_fidelity_action_object_keeps_material_identity(
+    prompt: str,
+    expected: str,
+) -> None:
+    layers = [SimpleNamespace(layer_id="scene-focus", prompt=prompt)]
+
+    assert finite_modal_provider_module._fidelity_action_object(layers) == expected
 
 
 def test_deployed_warm_state_uses_measured_container_reuse() -> None:

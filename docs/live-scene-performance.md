@@ -60,6 +60,15 @@ action semantics; human review still found walnut identity and visible steering 
 20-step SANA 1.5 follow-up was rejected at 5.656 seconds of L4 inference because it still produced a
 generic wooden boat.
 
+Material-bearing action objects keep a compound detector label. `walnut boat`, `coconut boat`, and
+`acorn boat` normalize to their corresponding `shell boat` phrases; other actions retain up to the
+last two object words, such as `brass key` or `red bicycle`. The existing count and overlap gate then
+tests the specific object rather than any generic boat or key. A pinned SigLIP candidate-ranker A/B
+did choose the visibly stronger otter plate (`0.777` versus `0.706`) with only 45–61 ms of warm
+inference, but it was rejected from production: adding its state to the renderer produced observed
+snapshot restore calls around 21 seconds. The detector-only design preserves the smaller, faster
+renderer snapshot and retains its failure-only second candidate.
+
 One-step support was tested separately with Diffusers' required
 `intermediate_timesteps=None` override. On the exact same prompt, seed, then-current 896x512 plate, and warm L4,
 it reduced image inference from 739.861 ms to 613.681 ms but reduced full API wall time by only

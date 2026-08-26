@@ -1699,6 +1699,7 @@ class FiniteModalLiveSceneProvider:
         if page.scene_spec is None:
             raise FiniteModalProviderError("live-scene draft has no SceneSpec")
         background_layer_id = _background_layer_id(resolved.pack)
+        fidelity_object_label = _fidelity_action_object(page.layers)
         fast_request = FastSceneRequest(
             scene_id=job_id,
             prompt=_bounded_prompt(
@@ -1716,7 +1717,7 @@ class FiniteModalLiveSceneProvider:
             steps=self.master_steps,
             guidance_scale=self.master_guidance_scale,
             fidelity_label=resolved.fidelity_label,
-            fidelity_object_label=_fidelity_action_object(page.layers),
+            fidelity_object_label=fidelity_object_label,
             require_subject_object_overlap=_fidelity_requires_overlap(page.layers),
             expected_subject_count=1,
         )
@@ -2308,7 +2309,15 @@ def _fidelity_action_object(layers: list[Any]) -> str:
     if match is None:
         return ""
     words = re.findall(r"[A-Za-z][A-Za-z'-]*", match.group(1))
-    return words[-1] if words else ""
+    while words and words[0].casefold() in {"a", "an", "one", "the"}:
+        words.pop(0)
+    if not words:
+        return ""
+    if len(words) >= 2 and words[-1].casefold() == "boat":
+        material = words[-2].casefold()
+        if material in {"acorn", "coconut", "walnut"}:
+            return f"{material} shell boat"
+    return " ".join(words[-2:])
 
 
 def _fidelity_requires_overlap(layers: list[Any]) -> bool:
