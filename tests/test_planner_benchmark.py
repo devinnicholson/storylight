@@ -2,6 +2,7 @@ import pytest
 
 from bookforge.planner_benchmark import (
     _contract_order_for_case,
+    _parser,
     _require_loopback,
     _summarize,
 )
@@ -39,3 +40,10 @@ def test_planner_benchmark_counterbalances_contract_order() -> None:
     assert _contract_order_for_case(1, contracts) == ("compact", "standard")
     assert _contract_order_for_case(2, contracts) == ("standard", "compact")
     assert _contract_order_for_case(3, ("compact",)) == ("compact",)
+
+
+def test_planner_benchmark_can_target_bundled_openai_compatible_server() -> None:
+    args = _parser().parse_args(["--backend", "openai", "--base-url", "http://127.0.0.1:11436"])
+
+    assert args.backend == "openai"
+    assert args.base_url == "http://127.0.0.1:11436"

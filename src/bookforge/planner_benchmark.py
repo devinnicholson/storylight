@@ -14,7 +14,7 @@ from urllib.parse import urlparse
 
 from bookforge.config import Settings
 from bookforge.live_scene_planner import StructuredLiveScenePlanner
-from bookforge.model_client import OllamaClient
+from bookforge.model_client import OllamaClient, OpenAICompatibleClient
 
 Contract = Literal["standard", "compact"]
 
@@ -154,7 +154,7 @@ async def benchmark(args: argparse.Namespace) -> dict[str, object]:
     base_url = _require_loopback(args.base_url)
     settings = Settings(
         _env_file=None,
-        model_backend="ollama",
+        model_backend=args.backend,
         model_name=args.model,
         model_base_url=base_url,
         model_timeout_seconds=args.model_timeout_seconds,
@@ -162,7 +162,9 @@ async def benchmark(args: argparse.Namespace) -> dict[str, object]:
         model_context_tokens=args.context_tokens,
         model_max_output_tokens=args.max_output_tokens,
     )
-    client = OllamaClient(settings)
+    client = (
+        OllamaClient(settings) if args.backend == "ollama" else OpenAICompatibleClient(settings)
+    )
     contracts: tuple[Contract, ...] = (
         ("standard", "compact") if args.contract == "both" else (args.contract,)
     )
@@ -230,6 +232,7 @@ async def benchmark(args: argparse.Namespace) -> dict[str, object]:
             "technical_pass_human_semantic_review_required" if technical_pass else "technical_fail"
         ),
         "runtime": {
+            "backend": args.backend,
             "model": args.model,
             "model_revision": args.model_revision,
             "base_url": base_url,
@@ -260,6 +263,7 @@ async def benchmark(args: argparse.Namespace) -> dict[str, object]:
 
 def _parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--backend", choices=("ollama", "openai"), default="ollama")
     parser.add_argument("--base-url", default="http://127.0.0.1:11434")
     parser.add_argument("--model", default="gemma3:1b-it-q4_K_M")
     parser.add_argument("--model-revision", default="configured-local-model")

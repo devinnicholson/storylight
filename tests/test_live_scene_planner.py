@@ -200,6 +200,35 @@ def test_wire_privacy_sanitizer_recovers_missing_action_object_locally(
     validate_live_scene_plan_privacy(plan, source_text=source)
 
 
+def test_wire_privacy_sanitizer_recovers_actor_and_compound_object_detail() -> None:
+    source = (
+        "At sunrise, a young otter steers a walnut-shell boat across a glassy pond "
+        "while two red dragonflies carry a ribbon of morning light between the reeds."
+    )
+    wire = LiveSceneWirePlan.model_validate(
+        {
+            "background_prompt": "glassy pond and reeds",
+            "focus": {
+                "kind": "character",
+                "subject": "otter",
+                "action": "steers boat",
+            },
+            "magic": {
+                "kind": "character",
+                "prompt": "red dragonflies carrying ribbon of light",
+            },
+        }
+    )
+
+    sanitized = wire.privacy_sanitized(source_text=source)
+    plan = sanitized.to_live_scene_plan(context_text=source)
+
+    assert sanitized.focus.subject == "young otter"
+    assert sanitized.focus.action == "steers walnut boat"
+    assert plan.focus.prompt == "a complete visible young otter, shown steering walnut boat"
+    validate_live_scene_plan_privacy(plan, source_text=source)
+
+
 def test_wire_plan_restores_supporting_creature_omitted_by_small_model() -> None:
     source = (
         "On a frozen lake beneath the northern lights, a red fox skates in circles "

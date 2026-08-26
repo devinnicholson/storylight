@@ -67,7 +67,7 @@ _LEADING_ARTICLE = re.compile(r"^(?:a|an|the)\s+", re.IGNORECASE)
 _SEMANTIC_WORD = re.compile(r"[A-Za-z][A-Za-z'-]*")
 _PLACEMENT_MARGIN = 0.04
 _PLAN_CACHE_SCHEMA_VERSION = "1"
-_PLAN_CACHE_CONTRACT_REVISION = "semantic-v9-compact-fidelity"
+_PLAN_CACHE_CONTRACT_REVISION = "semantic-v10-actor-object-detail"
 _EMAIL = re.compile(r"\b[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}\b", re.IGNORECASE)
 _PHONE = re.compile(r"(?<!\w)(?:\+?\d[\d\s()./-]{6,}\d)(?!\w)")
 _URL = re.compile(r"\b(?:https?://|www\.)\S+", re.IGNORECASE)
@@ -210,6 +210,10 @@ class LiveSceneWirePlan(FrozenStrictModel):
     magic: LiveSceneWireMagic
 
     def privacy_sanitized(self, *, source_text: str) -> LiveSceneWirePlan:
+        recovered_subject = _recover_subject_modifier(
+            self.focus.subject,
+            source_text=source_text,
+        )
         recovered_action = _recover_missing_action_object(
             self.focus.action,
             source_text=source_text,
@@ -224,7 +228,7 @@ class LiveSceneWirePlan(FrozenStrictModel):
         )
         repaired_magic = _repair_duplicated_focus_in_supporting_prompt(
             recovered_magic,
-            focus_subject=self.focus.subject,
+            focus_subject=recovered_subject,
             focus_action=recovered_action,
             source_text=source_text,
         )
@@ -234,7 +238,7 @@ class LiveSceneWirePlan(FrozenStrictModel):
         )
         repaired_background = _remove_focus_from_background_prompt(
             recovered_background,
-            focus_subject=self.focus.subject,
+            focus_subject=recovered_subject,
             focus_action=recovered_action,
         )
         return self.model_copy(
@@ -247,11 +251,15 @@ class LiveSceneWirePlan(FrozenStrictModel):
                 "focus": self.focus.model_copy(
                     update={
                         "subject": _remove_distinctive_source_overlap(
-                            self.focus.subject,
+                            recovered_subject,
                             source_text,
                             preserve_subject=True,
                         ),
-                        "action": _remove_distinctive_source_overlap(recovered_action, source_text),
+                        "action": _remove_distinctive_source_overlap(
+                            recovered_action,
+                            source_text,
+                            preserve_action=True,
+                        ),
                     }
                 ),
                 "magic": self.magic.model_copy(
@@ -643,10 +651,10 @@ def _normalized_wire_focus(layer: LiveSceneWireFocus) -> str:
 
 
 def _recover_missing_action_object(action: str, *, source_text: str) -> str:
-    """Repair a one-word action with a short ordinary object phrase from local text."""
+    """Repair an underspecified action with a short ordinary phrase from local text."""
 
     action_words = _SEMANTIC_WORD.findall(action)
-    if len(action_words) != 1:
+    if not action_words:
         return action
     verb = action_words[0]
     match = re.search(
@@ -662,6 +670,19 @@ def _recover_missing_action_object(action: str, *, source_text: str) -> str:
     if not tail:
         return action
 
+    if len(action_words) > 1:
+        object_token = action_words[-1].casefold()
+        object_index = next(
+            (index for index, word in enumerate(tail[:5]) if word.casefold() == object_token),
+            None,
+        )
+        if object_index is None or object_index == 0:
+            return action
+        detail = tail[: object_index + 1]
+        if len(detail) > 4:
+            return action
+        return " ".join([verb, *detail])
+
     directional = {"across", "down", "into", "over", "through", "toward", "towards", "under", "up"}
     stop = {"and", "as", "at", "by", "for", "from", "made", "of", "on", "when", "while", "with"}
     detail: list[str] = []
@@ -676,6 +697,35 @@ def _recover_missing_action_object(action: str, *, source_text: str) -> str:
         if len(detail) >= (3 if detail and detail[0].casefold() in directional else 2):
             break
     return " ".join([action, *detail]) if detail else action
+
+
+def _recover_subject_modifier(subject: str, *, source_text: str) -> str:
+    """Restore one adjacent story-visible modifier for a bare actor noun."""
+
+    subject_words = _SEMANTIC_WORD.findall(subject)
+    if len(subject_words) != 1:
+        return subject
+    source_words = _SEMANTIC_WORD.findall(source_text)
+    subject_token = subject_words[0].casefold()
+    blocked = _PHRASE_STOPWORDS | {
+        "and",
+        "at",
+        "in",
+        "inside",
+        "near",
+        "on",
+        "under",
+        "while",
+        "with",
+    }
+    for index, word in enumerate(source_words):
+        if word.casefold() != subject_token or index == 0:
+            continue
+        modifier = source_words[index - 1]
+        if modifier.casefold() in blocked:
+            return subject
+        return f"{modifier} {subject}"
+    return subject
 
 
 def _recover_missing_supporting_subject(prompt: str, *, source_text: str) -> str:
@@ -844,6 +894,8 @@ def _normalized_action(value: str) -> str:
         "reads": "reading",
         "skate": "skating",
         "skates": "skating",
+        "steer": "steering",
+        "steers": "steering",
         "swim": "swimming",
         "swims": "swimming",
         "unfold": "unfolding",
@@ -1154,6 +1206,7 @@ def _remove_distinctive_source_overlap(
     *,
     preserve_subject: bool = False,
     preserve_tail: bool = False,
+    preserve_action: bool = False,
 ) -> str:
     """Minimally redact repeated source trigrams without inventing replacement text."""
 
@@ -1184,6 +1237,12 @@ def _remove_distinctive_source_overlap(
             # survives ("silver whale swims" -> "silver whale"). The dedicated
             # action field still carries the visible verb.
             deletion_offset = 2
+        elif preserve_action:
+            # Keep both the visible verb and its head object. Removing the
+            # middle article/modifier breaks the source trigram while retaining
+            # actionable rendering semantics ("carries glowing pear" becomes
+            # "carries pear"; "walnut shell boat" becomes "walnut boat").
+            deletion_offset = 1
         elif preserve_tail:
             # Background and supporting-object phrases usually end in their
             # visual head noun ("small paper kite"). For one overlapping
