@@ -115,6 +115,7 @@ def _gemma_live_plan() -> LiveScenePlan:
         ),
         camera_motion="float",
         background_prompt="[0.5, 0.5, 0.8, 0.8], cobalt sky over luminous clouds",
+        focus_label="child",
         focus=LiveScenePlacedLayerPlan(
             kind="character",
             prompt="A child holding a luminous open book",
@@ -203,7 +204,7 @@ class StubWarmInvoker:
                 "gpu": "L40S",
             }
         if class_name == "FastSceneStudio":
-            return {
+            result = {
                 "master": _jpeg(arguments["width"], arguments["height"]),
                 "master_media_type": "image/jpeg",
                 "depth": _jpeg(arguments["width"], arguments["height"]),
@@ -218,7 +219,28 @@ class StubWarmInvoker:
                 "model_load_seconds": 2.5,
                 "container_age_seconds": 3.4,
                 "gpu": "L40S",
+                "selected_seed": arguments["seed"],
             }
+            if arguments.get("fidelity_label"):
+                result.update(
+                    {
+                        "quality_seconds": 0.3,
+                        "quality_attempts": 1,
+                        "quality_label": arguments["fidelity_label"],
+                        "quality_object_label": arguments["fidelity_object_label"],
+                        "quality_expected_count": arguments["expected_subject_count"],
+                        "quality_subject_count": arguments["expected_subject_count"],
+                        "quality_object_count": (
+                            1 if arguments["fidelity_object_label"] else None
+                        ),
+                        "quality_subject_object_overlap": (
+                            True if arguments["fidelity_object_label"] else None
+                        ),
+                        "quality_scores": [0.9],
+                        "quality_passed": True,
+                    }
+                )
+            return result
         return {
             "content": b"fixture-mp4",
             "generation_seconds": 14.0,
@@ -519,6 +541,34 @@ def test_request_profiles_are_projection_native_and_bounded() -> None:
         MotionUpgradeRequest(generated_frames=32)
     with pytest.raises(ValueError, match="between 1 and 4"):
         FastSceneRequest(scene_id="scene", prompt="A fox", steps=5)
+    with pytest.raises(ValueError, match="requires an object label"):
+        FastSceneRequest(
+            scene_id="scene",
+            prompt="A fox",
+            fidelity_label="fox",
+            require_subject_object_overlap=True,
+        )
+
+
+def test_fidelity_contract_extracts_action_object_and_overlap_requirement() -> None:
+    page = _gemma_live_plan().model_copy(
+        update={
+            "focus": LiveScenePlacedLayerPlan(
+                kind="character",
+                prompt="a complete visible young otter, shown steering walnut boat",
+                anchor=(0.5, 0.5, 0.4, 0.6),
+                depth=2.5,
+                motion="breathe",
+            )
+        }
+    ).to_page(
+        source_text="An animal crosses water.",
+        visual_style="luminous paper theater",
+        seed=27,
+    )
+
+    assert finite_modal_provider_module._fidelity_action_object(page.layers) == "boat"
+    assert finite_modal_provider_module._fidelity_requires_overlap(page.layers) is True
 
 
 def test_deployed_warm_state_uses_measured_container_reuse() -> None:
@@ -844,10 +894,18 @@ def test_uncached_model_plan_emits_privacy_safe_preview_before_final_master(
     assert master.metrics.provider_ms > preview.metrics.provider_ms
     assert [model.role for model in master.metrics.models] == [
         "scene_plan",
-        "preview",
-        "master",
-        "depth",
+            "preview",
+            "master",
+            "depth",
+        "visual_fidelity",
     ]
+    generate_call = next(
+        arguments
+        for class_name, method_name, arguments in invoker.calls
+        if class_name == "FastSceneStudio" and method_name == "generate"
+    )
+    assert generate_call["fidelity_label"] == "child"
+    assert generate_call["expected_subject_count"] == 1
     methods = [(class_name, method) for class_name, method, _ in invoker.calls]
     assert methods == [
         ("FastSceneStudio", "prewarm"),

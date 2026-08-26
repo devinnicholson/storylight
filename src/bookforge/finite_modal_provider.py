@@ -52,6 +52,8 @@ FAST_MODEL_REVISION = "19683c58b7ea290e55cedd8950ae1d86ada7ef96"
 DEPTH_MODEL = "depth-anything/Depth-Anything-V2-Small-hf"
 DEPTH_MODEL_REVISION = "b4769fd619394250528294b658587285526fab1c"
 DEPTH_DTYPE = "float16"
+FIDELITY_MODEL = "IDEA-Research/grounding-dino-tiny"
+FIDELITY_MODEL_REVISION = "a2bb814dd30d776dcf7e30523b00659f4f141c71"
 MOTION_MODEL = "Lightricks/LTX-Video"
 MOTION_MODEL_REVISION = "a6d59ee37c13c58261aa79027d3e41cd41960925"
 PROVIDER_NAME = "modal-finite"
@@ -140,6 +142,10 @@ class FastSceneRequest:
     height: int = 576
     steps: int = 2
     guidance_scale: float = 4.5
+    fidelity_label: str = ""
+    fidelity_object_label: str = ""
+    require_subject_object_overlap: bool = False
+    expected_subject_count: int = 1
 
     def __post_init__(self) -> None:
         _validate_identifier(self.scene_id)
@@ -151,6 +157,18 @@ class FastSceneRequest:
             raise ValueError("fast-scene steps must be between 1 and 4")
         if not math.isfinite(self.guidance_scale) or not 0 <= self.guidance_scale <= 12:
             raise ValueError("guidance_scale must be between 0 and 12")
+        if len(self.fidelity_label) > 80:
+            raise ValueError("fidelity_label cannot exceed 80 characters")
+        if self.fidelity_label and not self.fidelity_label.strip():
+            raise ValueError("fidelity_label cannot be whitespace")
+        if len(self.fidelity_object_label) > 80:
+            raise ValueError("fidelity_object_label cannot exceed 80 characters")
+        if self.fidelity_object_label and not self.fidelity_object_label.strip():
+            raise ValueError("fidelity_object_label cannot be whitespace")
+        if self.require_subject_object_overlap and not self.fidelity_object_label:
+            raise ValueError("subject/object overlap requires an object label")
+        if not 1 <= self.expected_subject_count <= 4:
+            raise ValueError("expected_subject_count must be between 1 and 4")
 
 
 @dataclass(frozen=True, slots=True)
@@ -544,6 +562,17 @@ class FiniteModalSceneProvider:
             str(request.steps),
             "--guidance-scale",
             str(request.guidance_scale),
+            "--fidelity-label",
+            request.fidelity_label,
+            "--fidelity-object-label",
+            request.fidelity_object_label,
+            *(
+                ["--require-subject-object-overlap"]
+                if request.require_subject_object_overlap
+                else []
+            ),
+            "--expected-subject-count",
+            str(request.expected_subject_count),
             "--output-dir",
             str(destination),
             "--plan-file",
@@ -1178,6 +1207,10 @@ class WarmModalSceneProvider(FiniteModalSceneProvider):
                         "height": request.height,
                         "steps": request.steps,
                         "guidance_scale": request.guidance_scale,
+                        "fidelity_label": request.fidelity_label,
+                        "fidelity_object_label": request.fidelity_object_label,
+                        "require_subject_object_overlap": request.require_subject_object_overlap,
+                        "expected_subject_count": request.expected_subject_count,
                     },
                 )
             except BaseException:
@@ -1463,6 +1496,7 @@ class _ResolvedLiveScenePlan:
     planning_ms: float
     status: LiveScenePlanningStatus
     provenance: LiveSceneModelProvenance
+    fidelity_label: str = ""
     preparation_ms: float = 0
     planning_cache_hit: bool = False
 
@@ -1681,6 +1715,10 @@ class FiniteModalLiveSceneProvider:
             height=self.master_height,
             steps=self.master_steps,
             guidance_scale=self.master_guidance_scale,
+            fidelity_label=resolved.fidelity_label,
+            fidelity_object_label=_fidelity_action_object(page.layers),
+            require_subject_object_overlap=_fidelity_requires_overlap(page.layers),
+            expected_subject_count=1,
         )
         try:
             fast_bundle = await self.provider.generate_fast(
@@ -1690,13 +1728,16 @@ class FiniteModalLiveSceneProvider:
         except FiniteModalUnavailableError as error:
             raise LiveSceneProviderUnavailableError(str(error)) from error
         try:
+            selected_seed = int(
+                fast_bundle.manifest["stages"]["fast"].get("selected_seed", seed)
+            )
             promotion_started = time.perf_counter()
             master_result, depth_result = await asyncio.gather(
                 self._promote_artifact(
                     bundle=fast_bundle,
                     role="master",
                     job_id=job_id,
-                    seed=seed,
+                    seed=selected_seed,
                     prompt=fast_request.prompt,
                     layer_id=background_layer_id,
                 ),
@@ -1704,7 +1745,7 @@ class FiniteModalLiveSceneProvider:
                     bundle=fast_bundle,
                     role="depth",
                     job_id=job_id,
-                    seed=seed,
+                    seed=selected_seed,
                     prompt=f"Depth estimate for {job_id}-master",
                     layer_id=background_layer_id,
                 ),
@@ -1940,6 +1981,7 @@ class FiniteModalLiveSceneProvider:
                     model=draft.compiler_model,
                     revision="v1",
                 ),
+                fidelity_label="",
             )
 
         try:
@@ -1979,6 +2021,7 @@ class FiniteModalLiveSceneProvider:
                 model=result.metrics.model,
                 revision=result.model_revision,
             ),
+            fidelity_label=result.plan.focus_label,
             planning_cache_hit=result.cache_hit,
         )
 
@@ -2151,6 +2194,14 @@ def _live_scene_metrics(
             revision=DEPTH_MODEL_REVISION,
         ),
     ]
+    if any(stage.get("quality_label") for stage in stages):
+        models.append(
+            LiveSceneModelProvenance(
+                role="visual_fidelity",
+                model=FIDELITY_MODEL,
+                revision=FIDELITY_MODEL_REVISION,
+            )
+        )
     if include_motion:
         models.append(
             LiveSceneModelProvenance(
@@ -2244,6 +2295,30 @@ def _safe_preview_subject(text: str) -> str:
     return "one clear central storybook subject"
 
 
+def _fidelity_focus_prompt(layers: list[Any]) -> str:
+    return next(
+        (str(layer.prompt) for layer in layers if layer.layer_id == "scene-focus"),
+        "",
+    )
+
+
+def _fidelity_action_object(layers: list[Any]) -> str:
+    prompt = _fidelity_focus_prompt(layers)
+    match = re.search(r"\bshown\s+[a-z'-]+ing\s+(.+)$", prompt, flags=re.IGNORECASE)
+    if match is None:
+        return ""
+    words = re.findall(r"[A-Za-z][A-Za-z'-]*", match.group(1))
+    return words[-1] if words else ""
+
+
+def _fidelity_requires_overlap(layers: list[Any]) -> bool:
+    prompt = _fidelity_focus_prompt(layers).casefold()
+    return any(
+        marker in prompt
+        for marker in ("shown paddling ", "shown riding ", "shown rowing ", "shown steering ")
+    )
+
+
 def _background_layer_id(pack: StoryPack) -> str:
     backgrounds = [
         layer.layer_id for page in pack.pages for layer in page.layers if layer.kind == "background"
@@ -2302,6 +2377,10 @@ def _fast_experiment_id(request: FastSceneRequest) -> str:
                 "height": request.height,
                 "steps": request.steps,
                 "guidance_scale": request.guidance_scale,
+                "fidelity_label": request.fidelity_label,
+                "fidelity_object_label": request.fidelity_object_label,
+                "require_subject_object_overlap": request.require_subject_object_overlap,
+                "expected_subject_count": request.expected_subject_count,
             },
             sort_keys=True,
         ).encode()
@@ -2483,6 +2562,9 @@ def _write_warm_fast_bundle(
         depth = bytes(result["depth"])
         image_seconds = float(result["image_seconds"])
         depth_seconds = float(result["depth_seconds"])
+        quality_seconds = float(result.get("quality_seconds", 0))
+        quality_attempts = int(result.get("quality_attempts", 0))
+        selected_seed = int(result.get("selected_seed", request.seed))
         packaging_seconds = float(result["packaging_seconds"])
         master_jpeg_quality = int(result["master_jpeg_quality"])
         depth_jpeg_quality = int(result["depth_jpeg_quality"])
@@ -2498,6 +2580,27 @@ def _write_warm_fast_bundle(
         raise FiniteModalProviderError("warm fast class returned ambiguous depth precision")
     if result.get("gpu") != WARM_FAST_GPU:
         raise FiniteModalProviderError("warm fast class ran on an unexpected GPU")
+    if request.fidelity_label:
+        if result.get("quality_passed") is not True:
+            raise FiniteModalProviderError("warm fast class did not pass visual fidelity")
+        if result.get("quality_label") != request.fidelity_label:
+            raise FiniteModalProviderError("warm fast class changed the fidelity label")
+        if int(result.get("quality_subject_count", 0)) != request.expected_subject_count:
+            raise FiniteModalProviderError("warm fast class returned the wrong subject count")
+        if result.get("quality_object_label", "") != request.fidelity_object_label:
+            raise FiniteModalProviderError("warm fast class changed the fidelity object label")
+        if request.fidelity_object_label and int(result.get("quality_object_count", 0)) != 1:
+            raise FiniteModalProviderError("warm fast class returned the wrong object count")
+        if (
+            request.require_subject_object_overlap
+            and result.get("quality_subject_object_overlap") is not True
+        ):
+            raise FiniteModalProviderError("warm fast class failed subject/object placement")
+        if not 1 <= quality_attempts <= 2:
+            raise FiniteModalProviderError("warm fast class returned invalid fidelity attempts")
+    elif quality_attempts != 0:
+        raise FiniteModalProviderError("warm fast class ran an unrequested fidelity gate")
+    _validate_seed(selected_seed)
     if master_jpeg_quality != 95 or depth_jpeg_quality != 85:
         raise FiniteModalProviderError("warm fast class returned unexpected JPEG quality")
     if _jpeg_dimensions(master) != (request.width, request.height):
@@ -2507,7 +2610,7 @@ def _write_warm_fast_bundle(
     _atomic_write(master_path, master)
     _atomic_write(depth_path, depth)
     now = datetime.now(UTC).isoformat()
-    inference_seconds = image_seconds + depth_seconds
+    inference_seconds = image_seconds + depth_seconds + quality_seconds
     payload = {
         "schema_version": "1.0",
         "provider": PROVIDER_NAME,
@@ -2518,6 +2621,7 @@ def _write_warm_fast_bundle(
             "prompt": request.prompt,
             "negative_prompt": request.negative_prompt,
             "seed": request.seed,
+            "selected_seed": selected_seed,
             "width": request.width,
             "height": request.height,
         },
@@ -2532,7 +2636,17 @@ def _write_warm_fast_bundle(
                 "model": FAST_MODEL,
                 "model_revision": FAST_MODEL_REVISION,
                 "additional_models": [
-                    {"model": DEPTH_MODEL, "model_revision": DEPTH_MODEL_REVISION}
+                    {"model": DEPTH_MODEL, "model_revision": DEPTH_MODEL_REVISION},
+                    *(
+                        [
+                            {
+                                "model": FIDELITY_MODEL,
+                                "model_revision": FIDELITY_MODEL_REVISION,
+                            }
+                        ]
+                        if request.fidelity_label
+                        else []
+                    ),
                 ],
                 "gpu": WARM_FAST_GPU,
                 "finite_call": True,
@@ -2542,6 +2656,19 @@ def _write_warm_fast_bundle(
                 "provider_overhead_seconds": max(0.0, remote_seconds - inference_seconds),
                 "image_seconds": image_seconds,
                 "depth_seconds": depth_seconds,
+                "quality_seconds": quality_seconds,
+                "quality_attempts": quality_attempts,
+                "quality_label": result.get("quality_label", ""),
+                "quality_object_label": result.get("quality_object_label", ""),
+                "quality_expected_count": result.get("quality_expected_count"),
+                "quality_subject_count": result.get("quality_subject_count"),
+                "quality_object_count": result.get("quality_object_count"),
+                "quality_subject_object_overlap": result.get(
+                    "quality_subject_object_overlap"
+                ),
+                "quality_scores": result.get("quality_scores", []),
+                "quality_passed": result.get("quality_passed"),
+                "selected_seed": selected_seed,
                 "packaging_seconds": packaging_seconds,
                 "master_jpeg_quality": master_jpeg_quality,
                 "depth_jpeg_quality": depth_jpeg_quality,

@@ -28,6 +28,7 @@ def _plan() -> LiveScenePlan:
         ),
         camera_motion="slow_push",
         background_prompt="Indigo cloudscape and a distant floating school in warm window light",
+        focus_label="child",
         focus=LiveScenePlacedLayerPlan(
             kind="character",
             prompt="A child in profile holding a luminous open storybook",
@@ -76,6 +77,30 @@ def test_wire_plan_is_compact_and_normalizes_safe_geometry_and_motion() -> None:
     assert plan.accent.depth == 5
     assert plan.accent.motion == "pulse"
     assert plan.ambience == ["dust"]
+
+
+def test_walnut_boat_action_compiles_to_explicit_visual_direction() -> None:
+    plan = LiveSceneWirePlan(
+        background_prompt="golden pond and reeds",
+        focus=LiveSceneWireFocus(
+            kind="character",
+            subject="young otter",
+            action="steering walnut boat",
+        ),
+        magic=LiveSceneWireMagic(kind="effect", prompt="red dragonflies carrying ribbon light"),
+    ).to_live_scene_plan()
+
+    page = plan.to_page(
+        source_text="An animal crosses water at sunrise.",
+        visual_style="luminous layered paper theater",
+        seed=27,
+    )
+
+    assert plan.focus_label == "young otter"
+    assert "one hollow half of a brown walnut shell" in page.scene_spec.master_prompt
+    assert "wrinkled brain-like walnut texture" in page.scene_spec.master_prompt
+    assert "paws on a small tiller" in page.scene_spec.master_prompt
+    assert page.layers[1].prompt.endswith("shown steering walnut boat")
 
 
 def test_short_key_wire_contract_preserves_semantics_with_less_decode_text() -> None:

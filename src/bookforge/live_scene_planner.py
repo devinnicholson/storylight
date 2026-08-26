@@ -67,7 +67,7 @@ _LEADING_ARTICLE = re.compile(r"^(?:a|an|the)\s+", re.IGNORECASE)
 _SEMANTIC_WORD = re.compile(r"[A-Za-z][A-Za-z'-]*")
 _PLACEMENT_MARGIN = 0.04
 _PLAN_CACHE_SCHEMA_VERSION = "1"
-_PLAN_CACHE_CONTRACT_REVISION = "semantic-v10-actor-object-detail"
+_PLAN_CACHE_CONTRACT_REVISION = "semantic-v11-visual-fidelity-label"
 _EMAIL = re.compile(r"\b[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}\b", re.IGNORECASE)
 _PHONE = re.compile(r"(?<!\w)(?:\+?\d[\d\s()./-]{6,}\d)(?!\w)")
 _URL = re.compile(r"\b(?:https?://|www\.)\S+", re.IGNORECASE)
@@ -302,6 +302,7 @@ class LiveSceneWirePlan(FrozenStrictModel):
             # decision from the latency-critical edge model.
             camera_motion="slow_push",
             background_prompt=_bounded_words(self.background_prompt, 10),
+            focus_label=_quality_subject_label(self.focus.subject),
             focus=LiveScenePlacedLayerPlan(
                 kind=self.focus.kind,
                 prompt=focus_prompt,
@@ -393,6 +394,10 @@ class LiveScenePlan(FrozenStrictModel):
         str,
         StringConstraints(strip_whitespace=True, min_length=1, max_length=140),
     ]
+    focus_label: Annotated[
+        str,
+        StringConstraints(strip_whitespace=True, min_length=1, max_length=80),
+    ]
     focus: LiveScenePlacedLayerPlan
     accent: LiveScenePlacedLayerPlan
     ambience: Annotated[list[LiveSceneAmbience], Field(max_length=3)] = Field(default_factory=list)
@@ -422,6 +427,7 @@ class LiveScenePlan(FrozenStrictModel):
         art_direction = _bounded_words(self.art_direction, 35)
         scene_summary = _normalized_summary(self.scene_summary)
         focus_prompt = _bounded_words(self.focus.prompt, 18)
+        render_focus_prompt = _render_focus_prompt(focus_prompt)
         accent_prompt = _bounded_words(self.accent.prompt, 18)
         background_prompt = _normalized_background_prompt(
             self.background_prompt,
@@ -448,7 +454,7 @@ class LiveScenePlan(FrozenStrictModel):
         master_prompt = (
             f"{_prompt_fragment(visual_style)}. {_prompt_fragment(art_direction)}. "
             f"{background_clause.lstrip()} "
-            f"Required foreground subject: {_prompt_fragment(focus_prompt)}. "
+            f"Required foreground subject: {_prompt_fragment(render_focus_prompt)}. "
             f"Required supporting visual: {_prompt_fragment(accent_prompt)}. "
             "Render exactly one main actor performing the action once; do not duplicate the "
             "actor or its tool. "
@@ -648,6 +654,52 @@ def _normalized_wire_focus(layer: LiveSceneWireFocus) -> str:
     # independently generated fields are joined (for example, "golden
     # retriever running").
     return f"a complete visible {subject}, shown {action}".strip(" ,")
+
+
+def _render_focus_prompt(focus_prompt: str) -> str:
+    """Expand compact action-object phrases into visually explicit render direction."""
+
+    match = re.search(
+        r"\bshown\s+steering\s+(?P<material>[A-Za-z'-]+)\s+boat\b",
+        focus_prompt,
+        flags=re.IGNORECASE,
+    )
+    if match is None:
+        return focus_prompt
+    material = match.group("material")
+    if material.casefold() == "walnut":
+        vessel = (
+            "one hollow half of a brown walnut shell used as the boat hull, open upward like a "
+            "tiny bowl, with wrinkled brain-like walnut texture clearly visible"
+        )
+    elif material.casefold() in {"acorn", "coconut"}:
+        vessel = f"one hollow half {material} shell with its natural texture clearly visible"
+    elif material.casefold() == "leaf":
+        vessel = "a curled leaf with its veins and stem clearly visible"
+    elif material.casefold() == "paper":
+        vessel = "a folded paper boat with crisp creases clearly visible"
+    else:
+        vessel = f"a boat unmistakably made from {material}"
+    return re.sub(
+        r"\bshown\s+steering\s+[A-Za-z'-]+\s+boat\b",
+        f"shown actively steering from inside {vessel}, paws on a small tiller",
+        focus_prompt,
+        count=1,
+        flags=re.IGNORECASE,
+    )
+
+
+def _quality_subject_label(subject: str) -> str:
+    """Return a short, cloud-safe open-vocabulary detection label."""
+
+    words = _SEMANTIC_WORD.findall(_LEADING_ARTICLE.sub("", subject))
+    if not words:
+        return "main subject"
+    for index, word in enumerate(words):
+        if word.casefold() in {"at", "carrying", "holding", "in", "on", "shown", "with"}:
+            words = words[:index]
+            break
+    return " ".join(words[-4:]) or "main subject"
 
 
 def _recover_missing_action_object(action: str, *, source_text: str) -> str:

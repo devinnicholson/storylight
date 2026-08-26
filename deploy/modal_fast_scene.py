@@ -48,6 +48,11 @@ FAST_MODEL_REVISION = "19683c58b7ea290e55cedd8950ae1d86ada7ef96"
 DEPTH_MODEL = "depth-anything/Depth-Anything-V2-Small-hf"
 DEPTH_MODEL_REVISION = "b4769fd619394250528294b658587285526fab1c"
 DEPTH_DTYPE = "float16"
+FIDELITY_MODEL = "IDEA-Research/grounding-dino-tiny"
+FIDELITY_MODEL_REVISION = "a2bb814dd30d776dcf7e30523b00659f4f141c71"
+FIDELITY_THRESHOLD = 0.25
+FIDELITY_SHORTEST_EDGE = 512
+FIDELITY_LONGEST_EDGE = 768
 MOTION_MODEL = "Lightricks/LTX-Video"
 MOTION_MODEL_REVISION = "a6d59ee37c13c58261aa79027d3e41cd41960925"
 PROVIDER_NAME = "modal-finite"
@@ -117,6 +122,45 @@ def _validate_seed(seed: int) -> None:
         raise ValueError("seed must be an unsigned 32-bit integer")
 
 
+def _box_containment(first: tuple[float, ...], second: tuple[float, ...]) -> float:
+    """Intersection divided by the smaller box area, for nested-box suppression."""
+
+    first_x0, first_y0, first_x1, first_y1 = first
+    second_x0, second_y0, second_x1, second_y1 = second
+    overlap_width = max(0.0, min(first_x1, second_x1) - max(first_x0, second_x0))
+    overlap_height = max(0.0, min(first_y1, second_y1) - max(first_y0, second_y0))
+    smaller_area = min(
+        max(0.0, first_x1 - first_x0) * max(0.0, first_y1 - first_y0),
+        max(0.0, second_x1 - second_x0) * max(0.0, second_y1 - second_y0),
+    )
+    return (overlap_width * overlap_height) / smaller_area if smaller_area else 0.0
+
+
+def _box_intersection_fraction(first: tuple[float, ...], second: tuple[float, ...]) -> float:
+    """Intersection divided by the first box area."""
+
+    first_x0, first_y0, first_x1, first_y1 = first
+    second_x0, second_y0, second_x1, second_y1 = second
+    overlap_width = max(0.0, min(first_x1, second_x1) - max(first_x0, second_x0))
+    overlap_height = max(0.0, min(first_y1, second_y1) - max(first_y0, second_y0))
+    first_area = max(0.0, first_x1 - first_x0) * max(0.0, first_y1 - first_y0)
+    return (overlap_width * overlap_height) / first_area if first_area else 0.0
+
+
+def _collapse_nested_detections(
+    candidates: list[dict[str, Any]],
+) -> list[dict[str, Any]]:
+    accepted: list[dict[str, Any]] = []
+    for candidate in sorted(candidates, key=lambda item: item["score"], reverse=True):
+        if any(
+            _box_containment(candidate["box"], prior["box"]) >= 0.8
+            for prior in accepted
+        ):
+            continue
+        accepted.append(candidate)
+    return accepted
+
+
 def _runtime_gpu_name() -> str:
     name = torch.cuda.get_device_name(0).upper()
     if "L40S" in name:
@@ -174,7 +218,7 @@ def _encode_scene_assets(master: Any, depth: Any) -> tuple[bytes, bytes, float]:
 class FastSceneStudio:
     @modal.enter(snap=True)
     def load(self) -> None:
-        from transformers import pipeline
+        from transformers import AutoModelForZeroShotObjectDetection, AutoProcessor, pipeline
 
         load_started = time.perf_counter()
         self.image_pipe = diffusers.SanaSprintPipeline.from_pretrained(
@@ -192,6 +236,15 @@ class FastSceneStudio:
             dtype=torch.float16,
             device=0,
         )
+        self.fidelity_processor = AutoProcessor.from_pretrained(
+            FIDELITY_MODEL,
+            revision=FIDELITY_MODEL_REVISION,
+        )
+        self.fidelity_model = AutoModelForZeroShotObjectDetection.from_pretrained(
+            FIDELITY_MODEL,
+            revision=FIDELITY_MODEL_REVISION,
+        ).to("cuda")
+        self.fidelity_model.eval()
         self.model_load_seconds = time.perf_counter() - load_started
         self.gpu = _runtime_gpu_name()
         self.inference_warmup_seconds = 0.0
@@ -219,6 +272,13 @@ class FastSceneStudio:
                 generator=torch.Generator(device="cuda").manual_seed(1),
             ).images[0]
             self.depth_pipe(warmup_master)
+            self._evaluate_fidelity(
+                warmup_master,
+                subject_label="lantern",
+                object_label="",
+                expected_subject_count=1,
+                require_overlap=False,
+            )
         torch.cuda.synchronize()
         self.inference_warmup_seconds = time.perf_counter() - warmup_started
         self.inference_warmed = True
@@ -232,6 +292,8 @@ class FastSceneStudio:
             "depth_model": DEPTH_MODEL,
             "depth_model_revision": DEPTH_MODEL_REVISION,
             "depth_dtype": DEPTH_DTYPE,
+            "fidelity_model": FIDELITY_MODEL,
+            "fidelity_model_revision": FIDELITY_MODEL_REVISION,
             "model_load_seconds": self.model_load_seconds,
             "inference_warmup_seconds": self.inference_warmup_seconds,
             "inference_warmed": self.inference_warmed,
@@ -250,6 +312,10 @@ class FastSceneStudio:
         height: int,
         steps: int,
         guidance_scale: float,
+        fidelity_label: str = "",
+        fidelity_object_label: str = "",
+        require_subject_object_overlap: bool = False,
+        expected_subject_count: int = 1,
     ) -> dict[str, Any]:
         _validate_prompt(prompt, name="prompt")
         _validate_prompt(negative_prompt, name="negative_prompt")
@@ -257,6 +323,16 @@ class FastSceneStudio:
         _validate_dimensions(width, height, minimum=512)
         if not 1 <= steps <= 4:
             raise ValueError("fast-scene steps must be between 1 and 4")
+        if len(fidelity_label) > 80 or (fidelity_label and not fidelity_label.strip()):
+            raise ValueError("fidelity_label must contain at most 80 characters")
+        if len(fidelity_object_label) > 80 or (
+            fidelity_object_label and not fidelity_object_label.strip()
+        ):
+            raise ValueError("fidelity_object_label must contain at most 80 characters")
+        if require_subject_object_overlap and not fidelity_object_label:
+            raise ValueError("subject/object overlap requires an object label")
+        if not 1 <= expected_subject_count <= 4:
+            raise ValueError("expected_subject_count must be between 1 and 4")
         master, image_seconds = self._generate_master(
             prompt=prompt,
             seed=seed,
@@ -265,6 +341,61 @@ class FastSceneStudio:
             steps=steps,
             guidance_scale=guidance_scale,
         )
+        selected_seed = seed
+        quality_attempts = 0
+        quality_seconds = 0.0
+        subject_count: int | None = None
+        object_count: int | None = None
+        subject_object_overlap: bool | None = None
+        quality_scores: list[float] = []
+        if fidelity_label:
+            quality, detection_seconds = self._evaluate_fidelity(
+                master,
+                subject_label=fidelity_label,
+                object_label=fidelity_object_label,
+                expected_subject_count=expected_subject_count,
+                require_overlap=require_subject_object_overlap,
+            )
+            quality_attempts = 1
+            quality_seconds += detection_seconds
+            subject_count = quality["subject_count"]
+            object_count = quality["object_count"]
+            subject_object_overlap = quality["subject_object_overlap"]
+            quality_scores = quality["scores"]
+            if not quality["passed"]:
+                retry_seed = (seed + 1) % (2**32)
+                retry_master, retry_image_seconds = self._generate_master(
+                    prompt=prompt,
+                    seed=retry_seed,
+                    width=width,
+                    height=height,
+                    steps=steps,
+                    guidance_scale=guidance_scale,
+                )
+                retry_quality, retry_detection_seconds = self._evaluate_fidelity(
+                    retry_master,
+                    subject_label=fidelity_label,
+                    object_label=fidelity_object_label,
+                    expected_subject_count=expected_subject_count,
+                    require_overlap=require_subject_object_overlap,
+                )
+                image_seconds += retry_image_seconds
+                quality_seconds += retry_detection_seconds
+                quality_attempts = 2
+                if retry_quality["passed"]:
+                    master = retry_master
+                    selected_seed = retry_seed
+                    subject_count = retry_quality["subject_count"]
+                    object_count = retry_quality["object_count"]
+                    subject_object_overlap = retry_quality["subject_object_overlap"]
+                    quality_scores = retry_quality["scores"]
+                    quality = retry_quality
+            if not quality["passed"]:
+                raise RuntimeError(
+                    "scene fidelity gate rejected both bounded candidates: "
+                    f"subject={subject_count}, object={object_count}, "
+                    f"overlap={subject_object_overlap}"
+                )
         depth_started = time.perf_counter()
         with torch.inference_mode():
             depth = self.depth_pipe(master)["depth"].convert("L").resize(
@@ -283,6 +414,17 @@ class FastSceneStudio:
             "depth_jpeg_quality": DEPTH_JPEG_QUALITY,
             "image_seconds": image_seconds,
             "depth_seconds": depth_seconds,
+            "quality_seconds": quality_seconds,
+            "quality_attempts": quality_attempts,
+            "quality_label": fidelity_label,
+            "quality_object_label": fidelity_object_label,
+            "quality_expected_count": expected_subject_count,
+            "quality_subject_count": subject_count,
+            "quality_object_count": object_count,
+            "quality_subject_object_overlap": subject_object_overlap,
+            "quality_scores": quality_scores,
+            "quality_passed": quality["passed"] if fidelity_label else None,
+            "selected_seed": selected_seed,
             "packaging_seconds": packaging_seconds,
             "model_load_seconds": self.model_load_seconds,
             "container_age_seconds": time.monotonic() - self.loaded_at,
@@ -362,6 +504,85 @@ class FastSceneStudio:
             ).images[0]
         image_seconds = time.perf_counter() - started
         return master, image_seconds
+
+    def _evaluate_fidelity(
+        self,
+        image: Any,
+        *,
+        subject_label: str,
+        object_label: str,
+        expected_subject_count: int,
+        require_overlap: bool,
+    ) -> tuple[dict[str, Any], float]:
+        started = time.perf_counter()
+        labels = [subject_label, *([object_label] if object_label else [])]
+        inputs = self.fidelity_processor(
+            images=image,
+            text=[labels],
+            return_tensors="pt",
+            size={
+                "shortest_edge": FIDELITY_SHORTEST_EDGE,
+                "longest_edge": FIDELITY_LONGEST_EDGE,
+            },
+        ).to("cuda")
+        with torch.inference_mode():
+            outputs = self.fidelity_model(**inputs)
+        result = self.fidelity_processor.post_process_grounded_object_detection(
+            outputs,
+            inputs.input_ids,
+            threshold=FIDELITY_THRESHOLD,
+            text_threshold=FIDELITY_THRESHOLD,
+            target_sizes=[(image.height, image.width)],
+        )[0]
+        grouped: dict[str, list[dict[str, Any]]] = {label: [] for label in labels}
+        for score, box, text_label in zip(
+            result["scores"],
+            result["boxes"].tolist(),
+            result["text_labels"],
+            strict=True,
+        ):
+            normalized = str(text_label).casefold().strip(" .")
+            label = next(
+                (candidate for candidate in labels if candidate.casefold() == normalized),
+                None,
+            )
+            if label is None:
+                continue
+            grouped[label].append(
+                {
+                    "score": float(score),
+                    "box": tuple(float(value) for value in box),
+                }
+            )
+        for label in labels:
+            grouped[label] = _collapse_nested_detections(grouped[label])
+        subjects = grouped[subject_label]
+        objects = grouped.get(object_label, [])
+        overlap = (
+            any(
+                _box_intersection_fraction(subject["box"], item["box"]) >= 0.05
+                for subject in subjects
+                for item in objects
+            )
+            if object_label
+            else None
+        )
+        passed = len(subjects) == expected_subject_count
+        if object_label:
+            passed = passed and len(objects) == 1
+        if require_overlap:
+            passed = passed and overlap is True
+        torch.cuda.synchronize()
+        return (
+            {
+                "passed": passed,
+                "subject_count": len(subjects),
+                "object_count": len(objects) if object_label else None,
+                "subject_object_overlap": overlap,
+                "scores": [item["score"] for item in [*subjects, *objects]],
+            },
+            time.perf_counter() - started,
+        )
 
 
 @app.cls(
@@ -614,6 +835,10 @@ def fast_scene_cli(
     height: int = 576,
     steps: int = 2,
     guidance_scale: float = 4.5,
+    fidelity_label: str = "",
+    fidelity_object_label: str = "",
+    require_subject_object_overlap: bool = False,
+    expected_subject_count: int = 1,
     plan_file: str = "experiments/live-scenes/modal-plan.json",
     ledger_path: str = "artifacts/live-scenes/modal-ledger.json",
     maximum_gpu_usd: float = 0.08,
@@ -644,6 +869,10 @@ def fast_scene_cli(
                 "height": height,
                 "steps": steps,
                 "guidance_scale": guidance_scale,
+                "fidelity_label": fidelity_label,
+                "fidelity_object_label": fidelity_object_label,
+                "require_subject_object_overlap": require_subject_object_overlap,
+                "expected_subject_count": expected_subject_count,
             },
             sort_keys=True,
         ).encode()
@@ -670,6 +899,10 @@ def fast_scene_cli(
         height=height,
         steps=steps,
         guidance_scale=guidance_scale,
+        fidelity_label=fidelity_label,
+        fidelity_object_label=fidelity_object_label,
+        require_subject_object_overlap=require_subject_object_overlap,
+        expected_subject_count=expected_subject_count,
     )
     if result.get("master_media_type") != "image/jpeg":
         raise RuntimeError("fast scene returned an unsupported master format")
@@ -701,6 +934,7 @@ def fast_scene_cli(
             "prompt": prompt,
             "negative_prompt": negative_prompt,
             "seed": seed,
+            "selected_seed": result.get("selected_seed", seed),
             "width": width,
             "height": height,
         },
@@ -715,19 +949,43 @@ def fast_scene_cli(
                 "model": FAST_MODEL,
                 "model_revision": FAST_MODEL_REVISION,
                 "additional_models": [
-                    {"model": DEPTH_MODEL, "model_revision": DEPTH_MODEL_REVISION}
+                    {"model": DEPTH_MODEL, "model_revision": DEPTH_MODEL_REVISION},
+                    {
+                        "model": FIDELITY_MODEL,
+                        "model_revision": FIDELITY_MODEL_REVISION,
+                    },
                 ],
                 "gpu": FAST_GPU,
                 "finite_call": True,
                 "hard_timeout_seconds": FAST_TIMEOUT_SECONDS,
                 "remote_seconds": remote_seconds,
-                "inference_seconds": result["image_seconds"] + result["depth_seconds"],
+                "inference_seconds": (
+                    result["image_seconds"]
+                    + result["depth_seconds"]
+                    + result.get("quality_seconds", 0)
+                ),
                 "provider_overhead_seconds": max(
                     0.0,
-                    remote_seconds - result["image_seconds"] - result["depth_seconds"],
+                    remote_seconds
+                    - result["image_seconds"]
+                    - result["depth_seconds"]
+                    - result.get("quality_seconds", 0),
                 ),
                 "image_seconds": result["image_seconds"],
                 "depth_seconds": result["depth_seconds"],
+                "quality_seconds": result.get("quality_seconds", 0),
+                "quality_attempts": result.get("quality_attempts", 0),
+                "quality_label": result.get("quality_label", ""),
+                "quality_object_label": result.get("quality_object_label", ""),
+                "quality_expected_count": result.get("quality_expected_count"),
+                "quality_subject_count": result.get("quality_subject_count"),
+                "quality_object_count": result.get("quality_object_count"),
+                "quality_subject_object_overlap": result.get(
+                    "quality_subject_object_overlap"
+                ),
+                "quality_scores": result.get("quality_scores", []),
+                "quality_passed": result.get("quality_passed"),
+                "selected_seed": result.get("selected_seed", seed),
                 "packaging_seconds": result["packaging_seconds"],
                 "master_jpeg_quality": result["master_jpeg_quality"],
                 "depth_jpeg_quality": result["depth_jpeg_quality"],

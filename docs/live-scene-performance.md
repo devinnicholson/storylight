@@ -48,6 +48,18 @@ visibly collapsed the central subject. SANA-Sprint is distilled for one-to-four-
 cut the exact warm provider path from 2.673 seconds to 1.176 seconds. Master and depth plates use
 bounded JPEG encodings, and the live request never empties the CUDA cache between scenes.
 
+The warm master path now includes a pinned Grounding DINO Tiny fidelity gate in the same GPU
+container. Gemma's cloud-safe plan supplies a short primary-subject label; the local compiler also
+extracts a required action object such as `boat`. Before depth generation, the gate requires the
+expected subject count, one required object when present, and actor/object overlap for supported
+actions such as steering or riding. Nested boxes are collapsed by containment so one actor is not
+counted twice. A mismatch generates exactly one new-seed candidate in the same bounded call; if
+both fail, no master is promoted. The real duplicate-prone acceptance selected its retry and
+completed in 1.530 seconds. This is an object-presence and placement gate, not proof of material or
+action semantics; human review still found walnut identity and visible steering ambiguous. A
+20-step SANA 1.5 follow-up was rejected at 5.656 seconds of L4 inference because it still produced a
+generic wooden boat.
+
 One-step support was tested separately with Diffusers' required
 `intermediate_timesteps=None` override. On the exact same prompt, seed, then-current 896x512 plate, and warm L4,
 it reduced image inference from 739.861 ms to 613.681 ms but reduced full API wall time by only
