@@ -88,6 +88,10 @@ deployed.
 them into the root-only service environment. Omit it when the service environment is already
 configured or when the Jetson should not retain cloud-renderer credentials.
 
+The immutable Modal budget plan stays under `/opt/bookforge`. Its runtime ledger is written to
+`/var/lib/bookforge/live-scenes/modal-ledger.json`, so the hardened application tree remains
+read-only while cost reservations and settlements remain durable across service restarts.
+
 Show the private pairing URL only when the operator is ready to connect the phone:
 
 ```bash

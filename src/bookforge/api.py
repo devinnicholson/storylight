@@ -169,15 +169,27 @@ async def lifespan(app: FastAPI):
         width=settings.asset_width,
         height=settings.asset_height,
     )
+    live_scene_output_dir = _jetson_writable_runtime_path(
+        settings.environment,
+        settings.data_dir,
+        settings.live_scene_output_dir,
+    )
+    modal_ledger_path = _jetson_writable_runtime_path(
+        settings.environment,
+        settings.data_dir,
+        settings.live_scene_modal_ledger_path,
+    )
     app.state.live_scenes = LiveSceneJobRegistry(
         build_live_scene_provider(
             settings.live_scene_backend,
             asset_backend=settings.asset_backend,
             cache=app.state.asset_cache,
-            output_root=settings.live_scene_output_dir,
+            output_root=live_scene_output_dir,
             enable_motion=settings.live_scene_enable_motion,
             enable_preview=settings.live_scene_enable_preview,
             modal_session_gpu_cap_usd=settings.live_scene_modal_session_gpu_cap_usd,
+            modal_plan_file=settings.live_scene_modal_plan_file,
+            modal_ledger_path=modal_ledger_path,
             gcp_url=settings.live_scene_gcp_url,
             gcp_audience=settings.live_scene_gcp_audience,
             gcp_impersonate_service_account=(
@@ -211,6 +223,16 @@ async def lifespan(app: FastAPI):
     http_client = getattr(client, "client", None)
     if http_client is not None:
         await http_client.aclose()
+
+
+def _jetson_writable_runtime_path(
+    environment: str,
+    data_dir: Path,
+    configured_path: Path,
+) -> Path:
+    if environment == "jetson" and not configured_path.is_absolute():
+        return data_dir / configured_path
+    return configured_path
 
 
 app = FastAPI(

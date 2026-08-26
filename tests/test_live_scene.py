@@ -821,6 +821,8 @@ def test_provider_factory_selects_fake_and_finite_modal_without_persistent_servi
         asset_backend="disabled",
         cache=cache,
         output_root=tmp_path / "warm-generated",
+        modal_plan_file=tmp_path / "modal-plan.json",
+        modal_ledger_path=tmp_path / "modal-ledger.json",
         auto_prewarm_on_submit=True,
     )
     explicit_fake = build_live_scene_provider(
@@ -865,6 +867,8 @@ def test_provider_factory_selects_fake_and_finite_modal_without_persistent_servi
     assert model_planned.planner.cache_entries == 7  # type: ignore[attr-defined]
     assert model_planned.planner.persistent_cache_dir == tmp_path / "plans"  # type: ignore[attr-defined]
     assert modal_warm.provider.__class__.__name__ == "WarmModalSceneProvider"  # type: ignore[attr-defined]
+    assert modal_warm.provider.plan_file == tmp_path / "modal-plan.json"  # type: ignore[attr-defined]
+    assert modal_warm.provider.ledger_path == tmp_path / "modal-ledger.json"  # type: ignore[attr-defined]
     assert modal_warm.auto_prewarm_on_submit is True  # type: ignore[attr-defined]
     assert modal.enable_motion is False  # type: ignore[attr-defined]
     assert modal.output_root == tmp_path / "generated"  # type: ignore[attr-defined]

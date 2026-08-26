@@ -203,6 +203,14 @@ def test_standalone_profile_keeps_raw_story_planning_local() -> None:
     assert "BOOKFORGE_LIVE_SCENE_PLANNER=model" in profile
     assert "BOOKFORGE_LIVE_SCENE_BACKEND=modal_warm" in profile
     assert "BOOKFORGE_ASSET_MODAL_COMMAND=/opt/bookforge/.venv/bin/modal" in profile
+    assert (
+        "BOOKFORGE_LIVE_SCENE_MODAL_PLAN_FILE="
+        "/opt/bookforge/experiments/live-scenes/modal-plan.json" in profile
+    )
+    assert (
+        "BOOKFORGE_LIVE_SCENE_MODAL_LEDGER_PATH="
+        "/var/lib/bookforge/live-scenes/modal-ledger.json" in profile
+    )
     assert "BOOKFORGE_LIVE_SCENE_ENABLE_MOTION=false" in profile
     assert "BOOKFORGE_ASR_BACKEND=disabled" in profile
     assert "MODAL_TOKEN_ID=\n" in profile

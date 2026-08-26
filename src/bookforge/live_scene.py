@@ -1625,6 +1625,8 @@ def build_live_scene_provider(
     enable_motion: bool = False,
     enable_preview: bool = True,
     modal_session_gpu_cap_usd: float = 1.0,
+    modal_plan_file: Path = Path("experiments/live-scenes/modal-plan.json"),
+    modal_ledger_path: Path = Path("artifacts/live-scenes/modal-ledger.json"),
     gcp_url: str = "",
     gcp_audience: str = "",
     gcp_impersonate_service_account: str = "",
@@ -1677,7 +1679,11 @@ def build_live_scene_provider(
         )
 
         return FiniteModalLiveSceneProvider(
-            FiniteModalSceneProvider(session_gpu_cap_usd=modal_session_gpu_cap_usd),
+            FiniteModalSceneProvider(
+                session_gpu_cap_usd=modal_session_gpu_cap_usd,
+                plan_file=modal_plan_file,
+                ledger_path=modal_ledger_path,
+            ),
             cache=cache,
             output_root=output_root,
             enable_motion=enable_motion,
@@ -1698,7 +1704,11 @@ def build_live_scene_provider(
         )
 
         return FiniteModalLiveSceneProvider(
-            WarmModalSceneProvider(session_gpu_cap_usd=modal_session_gpu_cap_usd),
+            WarmModalSceneProvider(
+                session_gpu_cap_usd=modal_session_gpu_cap_usd,
+                plan_file=modal_plan_file,
+                ledger_path=modal_ledger_path,
+            ),
             cache=cache,
             output_root=output_root,
             enable_motion=enable_motion,

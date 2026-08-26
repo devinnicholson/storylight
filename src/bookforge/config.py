@@ -65,6 +65,8 @@ class Settings(BaseSettings):
     live_scene_master_guidance_scale: Annotated[float, Field(ge=0, le=12)] = 4.5
     live_scene_auto_prewarm_on_submit: bool = False
     live_scene_modal_session_gpu_cap_usd: Annotated[float, Field(gt=0, le=10)] = 1.0
+    live_scene_modal_plan_file: Path = Path("experiments/live-scenes/modal-plan.json")
+    live_scene_modal_ledger_path: Path = Path("artifacts/live-scenes/modal-ledger.json")
     live_scene_gcp_url: str = ""
     live_scene_gcp_audience: str = ""
     live_scene_gcp_impersonate_service_account: str = ""

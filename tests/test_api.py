@@ -1,5 +1,6 @@
 import os
 from hashlib import sha256
+from pathlib import Path
 
 os.environ["BOOKFORGE_MODEL_BACKEND"] = "fake"
 os.environ["BOOKFORGE_MODEL_NAME"] = "fake"
@@ -9,7 +10,7 @@ os.environ["BOOKFORGE_CACHE_DIR"] = "/tmp/bookforge-api-tests/cache"
 
 from fastapi.testclient import TestClient  # noqa: E402
 
-from bookforge.api import app  # noqa: E402
+from bookforge.api import _jetson_writable_runtime_path, app  # noqa: E402
 from bookforge.asr_backend import DisabledAsrBackend  # noqa: E402
 from bookforge.domain import TranscriptionResponse  # noqa: E402
 
@@ -25,6 +26,17 @@ class FakeTranscriber:
             total_ms=12.5,
             audio_bytes=len(audio),
         )
+
+
+def test_jetson_relative_runtime_paths_resolve_under_writable_data_dir() -> None:
+    data_dir = Path("/var/lib/bookforge")
+    relative = Path("artifacts/live-scenes/modal-ledger.json")
+
+    assert _jetson_writable_runtime_path("jetson", data_dir, relative) == data_dir / relative
+    assert _jetson_writable_runtime_path("development", data_dir, relative) == relative
+    assert _jetson_writable_runtime_path("jetson", data_dir, Path("/tmp/ledger.json")) == Path(
+        "/tmp/ledger.json"
+    )
 
 
 def test_health_and_model_probe() -> None:
