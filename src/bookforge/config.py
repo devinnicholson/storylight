@@ -52,7 +52,7 @@ class Settings(BaseSettings):
     ] = "configured-local-model"
     live_scene_planner_cache_entries: Annotated[int, Field(ge=0, le=256)] = 32
     live_scene_planner_auto_warmup: bool = False
-    live_scene_planner_compact_wire: bool = False
+    live_scene_planner_compact_wire: bool = True
     live_scene_enable_motion: bool = False
     live_scene_enable_preview: bool = True
     live_scene_output_dir: Path = Path("artifacts/live-scenes/generated")
