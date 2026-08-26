@@ -1338,6 +1338,32 @@ def test_expired_prewarm_is_settled_and_rejected_instead_of_falsely_reused(
     assert [record.stage for record in ledger.records] == ["warm-prewarm-expired"]
 
 
+def test_new_prewarm_replaces_and_settles_an_expired_session(tmp_path: Path) -> None:
+    invoker = StubWarmInvoker()
+    provider = _warm_provider(tmp_path, invoker)
+
+    async def run():
+        await provider.prewarm(prewarm_id="first-expired")
+        assert provider._warm_session is not None
+        provider._warm_session.deadline_monotonic = 0
+        report = await provider.prewarm(prewarm_id="second-current")
+        return report, await provider.warm_status()
+
+    report, status = asyncio.run(run())
+
+    assert report.prewarm_id == "second-current"
+    assert status.state == "prewarmed"
+    assert status.prewarm_id == "second-current"
+    assert [(class_name, method) for class_name, method, _ in invoker.calls] == [
+        ("FastSceneStudio", "prewarm"),
+        ("FastSceneStudio", "prewarm"),
+    ]
+    envelope, _ = budget_envelope_from_plan(provider.plan_file)
+    ledger = VisualLabLedger.read(provider.ledger_path, envelope=envelope)
+    assert [record.stage for record in ledger.records] == ["warm-prewarm-expired"]
+    assert set(ledger.reservations) == {"reservation:warm-session:second-current"}
+
+
 def test_cancelling_prewarm_retains_fail_closed_reservation(tmp_path: Path) -> None:
     invoker = BlockingWarmInvoker(("FastSceneStudio", "prewarm"))
     provider = _warm_provider(tmp_path, invoker)

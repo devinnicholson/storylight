@@ -757,6 +757,7 @@ class WarmModalSceneProvider(FiniteModalSceneProvider):
             raise ValueError("extended presentation warming is supported for master/depth only")
         await self._require_ready()
         async with self._operation_lock:
+            await self._expire_warm_session_locked()
             if self._warm_session is not None:
                 raise FiniteModalProviderError("a prewarmed scene session is already active")
             experiment_id = f"warm-session:{prewarm_id}"
