@@ -35,6 +35,8 @@ explicit device-administration task that must follow NVIDIA's documentation.
   schema, privacy, fidelity, latency, memory, and power acceptance; never auto-promotes a model.
 - `run-power-mode-ab.sh`: explicit, reboot-aware 25W/MAXN_SUPER comparison with persistent evidence
   and a required restore verification.
+- `bookforge-admin` and `install-bookforge-admin.sh`: root-owned, fixed-command administration with
+  a narrowly scoped passwordless sudo rule; no password storage or arbitrary shell access.
 - `systemd/bookforge@.service`: system API service parameterized by the Linux user.
 - `systemd/bookforge-controller@.service`: authenticated, allowlisted phone gateway on port 8081.
 - `systemd/bookforge-kiosk.service`: graphical-session user service for the projector browser.
@@ -282,27 +284,46 @@ an acceptance result.
 
 #### Reboot-safe 25W versus MAXN_SUPER measurement
 
-JetPack 7.2.1 requires a reboot when this Orin Nano changes between power mode 1 (`25W`) and mode 2
-(`MAXN_SUPER`). Do not use a one-process switch/benchmark/restore script: the first reboot destroys
-that process and `/tmp` evidence. The repository runner preserves the accepted 25W baseline under
+On the measured JetPack 7.2.1 Orin Nano, changing from power mode 1 (`25W`) to mode 2
+(`MAXN_SUPER`) required a reboot; returning from mode 2 to mode 1 applied immediately. Do not use a
+one-process switch/benchmark/restore script: a requested reboot destroys that process and `/tmp`
+evidence. The repository runner preserves the accepted 25W baseline under
 `/var/lib/bookforge/power-mode-ab`, records a durable phase before each reboot, validates the mode
 after reconnect, and refuses out-of-order commands.
 
-Run exactly one phase at a time. The two mode-change phases prompt for a reboot; enter `YES` only
-after the script prints its matching durable phase:
+Run exactly one phase at a time. A mode-change phase may prompt for a reboot; enter `YES` only after
+the script prints its matching durable phase. If restoring 25W applies immediately, run `finalize`
+without rebooting:
 
 ```bash
 sudo /opt/bookforge/deploy/jetson/run-power-mode-ab.sh prepare-maxn
 # Reconnect after the MAXN_SUPER reboot.
 sudo /opt/bookforge/deploy/jetson/run-power-mode-ab.sh benchmark-maxn
 sudo /opt/bookforge/deploy/jetson/run-power-mode-ab.sh restore-25w
-# Reconnect after the 25W restore reboot.
+# Reconnect only if NVIDIA requested a 25W restore reboot.
 sudo /opt/bookforge/deploy/jetson/run-power-mode-ab.sh finalize
 ```
 
 The benchmark phase never changes power mode. The final phase must observe mode 1 and both local
 services before it writes `result=complete`. Evidence remains on the Jetson until it is explicitly
 collected; rebooting cannot erase it.
+
+#### Restricted unattended Bookforge administration
+
+Never store the Linux password in the repository, an environment file, a shell command, or a file
+for automation to read. Install the root-owned, allowlisted administrator once instead:
+
+```bash
+sudo /opt/bookforge/deploy/jetson/install-bookforge-admin.sh --user operator
+sudo -n /usr/local/sbin/bookforge-admin status
+```
+
+The sudo rule permits only `/usr/local/sbin/bookforge-admin`. That root-owned wrapper accepts fixed
+status, Bookforge service restart, and power-acceptance actions; it exposes no shell, arbitrary
+systemd unit, arbitrary path, package installation, network mutation, or general root command. The
+power runner is copied to a separate root-owned path so editing the Git checkout cannot alter code
+executed through passwordless sudo. Removing `/etc/sudoers.d/bookforge-admin-operator`
+revokes the delegation, but do so only through an explicitly authorized root maintenance action.
 
 Download the pinned official ARM64 archive into a versioned, user-owned directory. Verify the
 release digest before extracting it; do not pipe an unverified installer into a shell:
@@ -798,8 +819,9 @@ capture; the Firefox fallback does not establish that boundary by itself.
 - Camera and microphone enumeration proves presence, not capture quality. Test the exact USB camera,
   microphone, resolution, frame rate, room lighting, and projector interference used for the demo.
 - `nvpmodel -q` reports the current profile. Only the explicit `run-power-mode-ab.sh` acceptance
-  selects a profile; it uses two confirmed reboots, persists its phase, and refuses completion until
-  mode 1 (`25W`) is restored. No script runs maximum-clock commands.
+  selects a profile; it persists its phase across any required reboot and refuses completion until
+  mode 1 (`25W`) is restored. The measured 25W→MAXN transition required one reboot; MAXN→25W
+  applied immediately. No script runs maximum-clock commands.
 - Thermal-zone readings are a snapshot. Run a full-length rehearsal and record sustained latency and
   temperature; do not infer thermal stability from an idle check.
 - The system service does not join the user to `docker`, `video`, or `audio` groups. Granting device

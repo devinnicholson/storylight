@@ -17,6 +17,8 @@ EDGELLM_BENCHMARK = ROOT / "deploy/jetson/benchmark-tensorrt-edge-llm.py"
 EDGELLM_BENCHMARK_RUNNER = ROOT / "deploy/jetson/run-tensorrt-edge-benchmark.sh"
 EDGELLM_EXPORTER = ROOT / "deploy/modal_tensorrt_edge_export.py"
 POWER_MODE_AB = ROOT / "deploy/jetson/run-power-mode-ab.sh"
+BOOKFORGE_ADMIN = ROOT / "deploy/jetson/bookforge-admin"
+BOOKFORGE_ADMIN_INSTALLER = ROOT / "deploy/jetson/install-bookforge-admin.sh"
 
 
 def _write_executable(path: Path, body: str) -> None:
@@ -305,7 +307,8 @@ def test_power_mode_ab_is_reboot_aware_persistent_and_restores_25w() -> None:
     assert "benchmark-maxn" in runner
     assert "maxn-benchmarked" in runner
     assert "restore-25w" in runner
-    assert "awaiting-25w-reboot" in runner
+    assert "awaiting-25w-verification" in runner
+    assert "awaiting-25w-reboot" in runner  # Backward compatibility with an in-flight old phase.
     assert "finalize" in runner
     assert "require_mode 2" in runner
     assert "require_mode 1" in runner
@@ -322,6 +325,31 @@ def test_power_mode_ab_is_reboot_aware_persistent_and_restores_25w() -> None:
     assert "tegrastats --interval 500" in runner
     assert "bookforge.planner_benchmark" in runner
     assert "write_phase complete" in runner
+
+
+def test_bookforge_admin_delegation_is_root_owned_narrow_and_validated() -> None:
+    admin = BOOKFORGE_ADMIN.read_text()
+    installer = BOOKFORGE_ADMIN_INSTALLER.read_text()
+
+    subprocess.run(["bash", "-n", str(BOOKFORGE_ADMIN)], check=True)
+    subprocess.run(["bash", "-n", str(BOOKFORGE_ADMIN_INSTALLER)], check=True)
+    assert 'PATH=/usr/sbin:/usr/bin:/sbin:/bin' in admin
+    assert 'unset BASH_ENV ENV CDPATH GLOBIGNORE' in admin
+    assert 'readonly POWER_RUNNER="/usr/local/libexec/bookforge/run-power-mode-ab.sh"' in admin
+    assert "restart-api" in admin
+    assert "restart-controller" in admin
+    assert "restart-all" in admin
+    assert "status|prepare-maxn|benchmark-maxn|restore-25w|finalize" in admin
+    assert "eval " not in admin
+    assert "/home/" not in admin
+    assert "/opt/bookforge/deploy" not in admin
+    assert 'install -o root -g root -m 0755 "$ADMIN_SOURCE" "$ADMIN_TARGET"' in installer
+    assert 'install -o root -g root -m 0755 "$POWER_SOURCE" "$POWER_TARGET"' in installer
+    assert "NOPASSWD: %s" in installer
+    assert 'visudo -cf "$sudoers_tmp"' in installer
+    assert 'visudo -cf "$SUDOERS_TARGET"' in installer
+    assert "NOPASSWD: ALL" not in installer
+    assert "/bin/sh" not in installer
 
 
 def test_standalone_installer_waits_for_both_local_services() -> None:

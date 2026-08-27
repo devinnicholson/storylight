@@ -21,13 +21,14 @@ Usage: sudo run-power-mode-ab.sh COMMAND
 Commands:
   prepare-maxn    Preserve the 25W baseline, request MAXN_SUPER, then confirm its reboot.
   benchmark-maxn  After reconnecting, validate MAXN_SUPER and run the fixed five-case benchmark.
-  restore-25w     Request the accepted 25W mode, then confirm its reboot.
-  finalize        After reconnecting, validate 25W and close the persistent evidence record.
+  restore-25w     Request the accepted 25W mode, then verify it (reboot only if NVIDIA asks).
+  finalize        Validate the restored 25W mode and close the persistent evidence record.
   status          Print the current phase and power mode without changing anything.
 
-The two nvpmodel commands may ask whether to reboot. Enter YES only after the script has printed
-the matching durable phase marker. Never run benchmark-maxn before the MAXN reboot or finalize
-before the 25W restore reboot.
+An nvpmodel command may ask whether to reboot. Enter YES only after the script has printed the
+matching durable phase marker. On the measured JetPack 7.2.1 device, entering MAXN_SUPER required a
+reboot while returning to 25W applied immediately. Never benchmark or finalize until the requested
+mode is observable with nvpmodel.
 EOF
 }
 
@@ -252,20 +253,20 @@ PY
 restore_25w() {
   require_phase maxn-benchmarked
   require_mode 2
-  write_phase awaiting-25w-reboot
-  printf 'Durable phase: awaiting-25w-reboot\n'
-  printf 'Requesting 25W. When nvpmodel asks, enter YES to perform the restore reboot.\n'
+  write_phase awaiting-25w-verification
+  printf 'Durable phase: awaiting-25w-verification\n'
+  printf 'Requesting 25W. If nvpmodel asks to reboot, enter YES; otherwise verify immediately.\n'
   if ! nvpmodel -m 1; then
     write_phase restore-cancelled
     printf '25W restore was not requested; phase set to restore-cancelled.\n' >&2
     exit 1
   fi
-  printf 'If the board did not reboot, stop and inspect nvpmodel before continuing.\n'
+  printf 'Run finalize now if mode 1 is active, or after reconnecting if a reboot occurred.\n'
 }
 
 finalize() {
   case "$(phase)" in
-    awaiting-25w-reboot|restore-cancelled) ;;
+    awaiting-25w-verification|awaiting-25w-reboot|restore-cancelled) ;;
     *)
       printf 'Expected a pending 25W restore, found %s. Refusing.\n' "$(phase)" >&2
       exit 70
