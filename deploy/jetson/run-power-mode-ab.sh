@@ -12,6 +12,7 @@ readonly BASELINE_TELEMETRY_SOURCE="/tmp/bookforge-25w-tegrastats.log"
 readonly MAXN_REPORT="$EVIDENCE_DIR/bookforge-inference-maxn.json"
 readonly MAXN_TELEMETRY="$EVIDENCE_DIR/bookforge-maxn-tegrastats.log"
 readonly MODEL_REVISION="8648f39d-maxn-resident"
+monitor_pid=""
 
 usage() {
   cat <<'EOF'
@@ -44,12 +45,47 @@ if [[ ! -r /etc/nv_tegra_release ]] \
   printf 'This runner is pinned to JetPack 7.2.1 / L4T 39.2.1.\n' >&2
   exit 65
 fi
-for required in nvpmodel curl tegrastats runuser sha256sum; do
+for required in nvpmodel curl tegrastats runuser sha256sum pgrep; do
   if ! command -v "$required" >/dev/null 2>&1; then
     printf 'Required command is missing: %s\n' "$required" >&2
     exit 69
   fi
 done
+
+ensure_state_layout() {
+  # The benchmark runs as the unprivileged Bookforge user. Keep the phase file root-owned while
+  # allowing that user to traverse the parent and write only inside the evidence directory.
+  install -d -o root -g "$TARGET_GROUP" -m 0750 "$STATE_DIR"
+  install -d -o "$TARGET_USER" -g "$TARGET_GROUP" -m 0750 "$EVIDENCE_DIR"
+}
+
+cleanup_monitor() {
+  if [[ -n "${monitor_pid:-}" ]] && kill -0 "$monitor_pid" 2>/dev/null; then
+    kill "$monitor_pid" 2>/dev/null || true
+    wait "$monitor_pid" 2>/dev/null || true
+  fi
+  monitor_pid=""
+}
+
+cleanup_stale_monitor() {
+  local stale_pid
+  local stale_pattern
+  stale_pattern="^(tegrastats|/usr/bin/tegrastats) --interval 500 --logfile ${MAXN_TELEMETRY}$"
+  while IFS= read -r stale_pid; do
+    [[ -n "$stale_pid" ]] || continue
+    printf 'Stopping stale Bookforge telemetry monitor PID %s.\n' "$stale_pid"
+    kill "$stale_pid"
+    for _ in $(seq 1 20); do
+      kill -0 "$stale_pid" 2>/dev/null || break
+      sleep 0.1
+    done
+    if kill -0 "$stale_pid" 2>/dev/null; then
+      printf 'Stale telemetry monitor PID %s did not stop; refusing to benchmark.\n' \
+        "$stale_pid" >&2
+      exit 71
+    fi
+  done < <(pgrep -f -- "$stale_pattern" || true)
+}
 
 power_mode_id() {
   nvpmodel -q 2>/dev/null | awk '/^[0-9]+$/{mode=$1} END{print mode}'
@@ -124,8 +160,7 @@ prepare_maxn() {
     exit 69
   fi
 
-  install -d -m 0700 "$STATE_DIR"
-  install -d -o "$TARGET_USER" -g "$TARGET_GROUP" -m 0750 "$EVIDENCE_DIR"
+  ensure_state_layout
   install -o "$TARGET_USER" -g "$TARGET_GROUP" -m 0640 \
     "$BASELINE_SOURCE" "$EVIDENCE_DIR/bookforge-inference-25w.json"
   install -o "$TARGET_USER" -g "$TARGET_GROUP" -m 0640 \
@@ -152,14 +187,12 @@ benchmark_maxn() {
   require_phase awaiting-maxn-reboot
   require_mode 2
   wait_for_runtime
+  ensure_state_layout
+  cleanup_stale_monitor
 
   rm -f "$MAXN_REPORT" "$MAXN_TELEMETRY"
   tegrastats --interval 500 --logfile "$MAXN_TELEMETRY" &
-  local monitor_pid=$!
-  cleanup_monitor() {
-    kill "$monitor_pid" 2>/dev/null || true
-    wait "$monitor_pid" 2>/dev/null || true
-  }
+  monitor_pid=$!
   trap cleanup_monitor EXIT INT TERM
 
   runuser -u "$TARGET_USER" -- env PYTHONPATH=/opt/bookforge/src \

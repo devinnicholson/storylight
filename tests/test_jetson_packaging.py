@@ -314,6 +314,11 @@ def test_power_mode_ab_is_reboot_aware_persistent_and_restores_25w() -> None:
     assert "Enter YES" in runner
     assert 'readonly BASELINE_SOURCE="/tmp/bookforge-inference-25w-power.json"' in runner
     assert 'readonly EVIDENCE_DIR="$STATE_DIR/evidence"' in runner
+    assert 'install -d -o root -g "$TARGET_GROUP" -m 0750 "$STATE_DIR"' in runner
+    assert 'install -d -o "$TARGET_USER" -g "$TARGET_GROUP" -m 0750 "$EVIDENCE_DIR"' in runner
+    assert 'monitor_pid=""' in runner
+    assert "cleanup_stale_monitor" in runner
+    assert 'kill -0 "$stale_pid"' in runner
     assert "tegrastats --interval 500" in runner
     assert "bookforge.planner_benchmark" in runner
     assert "write_phase complete" in runner
