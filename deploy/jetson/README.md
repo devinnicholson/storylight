@@ -268,9 +268,10 @@ by this pinned runtime. The exact revision used here is public and ungated; no H
 click-through acceptance is required. The repository now contains a finite INT4-AWQ, text-only
 exporter that externalizes FFN weights for the 8 GB Jetson, plus an on-device engine builder and
 shadow benchmark. Modal refused both A100-80GB and L40S allocation without a payment method, so the
-candidate was not quantized, downloaded, built, or promoted. The linked GCP project was also
-checked after enabling Compute Engine: billing is active, no resources exist, and its global GPU
-quota is zero. Gemma 3 remains production. Full
+candidate was not quantized, downloaded, built, or promoted there. GCP approved exactly one
+Cloud Run RTX PRO 6000 Blackwell in `us-central1`; the pinned exporter image and private bucket are
+ready. Its first one-task execution remained pending for the full 30-minute wall guard and was
+cancelled before application start, model download, or GPU work. Gemma 3 remains production. Full
 control evidence is in `benchmarks/bookforge-tensorrt-edge-llm-2026-08-26.json`; the exact warm
 baseline, blocked export attempts, cost reconciliation, and promotion gate are in
 `benchmarks/bookforge-gemma4-tensorrt-edge-llm-2026-08-26.json`.
@@ -287,14 +288,24 @@ BOOKFORGE_EDGELLM_PROMPT_PROFILE=production \
 The benchmark exits nonzero when any output misses the strict wire schema. A high token rate is not
 an acceptance result.
 
-When an authorized cloud GPU is available, the Gemma 4 sequence is deliberately staged:
+The Gemma 4 sequence is deliberately staged. The existing GCP job is digest-pinned, uses one task,
+zero retries, a 1,200-second timeout, and a bucket-only service account:
 
 ```bash
 # Cloud: pinned BF16 -> INT4-AWQ -> text-only ONNX with external FFN weights.
-modal run deploy/modal_gemma4_tensorrt_edge_export.py::export_cli
+# Run only as a deliberate, monitored attempt when us-central1 Blackwell capacity is available.
+gcloud run jobs execute bookforge-gemma4-tensorrt-export \
+  --project=your-gcp-project --region=us-central1 --wait
 # Transfer only gemma4-e2b-it-int4-awq-v010/onnx to the matching Jetson model root.
 deploy/jetson/build-gemma4-tensorrt-edge-engine.sh
 deploy/jetson/run-gemma4-tensorrt-edge-benchmark.sh
+```
+
+If an execution remains `Pending`, cancel it rather than leaving an unattended late GPU start:
+
+```bash
+gcloud run jobs executions cancel EXECUTION_NAME \
+  --project=your-gcp-project --region=us-central1
 ```
 
 The first pass excludes Gemma 4 MTP. Only add the assistant after the target-only engine passes all
