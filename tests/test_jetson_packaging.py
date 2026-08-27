@@ -16,6 +16,9 @@ EDGELLM_ENGINE_BUILDER = ROOT / "deploy/jetson/build-tensorrt-edge-engine.sh"
 EDGELLM_BENCHMARK = ROOT / "deploy/jetson/benchmark-tensorrt-edge-llm.py"
 EDGELLM_BENCHMARK_RUNNER = ROOT / "deploy/jetson/run-tensorrt-edge-benchmark.sh"
 EDGELLM_EXPORTER = ROOT / "deploy/modal_tensorrt_edge_export.py"
+GEMMA4_EDGELLM_EXPORTER = ROOT / "deploy/modal_gemma4_tensorrt_edge_export.py"
+GEMMA4_EDGELLM_ENGINE_BUILDER = ROOT / "deploy/jetson/build-gemma4-tensorrt-edge-engine.sh"
+GEMMA4_EDGELLM_BENCHMARK_RUNNER = ROOT / "deploy/jetson/run-gemma4-tensorrt-edge-benchmark.sh"
 POWER_MODE_AB = ROOT / "deploy/jetson/run-power-mode-ab.sh"
 BOOKFORGE_ADMIN = ROOT / "deploy/jetson/bookforge-admin"
 BOOKFORGE_ADMIN_INSTALLER = ROOT / "deploy/jetson/install-bookforge-admin.sh"
@@ -295,6 +298,37 @@ def test_tensorrt_edge_llm_candidate_is_pinned_local_and_fail_closed() -> None:
     assert 'MODEL_REVISION = "db09cd27ead7fee40cdee309693cf83601b9c899"' in exporter
     assert "revision=MODEL_REVISION" in exporter
     assert '"model_revision": MODEL_REVISION' in exporter
+
+
+def test_gemma4_tensorrt_candidate_is_budgeted_externalized_and_shadow_only() -> None:
+    exporter = GEMMA4_EDGELLM_EXPORTER.read_text()
+    engine_builder = GEMMA4_EDGELLM_ENGINE_BUILDER.read_text()
+    benchmark_runner = GEMMA4_EDGELLM_BENCHMARK_RUNNER.read_text()
+
+    subprocess.run(["bash", "-n", str(GEMMA4_EDGELLM_ENGINE_BUILDER)], check=True)
+    subprocess.run(["bash", "-n", str(GEMMA4_EDGELLM_BENCHMARK_RUNNER)], check=True)
+    assert 'MODEL_ID = "google/gemma-4-E2B-it"' in exporter
+    assert 'MODEL_REVISION = "3e22461f65e89153144f8adb70e3b8c2cc9845a7"' in exporter
+    assert 'gpu="L40S"' in exporter
+    assert "REMOTE_TIMEOUT_SECONDS = 1_500" in exporter
+    assert "WORKSPACE_HARD_STOP_USD = 28.0" in exporter
+    assert "FULL_COMMAND_CEILING_USD = 1.30" in exporter
+    assert '"--quantization",\n                "int4_awq"' in exporter
+    assert '"--components",\n                "thinker"' in exporter
+    assert '"--externalize-weights",\n                "int4_ffn"' in exporter
+    assert '"mtp_included": False' in exporter
+    assert "_authoritative_workspace_total()" in exporter
+
+    assert 'models/gemma4-e2b-it-int4-awq-v010' in engine_builder
+    assert "Externalized Gemma 4 INT4 weights are missing" in engine_builder
+    assert 'readonly GEMMA_MODEL="${BOOKFORGE_GEMMA_MODEL:-gemma3:1b-it-q4_K_M}"' in engine_builder
+    assert "trap restore_runtime EXIT INT TERM" in engine_builder
+    assert "--maxKVCacheCapacity 1536" in engine_builder
+
+    assert 'models/gemma4-e2b-it-int4-awq-v010' in benchmark_runner
+    assert "--candidate-model google/gemma-4-E2B-it" in benchmark_runner
+    assert "--candidate-revision 3e22461f65e89153144f8adb70e3b8c2cc9845a7" in benchmark_runner
+    assert "Gemma 3 remains production" in benchmark_runner
 
 
 def test_power_mode_ab_is_reboot_aware_persistent_and_restores_25w() -> None:

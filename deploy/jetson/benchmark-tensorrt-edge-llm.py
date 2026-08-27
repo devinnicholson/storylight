@@ -144,6 +144,8 @@ def _parser() -> argparse.ArgumentParser:
     parser.add_argument("--output", type=Path, required=True)
     parser.add_argument("--warmup", type=int, default=1)
     parser.add_argument("--prompt-profile", choices=("production", "compact"), default="production")
+    parser.add_argument("--candidate-model", default="Qwen/Qwen2.5-0.5B-Instruct-AWQ")
+    parser.add_argument("--candidate-revision", default="db09cd27ead7fee40cdee309693cf83601b9c899")
     return parser
 
 
@@ -187,6 +189,8 @@ def main() -> None:
         ),
         "runtime": {
             "backend": "tensorrt-edge-llm",
+            "candidate_model": args.candidate_model,
+            "candidate_revision": args.candidate_revision,
             "binary": str(args.binary),
             "engine_dir": str(args.engine_dir),
             "checkpoint_dir": str(args.checkpoint_dir),
@@ -207,6 +211,7 @@ def main() -> None:
             "all_outputs_schema_valid": all(case["valid"] for case in cases),
             "human_semantic_review_required": True,
             "candidate_not_promoted_by_this_benchmark": True,
+            "production_backend_unchanged": "ollama/gemma3:1b-it-q4_K_M",
         },
         "diagnostics": {
             "stdout_tail": completed.stdout[-4000:],

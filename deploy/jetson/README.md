@@ -264,11 +264,14 @@ five-passage runs. The control is therefore rejected and is not selectable by pr
 
 The result is useful: TensorRT has enough performance to change the live experience, but the next
 candidate must preserve Gemma-level understanding. NVIDIA lists `google/gemma-4-E2B-it` as supported
-by this pinned runtime. That gated checkpoint is the next candidate after its Hugging Face license
-is accepted and an access token is supplied to a temporary Modal secret. It still requires a
-separate 8 GB memory, projector-concurrency, schema, privacy, and semantic acceptance before any
-runtime switch. Full measured evidence is in
-`benchmarks/bookforge-tensorrt-edge-llm-2026-08-26.json`.
+by this pinned runtime. The exact revision used here is public and ungated; no Hugging Face token or
+click-through acceptance is required. The repository now contains a finite INT4-AWQ, text-only
+exporter that externalizes FFN weights for the 8 GB Jetson, plus an on-device engine builder and
+shadow benchmark. Modal refused both A100-80GB and L40S allocation without a payment method, so the
+candidate was not quantized, downloaded, built, or promoted. Gemma 3 remains production. Full
+control evidence is in `benchmarks/bookforge-tensorrt-edge-llm-2026-08-26.json`; the exact warm
+baseline, blocked export attempts, cost reconciliation, and promotion gate are in
+`benchmarks/bookforge-gemma4-tensorrt-edge-llm-2026-08-26.json`.
 
 Reproduce the already-pinned control only when validating a new JetPack image:
 
@@ -281,6 +284,20 @@ BOOKFORGE_EDGELLM_PROMPT_PROFILE=production \
 
 The benchmark exits nonzero when any output misses the strict wire schema. A high token rate is not
 an acceptance result.
+
+When an authorized cloud GPU is available, the Gemma 4 sequence is deliberately staged:
+
+```bash
+# Cloud: pinned BF16 -> INT4-AWQ -> text-only ONNX with external FFN weights.
+modal run deploy/modal_gemma4_tensorrt_edge_export.py::export_cli
+# Transfer only gemma4-e2b-it-int4-awq-v010/onnx to the matching Jetson model root.
+deploy/jetson/build-gemma4-tensorrt-edge-engine.sh
+deploy/jetson/run-gemma4-tensorrt-edge-benchmark.sh
+```
+
+The first pass excludes Gemma 4 MTP. Only add the assistant after the target-only engine passes all
+schema, privacy, semantic, memory, and measured end-to-end gates. The shadow runner always restores
+Gemma 3 and cannot change the production backend.
 
 #### Reboot-safe 25W versus MAXN_SUPER measurement
 
