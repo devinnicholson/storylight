@@ -7,6 +7,14 @@ Implementation checkpoint: the privacy-safe Cloud Monitoring dashboard is deploy
 is staged at zero traffic; and `bookforge.gcp_scene_benchmark` now provides bounded probe/prepared
 experiments with no automatic retry and prompt hashes instead of prompt text.
 
+Current external blocker: two authenticated, zero-traffic health samples were rejected by the Cloud
+Run front end as billing-disabled before the container responded, while the Cloud Billing API
+reported account `000000-000000-000000` open and the project linked/enabled. No emergency-guard
+disable event exists. Google documents that services may take up to 24 hours to resume after billing
+is re-enabled and that some services require a manual restart. Do not spend additional canary calls
+inside that propagation window; after it, take one health-only sample and escalate to Cloud Billing
+Support if the API/front-end contradiction remains.
+
 Bookforge is no longer bottlenecked by one slow model. The accepted standalone path already has a
 faithful Jetson planner, a subsecond prepared renderer, stable 30 Hz depth motion, checksum-bound
 assets, and restart-safe caches. The remaining work is to make that performance predictable while
