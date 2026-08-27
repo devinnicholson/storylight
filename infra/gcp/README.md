@@ -54,6 +54,35 @@ Cloud Run verifies the Google-signed identity token; the browser and Jetson proj
 GCP credentials or the private service URL. Keep minimum instances at zero outside a supervised
 demo. The project-scoped billing guard below remains the last-resort containment layer.
 
+The checked-in Cloud Monitoring dashboard at
+`monitoring/live-scene-dashboard.json` uses only built-in Cloud Run metrics. It separates end-to-end
+request latency, container startup, NVIDIA GPU utilization and memory, instance count, and billable
+instance time without adding prompts, passages, session IDs, audio, or camera data as dimensions.
+Apply it once with:
+
+```bash
+gcloud monitoring dashboards create \
+  --project "${GOOGLE_CLOUD_PROJECT}" \
+  --config-from-file infra/gcp/monitoring/live-scene-dashboard.json
+```
+
+The deployed dashboard for `your-gcp-project` is
+`projects/your-gcp-project/dashboards/YOUR_DASHBOARD_ID`. Before a paid renderer
+benchmark, declare its sample count and cost ceiling. The harness uses five fixed synthetic visual
+briefs, records only prompt hashes, performs no automatic retry, and refuses to overwrite evidence:
+
+```bash
+.venv/bin/python -m bookforge.gcp_scene_benchmark \
+  --base-url "${BOOKFORGE_LIVE_SCENE_GCP_URL}" \
+  --audience "${BOOKFORGE_LIVE_SCENE_GCP_AUDIENCE}" \
+  --impersonate-service-account "${BOOKFORGE_LIVE_SCENE_GCP_IMPERSONATE_SERVICE_ACCOUNT}" \
+  --gpu RTX_PRO_6000 \
+  --mode prepared \
+  --samples 5 \
+  --output-root artifacts/gcp-scene-benchmark/YYYYMMDD \
+  --report benchmarks/gcp-scene-benchmark-YYYYMMDD.json
+```
+
 Cloud Run reserves some URL paths ending in `z`, so the worker intentionally exposes `/health`
 rather than `/healthz`. Do not prewarm or generate until authenticated `GET /health` reaches the
 worker. Evidence and the exact immutable revision are recorded in

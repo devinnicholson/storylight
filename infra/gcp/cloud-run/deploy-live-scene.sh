@@ -8,6 +8,13 @@ SERVICE="${BOOKFORGE_GCP_SCENE_SERVICE:-bookforge-scene-rtx}"
 SERVICE_ACCOUNT="bookforge-renderer@${PROJECT_ID}.iam.gserviceaccount.com"
 IMAGE="${REGION}-docker.pkg.dev/${PROJECT_ID}/${REPOSITORY}/live-scene:${BOOKFORGE_IMAGE_TAG:-latest}"
 GPU_TYPE="${BOOKFORGE_GCP_GPU_TYPE:-nvidia-rtx-pro-6000}"
+STARTUP_PROBE_ATTEMPTS="${BOOKFORGE_GCP_STARTUP_PROBE_ATTEMPTS:-900}"
+
+if [[ ! "${STARTUP_PROBE_ATTEMPTS}" =~ ^[0-9]+$ ]] || \
+   (( STARTUP_PROBE_ATTEMPTS < 60 || STARTUP_PROBE_ATTEMPTS > 1800 )); then
+  echo "BOOKFORGE_GCP_STARTUP_PROBE_ATTEMPTS must be an integer from 60 through 1800." >&2
+  exit 1
+fi
 
 case "${GPU_TYPE}" in
   nvidia-l4)
@@ -39,6 +46,7 @@ if [[ "${BOOKFORGE_GCP_APPLY:-}" != "I_UNDERSTAND_THIS_CREATES_BILLABLE_RESOURCE
   echo "  service:       ${SERVICE}"
   echo "  GPU:           one ${GPU_TYPE}, no zonal redundancy"
   echo "  autoscaling:   zero to one instance, concurrency one"
+  echo "  startup probe: one-second TCP checks, ${STARTUP_PROBE_ATTEMPTS} attempts"
   echo "  access:        IAM authenticated only"
   echo
   echo "Set BOOKFORGE_GCP_APPLY=I_UNDERSTAND_THIS_CREATES_BILLABLE_RESOURCES to apply."
@@ -140,10 +148,11 @@ gcloud run deploy "${SERVICE}" \
   --min 0 \
   --max 1 \
   --timeout 300s \
+  --startup-probe "tcpSocket.port=8080,initialDelaySeconds=0,timeoutSeconds=1,periodSeconds=1,failureThreshold=${STARTUP_PROBE_ATTEMPTS}" \
   --cpu-boost \
   --no-cpu-throttling \
   --no-allow-unauthenticated \
-  --set-env-vars "BOOKFORGE_EXPECTED_GPU=${EXPECTED_GPU},HF_HUB_OFFLINE=1,HF_HUB_DISABLE_XET=1,TRANSFORMERS_OFFLINE=1" \
+  --set-env-vars "BOOKFORGE_EXPECTED_GPU=${EXPECTED_GPU},GOOGLE_CLOUD_PROJECT=${PROJECT_ID},HF_HUB_OFFLINE=1,HF_HUB_DISABLE_XET=1,TRANSFORMERS_OFFLINE=1" \
   --labels app=bookforge,component=live-scene,model=sana-sprint \
   --quiet
 

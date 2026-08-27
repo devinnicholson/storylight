@@ -1,0 +1,183 @@
+{
+  "displayName": "Bookforge live-scene GPU performance",
+  "mosaicLayout": {
+    "columns": 12,
+    "tiles": [
+      {
+        "xPos": 0,
+        "yPos": 0,
+        "width": 6,
+        "height": 4,
+        "widget": {
+          "title": "End-to-end request latency p50 / p95",
+          "xyChart": {
+            "dataSets": [
+              {
+                "legendTemplate": "p50",
+                "plotType": "LINE",
+                "timeSeriesQuery": {
+                  "timeSeriesFilter": {
+                    "filter": "resource.type=\"cloud_run_revision\" AND resource.label.\"service_name\"=\"bookforge-scene-rtx\" AND metric.type=\"run.googleapis.com/request_latency/e2e_latencies\"",
+                    "aggregation": {
+                      "alignmentPeriod": "60s",
+                      "perSeriesAligner": "ALIGN_PERCENTILE_50"
+                    }
+                  }
+                }
+              },
+              {
+                "legendTemplate": "p95",
+                "plotType": "LINE",
+                "timeSeriesQuery": {
+                  "timeSeriesFilter": {
+                    "filter": "resource.type=\"cloud_run_revision\" AND resource.label.\"service_name\"=\"bookforge-scene-rtx\" AND metric.type=\"run.googleapis.com/request_latency/e2e_latencies\"",
+                    "aggregation": {
+                      "alignmentPeriod": "60s",
+                      "perSeriesAligner": "ALIGN_PERCENTILE_95"
+                    }
+                  }
+                }
+              }
+            ],
+            "yAxis": {"label": "milliseconds", "scale": "LINEAR"}
+          }
+        }
+      },
+      {
+        "xPos": 6,
+        "yPos": 0,
+        "width": 6,
+        "height": 4,
+        "widget": {
+          "title": "Container startup latency p95",
+          "xyChart": {
+            "dataSets": [
+              {
+                "legendTemplate": "startup p95",
+                "plotType": "LINE",
+                "timeSeriesQuery": {
+                  "timeSeriesFilter": {
+                    "filter": "resource.type=\"cloud_run_revision\" AND resource.label.\"service_name\"=\"bookforge-scene-rtx\" AND metric.type=\"run.googleapis.com/container/startup_latencies\"",
+                    "aggregation": {
+                      "alignmentPeriod": "60s",
+                      "perSeriesAligner": "ALIGN_PERCENTILE_95"
+                    }
+                  }
+                }
+              }
+            ],
+            "yAxis": {"label": "milliseconds", "scale": "LINEAR"}
+          }
+        }
+      },
+      {
+        "xPos": 0,
+        "yPos": 4,
+        "width": 6,
+        "height": 4,
+        "widget": {
+          "title": "NVIDIA GPU utilization p95",
+          "xyChart": {
+            "dataSets": [
+              {
+                "legendTemplate": "GPU {{metric.label.gpu_number}}",
+                "plotType": "LINE",
+                "timeSeriesQuery": {
+                  "timeSeriesFilter": {
+                    "filter": "resource.type=\"cloud_run_revision\" AND resource.label.\"service_name\"=\"bookforge-scene-rtx\" AND metric.type=\"run.googleapis.com/container/gpu/utilizations\"",
+                    "aggregation": {
+                      "alignmentPeriod": "60s",
+                      "perSeriesAligner": "ALIGN_PERCENTILE_95"
+                    }
+                  }
+                }
+              }
+            ],
+            "yAxis": {"label": "utilization", "scale": "LINEAR"}
+          }
+        }
+      },
+      {
+        "xPos": 6,
+        "yPos": 4,
+        "width": 6,
+        "height": 4,
+        "widget": {
+          "title": "NVIDIA GPU memory p95",
+          "xyChart": {
+            "dataSets": [
+              {
+                "legendTemplate": "GPU {{metric.label.gpu_number}}",
+                "plotType": "LINE",
+                "timeSeriesQuery": {
+                  "timeSeriesFilter": {
+                    "filter": "resource.type=\"cloud_run_revision\" AND resource.label.\"service_name\"=\"bookforge-scene-rtx\" AND metric.type=\"run.googleapis.com/container/gpu/memory_usages\"",
+                    "aggregation": {
+                      "alignmentPeriod": "60s",
+                      "perSeriesAligner": "ALIGN_PERCENTILE_95"
+                    }
+                  }
+                }
+              }
+            ],
+            "yAxis": {"label": "bytes", "scale": "LINEAR"}
+          }
+        }
+      },
+      {
+        "xPos": 0,
+        "yPos": 8,
+        "width": 6,
+        "height": 4,
+        "widget": {
+          "title": "Active and idle instances",
+          "xyChart": {
+            "dataSets": [
+              {
+                "legendTemplate": "{{metric.label.state}}",
+                "plotType": "STACKED_AREA",
+                "timeSeriesQuery": {
+                  "timeSeriesFilter": {
+                    "filter": "resource.type=\"cloud_run_revision\" AND resource.label.\"service_name\"=\"bookforge-scene-rtx\" AND metric.type=\"run.googleapis.com/container/instance_count\"",
+                    "aggregation": {
+                      "alignmentPeriod": "60s",
+                      "perSeriesAligner": "ALIGN_MEAN"
+                    }
+                  }
+                }
+              }
+            ],
+            "yAxis": {"label": "instances", "scale": "LINEAR"}
+          }
+        }
+      },
+      {
+        "xPos": 6,
+        "yPos": 8,
+        "width": 6,
+        "height": 4,
+        "widget": {
+          "title": "Billable instance time",
+          "xyChart": {
+            "dataSets": [
+              {
+                "legendTemplate": "billable seconds",
+                "plotType": "LINE",
+                "timeSeriesQuery": {
+                  "timeSeriesFilter": {
+                    "filter": "resource.type=\"cloud_run_revision\" AND resource.label.\"service_name\"=\"bookforge-scene-rtx\" AND metric.type=\"run.googleapis.com/container/billable_instance_time\"",
+                    "aggregation": {
+                      "alignmentPeriod": "60s",
+                      "perSeriesAligner": "ALIGN_SUM"
+                    }
+                  }
+                }
+              }
+            ],
+            "yAxis": {"label": "seconds per minute", "scale": "LINEAR"}
+          }
+        }
+      }
+    ]
+  }
+}

@@ -4,12 +4,14 @@ import asyncio
 import base64
 import hashlib
 import io
+import json
 import os
 import time
 from concurrent.futures import ThreadPoolExecutor
+from contextvars import ContextVar, Token
 from typing import Annotated, Any
 
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 from pydantic import BaseModel, ConfigDict, Field, StringConstraints
 
 FAST_MODEL = "Efficient-Large-Model/Sana_Sprint_1.6B_1024px_diffusers"
@@ -22,6 +24,39 @@ MASTER_JPEG_QUALITY = 95
 DEPTH_JPEG_QUALITY = 85
 MODEL_CACHE = os.environ.get("BOOKFORGE_MODEL_CACHE", "/models/huggingface")
 EXPECTED_GPU = os.environ.get("BOOKFORGE_EXPECTED_GPU", "L4")
+GOOGLE_CLOUD_PROJECT = os.environ.get("GOOGLE_CLOUD_PROJECT", "")
+_request_trace: ContextVar[str | None] = ContextVar("bookforge_cloud_trace", default=None)
+
+
+def _log_metric(event: str, **values: str | int | float | bool) -> None:
+    """Emit prompt-free structured telemetry for Cloud Logging."""
+    trace = _request_trace.get()
+    payload: dict[str, str | int | float | bool] = {
+        "severity": "INFO",
+        "event": event,
+        "provider": PROVIDER_NAME,
+        **values,
+    }
+    if trace:
+        payload["logging.googleapis.com/trace"] = trace
+    print(
+        json.dumps(payload, sort_keys=True),
+        flush=True,
+    )
+
+
+def _bind_cloud_trace(request: Request) -> Token[str | None]:
+    raw = request.headers.get("x-cloud-trace-context", "")
+    trace_id = raw.split("/", 1)[0]
+    trace = None
+    if GOOGLE_CLOUD_PROJECT and len(trace_id) == 32:
+        try:
+            int(trace_id, 16)
+        except ValueError:
+            pass
+        else:
+            trace = f"projects/{GOOGLE_CLOUD_PROJECT}/traces/{trace_id}"
+    return _request_trace.set(trace)
 
 
 class StrictModel(BaseModel):
@@ -127,6 +162,14 @@ class SceneRuntime:
         )
         self.model_load_seconds = time.perf_counter() - started
         self.loaded_at = time.monotonic()
+        _log_metric(
+            "runtime.load.complete",
+            gpu=self.gpu,
+            gpu_compute_capability=self.gpu_compute_capability,
+            torch_version=self.torch_version,
+            torch_cuda_version=self.torch_cuda_version,
+            model_load_seconds=self.model_load_seconds,
+        )
 
     async def prewarm(self) -> dict[str, Any]:
         await self.ensure_loaded()
@@ -145,6 +188,12 @@ class SceneRuntime:
                 )
                 self.inference_warmup_seconds = time.perf_counter() - started
                 self.inference_warmed = True
+                _log_metric(
+                    "runtime.prewarm.complete",
+                    gpu=self.gpu,
+                    inference_warmup_seconds=self.inference_warmup_seconds,
+                    model_load_seconds=self.model_load_seconds,
+                )
         return self.identity() | {
             "ready": True,
             "model_load_seconds": self.model_load_seconds,
@@ -167,6 +216,20 @@ class SceneRuntime:
                 True,
             )
             self.inference_warmed = True
+            _log_metric(
+                "runtime.generate.complete",
+                gpu=self.gpu,
+                width=request.width,
+                height=request.height,
+                steps=request.steps,
+                image_seconds=float(result["image_seconds"]),
+                depth_seconds=float(result["depth_seconds"]),
+                packaging_seconds=float(result["packaging_seconds"]),
+                image_gpu_ms=float(result["image_gpu_ms"]),
+                depth_gpu_ms=float(result["depth_gpu_ms"]),
+                master_bytes=int(result["master_bytes"]),
+                depth_bytes=int(result["depth_bytes"]),
+            )
         return self.identity() | {
             "scene_id": request.scene_id,
             "model_load_seconds": self.model_load_seconds,
@@ -189,8 +252,11 @@ class SceneRuntime:
 
         assert self.image_pipe is not None
         assert self.depth_pipe is not None
+        image_gpu_start = torch.cuda.Event(enable_timing=True)
+        image_gpu_end = torch.cuda.Event(enable_timing=True)
         image_started = time.perf_counter()
-        with torch.inference_mode():
+        with torch.inference_mode(), torch.cuda.nvtx.range("bookforge.sana_sprint"):
+            image_gpu_start.record()
             master = self.image_pipe(
                 prompt=prompt,
                 width=width,
@@ -199,19 +265,28 @@ class SceneRuntime:
                 num_inference_steps=steps,
                 generator=torch.Generator(device="cuda").manual_seed(seed),
             ).images[0]
-        torch.cuda.synchronize()
+            image_gpu_end.record()
+        image_gpu_end.synchronize()
         image_seconds = time.perf_counter() - image_started
+        image_gpu_ms = image_gpu_start.elapsed_time(image_gpu_end)
+        depth_gpu_start = torch.cuda.Event(enable_timing=True)
+        depth_gpu_end = torch.cuda.Event(enable_timing=True)
         depth_started = time.perf_counter()
-        with torch.inference_mode():
+        with torch.inference_mode(), torch.cuda.nvtx.range("bookforge.depth_anything"):
+            depth_gpu_start.record()
             depth = self.depth_pipe(master)["depth"].resize((width, height))
-        torch.cuda.synchronize()
+            depth_gpu_end.record()
+        depth_gpu_end.synchronize()
         depth_seconds = time.perf_counter() - depth_started
+        depth_gpu_ms = depth_gpu_start.elapsed_time(depth_gpu_end)
         if not encode:
             return {}
         master_bytes, depth_bytes, packaging_seconds = _encode_scene_assets(master, depth)
         return {
             "image_seconds": image_seconds,
             "depth_seconds": depth_seconds,
+            "image_gpu_ms": image_gpu_ms,
+            "depth_gpu_ms": depth_gpu_ms,
             "packaging_seconds": packaging_seconds,
             "negative_prompt_supported": False,
             "master_b64": base64.b64encode(master_bytes).decode("ascii"),
@@ -220,12 +295,14 @@ class SceneRuntime:
             "master_width": width,
             "master_height": height,
             "master_jpeg_quality": MASTER_JPEG_QUALITY,
+            "master_bytes": len(master_bytes),
             "depth_b64": base64.b64encode(depth_bytes).decode("ascii"),
             "depth_sha256": hashlib.sha256(depth_bytes).hexdigest(),
             "depth_media_type": "image/jpeg",
             "depth_width": width,
             "depth_height": height,
             "depth_jpeg_quality": DEPTH_JPEG_QUALITY,
+            "depth_bytes": len(depth_bytes),
         }
 
     def identity(self) -> dict[str, Any]:
@@ -292,11 +369,19 @@ async def health() -> dict[str, Any]:
 
 
 @app.post("/v1/prewarm")
-async def prewarm(payload: PrewarmRequest) -> dict[str, Any]:
-    result = await runtime.prewarm()
-    return {"prewarm_id": payload.prewarm_id, **result}
+async def prewarm(payload: PrewarmRequest, request: Request) -> dict[str, Any]:
+    token = _bind_cloud_trace(request)
+    try:
+        result = await runtime.prewarm()
+        return {"prewarm_id": payload.prewarm_id, **result}
+    finally:
+        _request_trace.reset(token)
 
 
 @app.post("/v1/generate")
-async def generate(payload: GenerateRequest) -> dict[str, Any]:
-    return await runtime.generate(payload)
+async def generate(payload: GenerateRequest, request: Request) -> dict[str, Any]:
+    token = _bind_cloud_trace(request)
+    try:
+        return await runtime.generate(payload)
+    finally:
+        _request_trace.reset(token)

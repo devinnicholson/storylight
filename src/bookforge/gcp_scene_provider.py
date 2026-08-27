@@ -490,6 +490,8 @@ def _write_bundle(
     image_seconds = _non_negative_float(remote, "image_seconds")
     depth_seconds = _non_negative_float(remote, "depth_seconds")
     packaging_seconds = _non_negative_float(remote, "packaging_seconds")
+    image_gpu_ms = _optional_non_negative_float(remote, "image_gpu_ms")
+    depth_gpu_ms = _optional_non_negative_float(remote, "depth_gpu_ms")
     inference_seconds = image_seconds + depth_seconds
     now = datetime.now(UTC).isoformat()
     manifest = {
@@ -525,6 +527,8 @@ def _write_bundle(
                 "provider_overhead_seconds": max(0.0, remote_seconds - inference_seconds),
                 "image_seconds": image_seconds,
                 "depth_seconds": depth_seconds,
+                "image_gpu_ms": image_gpu_ms,
+                "depth_gpu_ms": depth_gpu_ms,
                 "packaging_seconds": packaging_seconds,
                 "model_load_seconds": _non_negative_float(remote, "model_load_seconds"),
                 "container_age_seconds": _non_negative_float(remote, "container_age_seconds"),
@@ -604,6 +608,12 @@ def _non_negative_float(payload: Mapping[str, Any], key: str) -> float:
     if not math.isfinite(value) or value < 0:
         raise GcpSceneProviderError(f"Cloud Run response has invalid {key}")
     return value
+
+
+def _optional_non_negative_float(payload: Mapping[str, Any], key: str) -> float | None:
+    if key not in payload:
+        return None
+    return _non_negative_float(payload, key)
 
 
 def _positive_int(payload: Mapping[str, Any], key: str) -> int:

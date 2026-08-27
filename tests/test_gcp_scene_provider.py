@@ -38,6 +38,8 @@ def _payload(scene_id: str = "gcp-scene") -> dict[str, object]:
         "warm_state": "warm",
         "image_seconds": 0.4,
         "depth_seconds": 0.1,
+        "image_gpu_ms": 375.0,
+        "depth_gpu_ms": 82.0,
         "packaging_seconds": 0.02,
         "master_b64": base64.b64encode(master).decode(),
         "master_sha256": hashlib.sha256(master).hexdigest(),
@@ -86,6 +88,8 @@ def test_private_cloud_run_provider_writes_checksum_bound_bundle(tmp_path: Path)
     assert bundle.manifest["provider"] == "gcp-cloud-run"
     assert bundle.manifest["policy"]["private_iam_endpoint"] is True
     assert bundle.manifest["stages"]["fast"]["gpu"] == "L4"
+    assert bundle.manifest["stages"]["fast"]["image_gpu_ms"] == 375.0
+    assert bundle.manifest["stages"]["fast"]["depth_gpu_ms"] == 82.0
     assert bundle.estimated_gpu_usd > 0
 
 
@@ -118,6 +122,36 @@ def test_private_cloud_run_probe_avoids_reserved_healthz_path() -> None:
 
     assert asyncio.run(provider.probe())[0] is True
     assert observed == ["/health"]
+
+
+def test_cloud_run_provider_accepts_legacy_worker_without_cuda_event_metrics(
+    tmp_path: Path,
+) -> None:
+    payload = _payload(scene_id="legacy-worker")
+    del payload["image_gpu_ms"]
+    del payload["depth_gpu_ms"]
+
+    async def token_source(audience: str) -> str:
+        return "token"
+
+    provider = GcpCloudRunSceneProvider(
+        base_url="https://renderer.example.run.app",
+        audience="https://renderer.example.run.app",
+        token_source=token_source,
+        client_factory=lambda **kwargs: httpx.AsyncClient(
+            transport=httpx.MockTransport(lambda request: httpx.Response(200, json=payload)),
+            **kwargs,
+        ),
+    )
+    bundle = asyncio.run(
+        provider.generate_fast(
+            FastSceneRequest(scene_id="legacy-worker", prompt="A luminous paper fox."),
+            output_dir=tmp_path / "legacy-worker",
+        )
+    )
+
+    assert bundle.manifest["stages"]["fast"]["image_gpu_ms"] is None
+    assert bundle.manifest["stages"]["fast"]["depth_gpu_ms"] is None
 
 
 def test_cloud_run_provider_reuses_and_closes_one_http_client() -> None:

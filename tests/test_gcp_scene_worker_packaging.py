@@ -16,7 +16,15 @@ def test_rtx_worker_uses_blackwell_compatible_pytorch_and_cuda() -> None:
     assert "torchvision==0.23.0+cu128" in requirements
     assert "torch.cuda.get_device_capability(0)" in app
     assert "torch.cuda.get_arch_list()" in app
+    assert 'torch.cuda.nvtx.range("bookforge.sana_sprint")' in app
+    assert 'torch.cuda.nvtx.range("bookforge.depth_anything")' in app
+    assert "torch.cuda.Event(enable_timing=True)" in app
+    assert '"runtime.generate.complete"' in app
+    assert '"logging.googleapis.com/trace"' in app
+    assert 'request.headers.get("x-cloud-trace-context"' in app
+    assert '"prompt"' not in app[app.index("def _log_metric") : app.index("class StrictModel")]
     deploy_script = DEPLOY_SCRIPT.read_text()
+    assert "GOOGLE_CLOUD_PROJECT=${PROJECT_ID}" in deploy_script
     assert "HF_HUB_OFFLINE=1" in deploy_script
     assert "TRANSFORMERS_OFFLINE=1" in deploy_script
     assert "snapshot_download(" in app
@@ -39,7 +47,14 @@ def test_cloud_build_reuses_the_latest_immutable_worker_layers() -> None:
 
 def test_cloud_run_worker_avoids_reserved_healthz_route() -> None:
     app = (WORKER_ROOT / "app.py").read_text()
+    deploy_script = DEPLOY_SCRIPT.read_text()
 
     assert '@app.get("/health")' in app
     assert '@app.get("/healthz")' not in app
     assert "steps: Annotated[int, Field(ge=2, le=2)]" in app
+    assert "BOOKFORGE_GCP_STARTUP_PROBE_ATTEMPTS:-900" in deploy_script
+    assert "tcpSocket.port=8080,initialDelaySeconds=0,timeoutSeconds=1,periodSeconds=1" in (
+        deploy_script
+    )
+    assert "STARTUP_PROBE_ATTEMPTS < 60" in deploy_script
+    assert "STARTUP_PROBE_ATTEMPTS > 1800" in deploy_script
