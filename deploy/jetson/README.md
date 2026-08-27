@@ -268,7 +268,9 @@ by this pinned runtime. The exact revision used here is public and ungated; no H
 click-through acceptance is required. The repository now contains a finite INT4-AWQ, text-only
 exporter that externalizes FFN weights for the 8 GB Jetson, plus an on-device engine builder and
 shadow benchmark. Modal refused both A100-80GB and L40S allocation without a payment method, so the
-candidate was not quantized, downloaded, built, or promoted. Gemma 3 remains production. Full
+candidate was not quantized, downloaded, built, or promoted. The linked GCP project was also
+checked after enabling Compute Engine: billing is active, no resources exist, and its global GPU
+quota is zero. Gemma 3 remains production. Full
 control evidence is in `benchmarks/bookforge-tensorrt-edge-llm-2026-08-26.json`; the exact warm
 baseline, blocked export attempts, cost reconciliation, and promotion gate are in
 `benchmarks/bookforge-gemma4-tensorrt-edge-llm-2026-08-26.json`.
