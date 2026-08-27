@@ -16,6 +16,7 @@ EDGELLM_ENGINE_BUILDER = ROOT / "deploy/jetson/build-tensorrt-edge-engine.sh"
 EDGELLM_BENCHMARK = ROOT / "deploy/jetson/benchmark-tensorrt-edge-llm.py"
 EDGELLM_BENCHMARK_RUNNER = ROOT / "deploy/jetson/run-tensorrt-edge-benchmark.sh"
 EDGELLM_EXPORTER = ROOT / "deploy/modal_tensorrt_edge_export.py"
+POWER_MODE_AB = ROOT / "deploy/jetson/run-power-mode-ab.sh"
 
 
 def _write_executable(path: Path, body: str) -> None:
@@ -292,6 +293,30 @@ def test_tensorrt_edge_llm_candidate_is_pinned_local_and_fail_closed() -> None:
     assert 'MODEL_REVISION = "db09cd27ead7fee40cdee309693cf83601b9c899"' in exporter
     assert "revision=MODEL_REVISION" in exporter
     assert '"model_revision": MODEL_REVISION' in exporter
+
+
+def test_power_mode_ab_is_reboot_aware_persistent_and_restores_25w() -> None:
+    runner = POWER_MODE_AB.read_text()
+
+    subprocess.run(["bash", "-n", str(POWER_MODE_AB)], check=True)
+    assert 'readonly STATE_DIR="/var/lib/bookforge/power-mode-ab"' in runner
+    assert "prepare-maxn" in runner
+    assert "awaiting-maxn-reboot" in runner
+    assert "benchmark-maxn" in runner
+    assert "maxn-benchmarked" in runner
+    assert "restore-25w" in runner
+    assert "awaiting-25w-reboot" in runner
+    assert "finalize" in runner
+    assert "require_mode 2" in runner
+    assert "require_mode 1" in runner
+    assert 'nvpmodel -m 2' in runner
+    assert 'nvpmodel -m 1' in runner
+    assert "Enter YES" in runner
+    assert 'readonly BASELINE_SOURCE="/tmp/bookforge-inference-25w-power.json"' in runner
+    assert 'readonly EVIDENCE_DIR="$STATE_DIR/evidence"' in runner
+    assert "tegrastats --interval 500" in runner
+    assert "bookforge.planner_benchmark" in runner
+    assert "write_phase complete" in runner
 
 
 def test_standalone_installer_waits_for_both_local_services() -> None:

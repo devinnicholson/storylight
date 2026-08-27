@@ -33,6 +33,8 @@ explicit device-administration task that must follow NVIDIA's documentation.
   unload/restore and thermal evidence.
 - `benchmark-tensorrt-edge-llm.py` and `run-tensorrt-edge-benchmark.sh`: local-only five-passage
   schema, privacy, fidelity, latency, memory, and power acceptance; never auto-promotes a model.
+- `run-power-mode-ab.sh`: explicit, reboot-aware 25W/MAXN_SUPER comparison with persistent evidence
+  and a required restore verification.
 - `systemd/bookforge@.service`: system API service parameterized by the Linux user.
 - `systemd/bookforge-controller@.service`: authenticated, allowlisted phone gateway on port 8081.
 - `systemd/bookforge-kiosk.service`: graphical-session user service for the projector browser.
@@ -277,6 +279,30 @@ BOOKFORGE_EDGELLM_PROMPT_PROFILE=production \
 
 The benchmark exits nonzero when any output misses the strict wire schema. A high token rate is not
 an acceptance result.
+
+#### Reboot-safe 25W versus MAXN_SUPER measurement
+
+JetPack 7.2.1 requires a reboot when this Orin Nano changes between power mode 1 (`25W`) and mode 2
+(`MAXN_SUPER`). Do not use a one-process switch/benchmark/restore script: the first reboot destroys
+that process and `/tmp` evidence. The repository runner preserves the accepted 25W baseline under
+`/var/lib/bookforge/power-mode-ab`, records a durable phase before each reboot, validates the mode
+after reconnect, and refuses out-of-order commands.
+
+Run exactly one phase at a time. The two mode-change phases prompt for a reboot; enter `YES` only
+after the script prints its matching durable phase:
+
+```bash
+sudo /opt/bookforge/deploy/jetson/run-power-mode-ab.sh prepare-maxn
+# Reconnect after the MAXN_SUPER reboot.
+sudo /opt/bookforge/deploy/jetson/run-power-mode-ab.sh benchmark-maxn
+sudo /opt/bookforge/deploy/jetson/run-power-mode-ab.sh restore-25w
+# Reconnect after the 25W restore reboot.
+sudo /opt/bookforge/deploy/jetson/run-power-mode-ab.sh finalize
+```
+
+The benchmark phase never changes power mode. The final phase must observe mode 1 and both local
+services before it writes `result=complete`. Evidence remains on the Jetson until it is explicitly
+collected; rebooting cannot erase it.
 
 Download the pinned official ARM64 archive into a versioned, user-owned directory. Verify the
 release digest before extracting it; do not pipe an unverified installer into a shell:
@@ -771,8 +797,9 @@ capture; the Firefox fallback does not establish that boundary by itself.
   space in the diagnostic output before moving models or caches.
 - Camera and microphone enumeration proves presence, not capture quality. Test the exact USB camera,
   microphone, resolution, frame rate, room lighting, and projector interference used for the demo.
-- `nvpmodel -q` reports the current profile. These scripts intentionally never select a profile or
-  run maximum-clock commands.
+- `nvpmodel -q` reports the current profile. Only the explicit `run-power-mode-ab.sh` acceptance
+  selects a profile; it uses two confirmed reboots, persists its phase, and refuses completion until
+  mode 1 (`25W`) is restored. No script runs maximum-clock commands.
 - Thermal-zone readings are a snapshot. Run a full-length rehearsal and record sustained latency and
   temperature; do not infer thermal stability from an idle check.
 - The system service does not join the user to `docker`, `video`, or `audio` groups. Granting device
