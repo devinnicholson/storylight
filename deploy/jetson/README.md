@@ -539,6 +539,25 @@ python -m bookforge.planner_benchmark \
 For the Mac-to-Jetson SSH loopback forward, add `--base-url http://127.0.0.1:11435`. The harness
 rejects non-loopback model URLs and never calls Modal or GCP.
 
+Before spending cloud GPU time on prompt-quality experiments, run the broader contest suite. It
+keeps the five hardware cases and adds fifteen synthetic passages covering negation, passive voice,
+temporal transformations, containment, spatial relations, literacy, reversed motion, and visually
+important exclusions. Each plan must satisfy an automatic lexical evidence screen as well as the
+latency/token limits; that screen catches obvious omissions and contradictions but does not replace
+human visual review:
+
+```bash
+python -m bookforge.planner_benchmark \
+  --contract standard \
+  --suite contest \
+  --max-output-tokens 180 \
+  --model-revision ollama-manifest-sha256:8648f39daa8fbf5b18c7b4e6a8fb4990c692751d49917417b8842ca5758e7ffc \
+  --output benchmarks/jetson-gemma3-contest-semantics.json
+```
+
+Only passages whose structured plans pass this local gate should advance to paid SANA image A/B
+tests. Source passages and Gemma responses remain on the Jetson during this benchmark.
+
 Keep the model endpoint on loopback. When a Mac control plane needs it during development, use an
 explicit SSH local forward rather than changing `OLLAMA_HOST` to a LAN address.
 
