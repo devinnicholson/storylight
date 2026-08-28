@@ -21,7 +21,7 @@ from bookforge.model_client import OllamaClient, OpenAICompatibleClient
 Contract = Literal["standard", "compact"]
 Suite = Literal["five", "contest"]
 SEMANTIC_SCREEN_REVISION = "lexical-v2"
-PLANNER_INSTRUCTION_REVISION = "semantic-fidelity-v2"
+PLANNER_INSTRUCTION_REVISION = "semantic-fidelity-v1"
 
 
 @dataclass(frozen=True, slots=True)

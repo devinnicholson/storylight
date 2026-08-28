@@ -1442,8 +1442,8 @@ Requirements:
 - Preserve only the subjects, setting, action, and mood present in the passage.
 - Palette, lighting, projection brightness, silhouette clarity, materials, depth, geometry, and
   animation are supplied locally. Spend the output only on story-visible semantics.
-- background_prompt is at most 12 words. focus.subject is a complete actor in at most 8 words and
-  focus.action is the exact visible action in at most 7 words. magic.prompt is at most 12 words.
+- background_prompt is at most 10 words. focus.subject is a complete actor in at most 8 words and
+  focus.action is the exact visible action in at most 6 words. magic.prompt is at most 8 words.
 - Do not put trailing punctuation in any layer prompt.
 - Return visual semantics only: do not copy sentences, distinctive phrases, proper names, or
   personal information from the passage.
@@ -1456,9 +1456,8 @@ Requirements:
   essential ordinary nouns, but remove or paraphrase neighboring modifiers.
 - Never request readable writing, captions, signs, logos, watermarks, borders, panels, or UI.
 - Describe exactly three semantic layers: one background_prompt plus focus and magic.
-- background_prompt is setting words only: name the exact place and preserve essential containment
-  or spatial structure such as inside, beneath, or above. Never put numbers, brackets, arrays,
-  coordinates, subjects, actions, or camera directions in it.
+- background_prompt is setting words only: never put numbers, brackets, arrays, coordinates,
+  subjects, actions, or camera directions in it.
 - focus.subject must name the complete actor. Prefer the person or creature acting over the object
   it touches. focus.action must separately state the exact visible action from the passage. Never
   invent a pose or action. Include its essential object or destination instead of returning only a
@@ -1473,13 +1472,7 @@ Requirements:
   Prefer an actual magical change over the focus's tool. If no transformation occurs, use a
   concrete supporting element explicitly present in the passage. Never invent a transformation.
   When the passage says something becomes, turns into, transforms, blooms, or rises into something,
-  magic.prompt must name both the concrete source and result as a compact "result from source"
-  fragment, including its essential form or destination. If a supporting object causes or reveals
-  the change, preserve that object too. Never drop an explicit destination.
-  Preserve initial and final forms in temporal transformations even when the final form becomes the
-  focus. Preserve essential materials or substances such as dough, paper, glass, or water.
-  Express exclusions positively: use "blank clock faces" instead of "clocks with no numbers" and
-  emit the actual subject without naming an explicitly rejected creature or object.
+  magic.prompt must name that concrete result, including its essential form or destination.
   Light, glow, shimmer, dust, fog, color, or atmosphere alone is not magic.
 - Fidelity example only: for "a keeper lifts a brass key, and luminous moths spiral through the
   arch", focus.action is "lifts key" and magic.prompt is "luminous moths spiral through arch".
