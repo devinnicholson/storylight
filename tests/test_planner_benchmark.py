@@ -76,6 +76,9 @@ def test_semantic_alternative_matching_normalizes_punctuation_and_inflection() -
         "A luminous, folded-paper bird rises.",
         "paper bird",
     )
+    assert _contains_semantic_alternative("Origami birds cross the sky", "origami bird")
+    assert _contains_semantic_alternative("One glowing firefly appears", "fireflies")
+    assert _contains_semantic_alternative("Wildflowers cover the desert", "flowers")
     assert _contains_semantic_alternative("Flowers blooming across sand", "bloom")
     assert not _contains_semantic_alternative("A clock tower", "octopus")
 

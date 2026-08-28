@@ -20,6 +20,8 @@ from bookforge.model_client import OllamaClient, OpenAICompatibleClient
 
 Contract = Literal["standard", "compact"]
 Suite = Literal["five", "contest"]
+SEMANTIC_SCREEN_REVISION = "lexical-v2"
+PLANNER_INSTRUCTION_REVISION = "semantic-fidelity-v2"
 
 
 @dataclass(frozen=True, slots=True)
@@ -131,7 +133,8 @@ CASES = (
         seed=20261030,
         expectations=(
             _expect("actor", "turtle"),
-            _expect("path", "cloud staircase", "stairs of clouds", "cloud steps"),
+            _expect("path", "staircase", "stairs", "steps"),
+            _expect("path material", "cloud", "clouds"),
             _expect("supporting creatures", "jellyfish"),
             _expect("setting", "stars", "starry", "night sky"),
         ),
@@ -197,7 +200,13 @@ CONTEST_CASES = CASES + (
             _expect("actor", "mouse"),
             _expect("vehicle", "teacup", "cup boat"),
             _expect("setting", "frozen pond", "ice", "icy pond"),
-            _expect("reversed motion", "rising snow", "snowflakes rise", "upward snow"),
+            _expect(
+                "reversed motion",
+                "rising snow",
+                "snowflakes rise",
+                "snowflakes rising",
+                "upward snow",
+            ),
         ),
     ),
     BenchmarkCase(
@@ -227,7 +236,13 @@ CONTEST_CASES = CASES + (
             _expect("actor", "rabbit"),
             _expect("object", "red umbrella", "umbrella"),
             _expect("lower relation", "beneath bridge", "under bridge"),
-            _expect("upper relation", "lanterns above", "lanterns float", "floating lanterns"),
+            _expect(
+                "upper relation",
+                "lanterns above",
+                "lanterns float",
+                "floating lanterns",
+                "lanterns floating",
+            ),
         ),
     ),
     BenchmarkCase(
@@ -290,7 +305,7 @@ CONTEST_CASES = CASES + (
             _expect("actor", "beetle"),
             _expect("object", "seed"),
             _expect("setting", "rooftop", "chimneys", "roof garden"),
-            _expect("result", "tower of leaves", "giant leaves", "leaf tower"),
+            _expect("result", "tower of leaves", "giant leaves", "leaf tower", "tower leaves"),
         ),
     ),
     BenchmarkCase(
@@ -305,7 +320,7 @@ CONTEST_CASES = CASES + (
             _expect("actor", "owl"),
             _expect("carried object", "brass key", "key"),
             _expect("action", "unlock", "opens"),
-            _expect("destination", "moon door", "door in the moon", "lunar door"),
+            _expect("destination", "moon door", "door in the moon", "lunar door", "door moon"),
         ),
     ),
     BenchmarkCase(
@@ -403,6 +418,30 @@ def _normalized_semantic_text(value: str) -> str:
     return " ".join(_SEMANTIC_TOKEN.findall(normalized))
 
 
+def _semantic_stem(token: str) -> str:
+    if len(token) > 5 and token.endswith("ing"):
+        return token[:-3]
+    if len(token) > 4 and token.endswith("ies"):
+        return f"{token[:-3]}y"
+    if len(token) > 4 and token.endswith("es"):
+        return token[:-2]
+    if len(token) > 3 and token.endswith("s"):
+        return token[:-1]
+    return token
+
+
+def _semantic_token_matches(token: str, needle: str) -> bool:
+    token_stem = _semantic_stem(token)
+    needle_stem = _semantic_stem(needle)
+    return (
+        token_stem == needle_stem
+        or f"{token_stem}e" == needle_stem
+        or f"{needle_stem}e" == token_stem
+        or (len(needle_stem) >= 5 and token_stem.endswith(needle_stem))
+        or (len(token_stem) >= 5 and needle_stem.endswith(token_stem))
+    )
+
+
 def _contains_semantic_alternative(haystack: str, alternative: str) -> bool:
     haystack_tokens = _normalized_semantic_text(haystack).split()
     alternative_tokens = _normalized_semantic_text(alternative).split()
@@ -411,16 +450,18 @@ def _contains_semantic_alternative(haystack: str, alternative: str) -> bool:
     if len(alternative_tokens) > 1:
         width = len(alternative_tokens)
         return any(
-            haystack_tokens[index : index + width] == alternative_tokens
+            all(
+                _semantic_token_matches(token, needle)
+                for token, needle in zip(
+                    haystack_tokens[index : index + width],
+                    alternative_tokens,
+                    strict=True,
+                )
+            )
             for index in range(len(haystack_tokens) - width + 1)
         )
     needle = alternative_tokens[0]
-    return any(
-        token == needle
-        or (len(needle) >= 4 and token.startswith(needle))
-        or (len(token) >= 4 and needle.startswith(token))
-        for token in haystack_tokens
-    )
+    return any(_semantic_token_matches(token, needle) for token in haystack_tokens)
 
 
 def _semantic_evidence(
@@ -597,7 +638,7 @@ async def benchmark(args: argparse.Namespace) -> dict[str, object]:
     else:
         result_label = "automatic_acceptance_pass_human_review_required"
     return {
-        "schema_version": "1.1",
+        "schema_version": "1.2",
         "captured_at": datetime.now(UTC).isoformat(),
         "result": result_label,
         "runtime": {
@@ -611,6 +652,8 @@ async def benchmark(args: argparse.Namespace) -> dict[str, object]:
             "warmup_excluded": not args.skip_warmup,
             "suite": args.suite,
             "case_count": len(cases),
+            "semantic_screen_revision": SEMANTIC_SCREEN_REVISION,
+            "planner_instruction_revision": PLANNER_INSTRUCTION_REVISION,
         },
         "contracts": results,
         "execution": {

@@ -849,7 +849,13 @@ def test_structured_planner_uses_live_schema_and_records_model_revision() -> Non
     assert "most visually surprising transformation" in str(stub.calls[0]["prompt"])
     assert "exact visible action" in str(stub.calls[0]["prompt"])
     assert "Never invent a transformation" in str(stub.calls[0]["prompt"])
-    assert "magic.prompt must name that concrete result" in str(stub.calls[0]["prompt"])
+    assert "magic.prompt must name both the concrete source and result" in str(
+        stub.calls[0]["prompt"]
+    )
+    assert 'compact "result from source"' in str(stub.calls[0]["prompt"])
+    assert "Preserve initial and final forms" in str(stub.calls[0]["prompt"])
+    assert "blank clock faces" in str(stub.calls[0]["prompt"])
+    assert "inside, beneath, or above" in str(stub.calls[0]["prompt"])
     assert "Stop the action before a later magical transformation" in str(stub.calls[0]["prompt"])
     assert "essential object or destination" in str(stub.calls[0]["prompt"])
     assert "inspect that clause first" in str(stub.calls[0]["prompt"])
