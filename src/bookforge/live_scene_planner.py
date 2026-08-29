@@ -388,43 +388,6 @@ class LiveSceneCompactWirePlan(FrozenStrictModel):
         )
 
 
-class LiveSceneFlatWirePlan(FrozenStrictModel):
-    """Flat but semantically named research contract for small edge models."""
-
-    setting: Annotated[
-        str,
-        StringConstraints(strip_whitespace=True, min_length=1, max_length=110),
-    ]
-    actor_kind: Literal["character", "prop"]
-    actor: Annotated[
-        str,
-        StringConstraints(strip_whitespace=True, min_length=1, max_length=80),
-    ]
-    action: Annotated[
-        str,
-        StringConstraints(strip_whitespace=True, min_length=1, max_length=70),
-    ]
-    support_kind: Literal["character", "prop", "effect"]
-    support: Annotated[
-        str,
-        StringConstraints(strip_whitespace=True, min_length=1, max_length=110),
-    ]
-
-    def to_wire_plan(self) -> LiveSceneWirePlan:
-        return LiveSceneWirePlan(
-            background_prompt=self.setting,
-            focus=LiveSceneWireFocus(
-                kind=self.actor_kind,
-                subject=self.actor,
-                action=self.action,
-            ),
-            magic=LiveSceneWireMagic(
-                kind=self.support_kind,
-                prompt=self.support,
-            ),
-        )
-
-
 class LiveScenePlan(FrozenStrictModel):
     """A compact Gemma-authored semantic plan, normalized into SceneSpec v2."""
 
@@ -1456,7 +1419,6 @@ def live_scene_plan_prompt(
     visual_style: str,
     seed: int,
     compact_wire: bool = False,
-    flat_wire: bool = False,
 ) -> str:
     # Geometry and animation remain deterministic from the seed. The language
     # model only performs semantic extraction, so sending the seed wastes edge
@@ -1467,20 +1429,11 @@ def live_scene_plan_prompt(
     # wastes prompt tokens and prevents plan reuse across style auditions.
     del visual_style
     request = {"passage": text}
-    if compact_wire and flat_wire:
-        raise ValueError("compact and flat wire contracts are mutually exclusive")
-    wire_guide = (
+    compact_key_guide = (
         "\nCompact JSON: b=background; f=[kind,subject,action], where kind is character or "
         "prop; m=[kind,prompt], where kind is character, prop, or effect.\n"
         if compact_wire
-        else (
-            "\nFlat JSON: setting is only the visible place; actor_kind is character or prop; "
-            "actor is the complete main actor; action is that actor's visible action; "
-            "support_kind is character, prop, or effect; support is the magical or supporting "
-            "visual.\n"
-            if flat_wire
-            else ""
-        )
+        else ""
     )
     return (
         """Plan one full-bleed cinematic 16:9 illustration for immediate projection.
@@ -1528,7 +1481,7 @@ Requirements:
 - The scene must remain legible on a projector. Atmosphere is supplied locally from the setting.
 - Keep the entire JSON compact; omit unnecessary adjectives and explanations.
 """
-        + wire_guide
+        + compact_key_guide
         + """
 Input:
 """
@@ -1546,7 +1499,6 @@ class StructuredLiveScenePlanner:
         timeout_seconds: float,
         model_revision: str = "configured-local-model",
         compact_wire: bool = False,
-        flat_wire: bool = False,
         cache_entries: int = 32,
         persistent_cache_dir: Path | None = None,
     ) -> None:
@@ -1555,10 +1507,7 @@ class StructuredLiveScenePlanner:
         self.client = client
         self.timeout_seconds = timeout_seconds
         self.model_revision = _PLAN_MODEL_REVISION_ADAPTER.validate_python(model_revision)
-        if compact_wire and flat_wire:
-            raise ValueError("compact and flat wire contracts are mutually exclusive")
         self.compact_wire = compact_wire
-        self.flat_wire = flat_wire
         if not 0 <= cache_entries <= 256:
             raise ValueError("live-scene planner cache entries must be between 0 and 256")
         self.cache_entries = cache_entries
@@ -1700,12 +1649,7 @@ class StructuredLiveScenePlanner:
         started = perf_counter()
         try:
             async with asyncio.timeout(self.timeout_seconds):
-                if self.compact_wire:
-                    output_type = LiveSceneCompactWirePlan
-                elif self.flat_wire:
-                    output_type = LiveSceneFlatWirePlan
-                else:
-                    output_type = LiveSceneWirePlan
+                output_type = LiveSceneCompactWirePlan if self.compact_wire else LiveSceneWirePlan
                 plan, metrics = await self.client.generate(
                     system=LIVE_SCENE_SYSTEM_PROMPT,
                     prompt=live_scene_plan_prompt(
@@ -1713,7 +1657,6 @@ class StructuredLiveScenePlanner:
                         visual_style=visual_style,
                         seed=seed,
                         compact_wire=self.compact_wire,
-                        flat_wire=self.flat_wire,
                     ),
                     output_type=output_type,
                 )
@@ -1732,9 +1675,6 @@ class StructuredLiveScenePlanner:
         if self.compact_wire:
             compact_plan = LiveSceneCompactWirePlan.model_validate(plan.model_dump())
             wire_plan = compact_plan.to_wire_plan()
-        elif self.flat_wire:
-            flat_plan = LiveSceneFlatWirePlan.model_validate(plan.model_dump())
-            wire_plan = flat_plan.to_wire_plan()
         else:
             wire_plan = LiveSceneWirePlan.model_validate(plan.model_dump())
         sanitized_wire_plan = wire_plan.privacy_sanitized(source_text=text)
@@ -1771,7 +1711,6 @@ class StructuredLiveScenePlanner:
                 "text": text,
                 "model_revision": self.model_revision,
                 "compact_wire": self.compact_wire,
-                "flat_wire": self.flat_wire,
                 "contract_revision": _PLAN_CACHE_CONTRACT_REVISION,
             },
             ensure_ascii=False,

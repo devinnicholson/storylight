@@ -6,7 +6,6 @@ import pytest
 from bookforge.domain import ModelMetrics
 from bookforge.live_scene_planner import (
     LiveSceneCompactWirePlan,
-    LiveSceneFlatWirePlan,
     LiveScenePlacedLayerPlan,
     LiveScenePlan,
     LiveScenePlannerError,
@@ -142,29 +141,6 @@ def test_compact_wire_preserves_actor_setting_and_supporting_object() -> None:
     assert sanitized.magic.prompt == "paper kite"
     assert "kite" in plan.accent.prompt
     validate_live_scene_plan_privacy(plan, source_text=source)
-
-
-def test_flat_wire_keeps_semantic_labels_without_nested_json() -> None:
-    wire = _wire_plan()
-    flat = LiveSceneFlatWirePlan(
-        setting=wire.background_prompt,
-        actor_kind=wire.focus.kind,
-        actor=wire.focus.subject,
-        action=wire.focus.action,
-        support_kind=wire.magic.kind,
-        support=wire.magic.prompt,
-    )
-
-    assert flat.to_wire_plan() == wire
-    assert set(LiveSceneFlatWirePlan.model_json_schema()["properties"]) == {
-        "setting",
-        "actor_kind",
-        "actor",
-        "action",
-        "support_kind",
-        "support",
-    }
-    assert len(flat.model_dump_json()) < len(wire.model_dump_json())
 
 
 def test_wire_normalization_sanitizes_cross_field_summary_overlap() -> None:
@@ -825,15 +801,6 @@ class _ModelStub:
                     "m": [plan.magic.kind, plan.magic.prompt],
                 }
             )
-        elif output_type is LiveSceneFlatWirePlan:
-            result = LiveSceneFlatWirePlan(
-                setting=plan.background_prompt,
-                actor_kind=plan.focus.kind,
-                actor=plan.focus.subject,
-                action=plan.focus.action,
-                support_kind=plan.magic.kind,
-                support=plan.magic.prompt,
-            )
         else:
             result = plan
         return result, ModelMetrics(
@@ -912,42 +879,6 @@ def test_structured_planner_can_use_opt_in_short_key_contract() -> None:
         .to_live_scene_plan(context_text="A child opens a quiet book while paper birds rise.")
         .focus.prompt
     )
-
-
-def test_structured_planner_can_use_opt_in_flat_semantic_contract() -> None:
-    stub = _ModelStub()
-    planner = StructuredLiveScenePlanner(
-        stub,  # type: ignore[arg-type]
-        timeout_seconds=1,
-        flat_wire=True,
-    )
-
-    result = asyncio.run(
-        planner.plan(
-            text="A child opens a quiet book while paper birds rise.",
-            visual_style="luminous watercolor paper theater",
-            seed=23,
-        )
-    )
-
-    assert stub.calls[0]["output_type"] is LiveSceneFlatWirePlan
-    assert "actor is the complete main actor" in str(stub.calls[0]["prompt"])
-    assert "support is the magical or supporting visual" in str(stub.calls[0]["prompt"])
-    assert result.plan.focus.prompt == (
-        _wire_plan()
-        .to_live_scene_plan(context_text="A child opens a quiet book while paper birds rise.")
-        .focus.prompt
-    )
-
-
-def test_structured_planner_rejects_multiple_compact_contracts() -> None:
-    with pytest.raises(ValueError, match="mutually exclusive"):
-        StructuredLiveScenePlanner(
-            _ModelStub(),  # type: ignore[arg-type]
-            timeout_seconds=1,
-            compact_wire=True,
-            flat_wire=True,
-        )
 
 
 def test_structured_planner_coalesces_text_free_local_warmup() -> None:
