@@ -163,6 +163,7 @@ class GcpCloudRunSceneProvider:
         self._estimated_gpu_usd = 0.0
         self._prewarm_id: str | None = None
         self._prewarm_deadline = 0.0
+        self._remote_warm_deadline = 0.0
         self._scaledown_window_seconds = DEFAULT_SCALEDOWN_WINDOW_SECONDS
         self._operation_lock = asyncio.Lock()
 
@@ -202,6 +203,7 @@ class GcpCloudRunSceneProvider:
             self._prewarm_id = prewarm_id
             self._scaledown_window_seconds = scaledown_window_seconds
             self._prewarm_deadline = time.monotonic() + scaledown_window_seconds
+            self._remote_warm_deadline = self._prewarm_deadline
             return WarmPrewarmReport(
                 prewarm_id=prewarm_id,
                 reservation_id=f"gcp-cloud-run:{prewarm_id}",
@@ -241,7 +243,11 @@ class GcpCloudRunSceneProvider:
             return self._prewarm_id is not None
 
     async def is_renderer_likely_warm(self) -> bool:
-        return await self.is_prewarmed()
+        async with self._operation_lock:
+            now = time.monotonic()
+            if now >= self._prewarm_deadline:
+                self._prewarm_id = None
+            return self._prewarm_id is not None or now < self._remote_warm_deadline
 
     async def generate_fast(
         self,
@@ -278,7 +284,7 @@ class GcpCloudRunSceneProvider:
             if master.media_type != "image/jpeg" or depth.media_type != "image/jpeg":
                 raise GcpSceneProviderError("Cloud Run returned unsupported scene media")
             estimated_gpu_usd = remote_seconds * self.gpu_usd_per_second
-            return await asyncio.to_thread(
+            bundle = await asyncio.to_thread(
                 _write_bundle,
                 request,
                 destination,
@@ -288,6 +294,10 @@ class GcpCloudRunSceneProvider:
                 remote_seconds,
                 estimated_gpu_usd,
             )
+            self._remote_warm_deadline = (
+                time.monotonic() + self._scaledown_window_seconds
+            )
+            return bundle
 
     async def upgrade_motion(
         self,

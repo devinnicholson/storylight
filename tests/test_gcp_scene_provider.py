@@ -91,6 +91,38 @@ def test_private_cloud_run_provider_writes_checksum_bound_bundle(tmp_path: Path)
     assert bundle.manifest["stages"]["fast"]["image_gpu_ms"] == 375.0
     assert bundle.manifest["stages"]["fast"]["depth_gpu_ms"] == 82.0
     assert bundle.estimated_gpu_usd > 0
+    assert asyncio.run(provider.is_prewarmed()) is False
+    assert asyncio.run(provider.is_renderer_likely_warm()) is True
+
+
+def test_successful_generation_reuses_recent_cloud_run_warm_hint(tmp_path: Path) -> None:
+    async def token_source(audience: str) -> str:
+        return "token"
+
+    provider = GcpCloudRunSceneProvider(
+        base_url="https://renderer.example.run.app",
+        audience="https://renderer.example.run.app",
+        token_source=token_source,
+        client_factory=lambda **kwargs: httpx.AsyncClient(
+            transport=httpx.MockTransport(
+                lambda request: httpx.Response(200, json=_payload(scene_id="warm-hint"))
+            ),
+            **kwargs,
+        ),
+    )
+
+    async def exercise() -> tuple[bool, bool, bool]:
+        before = await provider.is_renderer_likely_warm()
+        await provider.generate_fast(
+            FastSceneRequest(scene_id="warm-hint", prompt="A luminous paper fox."),
+            output_dir=tmp_path / "warm-hint",
+        )
+        after = await provider.is_renderer_likely_warm()
+        provider._remote_warm_deadline = time.monotonic() - 1
+        expired = await provider.is_renderer_likely_warm()
+        return before, after, expired
+
+    assert asyncio.run(exercise()) == (False, True, False)
 
 
 def test_private_cloud_run_probe_avoids_reserved_healthz_path() -> None:

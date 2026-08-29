@@ -1913,7 +1913,10 @@ class FiniteModalLiveSceneProvider:
         prepare_renderer: bool = True,
     ) -> _ResolvedLiveScenePlan:
         prepare_task: asyncio.Task[float] | None = None
-        if prepare_renderer and isinstance(self.provider, WarmModalSceneProvider):
+        if prepare_renderer and (
+            isinstance(self.provider, WarmModalSceneProvider)
+            or (self.auto_prewarm_on_submit and self._supports_auto_prewarm())
+        ):
             prepare_task = asyncio.create_task(
                 self._prepare_warm_renderer(job_id=job_id),
                 name=f"bookforge-renderer-preparation-{job_id}",
@@ -1941,18 +1944,29 @@ class FiniteModalLiveSceneProvider:
                     await drain
                     raise
 
+    def _supports_auto_prewarm(self) -> bool:
+        return all(
+            callable(getattr(self.provider, method_name, None))
+            for method_name in ("prewarm", "is_prewarmed", "is_renderer_likely_warm")
+        )
+
     async def _prepare_warm_renderer(self, *, job_id: str) -> float:
-        if not isinstance(self.provider, WarmModalSceneProvider):
+        is_prewarmed = getattr(self.provider, "is_prewarmed", None)
+        if not callable(is_prewarmed):
             return 0
-        if await self.provider.is_prewarmed():
+        if await is_prewarmed():
             return 0
         started = time.perf_counter()
-        if self.auto_prewarm_on_submit and not await self.provider.is_renderer_likely_warm():
-            await self.provider.prewarm(
-                prewarm_id=f"auto-{job_id}",
-                include_motion=self.enable_motion,
-            )
-        else:
+        is_likely_warm = getattr(self.provider, "is_renderer_likely_warm", None)
+        prewarm = getattr(self.provider, "prewarm", None)
+        if (
+            self.auto_prewarm_on_submit
+            and callable(is_likely_warm)
+            and callable(prewarm)
+            and not await is_likely_warm()
+        ):
+            await prewarm(prewarm_id=f"auto-{job_id}", include_motion=self.enable_motion)
+        elif isinstance(self.provider, WarmModalSceneProvider):
             await self.provider.prepare_fast_authorization(scene_id=job_id)
         return (time.perf_counter() - started) * 1_000
 

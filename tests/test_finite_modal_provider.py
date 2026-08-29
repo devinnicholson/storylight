@@ -764,6 +764,135 @@ def test_auto_prewarm_overlaps_local_planning_before_generation(tmp_path: Path) 
     ]
 
 
+def test_capability_based_auto_prewarm_overlaps_gcp_planning(tmp_path: Path) -> None:
+    class GcpLikeProvider:
+        def __init__(self) -> None:
+            self.prewarm_started = asyncio.Event()
+            self.prewarm_release = asyncio.Event()
+            self.prewarmed = False
+            self.generate_calls = 0
+
+        async def is_prewarmed(self) -> bool:
+            return self.prewarmed
+
+        async def is_renderer_likely_warm(self) -> bool:
+            return self.prewarmed
+
+        async def prewarm(self, *, prewarm_id: str, include_motion: bool) -> SimpleNamespace:
+            assert prewarm_id.startswith("auto-scene_")
+            assert include_motion is False
+            self.prewarm_started.set()
+            await self.prewarm_release.wait()
+            self.prewarmed = True
+            return SimpleNamespace(prewarm_id=prewarm_id)
+
+        async def generate_fast(
+            self,
+            request: FastSceneRequest,
+            *,
+            output_dir: Path,
+        ) -> FiniteSceneBundle:
+            assert self.prewarmed is True
+            self.generate_calls += 1
+            output_dir.mkdir(parents=True)
+            master = _artifact(output_dir / "master.png", b"master", "image/png")
+            depth = _artifact(output_dir / "depth.png", b"depth", "image/png")
+            payload = {
+                "schema_version": "1.0",
+                "provider": "modal-finite",
+                "scene_id": request.scene_id,
+                "stages": {
+                    "fast": {
+                        "model": FAST_MODEL,
+                        "model_revision": FAST_MODEL_REVISION,
+                        "gpu": "L4",
+                        "finite_call": True,
+                        "estimated_gpu_usd": 0.01,
+                        "remote_seconds": 0.5,
+                        "inference_seconds": 0.22,
+                        "provider_overhead_seconds": 0.28,
+                        "packaging_seconds": 0.05,
+                        "image_seconds": 0.19,
+                        "depth_seconds": 0.03,
+                        "warm_state": "prewarmed",
+                    }
+                },
+                "artifacts": {"master": master, "depth": depth},
+            }
+            manifest_path = output_dir / "scene.manifest.json"
+            manifest_path.write_text(json.dumps(payload))
+            return load_finite_scene_bundle(manifest_path)
+
+        async def upgrade_motion(
+            self,
+            bundle: FiniteSceneBundle,
+            request: MotionUpgradeRequest,
+        ) -> FiniteSceneBundle:
+            del bundle, request
+            raise AssertionError("motion is disabled")
+
+    class BlockingPlanner:
+        def __init__(self) -> None:
+            self.started = asyncio.Event()
+            self.release = asyncio.Event()
+
+        async def plan(self, **kwargs) -> LiveScenePlanningResult:
+            del kwargs
+            self.started.set()
+            await self.release.wait()
+            return LiveScenePlanningResult(
+                plan=_gemma_live_plan(),
+                metrics=ModelMetrics(
+                    backend="ollama",
+                    model="gemma3:1b",
+                    total_ms=2_800,
+                    input_tokens=300,
+                    output_tokens=80,
+                ),
+                model_revision="sha256:gemma-fixture",
+                wall_ms=2_850,
+            )
+
+    async def run():
+        cache = AssetCache(tmp_path / "gcp-auto-prewarm-cache")
+        await cache.initialize()
+        remote = GcpLikeProvider()
+        planner = BlockingPlanner()
+        adapter = FiniteModalLiveSceneProvider(
+            remote,  # type: ignore[arg-type]
+            cache=cache,
+            output_root=tmp_path / "gcp-auto-prewarm-output",
+            planner=planner,
+            auto_prewarm_on_submit=True,
+            provider_name="gcp-cloud-run",
+        )
+        iterator = adapter.generate(
+            LiveSceneCreateRequest(text="A child opens a book and birds fill the sky.", seed=41),
+            job_id="scene_000000000000000000000041",
+        )
+        draft = await anext(iterator)
+        master_task = asyncio.create_task(anext(iterator))
+        await asyncio.wait_for(planner.started.wait(), timeout=1)
+        await asyncio.wait_for(remote.prewarm_started.wait(), timeout=1)
+        assert remote.generate_calls == 0
+        assert not master_task.done()
+        planner.release.set()
+        remote.prewarm_release.set()
+        master = await asyncio.wait_for(master_task, timeout=2)
+        with pytest.raises(StopAsyncIteration):
+            await anext(iterator)
+        return draft, master, remote
+
+    draft, master, remote = asyncio.run(run())
+
+    assert draft.stage is LiveSceneStage.DRAFT_READY
+    assert master.stage is LiveSceneStage.MASTER_READY
+    assert master.complete is True
+    assert master.metrics.preparation_ms > 0
+    assert master.metrics.warm_state is LiveSceneWarmState.WARM
+    assert remote.generate_calls == 1
+
+
 def test_billing_authorization_overlaps_planning_without_starting_gpu_early(
     tmp_path: Path,
 ) -> None:
