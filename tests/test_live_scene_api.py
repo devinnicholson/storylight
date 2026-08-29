@@ -3,6 +3,8 @@ import json
 import os
 from types import SimpleNamespace
 
+import pytest
+
 os.environ["BOOKFORGE_MODEL_BACKEND"] = "fake"
 os.environ["BOOKFORGE_MODEL_NAME"] = "fake"
 os.environ["BOOKFORGE_ASSET_BACKEND"] = "fake"
@@ -12,6 +14,7 @@ os.environ["BOOKFORGE_CACHE_DIR"] = "/tmp/bookforge-live-scene-api-tests/cache"
 from fastapi.testclient import TestClient  # noqa: E402
 
 from bookforge.api import _completed_pack_matches_planner_mode, app  # noqa: E402
+from bookforge.config import Settings  # noqa: E402
 from bookforge.finite_modal_provider import (  # noqa: E402
     WarmPrewarmReport,
     WarmProviderStatus,
@@ -21,6 +24,20 @@ from bookforge.nemotron_critic import (  # noqa: E402
     NemotronCriticEvidence,
     NemotronCriticVerdict,
 )
+
+
+@pytest.fixture(autouse=True)
+def _isolated_live_scene_settings(monkeypatch, tmp_path) -> None:
+    settings = Settings(
+        _env_file=None,
+        model_backend="fake",
+        model_name="fake",
+        asset_backend="fake",
+        live_scene_enable_motion=True,
+        data_dir=tmp_path / "data",
+        cache_dir=tmp_path / "cache",
+    )
+    monkeypatch.setattr("bookforge.api.get_settings", lambda: settings)
 
 
 def _payload() -> dict[str, object]:
