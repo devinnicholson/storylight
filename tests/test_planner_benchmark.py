@@ -65,6 +65,12 @@ def test_planner_benchmark_can_target_bundled_openai_compatible_server() -> None
     assert args.suite == "contest"
 
 
+def test_planner_benchmark_accepts_flat_semantic_contract() -> None:
+    args = _parser().parse_args(["--contract", "flat"])
+
+    assert args.contract == "flat"
+
+
 def test_contest_suite_has_twenty_unique_synthetic_cases() -> None:
     assert len(CONTEST_CASES) == 20
     assert len({case.case_id for case in CONTEST_CASES}) == 20

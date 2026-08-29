@@ -18,7 +18,7 @@ from bookforge.config import Settings
 from bookforge.live_scene_planner import StructuredLiveScenePlanner
 from bookforge.model_client import OllamaClient, OpenAICompatibleClient
 
-Contract = Literal["standard", "compact"]
+Contract = Literal["standard", "compact", "flat"]
 Suite = Literal["five", "contest"]
 SEMANTIC_SCREEN_REVISION = "lexical-v2"
 PLANNER_INSTRUCTION_REVISION = "semantic-fidelity-v1"
@@ -579,6 +579,7 @@ async def benchmark(args: argparse.Namespace) -> dict[str, object]:
                 timeout_seconds=max(args.planner_timeout_seconds, 30),
                 model_revision=args.model_revision,
                 compact_wire=contracts[0] == "compact",
+                flat_wire=contracts[0] == "flat",
             )
             await warmup.plan(
                 text=cases[0].text,
@@ -591,6 +592,7 @@ async def benchmark(args: argparse.Namespace) -> dict[str, object]:
                 timeout_seconds=args.planner_timeout_seconds,
                 model_revision=args.model_revision,
                 compact_wire=contract == "compact",
+                flat_wire=contract == "flat",
             )
             for contract in contracts
         }
@@ -683,7 +685,11 @@ def _parser() -> argparse.ArgumentParser:
     parser.add_argument("--base-url", default="http://127.0.0.1:11434")
     parser.add_argument("--model", default="gemma3:1b-it-q4_K_M")
     parser.add_argument("--model-revision", default="configured-local-model")
-    parser.add_argument("--contract", choices=("standard", "compact", "both"), default="both")
+    parser.add_argument(
+        "--contract",
+        choices=("standard", "compact", "flat", "both"),
+        default="both",
+    )
     parser.add_argument("--suite", choices=("five", "contest"), default="five")
     parser.add_argument("--context-tokens", type=int, default=4096)
     parser.add_argument("--max-output-tokens", type=int, default=180)
