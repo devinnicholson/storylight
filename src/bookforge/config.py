@@ -67,6 +67,10 @@ class Settings(BaseSettings):
     # for explicitly budgeted research.
     live_scene_master_steps: Annotated[int, Field(ge=2, le=4)] = 2
     live_scene_master_guidance_scale: Annotated[float, Field(ge=0, le=12)] = 4.5
+    # Inline preserves the fail-closed Grounding DINO gate. Deferred returns the
+    # first generated plate immediately so an optional critic can evaluate it
+    # after projection without extending time-to-first-image.
+    live_scene_fidelity_mode: Literal["inline", "deferred"] = "inline"
     live_scene_auto_prewarm_on_submit: bool = False
     live_scene_modal_session_gpu_cap_usd: Annotated[float, Field(gt=0, le=10)] = 1.0
     live_scene_modal_plan_file: Path = Path("experiments/live-scenes/modal-plan.json")

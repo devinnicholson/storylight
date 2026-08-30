@@ -218,7 +218,7 @@ def _encode_scene_assets(master: Any, depth: Any) -> tuple[bytes, bytes, float]:
 class FastSceneStudio:
     @modal.enter(snap=True)
     def load(self) -> None:
-        from transformers import AutoModelForZeroShotObjectDetection, AutoProcessor, pipeline
+        from transformers import pipeline
 
         load_started = time.perf_counter()
         self.image_pipe = diffusers.SanaSprintPipeline.from_pretrained(
@@ -236,6 +236,25 @@ class FastSceneStudio:
             dtype=torch.float16,
             device=0,
         )
+        # Grounding DINO is deliberately absent from the first-plate GPU
+        # snapshot. Deferred-fidelity requests never need its weights; strict
+        # inline requests load it only when they actually request the gate.
+        self.fidelity_processor = None
+        self.fidelity_model = None
+        self.fidelity_model_load_seconds = 0.0
+        self.model_load_seconds = time.perf_counter() - load_started
+        self.gpu = _runtime_gpu_name()
+        self.inference_warmup_seconds = 0.0
+        self.inference_warmed = False
+        self._warm_inference()
+        self.loaded_at = time.monotonic()
+
+    def _ensure_fidelity_model(self) -> float:
+        if self.fidelity_processor is not None and self.fidelity_model is not None:
+            return 0.0
+        from transformers import AutoModelForZeroShotObjectDetection, AutoProcessor
+
+        started = time.perf_counter()
         self.fidelity_processor = AutoProcessor.from_pretrained(
             FIDELITY_MODEL,
             revision=FIDELITY_MODEL_REVISION,
@@ -245,12 +264,10 @@ class FastSceneStudio:
             revision=FIDELITY_MODEL_REVISION,
         ).to("cuda")
         self.fidelity_model.eval()
-        self.model_load_seconds = time.perf_counter() - load_started
-        self.gpu = _runtime_gpu_name()
-        self.inference_warmup_seconds = 0.0
-        self.inference_warmed = False
-        self._warm_inference()
-        self.loaded_at = time.monotonic()
+        torch.cuda.synchronize()
+        elapsed = time.perf_counter() - started
+        self.fidelity_model_load_seconds += elapsed
+        return elapsed
 
     @modal.enter(snap=False)
     def restore(self) -> None:
@@ -272,20 +289,26 @@ class FastSceneStudio:
                 generator=torch.Generator(device="cuda").manual_seed(1),
             ).images[0]
             self.depth_pipe(warmup_master)
-            self._evaluate_fidelity(
-                warmup_master,
-                subject_label="lantern",
-                object_label="",
-                expected_subject_count=1,
-                require_overlap=False,
-            )
+            self._warmup_master = warmup_master
         torch.cuda.synchronize()
         self.inference_warmup_seconds = time.perf_counter() - warmup_started
         self.inference_warmed = True
 
     @modal.method()
-    def prewarm(self) -> dict[str, Any]:
+    def prewarm(self, include_fidelity: bool = True) -> dict[str, Any]:
         self._warm_inference()
+        fidelity_warmup_seconds = 0.0
+        if include_fidelity:
+            fidelity_started = time.perf_counter()
+            self._ensure_fidelity_model()
+            self._evaluate_fidelity(
+                self._warmup_master,
+                subject_label="lantern",
+                object_label="",
+                expected_subject_count=1,
+                require_overlap=False,
+            )
+            fidelity_warmup_seconds = time.perf_counter() - fidelity_started
         return {
             "model": FAST_MODEL,
             "model_revision": FAST_MODEL_REVISION,
@@ -294,6 +317,9 @@ class FastSceneStudio:
             "depth_dtype": DEPTH_DTYPE,
             "fidelity_model": FIDELITY_MODEL,
             "fidelity_model_revision": FIDELITY_MODEL_REVISION,
+            "fidelity_loaded": self.fidelity_model is not None,
+            "fidelity_model_load_seconds": self.fidelity_model_load_seconds,
+            "fidelity_warmup_seconds": fidelity_warmup_seconds,
             "model_load_seconds": self.model_load_seconds,
             "inference_warmup_seconds": self.inference_warmup_seconds,
             "inference_warmed": self.inference_warmed,
@@ -349,6 +375,7 @@ class FastSceneStudio:
         subject_object_overlap: bool | None = None
         quality_scores: list[float] = []
         if fidelity_label:
+            quality_seconds += self._ensure_fidelity_model()
             quality, detection_seconds = self._evaluate_fidelity(
                 master,
                 subject_label=fidelity_label,
@@ -424,6 +451,8 @@ class FastSceneStudio:
             "quality_subject_object_overlap": subject_object_overlap,
             "quality_scores": quality_scores,
             "quality_passed": quality["passed"] if fidelity_label else None,
+            "fidelity_loaded": self.fidelity_model is not None,
+            "fidelity_model_load_seconds": self.fidelity_model_load_seconds,
             "selected_seed": selected_seed,
             "packaging_seconds": packaging_seconds,
             "model_load_seconds": self.model_load_seconds,
@@ -950,10 +979,16 @@ def fast_scene_cli(
                 "model_revision": FAST_MODEL_REVISION,
                 "additional_models": [
                     {"model": DEPTH_MODEL, "model_revision": DEPTH_MODEL_REVISION},
-                    {
-                        "model": FIDELITY_MODEL,
-                        "model_revision": FIDELITY_MODEL_REVISION,
-                    },
+                    *(
+                        [
+                            {
+                                "model": FIDELITY_MODEL,
+                                "model_revision": FIDELITY_MODEL_REVISION,
+                            }
+                        ]
+                        if fidelity_label
+                        else []
+                    ),
                 ],
                 "gpu": FAST_GPU,
                 "finite_call": True,
@@ -992,6 +1027,10 @@ def fast_scene_cli(
                 "depth_dtype": DEPTH_DTYPE,
                 "negative_prompt_supported": False,
                 "model_load_seconds": result.get("model_load_seconds", 0),
+                "fidelity_model_load_seconds": result.get(
+                    "fidelity_model_load_seconds", 0
+                ),
+                "fidelity_loaded": result.get("fidelity_loaded", False),
                 "container_age_seconds": result.get("container_age_seconds", 0),
                 "warm_state": "cold",
                 "estimated_gpu_usd": estimated_gpu_usd,

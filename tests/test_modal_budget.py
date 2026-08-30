@@ -7,6 +7,7 @@ import pytest
 from bookforge.modal_budget import (
     authorize_and_reserve_modal_budget,
     budget_envelope_from_plan,
+    reconcile_failed_modal_budget_reservation,
     release_modal_budget_reservation,
     require_modal_budget_reservation,
     reserve_modal_budget,
@@ -252,3 +253,45 @@ def test_unused_authorization_can_be_released_before_any_remote_call(tmp_path: P
     ledger = VisualLabLedger.read(ledger_path, envelope=envelope)
     assert ledger.reservations == {}
     assert ledger.records == []
+
+
+def test_failed_reservation_reconciles_only_after_authoritative_charge(tmp_path: Path) -> None:
+    plan = tmp_path / "plan.json"
+    ledger_path = tmp_path / "ledger.json"
+    plan.write_text(
+        json.dumps(
+            {
+                "monthly_credit_usd": 30.0,
+                "workspace_usage_before_live_scenes_usd": 10.0,
+                "billing_delay_reserve_usd": 1.0,
+                "hard_stop_workspace_total_usd": 29.0,
+                "maximum_new_spend_usd": 19.0,
+            }
+        )
+    )
+    reservation_id = authorize_and_reserve_modal_budget(
+        plan_path=plan,
+        ledger_path=ledger_path,
+        authoritative_workspace_usd=10.0,
+        experiment_id="failed-scene",
+        full_call_ceiling_usd=0.20,
+    )
+
+    reconcile_failed_modal_budget_reservation(
+        plan_path=plan,
+        ledger_path=ledger_path,
+        reservation_id=reservation_id,
+        authoritative_workspace_usd=10.17,
+    )
+
+    envelope, _ = budget_envelope_from_plan(plan)
+    ledger = VisualLabLedger.read(ledger_path, envelope=envelope)
+    assert ledger.reservations == {}
+    assert ledger.estimated_usage_usd == pytest.approx(0.17)
+    with pytest.raises(ValueError, match="unknown reservation_id"):
+        reconcile_failed_modal_budget_reservation(
+            plan_path=plan,
+            ledger_path=ledger_path,
+            reservation_id=reservation_id,
+            authoritative_workspace_usd=10.17,
+        )

@@ -14,6 +14,19 @@ def test_fast_scene_models_and_revisions_are_pinned() -> None:
     assert "revision=MOTION_MODEL_REVISION" in SOURCE
 
 
+def test_deferred_first_plate_does_not_claim_or_load_grounding_dino() -> None:
+    fast = SOURCE.split("class FastSceneStudio:", 1)[1].split(
+        "class MotionUpgradeStudio:", 1
+    )[0]
+    cli = SOURCE.split("def fast_scene_cli(", 1)[1].split("def preview_scene_cli(", 1)[0]
+
+    load = fast.split("def load(self)", 1)[1].split("def _ensure_fidelity_model", 1)[0]
+    assert "AutoModelForZeroShotObjectDetection.from_pretrained" not in load
+    assert "if fidelity_label" in fast
+    assert "if fidelity_label" in cli
+    assert '"fidelity_loaded": self.fidelity_model is not None' in fast
+
+
 def test_deployed_base_stays_on_l4_for_credit_only_dynamic_l40s_selection() -> None:
     assert 'FAST_GPU = "L4"' in SOURCE
     assert "FAST_GPU_USD_PER_SECOND = 0.000222" in SOURCE
@@ -38,7 +51,7 @@ def test_deployed_classes_scale_to_zero_and_require_explicit_prewarm() -> None:
     assert SOURCE.count("max_containers=1") == 2
     assert "SCALEDOWN_WINDOW_SECONDS = 90" in SOURCE
     assert SOURCE.count("scaledown_window=SCALEDOWN_WINDOW_SECONDS") == 2
-    assert SOURCE.count("def prewarm(self)") == 2
+    assert SOURCE.count("def prewarm(self") == 2
     assert "modal.Cls.from_name" not in SOURCE
 
 
@@ -102,6 +115,11 @@ def test_fast_prewarm_executes_shape_matched_cuda_and_depth_work() -> None:
     assert "if self.inference_warmed:" in fast
     assert "num_inference_steps=2" in fast
     assert "self.depth_pipe(warmup_master)" in fast
+    assert "self._evaluate_fidelity(" not in fast.split("def _warm_inference", 1)[1].split(
+        "@modal.method()", 1
+    )[0]
+    assert "def _ensure_fidelity_model" in fast
+    assert "quality_seconds += self._ensure_fidelity_model()" in fast
     assert "dtype=torch.float16" in fast
     assert '"inference_warmup_seconds"' in fast
 

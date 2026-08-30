@@ -294,6 +294,16 @@ Jetson power mode or another smaller local schema. GCP should preserve the exist
 contract while supplying persistent or predictably warm NVIDIA capacity; Nemotron remains an
 asynchronous fidelity critic so it cannot delay first projection.
 
+The August 30 deferred-fidelity pass separates those concerns in code. The default remains the
+fail-closed inline Grounding DINO gate. An explicit deferred mode omits DINO labels from the first
+render request, and the Modal GPU snapshot now contains only SANA-Sprint and Depth Anything; DINO
+loads lazily only for a strict request. One guarded cold L4 sample produced its 1024x576 master and
+depth map in 0.794 seconds of measured inference and 37.595 seconds client wall, with zero critic
+attempts. Human review rejected that provisional plate because it contained two foxes and did not
+show the requested fox raising the lantern. Deferred output is therefore a fast provisional plate,
+not a verified final master; post-projection criticism and correction remain mandatory before a
+quality claim.
+
 The exact GCP handoff is bounded and does not require another image build: retry immutable strict
 worker digest `sha256:d9bda0e00acd3889eb214b10841dac00105a18676953708be9621359736481ad`,
 which previously reached Cloud Run's GPU startup gate before application logging. After it starts,

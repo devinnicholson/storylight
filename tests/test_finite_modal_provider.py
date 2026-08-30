@@ -2091,6 +2091,7 @@ def test_live_scene_adapter_uses_model_plan_after_immediate_deterministic_draft(
             cache=cache,
             output_root=tmp_path / "model-plan-output",
             planner=planner,
+            fidelity_mode="deferred",
         )
         iterator = adapter.generate(
             LiveSceneCreateRequest(
@@ -2117,6 +2118,9 @@ def test_live_scene_adapter_uses_model_plan_after_immediate_deterministic_draft(
     assert ".." not in finite.request.prompt
     assert "Quenlora" not in finite.request.prompt
     assert "amber-key refrain" not in finite.request.prompt
+    assert finite.request.fidelity_label == ""
+    assert finite.request.fidelity_object_label == ""
+    assert finite.request.require_subject_object_overlap is False
     assert master.complete is True
     assert master.story_pack.compiler_model == "gemma3:1b"
     assert master.story_pack.pages[0].scene_summary == _gemma_live_plan().scene_summary

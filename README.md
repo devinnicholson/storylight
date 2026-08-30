@@ -145,6 +145,10 @@ A multimodal Nemotron critic can inspect the generated synthetic plate against t
 visual plan, record a score, and propose a correction for a later refinement. It is not allowed to
 receive the raw passage, microphone audio, webcam frames, or child identity data. Until that critic
 is deployed and its evidence is returned, the UI must not claim Nemotron visually verified a scene.
+`BOOKFORGE_LIVE_SCENE_FIDELITY_MODE=deferred` removes Grounding DINO and its bounded rerender from
+the first-image RPC; the default remains `inline` and fail-closed. Deferred mode preserves the
+privacy-gated scene plan and layer requirements for the post-projection critic instead of claiming
+that an ungraded plate passed visual verification.
 Cosmos remains outside the primary path because world-model video would cost much more latency than
 the depth-aware local motion that already runs on the Jetson.
 
@@ -639,6 +643,7 @@ passes the real I/O and latency run on JetPack 7.2.1.
 - [`benchmarks/bookforge-gcp-strict-canary-2026-08-26.json`](benchmarks/bookforge-gcp-strict-canary-2026-08-26.json): zero-traffic strict-image canary; the revision staged without a rebuild, but billing-front-end and capacity responses prevented application health, so no prewarm, generation, or traffic promotion occurred
 - [`benchmarks/gcp-scene-probe-2026-08-26.json`](benchmarks/gcp-scene-probe-2026-08-26.json): later authenticated health-only sample with no retry, prewarm, generation, or prompt transfer; Cloud Run again rejected before container startup as billing-disabled while the Billing API reported the linked account open, isolating the current GCP blocker from the renderer image
 - [`benchmarks/bookforge-visual-fidelity-gate-2026-08-26.json`](benchmarks/bookforge-visual-fidelity-gate-2026-08-26.json): calibrated Grounding DINO subject/object/overlap gate; a duplicate-prone request selected its bounded retry in 1.530 seconds, while human review and a rejected 5.656-second SANA 1.5 A/B keep material and action fidelity honestly pending
+- [`benchmarks/modal-deferred-first-plate-2026-08-30.json`](benchmarks/modal-deferred-first-plate-2026-08-30.json): guarded cold L4 deferred-fidelity pass; SANA plus depth inference completed in 0.794 seconds, but 37.595-second client wall exposed container setup as the remaining bottleneck and human review rejected the ungraded plate's duplicate foxes
 - [`benchmarks/bookforge-semantic-candidate-ranking-2026-08-26.json`](benchmarks/bookforge-semantic-candidate-ranking-2026-08-26.json): rejected SigLIP candidate-ranking A/B; warm decisions were only 45–61 ms and ranked the stronger plate, but the added snapshot state pushed observed restore calls to roughly 21 seconds, so production retained the compound-label Grounding DINO gate
 - [`benchmarks/bookforge-jetson-planner-semantic-hardening-2026-08-24.json`](benchmarks/bookforge-jetson-planner-semantic-hardening-2026-08-24.json): five-passage Jetson GPU acceptance of the 2.661-second faithful planner, zero-token action/object repairs, and rejection of a 9.2%-faster short-key object format that failed every semantic gate
 - [`benchmarks/bookforge-modal-concurrent-model-load-rejection-2026-08-24.json`](benchmarks/bookforge-modal-concurrent-model-load-rejection-2026-08-24.json): isolated L40S cold-start A/B; concurrent SANA/depth loading was reverted after a 23.3% prewarm regression, with the sequential app restored, zero tasks, and billing reconciled

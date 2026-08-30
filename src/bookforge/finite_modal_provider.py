@@ -14,7 +14,7 @@ from collections.abc import AsyncIterator, Awaitable, Callable, Mapping
 from dataclasses import asdict, dataclass, replace
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import Any, Protocol
+from typing import Any, Literal, Protocol
 
 from bookforge.asset_cache import AssetCache
 from bookforge.domain import AssetKind, AssetRecord, AssetRole, AssetState, StoryPack
@@ -748,11 +748,13 @@ class WarmModalSceneProvider(FiniteModalSceneProvider):
         self,
         *,
         invoker: WarmModalInvoker | None = None,
+        prewarm_fidelity: bool = True,
         **kwargs: Any,
     ) -> None:
         kwargs.setdefault("fast_policy", WARM_FAST_STAGE_POLICY)
         super().__init__(**kwargs)
         self.invoker = invoker or ModalSdkWarmInvoker()
+        self.prewarm_fidelity = prewarm_fidelity
         self._warm_session: _ActiveWarmSession | None = None
         self._prepared_fast_authorizations: dict[str, _PreparedFastAuthorization] = {}
         self._operation_lock = asyncio.Lock()
@@ -806,7 +808,12 @@ class WarmModalSceneProvider(FiniteModalSceneProvider):
 
             async def timed(class_name: str) -> tuple[float, dict[str, Any]]:
                 started = time.perf_counter()
-                result = await self.invoker.invoke(class_name, "prewarm", {})
+                arguments = (
+                    {"include_fidelity": self.prewarm_fidelity}
+                    if class_name == "FastSceneStudio"
+                    else {}
+                )
+                result = await self.invoker.invoke(class_name, "prewarm", arguments)
                 return time.perf_counter() - started, result
 
             # Motion is deliberately opt-in. A master-only session never starts
@@ -1527,6 +1534,7 @@ class FiniteModalLiveSceneProvider:
         master_height: int = 576,
         master_steps: int = 2,
         master_guidance_scale: float = 4.5,
+        fidelity_mode: Literal["inline", "deferred"] = "inline",
         auto_prewarm_on_submit: bool = False,
         provider_name: str = PROVIDER_NAME,
     ) -> None:
@@ -1538,6 +1546,9 @@ class FiniteModalLiveSceneProvider:
         self.planner = planner
         self.motion_gate = motion_gate or MotionTechnicalGate()
         self.motion_evaluator = motion_evaluator or _evaluate_motion_technical
+        if fidelity_mode not in {"inline", "deferred"}:
+            raise ValueError("fidelity_mode must be 'inline' or 'deferred'")
+        self.fidelity_mode = fidelity_mode
         self.auto_prewarm_on_submit = auto_prewarm_on_submit
         self.provider_name = provider_name
         # Validate the complete render profile once at construction time.
@@ -1700,6 +1711,7 @@ class FiniteModalLiveSceneProvider:
             raise FiniteModalProviderError("live-scene draft has no SceneSpec")
         background_layer_id = _background_layer_id(resolved.pack)
         fidelity_object_label = _fidelity_action_object(page.layers)
+        inline_fidelity = self.fidelity_mode == "inline"
         fast_request = FastSceneRequest(
             scene_id=job_id,
             prompt=_bounded_prompt(
@@ -1716,9 +1728,11 @@ class FiniteModalLiveSceneProvider:
             height=self.master_height,
             steps=self.master_steps,
             guidance_scale=self.master_guidance_scale,
-            fidelity_label=resolved.fidelity_label,
-            fidelity_object_label=fidelity_object_label,
-            require_subject_object_overlap=_fidelity_requires_overlap(page.layers),
+            fidelity_label=resolved.fidelity_label if inline_fidelity else "",
+            fidelity_object_label=fidelity_object_label if inline_fidelity else "",
+            require_subject_object_overlap=(
+                _fidelity_requires_overlap(page.layers) if inline_fidelity else False
+            ),
             expected_subject_count=1,
         )
         try:

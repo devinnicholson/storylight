@@ -118,14 +118,10 @@ def authorize_and_reserve_modal_budget(
             raise ValueError(f"duplicate reservation_id: {reservation_id}")
         if any(record.experiment_id == experiment_id for record in ledger.records):
             raise ValueError(f"generation already recorded: {experiment_id}")
-        recorded = sum(record.estimated_gpu_usd for record in ledger.records)
-        reported_phase = max(
-            0.0,
-            authoritative_workspace_usd - envelope.usage_before_lab_usd,
+        _anchor_authoritative_workspace_total(
+            ledger,
+            authoritative_workspace_usd=authoritative_workspace_usd,
         )
-        existing_settled = ledger.prior_estimated_usd + recorded
-        settled_floor = max(reported_phase, recorded, existing_settled)
-        ledger.prior_estimated_usd = settled_floor - recorded
         projected_workspace = (
             envelope.usage_before_lab_usd + ledger.estimated_usage_usd + full_call_ceiling_usd
         )
@@ -167,6 +163,34 @@ def release_modal_budget_reservation(
         ledger.release(reservation_id)
 
 
+def reconcile_failed_modal_budget_reservation(
+    *,
+    plan_path: Path,
+    ledger_path: Path,
+    reservation_id: str,
+    authoritative_workspace_usd: float,
+) -> None:
+    """Replace one failed call ceiling only after provider billing has settled.
+
+    A failed or cancelled remote call retains its complete ceiling because its
+    billable duration is initially unknown. Once the authoritative workspace
+    report includes the charge, this operation anchors that report in the
+    ledger before releasing only the named reservation. The existing billing
+    delay reserve still protects against later provider adjustments.
+    """
+
+    if not math.isfinite(authoritative_workspace_usd) or authoritative_workspace_usd < 0:
+        raise ValueError("authoritative workspace total must be finite and non-negative")
+    with locked_modal_budget_ledger(plan_path=plan_path, ledger_path=ledger_path) as ledger:
+        if reservation_id not in ledger.reservations:
+            raise ValueError(f"unknown reservation_id: {reservation_id}")
+        _anchor_authoritative_workspace_total(
+            ledger,
+            authoritative_workspace_usd=authoritative_workspace_usd,
+        )
+        ledger.release(reservation_id)
+
+
 def settle_modal_budget(
     *,
     plan_path: Path,
@@ -177,3 +201,18 @@ def settle_modal_budget(
     with locked_modal_budget_ledger(plan_path=plan_path, ledger_path=ledger_path) as ledger:
         ledger.release(reservation_id)
         ledger.add(record)
+
+
+def _anchor_authoritative_workspace_total(
+    ledger: VisualLabLedger,
+    *,
+    authoritative_workspace_usd: float,
+) -> None:
+    recorded = sum(record.estimated_gpu_usd for record in ledger.records)
+    reported_phase = max(
+        0.0,
+        authoritative_workspace_usd - ledger.envelope.usage_before_lab_usd,
+    )
+    existing_settled = ledger.prior_estimated_usd + recorded
+    settled_floor = max(reported_phase, recorded, existing_settled)
+    ledger.prior_estimated_usd = settled_floor - recorded

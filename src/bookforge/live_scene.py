@@ -1670,6 +1670,7 @@ def build_live_scene_provider(
     master_height: int = 576,
     master_steps: int = 2,
     master_guidance_scale: float = 4.5,
+    fidelity_mode: str = "inline",
     auto_prewarm_on_submit: bool = False,
 ) -> LiveSceneProvider:
     planner = None
@@ -1721,6 +1722,7 @@ def build_live_scene_provider(
             master_height=master_height,
             master_steps=master_steps,
             master_guidance_scale=master_guidance_scale,
+            fidelity_mode=fidelity_mode,
             auto_prewarm_on_submit=auto_prewarm_on_submit,
         )
     if selected == "modal_warm":
@@ -1736,6 +1738,7 @@ def build_live_scene_provider(
                 session_gpu_cap_usd=modal_session_gpu_cap_usd,
                 plan_file=modal_plan_file,
                 ledger_path=modal_ledger_path,
+                prewarm_fidelity=fidelity_mode == "inline",
             ),
             cache=cache,
             output_root=output_root,
@@ -1746,6 +1749,7 @@ def build_live_scene_provider(
             master_height=master_height,
             master_steps=master_steps,
             master_guidance_scale=master_guidance_scale,
+            fidelity_mode=fidelity_mode,
             auto_prewarm_on_submit=auto_prewarm_on_submit,
         )
     if selected == "gcp_cloud_run":
@@ -1774,6 +1778,7 @@ def build_live_scene_provider(
             master_height=master_height,
             master_steps=master_steps,
             master_guidance_scale=master_guidance_scale,
+            fidelity_mode=fidelity_mode,
             auto_prewarm_on_submit=auto_prewarm_on_submit,
             provider_name="gcp-cloud-run",
         )

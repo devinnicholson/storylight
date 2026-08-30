@@ -815,6 +815,7 @@ def test_provider_factory_selects_fake_and_finite_modal_without_persistent_servi
         master_height=544,
         master_steps=2,
         master_guidance_scale=4,
+        fidelity_mode="deferred",
     )
     modal_warm = build_live_scene_provider(
         "modal_warm",
@@ -823,6 +824,7 @@ def test_provider_factory_selects_fake_and_finite_modal_without_persistent_servi
         output_root=tmp_path / "warm-generated",
         modal_plan_file=tmp_path / "modal-plan.json",
         modal_ledger_path=tmp_path / "modal-ledger.json",
+        fidelity_mode="deferred",
         auto_prewarm_on_submit=True,
     )
     explicit_fake = build_live_scene_provider(
@@ -870,6 +872,7 @@ def test_provider_factory_selects_fake_and_finite_modal_without_persistent_servi
     assert modal_warm.provider.__class__.__name__ == "WarmModalSceneProvider"  # type: ignore[attr-defined]
     assert modal_warm.provider.plan_file == tmp_path / "modal-plan.json"  # type: ignore[attr-defined]
     assert modal_warm.provider.ledger_path == tmp_path / "modal-ledger.json"  # type: ignore[attr-defined]
+    assert modal_warm.provider.prewarm_fidelity is False  # type: ignore[attr-defined]
     assert modal_warm.auto_prewarm_on_submit is True  # type: ignore[attr-defined]
     assert modal.enable_motion is False  # type: ignore[attr-defined]
     assert modal.output_root == tmp_path / "generated"  # type: ignore[attr-defined]
@@ -877,6 +880,7 @@ def test_provider_factory_selects_fake_and_finite_modal_without_persistent_servi
     assert modal.master_height == 544  # type: ignore[attr-defined]
     assert modal.master_steps == 2  # type: ignore[attr-defined]
     assert modal.master_guidance_scale == 4  # type: ignore[attr-defined]
+    assert modal.fidelity_mode == "deferred"  # type: ignore[attr-defined]
     assert LiveSceneJobRegistry(modal, max_active_jobs=8).max_active_jobs == 1
     assert LiveSceneJobRegistry(modal_warm, max_active_jobs=8).max_active_jobs == 1
     assert LiveSceneJobRegistry(fake, max_active_jobs=8).max_active_jobs == 8

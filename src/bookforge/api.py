@@ -209,6 +209,7 @@ async def lifespan(app: FastAPI):
             master_height=settings.live_scene_master_height,
             master_steps=settings.live_scene_master_steps,
             master_guidance_scale=settings.live_scene_master_guidance_scale,
+            fidelity_mode=settings.live_scene_fidelity_mode,
             auto_prewarm_on_submit=settings.live_scene_auto_prewarm_on_submit,
         ),
         max_active_jobs=settings.live_scene_max_active_jobs,
