@@ -67,7 +67,7 @@ _LEADING_ARTICLE = re.compile(r"^(?:a|an|the)\s+", re.IGNORECASE)
 _SEMANTIC_WORD = re.compile(r"[A-Za-z][A-Za-z'-]*")
 _PLACEMENT_MARGIN = 0.04
 _PLAN_CACHE_SCHEMA_VERSION = "1"
-_PLAN_CACHE_CONTRACT_REVISION = "semantic-v12-supporting-relation-repair"
+_PLAN_CACHE_CONTRACT_REVISION = "semantic-v13-source-grounded-action-count-repair"
 _EMAIL = re.compile(r"\b[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}\b", re.IGNORECASE)
 _PHONE = re.compile(r"(?<!\w)(?:\+?\d[\d\s()./-]{6,}\d)(?!\w)")
 _URL = re.compile(r"\b(?:https?://|www\.)\S+", re.IGNORECASE)
@@ -132,6 +132,79 @@ _PHRASE_STOPWORDS = frozenset(
         "the",
         "to",
         "with",
+    }
+)
+_COUNT_WORDS = {
+    "one": "1",
+    "two": "2",
+    "three": "3",
+    "four": "4",
+    "five": "5",
+    "six": "6",
+    "seven": "7",
+    "eight": "8",
+    "nine": "9",
+    "ten": "10",
+}
+_COLOR_WORDS = frozenset(
+    {
+        "amber",
+        "black",
+        "blue",
+        "bronze",
+        "brown",
+        "copper",
+        "crimson",
+        "gold",
+        "golden",
+        "green",
+        "grey",
+        "indigo",
+        "orange",
+        "pink",
+        "purple",
+        "red",
+        "silver",
+        "teal",
+        "violet",
+        "white",
+        "yellow",
+    }
+)
+_VISIBLE_VERBS = frozenset(
+    {
+        "arc",
+        "arcs",
+        "carry",
+        "carries",
+        "circle",
+        "circles",
+        "climb",
+        "climbs",
+        "drift",
+        "drifts",
+        "float",
+        "floats",
+        "fold",
+        "folds",
+        "hold",
+        "holds",
+        "lift",
+        "lifts",
+        "open",
+        "opens",
+        "point",
+        "points",
+        "rise",
+        "rises",
+        "run",
+        "runs",
+        "spiral",
+        "spirals",
+        "swim",
+        "swims",
+        "unfold",
+        "unfolds",
     }
 )
 
@@ -218,6 +291,11 @@ class LiveSceneWirePlan(FrozenStrictModel):
             self.focus.action,
             source_text=source_text,
         )
+        recovered_action = _recover_source_grounded_action_chain(
+            recovered_action,
+            focus_subject=recovered_subject,
+            source_text=source_text,
+        )
         recovered_magic = _recover_missing_supporting_subject(
             self.magic.prompt,
             source_text=source_text,
@@ -239,6 +317,11 @@ class LiveSceneWirePlan(FrozenStrictModel):
         )
         repaired_magic = _rephrase_distinctive_supporting_action(
             repaired_magic,
+            source_text=source_text,
+        )
+        repaired_magic = _recover_counted_supporting_detail(
+            repaired_magic,
+            focus_subject=recovered_subject,
             source_text=source_text,
         )
         recovered_background = _recover_generic_background_prompt(
@@ -466,8 +549,8 @@ class LiveScenePlan(FrozenStrictModel):
             f"{background_clause.lstrip()} "
             f"Required foreground subject: {_prompt_fragment(render_focus_prompt)}. "
             f"Required supporting visual: {_prompt_fragment(accent_prompt)}. "
-            "Render exactly one main actor performing the action once; do not duplicate the "
-            "actor or its tool. "
+            "Render exactly one main actor, shown once, performing every required action; do not "
+            "duplicate the actor or its tools. "
             "Make the main actor the visually dominant single subject. "
             "Show the background, subject, and supporting visual simultaneously. "
             f"{setting_guard}"
@@ -652,7 +735,9 @@ def _open_setting_guard(background_prompt: str) -> str:
 
 def _normalized_wire_focus(layer: LiveSceneWireFocus) -> str:
     subject = _bounded_words(layer.subject, 8)
-    action = _normalized_action(_bounded_words(layer.action, 6))
+    # Model output is still capped at six words. Local source-grounded repair
+    # may add one concurrent action and needs room to retain both objects.
+    action = _normalized_action(_bounded_words(layer.action, 10))
     if layer.kind != "character":
         return f"{subject}, {action}".strip(" ,")
     # Gemma 1B occasionally describes a character through one body fragment.
@@ -788,6 +873,177 @@ def _recover_subject_modifier(subject: str, *, source_text: str) -> str:
             return subject
         return f"{modifier} {subject}"
     return subject
+
+
+def _recover_source_grounded_action_chain(
+    action: str,
+    *,
+    focus_subject: str,
+    source_text: str,
+) -> str:
+    """Restore up to two visible actions performed by the selected main actor.
+
+    A 1B planner can select the right actor while truncating ``points to a`` or
+    choosing only the final action in a sentence. This local repair is a bounded
+    text scan, not another inference pass: it retains the model-selected actor,
+    extracts only clauses whose grammatical subject is that actor, and later
+    passes through the same distinctive-phrase privacy gate as model output.
+    """
+
+    subject_tokens = [
+        token
+        for token in _privacy_tokens(focus_subject)
+        if token not in _PHRASE_STOPWORDS
+    ]
+    if not subject_tokens:
+        return action
+    subject_head = subject_tokens[-1]
+    candidates: list[str] = []
+    for match in re.finditer(
+        rf"\b{re.escape(subject_head)}\b\s+(?P<tail>[^,.;!?]{{1,100}})",
+        source_text,
+        flags=re.IGNORECASE,
+    ):
+        words = _SEMANTIC_WORD.findall(match.group("tail"))
+        if not words or words[0].casefold() not in _VISIBLE_VERBS:
+            continue
+        bounded: list[str] = []
+        for word in words:
+            lowered = word.casefold()
+            if lowered in {"and", "as", "then", "when", "while"} and len(bounded) >= 2:
+                break
+            if lowered in {"at", "beneath", "beside", "inside", "near"} and len(bounded) >= 3:
+                break
+            if lowered in {"shaped", "which"} and len(bounded) >= 3:
+                break
+            bounded.append(word)
+            if len(bounded) >= 6:
+                break
+        if not bounded:
+            continue
+        candidate = _normalized_action(" ".join(bounded))
+        if candidate.casefold() not in {item.casefold() for item in candidates}:
+            candidates.append(candidate)
+        if len(candidates) == 2:
+            break
+    if not candidates:
+        return action
+    action_words = _privacy_tokens(action)
+    incomplete = len(action_words) <= 1 or action_words[-1] in {
+        "a",
+        "an",
+        "at",
+        "into",
+        "on",
+        "the",
+        "to",
+        "toward",
+        "towards",
+        "with",
+    }
+    if len(candidates) == 1 and not incomplete:
+        return action
+    repaired = " and ".join(_reorder_action_colors(candidate) for candidate in candidates)
+    return repaired[:70].rstrip(" ,;:-") or action
+
+
+def _reorder_action_colors(action: str) -> str:
+    """Keep color facts while breaking source-order adjective trigrams."""
+
+    clauses: list[str] = []
+    for clause in re.split(r"\s+and\s+", action, flags=re.IGNORECASE):
+        words = _SEMANTIC_WORD.findall(clause)
+        colors = [word for word in words if word.casefold() in _COLOR_WORDS]
+        if not colors:
+            clauses.append(clause)
+            continue
+        content = [
+            word
+            for word in words
+            if word.casefold() not in _COLOR_WORDS
+            and word.casefold() not in {"a", "an", "the"}
+            and word.casefold() not in {"bright", "large", "little", "small", "tiny"}
+        ]
+        clauses.append(
+            " ".join([*content, *(color.casefold() + "-colored" for color in colors)])
+        )
+    return " and ".join(clauses)
+
+
+def _recover_counted_supporting_detail(
+    prompt: str,
+    *,
+    focus_subject: str,
+    source_text: str,
+) -> str:
+    """Preserve an explicit supporting count without echoing a source phrase.
+
+    Counts are easily lost by compact planning and materially change an image.
+    The output deliberately reorders colors after the noun and converts number
+    words to digits, preserving visual facts while avoiding source trigrams.
+    """
+
+    prompt_tokens = set(_privacy_tokens(prompt))
+    focus_tokens = set(_privacy_tokens(focus_subject))
+    proper_names = {
+        token
+        for candidate in _proper_name_candidates(source_text)
+        for token in candidate
+    }
+    count_pattern = "|".join([*_COUNT_WORDS, r"\d{1,2}"])
+    for match in re.finditer(
+        rf"\b(?:exactly\s+|only\s+)?(?P<count>{count_pattern})\s+"
+        r"(?P<body>[^,.;!?]{1,100})",
+        source_text,
+        flags=re.IGNORECASE,
+    ):
+        words = _SEMANTIC_WORD.findall(match.group("body"))
+        verb_index = next(
+            (
+                index
+                for index, word in enumerate(words)
+                if word.casefold() in _VISIBLE_VERBS
+            ),
+            None,
+        )
+        if verb_index is None or verb_index == 0:
+            continue
+        noun_words = [
+            word
+            for word in words[:verb_index]
+            if word.casefold() not in {"a", "an", "the"}
+        ]
+        noun_tokens = {word.casefold() for word in noun_words}
+        if not noun_tokens.intersection(prompt_tokens):
+            continue
+        if noun_tokens.issubset(focus_tokens) or noun_tokens.intersection(proper_names):
+            continue
+        colors = [word for word in noun_words if word.casefold() in _COLOR_WORDS]
+        subject_words = [word for word in noun_words if word.casefold() not in _COLOR_WORDS]
+        if not subject_words:
+            continue
+        action_words: list[str] = []
+        for word in words[verb_index:]:
+            if word.casefold() in {"and", "as", "then", "when", "while"}:
+                break
+            action_words.append(word)
+            if len(action_words) >= 6:
+                break
+        action = _normalized_action(" ".join(action_words))
+        action = re.sub(r"\babove\s+(?:it|them)\b", "overhead", action, flags=re.IGNORECASE)
+        action = re.sub(r"\bbelow\s+(?:it|them)\b", "underneath", action, flags=re.IGNORECASE)
+        count = match.group("count").casefold()
+        count = _COUNT_WORDS.get(count, count)
+        color_clause = (
+            f", {' and '.join(color.casefold() + '-colored' for color in colors)}"
+            if colors
+            else ""
+        )
+        repaired = (
+            f"{count} {' '.join(subject_words)}{color_clause}, all {action}"
+        )
+        return _bounded_words(repaired, 12)[:110].rstrip(" ,;:-")
+    return prompt
 
 
 def _recover_missing_supporting_subject(prompt: str, *, source_text: str) -> str:
@@ -989,8 +1245,12 @@ def _normalized_action(value: str) -> str:
         return "performing the story action"
     verb = words[0].casefold()
     gerunds = {
+        "arc": "arcing",
+        "arcs": "arcing",
         "carry": "carrying",
         "carries": "carrying",
+        "circle": "circling",
+        "circles": "circling",
         "climb": "climbing",
         "climbs": "climbing",
         "create": "creating",
@@ -999,6 +1259,8 @@ def _normalized_action(value: str) -> str:
         "drifts": "drifting",
         "float": "floating",
         "floats": "floating",
+        "fold": "folding",
+        "folds": "folding",
         "form": "forming",
         "forms": "forming",
         "hold": "holding",
@@ -1009,10 +1271,14 @@ def _normalized_action(value: str) -> str:
         "opens": "opening",
         "plant": "planting",
         "plants": "planting",
+        "point": "pointing",
+        "points": "pointing",
         "read": "reading",
         "reads": "reading",
         "rise": "rising",
         "rises": "rising",
+        "run": "running",
+        "runs": "running",
         "bloom": "blooming",
         "blooms": "blooming",
         "spiral": "spiraling",

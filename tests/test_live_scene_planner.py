@@ -254,6 +254,45 @@ def test_wire_privacy_sanitizer_recovers_actor_and_compound_object_detail() -> N
     validate_live_scene_plan_privacy(plan, source_text=source)
 
 
+def test_wire_plan_repairs_multiple_actor_actions_and_exact_supporting_count() -> None:
+    source = (
+        "At twilight, a small copper owl unfolds a bright blue paper map beside a "
+        "glass lighthouse. Exactly two silver comet-fish arc above it while the owl "
+        "points to a tiny red island shaped like a star."
+    )
+    wire = LiveSceneWirePlan(
+        background_prompt="twilight glass lighthouse red island star map",
+        focus=LiveSceneWireFocus(
+            kind="character",
+            subject="copper owl",
+            action="points to a",
+        ),
+        magic=LiveSceneWireMagic(
+            kind="effect",
+            prompt="silver comet arc above",
+        ),
+    )
+
+    sanitized = wire.privacy_sanitized(source_text=source)
+    plan = sanitized.to_live_scene_plan(context_text=source)
+    page = plan.to_page(
+        source_text=source,
+        visual_style="luminous cut-paper theater",
+        seed=17,
+    )
+
+    assert "unfolding" in sanitized.focus.action
+    assert "paper map" in sanitized.focus.action
+    assert "pointing" in sanitized.focus.action
+    assert "island" in sanitized.focus.action
+    assert "red-colored" in sanitized.focus.action
+    assert sanitized.magic.prompt.startswith("2 comet-fish")
+    assert "silver-colored" in sanitized.magic.prompt
+    assert "arcing overhead" in sanitized.magic.prompt
+    assert "2 comet-fish" in page.scene_spec.master_prompt
+    validate_live_scene_plan_privacy(plan, source_text=source)
+
+
 def test_wire_plan_restores_supporting_creature_omitted_by_small_model() -> None:
     source = (
         "On a frozen lake beneath the northern lights, a red fox skates in circles "
@@ -503,7 +542,9 @@ def test_compact_plan_normalizes_to_canonical_scene_spec_and_layers() -> None:
     assert "Show the background, subject, and supporting visual simultaneously" in (
         page.scene_spec.master_prompt
     )
-    assert "exactly one main actor performing the action once" in (page.scene_spec.master_prompt)
+    assert "exactly one main actor, shown once, performing every required action" in (
+        page.scene_spec.master_prompt
+    )
     assert "visually dominant single subject" in page.scene_spec.master_prompt
     assert "duplicate person" in page.scene_spec.negative_prompt
     assert "main subject at left" in page.scene_spec.master_prompt
