@@ -296,7 +296,12 @@ zero retries, a 1,200-second timeout, and a bucket-only service account:
 # Run only as a deliberate, monitored attempt when us-central1 Blackwell capacity is available.
 gcloud run jobs execute bookforge-gemma4-tensorrt-export \
   --project=your-gcp-project --region=us-central1 --wait
-# Transfer only gemma4-e2b-it-int4-awq-v010/onnx to the matching Jetson model root.
+# Download the completed prefix, including export.manifest.json and onnx/, to one
+# temporary bundle directory and transfer that directory to the Jetson. The
+# installer verifies every byte against the cloud completion manifest, rejects
+# an unpinned model/export/runtime or an extra file, and refuses to overwrite an
+# existing checkpoint before atomically installing it.
+deploy/jetson/install-gemma4-tensorrt-checkpoint.py /path/to/export-bundle
 deploy/jetson/build-gemma4-tensorrt-edge-engine.sh
 deploy/jetson/run-gemma4-tensorrt-edge-benchmark.sh
 ```
