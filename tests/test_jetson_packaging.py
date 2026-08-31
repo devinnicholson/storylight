@@ -1021,6 +1021,8 @@ def test_server_rendezvous_synchronizes_separate_workbench_and_kiosk_browsers() 
     assert "restoreInitialScene();" in workbench
     assert "/v1/live-scene-sessions/${encodeURIComponent(SESSION_ID)}" in projector
     assert "/v1/live-scene-sessions/${encodeURIComponent(SESSION_ID)}/events" in projector
+    assert 'localFetch("/v1/projector-telemetry"' in projector
+    assert "depthRenderedFrames" in projector
     assert "function connectLiveSceneSessionEvents()" in projector
     assert 'source.addEventListener("scene.session", receive)' in projector
     assert "async function rendezvousLiveScene()" in projector

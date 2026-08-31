@@ -16,7 +16,7 @@ from datetime import UTC, datetime
 from enum import StrEnum
 from pathlib import Path
 from time import perf_counter
-from typing import TYPE_CHECKING, Annotated, Protocol
+from typing import TYPE_CHECKING, Annotated, Literal, Protocol
 from uuid import uuid4
 
 from pydantic import BaseModel, ConfigDict, Field, StringConstraints, model_validator
@@ -172,6 +172,24 @@ class LiveSceneMetrics(FrozenStrictModel):
         ):
             raise ValueError("restored scenes cannot report new provider work or GPU cost")
         return self
+
+
+class ProjectorTelemetry(FrozenStrictModel):
+    """Privacy-safe physical renderer evidence reported only to loopback."""
+
+    session_id: SessionId
+    renderer: Literal["webgl-depth", "image", "fixture"]
+    display_fps: Annotated[float, Field(ge=0, le=240)] | None = None
+    dropped_display_frames: Annotated[int, Field(ge=0, le=2**31 - 1)] = 0
+    depth_fps: Annotated[float, Field(ge=0, le=120)] | None = None
+    depth_target_fps: Annotated[int, Field(ge=1, le=120)] | None = None
+    depth_rendered_frames: Annotated[int, Field(ge=0, le=2**31 - 1)] = 0
+    depth_skipped_frames: Annotated[int, Field(ge=0, le=2**31 - 1)] = 0
+    sample_window_ms: Annotated[float, Field(gt=0, le=60_000)]
+    live_job_id: LiveSceneJobId | None = None
+    live_stage: LiveSceneStage | None = None
+    live_activation_ms: Annotated[float, Field(ge=0, le=60_000)] | None = None
+    captured_at: datetime | None = None
 
 
 class LiveSceneCreateRequest(FrozenStrictModel):

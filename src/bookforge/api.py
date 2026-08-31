@@ -1,6 +1,7 @@
 import asyncio
 from contextlib import asynccontextmanager, suppress
 from dataclasses import asdict
+from datetime import UTC, datetime
 from ipaddress import ip_address
 from pathlib import Path
 from typing import Annotated
@@ -66,6 +67,7 @@ from bookforge.live_scene import (
     LiveSceneSessionEvent,
     LiveSceneSessionStatus,
     LiveSceneWarmProviderStatus,
+    ProjectorTelemetry,
     build_live_scene_provider,
     live_scene_request_seed,
 )
@@ -138,6 +140,7 @@ async def lifespan(app: FastAPI):
     app.state.settings = settings
     app.state.service = BookforgeService(settings, client)
     app.state.transcriber = build_asr_backend(settings)
+    app.state.projector_telemetry = {}
     app.state.reader_events = ReaderEventHub()
     app.state.reader_sessions = ReaderSessionRegistry()
     app.state.reader_pipeline_lock = asyncio.Lock()
@@ -512,6 +515,31 @@ async def cached_asset(checksum: str, filename: str, request: Request) -> FileRe
         )
     except AssetCacheError as error:
         raise HTTPException(status_code=404, detail=str(error)) from error
+
+
+@app.post("/v1/projector-telemetry", response_model=ProjectorTelemetry)
+async def record_projector_telemetry(
+    payload: ProjectorTelemetry,
+    request: Request,
+) -> ProjectorTelemetry:
+    if not _is_local_connection(request):
+        raise HTTPException(status_code=403, detail="Projector telemetry is local-only")
+    snapshot = payload.model_copy(update={"captured_at": datetime.now(UTC)})
+    request.app.state.projector_telemetry[payload.session_id] = snapshot
+    return snapshot
+
+
+@app.get("/v1/projector-telemetry/{session_id}", response_model=ProjectorTelemetry)
+async def latest_projector_telemetry(
+    session_id: SessionId,
+    request: Request,
+) -> ProjectorTelemetry:
+    if not _is_local_connection(request):
+        raise HTTPException(status_code=403, detail="Projector telemetry is local-only")
+    snapshot = request.app.state.projector_telemetry.get(session_id)
+    if snapshot is None:
+        raise HTTPException(status_code=404, detail="No projector telemetry is available")
+    return snapshot
 
 
 @app.post(

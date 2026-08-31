@@ -79,6 +79,7 @@ const state = {
   delays: [],
   droppedFrames: 0,
   frameSamples: [],
+  displayFps: null,
   corners: [],
   socket: null,
   reconnectTimer: null,
@@ -122,6 +123,10 @@ const state = {
   lastSceneCommitPaint: null,
   screenWakeLock: null,
   screenWakeLockRequest: null,
+  projectorTelemetryTimer: null,
+  projectorTelemetryAt: performance.now(),
+  projectorTelemetryRenderer: null,
+  projectorTelemetryRenderedFrames: 0,
 };
 
 function publish(type, detail = {}) {
@@ -655,6 +660,15 @@ async function startDepthRenderer(canvas, masterImage, depthImage, sceneSpec) {
     webglRenderer: rendererInfo.renderer,
     webglVendor: rendererInfo.vendor,
     targetFps: DEPTH_RENDER_TARGET_FPS,
+    telemetry() {
+      return {
+        renderedFrames,
+        skippedFrames,
+        targetFps: DEPTH_RENDER_TARGET_FPS,
+        stopped,
+        paused,
+      };
+    },
     pause() {
       if (stopped || paused) return;
       paused = true;
@@ -2035,9 +2049,64 @@ function monitorFrames(timestamp) {
     state.droppedFrames += Math.max(1, Math.round(delta / baseline) - 1);
   }
   const average = state.frameSamples.reduce((sum, value) => sum + value, 0) / state.frameSamples.length;
+  state.displayFps = average > 0 ? Math.min(240, 1000 / average) : null;
   elements.frameRate.textContent = average > 0 ? `${Math.min(240, 1000 / average).toFixed(0)} fps` : "—";
   elements.droppedFrames.textContent = String(state.droppedFrames);
   requestAnimationFrame(monitorFrames);
+}
+
+async function reportProjectorTelemetry() {
+  if (document.visibilityState !== "visible") return;
+  const now = performance.now();
+  const sampleWindowMs = Math.max(250, now - state.projectorTelemetryAt);
+  const renderer = state.depthRenderer;
+  const depth = renderer?.telemetry?.() || null;
+  let depthFps = null;
+  if (depth) {
+    const sameRenderer = state.projectorTelemetryRenderer === renderer;
+    const renderedDelta = sameRenderer
+      ? Math.max(0, depth.renderedFrames - state.projectorTelemetryRenderedFrames)
+      : 0;
+    if (sameRenderer) depthFps = Math.min(120, renderedDelta * 1000 / sampleWindowMs);
+    state.projectorTelemetryRenderer = renderer;
+    state.projectorTelemetryRenderedFrames = depth.renderedFrames;
+  } else {
+    state.projectorTelemetryRenderer = null;
+    state.projectorTelemetryRenderedFrames = 0;
+  }
+  state.projectorTelemetryAt = now;
+  const rendererKind = depth ? "webgl-depth" : state.pack ? "image" : "fixture";
+  const payload = {
+    session_id: SESSION_ID,
+    renderer: rendererKind,
+    display_fps: Number.isFinite(state.displayFps) ? state.displayFps : null,
+    dropped_display_frames: state.droppedFrames,
+    depth_fps: Number.isFinite(depthFps) ? depthFps : null,
+    depth_target_fps: depth?.targetFps || null,
+    depth_rendered_frames: depth?.renderedFrames || 0,
+    depth_skipped_frames: depth?.skippedFrames || 0,
+    sample_window_ms: sampleWindowMs,
+    live_job_id: state.liveJobId || null,
+    live_stage: state.liveStage || null,
+    live_activation_ms: Number.isFinite(state.liveActivationMs) ? state.liveActivationMs : null,
+  };
+  try {
+    await localFetch("/v1/projector-telemetry", {
+      method: "POST",
+      headers: {"Content-Type": "application/json"},
+      body: JSON.stringify(payload),
+      keepalive: true,
+    });
+  } catch (_) {
+    // Physical performance reporting is diagnostic only and never disrupts projection.
+  }
+}
+
+function startProjectorTelemetry() {
+  if (state.projectorTelemetryTimer !== null) return;
+  state.projectorTelemetryTimer = window.setInterval(() => {
+    void reportProjectorTelemetry();
+  }, 5_000);
 }
 
 function resetFrameSampling({resetDropped = false} = {}) {
@@ -2181,6 +2250,7 @@ window.addEventListener("beforeunload", () => {
   state.liveSessionEventSource?.close();
   state.liveSessionStreamHealthy = false;
   window.clearInterval(state.liveClockTimer);
+  window.clearInterval(state.projectorTelemetryTimer);
   state.depthRenderer?.destroy();
   state.socket?.close();
   void state.screenWakeLock?.release();
@@ -2200,6 +2270,7 @@ loadCalibration();
 bindCalibrationHandles();
 updateProjection();
 setupProjectorWakeLock();
+startProjectorTelemetry();
 void startProjector();
 if (PRESENTATION_MODE) {
   document.body.dataset.frameMonitor = "disabled";

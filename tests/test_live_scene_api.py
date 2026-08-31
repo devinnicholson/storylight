@@ -264,6 +264,36 @@ def test_live_scene_api_rejects_raw_media_unknown_jobs_and_remote_clients() -> N
     assert remote_critic.status_code == 403
 
 
+def test_projector_telemetry_round_trips_locally_and_rejects_remote_clients() -> None:
+    payload = {
+        "session_id": "bookforge-live",
+        "renderer": "webgl-depth",
+        "display_fps": None,
+        "dropped_display_frames": 0,
+        "depth_fps": 29.97,
+        "depth_target_fps": 30,
+        "depth_rendered_frames": 900,
+        "depth_skipped_frames": 901,
+        "sample_window_ms": 5_001.2,
+        "live_job_id": "scene_000000000000000000000123",
+        "live_stage": "master_ready",
+        "live_activation_ms": 188.4,
+    }
+    with TestClient(app) as client:
+        recorded = client.post("/v1/projector-telemetry", json=payload)
+        latest = client.get("/v1/projector-telemetry/bookforge-live")
+    with TestClient(app, client=("203.0.113.8", 50000)) as remote:
+        remote_record = remote.post("/v1/projector-telemetry", json=payload)
+        remote_latest = remote.get("/v1/projector-telemetry/bookforge-live")
+
+    assert recorded.status_code == 200
+    assert recorded.json()["captured_at"]
+    assert latest.status_code == 200
+    assert latest.json() == recorded.json()
+    assert remote_record.status_code == 403
+    assert remote_latest.status_code == 403
+
+
 def test_nemotron_critic_rejects_non_privacy_gated_fallback_scene() -> None:
     calls: list[dict[str, object]] = []
 
