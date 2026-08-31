@@ -435,6 +435,31 @@ def test_wire_plan_recovers_destination_and_small_model_action_objects() -> None
     assert "roof garden" in beetle.focus.action
 
 
+def test_wire_plan_recovers_setting_from_architectural_structure() -> None:
+    source = (
+        "A student lifts one folded butterfly from a desk, and the classroom ceiling "
+        "blooms into a floating garden of paper flowers."
+    )
+    wire = LiveSceneWirePlan(
+        background_prompt="hand gently holding small desk soft light",
+        focus=LiveSceneWireFocus(
+            kind="character",
+            subject="student",
+            action="lifting folded butterfly",
+        ),
+        magic=LiveSceneWireMagic(
+            kind="effect",
+            prompt="paper flowers bloom into floating garden",
+        ),
+    )
+
+    sanitized = wire.privacy_sanitized(source_text=source)
+    plan = sanitized.to_live_scene_plan(context_text=source)
+
+    assert "classroom" in sanitized.background_prompt
+    validate_live_scene_plan_privacy(plan, source_text=source)
+
+
 def test_wire_plan_restores_supporting_creature_omitted_by_small_model() -> None:
     source = (
         "On a frozen lake beneath the northern lights, a red fox skates in circles "

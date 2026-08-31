@@ -67,7 +67,7 @@ _LEADING_ARTICLE = re.compile(r"^(?:a|an|the)\s+", re.IGNORECASE)
 _SEMANTIC_WORD = re.compile(r"[A-Za-z][A-Za-z'-]*")
 _PLACEMENT_MARGIN = 0.04
 _PLAN_CACHE_SCHEMA_VERSION = "1"
-_PLAN_CACHE_CONTRACT_REVISION = "semantic-v14-relations-transformations-action-repair"
+_PLAN_CACHE_CONTRACT_REVISION = "semantic-v15-relations-transformations-setting-repair"
 _EMAIL = re.compile(r"\b[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}\b", re.IGNORECASE)
 _PHONE = re.compile(r"(?<!\w)(?:\+?\d[\d\s()./-]{6,}\d)(?!\w)")
 _URL = re.compile(r"\b(?:https?://|www\.)\S+", re.IGNORECASE)
@@ -1408,6 +1408,20 @@ def _recover_source_grounded_setting(prompt: str, *, source_text: str) -> str:
             continue
         candidate = " ".join(candidate_tokens)
         return _bounded_words(f"{candidate}, {prompt}", 10)
+
+    # Some settings appear as modifiers of a visible architectural surface rather
+    # than after a preposition (for example ``the classroom ceiling``). Preserve
+    # the setting noun without copying the source phrase or inventing story detail.
+    structure_match = re.search(
+        rf"\b(?:a|an|the)\s+(?P<noun>{noun_pattern})\s+"
+        r"(?:ceiling|door|floor|roof|wall|walls|window|windows)\b",
+        source_text,
+        flags=re.IGNORECASE,
+    )
+    if structure_match is not None:
+        noun = structure_match.group("noun").casefold()
+        if noun not in prompt_tokens:
+            return _bounded_words(f"{noun} interior, {prompt}", 10)
     return prompt
 
 
