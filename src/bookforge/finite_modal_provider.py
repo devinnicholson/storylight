@@ -1937,6 +1937,14 @@ class FiniteModalLiveSceneProvider:
                 self._prepare_warm_renderer(job_id=job_id),
                 name=f"bookforge-renderer-preparation-{job_id}",
             )
+        elif prepare_renderer and callable(getattr(self.provider, "probe", None)):
+            # Readiness probes are explicitly non-billable. Overlap credential
+            # refresh and DNS/TLS/HTTP setup with private local planning so a
+            # fresh process does not put that latency on the render critical path.
+            prepare_task = asyncio.create_task(
+                self._prepare_safe_provider_route(),
+                name=f"bookforge-provider-route-preparation-{job_id}",
+            )
         try:
             resolved = await self._resolve_plan(
                 request,
@@ -1965,6 +1973,34 @@ class FiniteModalLiveSceneProvider:
             callable(getattr(self.provider, method_name, None))
             for method_name in ("prewarm", "is_prewarmed", "is_renderer_likely_warm")
         )
+
+    async def _prepare_safe_provider_route(self) -> float:
+        probe = getattr(self.provider, "probe", None)
+        if not callable(probe):
+            return 0
+        started = time.perf_counter()
+        try:
+            result = await probe()
+        except asyncio.CancelledError:
+            raise
+        except Exception as error:
+            raise LiveSceneProviderUnavailableError(
+                f"Cloud scene route readiness failed before billing: {error}"
+            ) from error
+        if (
+            not isinstance(result, tuple)
+            or len(result) != 2
+            or not isinstance(result[0], bool)
+        ):
+            raise LiveSceneProviderUnavailableError(
+                "Cloud scene route returned invalid readiness evidence before billing"
+            )
+        ready, detail = result
+        if not ready:
+            raise LiveSceneProviderUnavailableError(
+                f"Cloud scene route is unavailable before billing: {str(detail)[:300]}"
+            )
+        return (time.perf_counter() - started) * 1_000
 
     async def _prepare_warm_renderer(self, *, job_id: str) -> float:
         is_prewarmed = getattr(self.provider, "is_prewarmed", None)

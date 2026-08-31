@@ -893,6 +893,84 @@ def test_capability_based_auto_prewarm_overlaps_gcp_planning(tmp_path: Path) -> 
     assert remote.generate_calls == 1
 
 
+def test_safe_route_probe_overlaps_local_planning(tmp_path: Path) -> None:
+    class BlockingProbeProvider:
+        def __init__(self) -> None:
+            self.started = asyncio.Event()
+            self.release = asyncio.Event()
+
+        async def probe(self) -> tuple[bool, str]:
+            self.started.set()
+            await self.release.wait()
+            return True, "fixture route warm"
+
+    class BlockingPlanner:
+        def __init__(self) -> None:
+            self.started = asyncio.Event()
+            self.release = asyncio.Event()
+
+        async def plan(self, **kwargs) -> LiveScenePlanningResult:
+            del kwargs
+            self.started.set()
+            await self.release.wait()
+            return LiveScenePlanningResult(
+                plan=_gemma_live_plan(),
+                metrics=ModelMetrics(
+                    backend="ollama",
+                    model="gemma3:1b",
+                    total_ms=2_800,
+                    input_tokens=300,
+                    output_tokens=80,
+                ),
+                model_revision="sha256:gemma-fixture",
+                wall_ms=2_850,
+            )
+
+    async def run():
+        cache = AssetCache(tmp_path / "safe-probe-cache")
+        await cache.initialize()
+        remote = BlockingProbeProvider()
+        planner = BlockingPlanner()
+        adapter = FiniteModalLiveSceneProvider(
+            remote,  # type: ignore[arg-type]
+            cache=cache,
+            output_root=tmp_path / "safe-probe-output",
+            planner=planner,
+            provider_name="resilient-cloud",
+        )
+        request = LiveSceneCreateRequest(
+            text="A child opens a book and birds fill the sky.",
+            seed=43,
+        )
+        draft = build_live_scene_story_pack(
+            request,
+            job_id="scene_000000000000000000000043",
+            seed=43,
+            assets=[],
+            compiler_model="deterministic-live-scene-planner-v3",
+        )
+        task = asyncio.create_task(
+            adapter._resolve_plan_while_preparing_renderer(
+                request,
+                job_id="scene_000000000000000000000043",
+                seed=43,
+                draft=draft,
+            )
+        )
+        await asyncio.wait_for(planner.started.wait(), timeout=1)
+        await asyncio.wait_for(remote.started.wait(), timeout=1)
+        assert not task.done()
+        planner.release.set()
+        remote.release.set()
+        resolved = await asyncio.wait_for(task, timeout=2)
+        return resolved
+
+    resolved = asyncio.run(run())
+
+    assert resolved.planning_ms == 2_850
+    assert resolved.preparation_ms > 0
+
+
 def test_billing_authorization_overlaps_planning_without_starting_gpu_early(
     tmp_path: Path,
 ) -> None:
