@@ -293,6 +293,148 @@ def test_wire_plan_repairs_multiple_actor_actions_and_exact_supporting_count() -
     validate_live_scene_plan_privacy(plan, source_text=source)
 
 
+def test_wire_plan_recovers_spatial_relation_and_complete_colored_object() -> None:
+    source = (
+        "A white rabbit waits beneath a stone bridge holding a red umbrella, while "
+        "three paper lanterns float high above the bridge."
+    )
+    wire = LiveSceneWirePlan(
+        background_prompt="stone bridge overcast sky soft light red umbrella floating",
+        focus=LiveSceneWireFocus(
+            kind="character",
+            subject="white rabbit",
+            action="waits a",
+        ),
+        magic=LiveSceneWireMagic(
+            kind="effect",
+            prompt="3 paper lanterns all floating high above bridge",
+        ),
+    )
+
+    sanitized = wire.privacy_sanitized(source_text=source)
+    plan = sanitized.to_live_scene_plan(context_text=source)
+
+    assert "waiting under bridge" in sanitized.focus.action
+    assert "umbrella" in sanitized.focus.action
+    assert "red-colored" in sanitized.focus.action
+    assert "lanterns floating" in sanitized.magic.prompt
+    validate_live_scene_plan_privacy(plan, source_text=source)
+
+
+def test_wire_plan_recovers_omitted_supporting_subject_and_removes_negative_text() -> None:
+    bakery_source = (
+        "A round robot baker opens the oven, and a mountain of bread dough erupts "
+        "with colorful confetti instead of smoke."
+    )
+    bakery = LiveSceneWirePlan(
+        background_prompt="warm bakery interior oven",
+        focus=LiveSceneWireFocus(
+            kind="character",
+            subject="robot baker",
+            action="opening oven",
+        ),
+        magic=LiveSceneWireMagic(
+            kind="effect",
+            prompt="colorful confetti erupts from the oven",
+        ),
+    ).privacy_sanitized(source_text=bakery_source)
+    underwater_source = (
+        "An octopus conductor guides a tiny train through an underwater station, where "
+        "bubbles swell into glowing clocks with no numbers."
+    )
+    underwater = LiveSceneWirePlan(
+        background_prompt="vibrant coral reef softly illuminated",
+        focus=LiveSceneWireFocus(
+            kind="character",
+            subject="octopus",
+            action="guides tiny train",
+        ),
+        magic=LiveSceneWireMagic(
+            kind="effect",
+            prompt="tiny train, glowing clocks, no numbers",
+        ),
+    ).privacy_sanitized(source_text=underwater_source)
+
+    assert "dough" in bakery.magic.prompt
+    assert "confetti" in bakery.magic.prompt
+    assert "station" in underwater.background_prompt
+    assert "underwater" in underwater.background_prompt
+    assert "numbers" not in underwater.magic.prompt
+    assert "clocks" in underwater.magic.prompt
+
+
+def test_wire_plan_recovers_both_sides_of_pronominal_transformation() -> None:
+    source = (
+        "After a folded paper boat tumbles through a waterfall, it emerges as a white swan "
+        "on a glowing lake."
+    )
+    wire = LiveSceneWirePlan(
+        background_prompt="waterfall misty reflective surface soft light",
+        focus=LiveSceneWireFocus(
+            kind="character",
+            subject="white swan",
+            action="emerges",
+        ),
+        magic=LiveSceneWireMagic(kind="effect", prompt="it as glowing lake"),
+    )
+
+    sanitized = wire.privacy_sanitized(source_text=source)
+    plan = sanitized.to_live_scene_plan(context_text=source)
+
+    assert "paper boat" in plan.accent.prompt
+    assert "swan" in plan.accent.prompt
+    assert "lake" in plan.accent.prompt
+    validate_live_scene_plan_privacy(plan, source_text=source)
+
+
+def test_wire_plan_recovers_destination_and_small_model_action_objects() -> None:
+    literacy_source = (
+        "Each syllable a child reads aloud becomes a glowing firefly, and together the "
+        "fireflies form a path from the bedroom to a distant library."
+    )
+    literacy = LiveSceneWirePlan(
+        background_prompt="soft warm window light cozy garden",
+        focus=LiveSceneWireFocus(
+            kind="character",
+            subject="child",
+            action="reading aloud",
+        ),
+        magic=LiveSceneWireMagic(
+            kind="effect",
+            prompt="glowing firefly appears forming a path",
+        ),
+    ).privacy_sanitized(source_text=literacy_source)
+    teacup_source = (
+        "A field mouse sails a cracked blue teacup across a frozen pond while tiny "
+        "snowflakes rise upward like lanterns."
+    )
+    teacup = LiveSceneWirePlan(
+        background_prompt="frozen pond snow lanterns",
+        focus=LiveSceneWireFocus(
+            kind="character",
+            subject="field mouse",
+            action="sails cracked blue",
+        ),
+        magic=LiveSceneWireMagic(kind="effect", prompt="snowflakes rising like lanterns"),
+    ).privacy_sanitized(source_text=teacup_source)
+    beetle_source = (
+        "A green beetle pushes one seed into a rooftop garden, and a twisting tower of "
+        "giant leaves grows around the chimneys."
+    )
+    beetle = LiveSceneWirePlan(
+        background_prompt="rooftop garden twisting tower leaves",
+        focus=LiveSceneWireFocus(kind="character", subject="green beetle", action="push"),
+        magic=LiveSceneWireMagic(kind="effect", prompt="twisting leaves around chimneys"),
+    ).privacy_sanitized(source_text=beetle_source)
+
+    assert "library" in literacy.background_prompt
+    assert "teacup" in teacup.focus.action
+    assert "frozen pond" in teacup.focus.action
+    assert "blue-colored" in teacup.focus.action
+    assert "seed" in beetle.focus.action
+    assert "roof garden" in beetle.focus.action
+
+
 def test_wire_plan_restores_supporting_creature_omitted_by_small_model() -> None:
     source = (
         "On a frozen lake beneath the northern lights, a red fox skates in circles "

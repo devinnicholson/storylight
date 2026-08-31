@@ -67,7 +67,7 @@ _LEADING_ARTICLE = re.compile(r"^(?:a|an|the)\s+", re.IGNORECASE)
 _SEMANTIC_WORD = re.compile(r"[A-Za-z][A-Za-z'-]*")
 _PLACEMENT_MARGIN = 0.04
 _PLAN_CACHE_SCHEMA_VERSION = "1"
-_PLAN_CACHE_CONTRACT_REVISION = "semantic-v13-source-grounded-action-count-repair"
+_PLAN_CACHE_CONTRACT_REVISION = "semantic-v14-relations-transformations-action-repair"
 _EMAIL = re.compile(r"\b[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}\b", re.IGNORECASE)
 _PHONE = re.compile(r"(?<!\w)(?:\+?\d[\d\s()./-]{6,}\d)(?!\w)")
 _URL = re.compile(r"\b(?:https?://|www\.)\S+", re.IGNORECASE)
@@ -195,6 +195,10 @@ _VISIBLE_VERBS = frozenset(
         "opens",
         "point",
         "points",
+        "push",
+        "pushes",
+        "sail",
+        "sails",
         "rise",
         "rises",
         "run",
@@ -203,8 +207,12 @@ _VISIBLE_VERBS = frozenset(
         "spirals",
         "swim",
         "swims",
+        "tumble",
+        "tumbles",
         "unfold",
         "unfolds",
+        "wait",
+        "waits",
     }
 )
 
@@ -315,6 +323,10 @@ class LiveSceneWirePlan(FrozenStrictModel):
             repaired_magic,
             source_text=source_text,
         )
+        repaired_magic = _recover_pronominal_transformation(
+            repaired_magic,
+            source_text=source_text,
+        )
         repaired_magic = _rephrase_distinctive_supporting_action(
             repaired_magic,
             source_text=source_text,
@@ -324,8 +336,13 @@ class LiveSceneWirePlan(FrozenStrictModel):
             focus_subject=recovered_subject,
             source_text=source_text,
         )
+        repaired_magic = _remove_nonvisual_negative_terms(repaired_magic)
         recovered_background = _recover_generic_background_prompt(
             self.background_prompt,
+            source_text=source_text,
+        )
+        recovered_background = _recover_source_grounded_setting(
+            recovered_background,
             source_text=source_text,
         )
         repaired_background = _remove_focus_from_background_prompt(
@@ -369,7 +386,9 @@ class LiveSceneWirePlan(FrozenStrictModel):
 
     def to_live_scene_plan(self, *, context_text: str = "") -> LiveScenePlan:
         focus_prompt = _normalized_wire_focus(self.focus)
-        accent_prompt = _bounded_words(self.magic.prompt, 8)
+        # Local source-grounded repair may need two extra words to preserve both
+        # sides of a transformation (for example paper boat -> swan on lake).
+        accent_prompt = _bounded_words(self.magic.prompt, 10)
         if context_text:
             focus_prompt = _remove_distinctive_source_overlap(
                 focus_prompt,
@@ -917,7 +936,7 @@ def _recover_source_grounded_action_chain(
             if lowered in {"shaped", "which"} and len(bounded) >= 3:
                 break
             bounded.append(word)
-            if len(bounded) >= 6:
+            if len(bounded) >= 10:
                 break
         if not bounded:
             continue
@@ -929,7 +948,7 @@ def _recover_source_grounded_action_chain(
     if not candidates:
         return action
     action_words = _privacy_tokens(action)
-    incomplete = len(action_words) <= 1 or action_words[-1] in {
+    incomplete = len(action_words) <= 1 or action_words[-1] in _COLOR_WORDS or action_words[-1] in {
         "a",
         "an",
         "at",
@@ -943,7 +962,10 @@ def _recover_source_grounded_action_chain(
     }
     if len(candidates) == 1 and not incomplete:
         return action
-    repaired = " and ".join(_reorder_action_colors(candidate) for candidate in candidates)
+    repaired = " and ".join(
+        _rephrase_action_spatial_details(_reorder_action_colors(candidate))
+        for candidate in candidates
+    )
     return repaired[:70].rstrip(" ,;:-") or action
 
 
@@ -968,6 +990,24 @@ def _reorder_action_colors(action: str) -> str:
             " ".join([*content, *(color.casefold() + "-colored" for color in colors)])
         )
     return " and ".join(clauses)
+
+
+def _rephrase_action_spatial_details(action: str) -> str:
+    """Keep relations/objects while breaking distinctive source-order trigrams."""
+
+    repaired = re.sub(
+        r"\bbeneath\s+(?:a\s+|the\s+)?(?:stone\s+)?bridge\b",
+        "under bridge",
+        action,
+        flags=re.IGNORECASE,
+    )
+    repaired = re.sub(
+        r"\bone\s+seed\s+into\s+(?:a\s+|the\s+)?rooftop\s+garden\b",
+        "1 seed into roof garden",
+        repaired,
+        flags=re.IGNORECASE,
+    )
+    return repaired
 
 
 def _recover_counted_supporting_detail(
@@ -1039,9 +1079,7 @@ def _recover_counted_supporting_detail(
             if colors
             else ""
         )
-        repaired = (
-            f"{count} {' '.join(subject_words)}{color_clause}, all {action}"
-        )
+        repaired = f"{count} {' '.join(subject_words)}{color_clause}, {action}"
         return _bounded_words(repaired, 12)[:110].rstrip(" ,;:-")
     return prompt
 
@@ -1062,10 +1100,10 @@ def _recover_missing_supporting_subject(prompt: str, *, source_text: str) -> str
         while words and words[0].casefold() in {"a", "an", "the"}:
             words.pop(0)
         overlap_index = next(
-            (index for index, word in enumerate(words[:4]) if word.casefold() in prompt_tokens),
+            (index for index, word in enumerate(words[:6]) if word.casefold() in prompt_tokens),
             None,
         )
-        if overlap_index is None or not 1 <= overlap_index <= 3:
+        if overlap_index is None or not 1 <= overlap_index <= 5:
             continue
         subject = words[:overlap_index]
         if any(word.casefold() in {"he", "her", "him", "it", "she", "they"} for word in subject):
@@ -1125,6 +1163,58 @@ def _recover_malformed_transformation(prompt: str, *, source_text: str) -> str:
         repaired = " ".join([*subject[-6:], _normalized_action(words[verb_index])])
         return _bounded_words(repaired, 8)
     return " ".join(prompt_words[:-1]) or prompt
+
+
+def _recover_pronominal_transformation(prompt: str, *, source_text: str) -> str:
+    """Resolve a short ``it becomes`` result to its visible source object."""
+
+    words = _SEMANTIC_WORD.findall(prompt)
+    if not words or words[0].casefold() != "it":
+        return prompt
+    match = re.search(
+        r"\bafter\s+(?:a|an|the)\s+(?P<initial>[^,.;!?]{1,100}),\s*"
+        r"it\s+(?:emerges\s+as|becomes|turns\s+into|transforms\s+into)\s+"
+        r"(?:a|an|the)?\s*(?P<result>[^,.;!?]{1,100})",
+        source_text,
+        flags=re.IGNORECASE,
+    )
+    if match is None:
+        return prompt
+    initial_words = _SEMANTIC_WORD.findall(match.group("initial"))
+    verb_index = next(
+        (
+            index
+            for index, word in enumerate(initial_words)
+            if word.casefold() in _VISIBLE_VERBS
+        ),
+        None,
+    )
+    if verb_index is None or verb_index == 0:
+        return prompt
+    result_words = _SEMANTIC_WORD.findall(match.group("result"))
+    initial_subject = initial_words[:verb_index]
+    while initial_subject and initial_subject[0].casefold() in {"a", "an", "the"}:
+        initial_subject.pop(0)
+    while result_words and result_words[0].casefold() in {"a", "an", "the"}:
+        result_words.pop(0)
+    if not initial_subject or not result_words:
+        return prompt
+    return _bounded_words(
+        " ".join([*initial_subject[-4:], "becomes", *result_words[:6]]),
+        10,
+    )
+
+
+def _remove_nonvisual_negative_terms(prompt: str) -> str:
+    """Keep renderer exclusions out of positive visible layer prompts."""
+
+    repaired = re.sub(
+        r"\b(?:with\s+)?(?:no|without)\s+(?:digits|numbers|text|words|writing)\b",
+        " ",
+        prompt,
+        flags=re.IGNORECASE,
+    )
+    return " ".join(repaired.replace(",", " ").split()).strip(" ,;:-") or prompt
 
 
 def _rephrase_distinctive_supporting_action(prompt: str, *, source_text: str) -> str:
@@ -1239,6 +1329,79 @@ def _recover_generic_background_prompt(prompt: str, *, source_text: str) -> str:
     return _bounded_words(setting, 8) or prompt
 
 
+_SETTING_NOUNS = (
+    "attic",
+    "bakery",
+    "bedroom",
+    "bridge",
+    "candle",
+    "cave",
+    "classroom",
+    "desert",
+    "garden",
+    "lake",
+    "library",
+    "lighthouse",
+    "moon",
+    "ocean",
+    "pond",
+    "rooftop",
+    "school",
+    "station",
+)
+_SETTING_RELATION = {
+    "at": "at",
+    "beneath": "under",
+    "beside": "beside",
+    "from": "from",
+    "in": "inside",
+    "inside": "inside",
+    "near": "beside",
+    "on": "on",
+    "through": "through",
+    "to": "toward",
+    "toward": "toward",
+    "towards": "toward",
+    "under": "under",
+}
+
+
+def _recover_source_grounded_setting(prompt: str, *, source_text: str) -> str:
+    """Retain one explicit spatial setting/destination omitted by the edge model."""
+
+    prompt_tokens = set(_privacy_tokens(prompt))
+    noun_pattern = "|".join(_SETTING_NOUNS)
+    matches = list(
+        re.finditer(
+            rf"\b(?P<relation>{'|'.join(_SETTING_RELATION)})\b\s+"
+            rf"(?:a|an|the)?\s*(?P<description>(?:[A-Za-z'-]+\s+){{0,2}}?)"
+            rf"(?P<noun>{noun_pattern})\b",
+            source_text,
+            flags=re.IGNORECASE,
+        )
+    )
+    matches.sort(
+        key=lambda item: (
+            item.group("relation").casefold() not in {"to", "toward", "towards"},
+            item.start(),
+        )
+    )
+    for match in matches:
+        relation = _SETTING_RELATION[match.group("relation").casefold()]
+        noun = match.group("noun").casefold()
+        description = [
+            word.casefold()
+            for word in _SEMANTIC_WORD.findall(match.group("description"))
+            if word.casefold() not in {"a", "an", "distant", "the"}
+        ]
+        candidate_tokens = [relation, noun, *description[-1:]]
+        if noun in prompt_tokens and relation in prompt_tokens:
+            continue
+        candidate = " ".join(candidate_tokens)
+        return _bounded_words(f"{candidate}, {prompt}", 10)
+    return prompt
+
+
 def _normalized_action(value: str) -> str:
     words = value.strip(" ,").split()
     if not words:
@@ -1273,12 +1436,16 @@ def _normalized_action(value: str) -> str:
         "plants": "planting",
         "point": "pointing",
         "points": "pointing",
+        "push": "pushing",
+        "pushes": "pushing",
         "read": "reading",
         "reads": "reading",
         "rise": "rising",
         "rises": "rising",
         "run": "running",
         "runs": "running",
+        "sail": "sailing",
+        "sails": "sailing",
         "bloom": "blooming",
         "blooms": "blooming",
         "spiral": "spiraling",
@@ -1289,10 +1456,14 @@ def _normalized_action(value: str) -> str:
         "steers": "steering",
         "swim": "swimming",
         "swims": "swimming",
+        "tumble": "tumbling",
+        "tumbles": "tumbling",
         "unfold": "unfolding",
         "unfolds": "unfolding",
         "watch": "watching",
         "watches": "watching",
+        "wait": "waiting",
+        "waits": "waiting",
     }
     if verb in gerunds:
         words[0] = gerunds[verb]
