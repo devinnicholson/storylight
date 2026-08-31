@@ -673,7 +673,10 @@ class LiveSceneJobRegistry:
     ) -> None:
         if max_active_jobs < 1:
             raise ValueError("max_active_jobs must be at least 1")
-        effective_max_active_jobs = 1 if provider.name == "modal-finite" else max_active_jobs
+        serializes_paid_jobs = provider.name == "modal-finite" or bool(
+            getattr(provider, "serializes_paid_jobs", False)
+        )
+        effective_max_active_jobs = 1 if serializes_paid_jobs else max_active_jobs
         if max_retained_jobs < effective_max_active_jobs:
             raise ValueError("max_retained_jobs must be at least the effective max_active_jobs")
         if event_queue_size < 1:
@@ -1651,6 +1654,7 @@ def build_live_scene_provider(
     enable_motion: bool = False,
     enable_preview: bool = True,
     modal_session_gpu_cap_usd: float = 1.0,
+    modal_executable: str = "modal",
     modal_plan_file: Path = Path("experiments/live-scenes/modal-plan.json"),
     modal_ledger_path: Path = Path("artifacts/live-scenes/modal-ledger.json"),
     gcp_url: str = "",
@@ -1659,6 +1663,14 @@ def build_live_scene_provider(
     gcp_gpu: str = "L4",
     gcp_timeout_seconds: float = 180.0,
     gcp_session_gpu_cap_usd: float = 0.50,
+    vertex_project_id: str = "",
+    vertex_location: str = "global",
+    vertex_model: str = "gemini-2.5-flash-image",
+    vertex_timeout_seconds: float = 90.0,
+    vertex_session_cost_cap_usd: float = 0.50,
+    vertex_estimated_image_usd: float = 0.05,
+    routing_probe_timeout_seconds: float = 2.0,
+    routing_failure_cooldown_seconds: float = 300.0,
     planner_mode: str = "deterministic",
     model_client: StructuredModelClient | None = None,
     planner_timeout_seconds: float = 12.0,
@@ -1709,6 +1721,7 @@ def build_live_scene_provider(
 
         return FiniteModalLiveSceneProvider(
             FiniteModalSceneProvider(
+                modal_executable=modal_executable,
                 session_gpu_cap_usd=modal_session_gpu_cap_usd,
                 plan_file=modal_plan_file,
                 ledger_path=modal_ledger_path,
@@ -1735,6 +1748,7 @@ def build_live_scene_provider(
 
         return FiniteModalLiveSceneProvider(
             WarmModalSceneProvider(
+                modal_executable=modal_executable,
                 session_gpu_cap_usd=modal_session_gpu_cap_usd,
                 plan_file=modal_plan_file,
                 ledger_path=modal_ledger_path,
@@ -1781,6 +1795,79 @@ def build_live_scene_provider(
             fidelity_mode=fidelity_mode,
             auto_prewarm_on_submit=auto_prewarm_on_submit,
             provider_name="gcp-cloud-run",
+        )
+    if selected == "gcp_resilient":
+        if cache is None:
+            raise ValueError("The resilient live-scene provider requires an AssetCache")
+        from bookforge.finite_modal_provider import (
+            FiniteModalLiveSceneProvider,
+            WarmModalSceneProvider,
+        )
+        from bookforge.provider_router import ProviderRoute, ResilientFastSceneProvider
+
+        routes: list[ProviderRoute] = []
+        if gcp_url.strip():
+            from bookforge.gcp_scene_provider import GcpCloudRunSceneProvider
+
+            routes.append(
+                ProviderRoute(
+                    "gcp-cloud-run",
+                    GcpCloudRunSceneProvider(
+                        base_url=gcp_url,
+                        audience=gcp_audience or gcp_url,
+                        impersonate_service_account=gcp_impersonate_service_account,
+                        gpu=gcp_gpu,
+                        timeout_seconds=gcp_timeout_seconds,
+                        session_gpu_cap_usd=gcp_session_gpu_cap_usd,
+                    ),
+                )
+            )
+        if vertex_project_id.strip():
+            from bookforge.vertex_scene_provider import VertexGeminiImageSceneProvider
+
+            routes.append(
+                ProviderRoute(
+                    "gcp-vertex-managed",
+                    VertexGeminiImageSceneProvider(
+                        project_id=vertex_project_id,
+                        location=vertex_location,
+                        model=vertex_model,
+                        timeout_seconds=vertex_timeout_seconds,
+                        session_cost_cap_usd=vertex_session_cost_cap_usd,
+                        estimated_image_usd=vertex_estimated_image_usd,
+                    ),
+                )
+            )
+        routes.append(
+            ProviderRoute(
+                "modal-warm-fallback",
+                WarmModalSceneProvider(
+                    modal_executable=modal_executable,
+                    session_gpu_cap_usd=modal_session_gpu_cap_usd,
+                    plan_file=modal_plan_file,
+                    ledger_path=modal_ledger_path,
+                    prewarm_fidelity=fidelity_mode == "inline",
+                ),
+            )
+        )
+        return FiniteModalLiveSceneProvider(
+            ResilientFastSceneProvider(
+                routes,
+                probe_timeout_seconds=routing_probe_timeout_seconds,
+                failure_cooldown_seconds=routing_failure_cooldown_seconds,
+            ),
+            cache=cache,
+            output_root=output_root,
+            enable_motion=False,
+            enable_preview=False,
+            planner=planner,
+            master_width=master_width,
+            master_height=master_height,
+            master_steps=master_steps,
+            master_guidance_scale=master_guidance_scale,
+            fidelity_mode=fidelity_mode,
+            auto_prewarm_on_submit=False,
+            provider_name="resilient-cloud",
         )
     return DisabledLiveSceneProvider(
         f"No live-scene provider is configured for backend {selected!r}"

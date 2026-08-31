@@ -152,6 +152,42 @@ that an ungraded plate passed visual verification.
 Cosmos remains outside the primary path because world-model video would cost much more latency than
 the depth-aware local motion that already runs on the Jetson.
 
+### Resilient edge-to-cloud rendering
+
+`gcp_resilient` is the showcase route. It tries the private Cloud Run RTX renderer first, then the
+managed Vertex `gemini-2.5-flash-image` model, and finally the authenticated Modal deployment. Each
+candidate must pass a bounded, non-generation readiness gate before it receives the privacy-safe
+visual brief. Explicit non-billable rejection can advance to the next route; a timeout, connection
+reset, malformed successful response, or other ambiguous paid result fails closed so Bookforge never
+silently buys two conflicting images.
+
+The managed Vertex route does not require project GPU quota. It returns a 16:9 master and Bookforge
+immediately pairs it with a deterministic local projection-depth bootstrap, so the projector can
+move while an eventual Jetson TensorRT depth result is prepared. The raw passage, audio, camera
+frames, and identity data remain local. Google now recommends `gemini-2.5-flash-image` as the
+replacement for deprecated Imagen generation endpoints; see the
+[Vertex image model documentation](https://cloud.google.com/vertex-ai/generative-ai/docs/models/gemini/2-5-flash-image)
+and [Vertex release notes](https://cloud.google.com/vertex-ai/generative-ai/docs/release-notes).
+
+```bash
+BOOKFORGE_LIVE_SCENE_BACKEND=gcp_resilient \
+BOOKFORGE_LIVE_SCENE_GCP_URL=https://SERVICE_HASH.us-central1.run.app \
+BOOKFORGE_LIVE_SCENE_GCP_AUDIENCE=https://SERVICE_HASH.us-central1.run.app \
+BOOKFORGE_LIVE_SCENE_GCP_IMPERSONATE_SERVICE_ACCOUNT=bookforge-renderer@your-gcp-project.iam.gserviceaccount.com \
+BOOKFORGE_LIVE_SCENE_GCP_GPU=RTX_PRO_6000 \
+BOOKFORGE_LIVE_SCENE_VERTEX_PROJECT_ID=your-gcp-project \
+BOOKFORGE_LIVE_SCENE_VERTEX_LOCATION=global \
+BOOKFORGE_LIVE_SCENE_VERTEX_MODEL=gemini-2.5-flash-image \
+BOOKFORGE_LIVE_SCENE_ROUTING_PROBE_TIMEOUT_SECONDS=2 \
+BOOKFORGE_ASSET_MODAL_COMMAND=/opt/bookforge/.venv/bin/modal \
+BOOKFORGE_LIVE_SCENE_FIDELITY_MODE=deferred \
+make dev
+```
+
+Every completed scene manifest records the selected route, previous readiness failures, exact
+provider/model revisions, prompt hash, checksums, measured latency, and bounded cost estimate. Exact
+replays still use the verified local Story Pack cache and spend nothing.
+
 ### Generate live scenes on Modal
 
 The authenticated warm live backend selects a budget-checked NVIDIA L40S variant for its SANA-Sprint

@@ -104,3 +104,21 @@ def test_general_model_output_default_remains_large_enough_for_story_compilation
     settings = Settings(_env_file=None)
 
     assert settings.model_max_output_tokens == 4_096
+
+
+def test_resilient_cloud_route_has_bounded_managed_provider_defaults() -> None:
+    settings = Settings(
+        _env_file=None,
+        live_scene_backend="gcp_resilient",
+        live_scene_vertex_project_id="your-gcp-project",
+    )
+
+    assert settings.live_scene_vertex_model == "gemini-2.5-flash-image"
+    assert settings.live_scene_vertex_location == "global"
+    assert settings.live_scene_vertex_timeout_seconds == 90
+    assert settings.live_scene_vertex_estimated_image_usd == 0.05
+    assert settings.live_scene_vertex_session_cost_cap_usd == 0.50
+    assert settings.live_scene_routing_probe_timeout_seconds == 2
+    assert settings.live_scene_routing_failure_cooldown_seconds == 300
+    with pytest.raises(ValidationError):
+        Settings(_env_file=None, live_scene_vertex_estimated_image_usd=0)

@@ -188,6 +188,7 @@ async def lifespan(app: FastAPI):
             enable_motion=settings.live_scene_enable_motion,
             enable_preview=settings.live_scene_enable_preview,
             modal_session_gpu_cap_usd=settings.live_scene_modal_session_gpu_cap_usd,
+            modal_executable=settings.asset_modal_command,
             modal_plan_file=settings.live_scene_modal_plan_file,
             modal_ledger_path=modal_ledger_path,
             gcp_url=settings.live_scene_gcp_url,
@@ -198,6 +199,18 @@ async def lifespan(app: FastAPI):
             gcp_gpu=settings.live_scene_gcp_gpu,
             gcp_timeout_seconds=settings.live_scene_gcp_timeout_seconds,
             gcp_session_gpu_cap_usd=settings.live_scene_gcp_session_gpu_cap_usd,
+            vertex_project_id=settings.live_scene_vertex_project_id,
+            vertex_location=settings.live_scene_vertex_location,
+            vertex_model=settings.live_scene_vertex_model,
+            vertex_timeout_seconds=settings.live_scene_vertex_timeout_seconds,
+            vertex_session_cost_cap_usd=settings.live_scene_vertex_session_cost_cap_usd,
+            vertex_estimated_image_usd=settings.live_scene_vertex_estimated_image_usd,
+            routing_probe_timeout_seconds=(
+                settings.live_scene_routing_probe_timeout_seconds
+            ),
+            routing_failure_cooldown_seconds=(
+                settings.live_scene_routing_failure_cooldown_seconds
+            ),
             planner_mode=settings.live_scene_planner,
             model_client=client,
             planner_timeout_seconds=settings.live_scene_planner_timeout_seconds,

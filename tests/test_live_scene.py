@@ -855,12 +855,35 @@ def test_provider_factory_selects_fake_and_finite_modal_without_persistent_servi
         planner_mode="model",
         model_client=FakeModelClient(),
     )
+    resilient = build_live_scene_provider(
+        "gcp_resilient",
+        asset_backend="disabled",
+        cache=cache,
+        output_root=tmp_path / "resilient-generated",
+        modal_executable="/opt/bookforge/.venv/bin/modal",
+        modal_plan_file=tmp_path / "modal-plan.json",
+        modal_ledger_path=tmp_path / "modal-ledger.json",
+        gcp_url="https://renderer.example.run.app",
+        gcp_impersonate_service_account="renderer@example.iam.gserviceaccount.com",
+        vertex_project_id="your-gcp-project",
+        planner_mode="model",
+        model_client=FakeModelClient(),
+    )
 
     assert fake.name == "fake"
     assert explicit_fake.name == "fake"
     assert modal.name == "modal-finite"
     assert modal_warm.name == "modal-finite"
     assert gcp.name == "gcp-cloud-run"
+    assert resilient.name == "resilient-cloud"
+    assert resilient.serializes_paid_jobs is True  # type: ignore[attr-defined]
+    assert [  # type: ignore[attr-defined]
+        route.name for route in resilient.provider.routes
+    ] == ["gcp-cloud-run", "gcp-vertex-managed", "modal-warm-fallback"]
+    assert (  # type: ignore[attr-defined]
+        resilient.provider.routes[-1].provider.modal_executable
+        == "/opt/bookforge/.venv/bin/modal"
+    )
     assert gcp.provider.__class__.__name__ == "GcpCloudRunSceneProvider"  # type: ignore[attr-defined]
     assert (  # type: ignore[attr-defined]
         gcp.provider._token_source.__class__.__name__ == "GoogleImpersonatedIdentityTokenSource"
@@ -883,6 +906,7 @@ def test_provider_factory_selects_fake_and_finite_modal_without_persistent_servi
     assert modal.fidelity_mode == "deferred"  # type: ignore[attr-defined]
     assert LiveSceneJobRegistry(modal, max_active_jobs=8).max_active_jobs == 1
     assert LiveSceneJobRegistry(modal_warm, max_active_jobs=8).max_active_jobs == 1
+    assert LiveSceneJobRegistry(resilient, max_active_jobs=8).max_active_jobs == 1
     assert LiveSceneJobRegistry(fake, max_active_jobs=8).max_active_jobs == 8
     with pytest.raises(ValueError, match="structured model client"):
         build_live_scene_provider(

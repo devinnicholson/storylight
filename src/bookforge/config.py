@@ -43,6 +43,7 @@ class Settings(BaseSettings):
         "modal",
         "modal_warm",
         "gcp_cloud_run",
+        "gcp_resilient",
     ] = "auto"
     live_scene_planner: Literal["deterministic", "model"] = "deterministic"
     live_scene_planner_timeout_seconds: Annotated[float, Field(gt=0, le=60)] = 12.0
@@ -81,6 +82,17 @@ class Settings(BaseSettings):
     live_scene_gcp_gpu: Literal["L4", "RTX_PRO_6000"] = "L4"
     live_scene_gcp_timeout_seconds: Annotated[float, Field(gt=0, le=600)] = 180.0
     live_scene_gcp_session_gpu_cap_usd: Annotated[float, Field(gt=0, le=10)] = 0.50
+    live_scene_vertex_project_id: str = ""
+    live_scene_vertex_location: str = "global"
+    live_scene_vertex_model: str = "gemini-2.5-flash-image"
+    live_scene_vertex_timeout_seconds: Annotated[float, Field(gt=0, le=300)] = 90.0
+    live_scene_vertex_session_cost_cap_usd: Annotated[float, Field(gt=0, le=10)] = 0.50
+    live_scene_vertex_estimated_image_usd: Annotated[float, Field(gt=0, le=1)] = 0.05
+    live_scene_routing_probe_timeout_seconds: Annotated[float, Field(gt=0, le=60)] = 2.0
+    live_scene_routing_failure_cooldown_seconds: Annotated[
+        float,
+        Field(gt=0, le=3_600),
+    ] = 300.0
     live_scene_critic_backend: Literal["disabled", "nemotron"] = "disabled"
     live_scene_critic_url: str = ""
     live_scene_critic_audience: str = ""

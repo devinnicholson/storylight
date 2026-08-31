@@ -90,6 +90,29 @@ worker. Evidence and the exact immutable revision are recorded in
 SANA Sprint uses its native two-step SCM path; the Bookforge GCP adapter rejects any other step
 count locally before a paid request, and the worker validates the same constraint.
 
+## Managed Vertex route and Modal fallback
+
+Cloud Run GPU availability is an optimization, not a runtime dependency. Configure
+`gcp_resilient` to try the existing private RTX service, use managed Vertex image generation when
+the service does not pass readiness, and retain Modal as the final budget-checked fallback:
+
+```bash
+export BOOKFORGE_LIVE_SCENE_BACKEND=gcp_resilient
+export BOOKFORGE_LIVE_SCENE_VERTEX_PROJECT_ID=your-gcp-project
+export BOOKFORGE_LIVE_SCENE_VERTEX_LOCATION=global
+export BOOKFORGE_LIVE_SCENE_VERTEX_MODEL=gemini-2.5-flash-image
+export BOOKFORGE_LIVE_SCENE_VERTEX_SESSION_COST_CAP_USD=0.50
+export BOOKFORGE_LIVE_SCENE_VERTEX_ESTIMATED_IMAGE_USD=0.05
+export BOOKFORGE_LIVE_SCENE_ROUTING_PROBE_TIMEOUT_SECONDS=2
+export BOOKFORGE_LIVE_SCENE_ROUTING_FAILURE_COOLDOWN_SECONDS=300
+```
+
+Enable `aiplatform.googleapis.com` and provide Application Default Credentials to the Jetson
+service account environment before expecting the managed route to pass readiness. If either is
+missing, routing advances to Modal without sending a story prompt. Successful Vertex responses are
+cost-reserved and never automatically duplicated. The returned plate receives a local depth
+bootstrap immediately; TensorRT depth replacement remains an asynchronous edge optimization.
+
 ### Nemotron visual critic
 
 Bookforge's optional critic client targets NVIDIA's OpenAI-compatible

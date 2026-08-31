@@ -92,7 +92,10 @@ if ((INSTALL_APP == 1 || INSTALL_MODAL_RUNTIME == 1)); then
   fi
   "${VENV_PATH}/bin/python" -m pip install --upgrade pip
   if ((INSTALL_MODAL_RUNTIME == 1)); then
-    "${VENV_PATH}/bin/python" -m pip install --upgrade "${REPO_ROOT}[modal-authoring]"
+    # The resilient runtime needs both Modal SDK fallback and keyless Google
+    # authentication. Neither optional extra contains a stored credential.
+    "${VENV_PATH}/bin/python" -m pip install --upgrade \
+      "${REPO_ROOT}[modal-authoring,gcp]"
   else
     "${VENV_PATH}/bin/python" -m pip install --upgrade "$REPO_ROOT"
   fi

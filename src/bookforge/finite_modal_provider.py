@@ -1519,6 +1519,8 @@ class _GeneratedLivePreview:
 class FiniteModalLiveSceneProvider:
     """Adapter from finite Modal artifacts to the progressive live-scene contract."""
 
+    serializes_paid_jobs = True
+
     def __init__(
         self,
         provider: FiniteModalSceneProvider,
@@ -2118,13 +2120,20 @@ class FiniteModalLiveSceneProvider:
             raise FiniteModalProviderError(f"cached {role} checksum changed during promotion")
         stage_name = role if role in {"preview", "motion"} else "fast"
         stage = bundle.manifest["stages"][stage_name]
+        model, revision = _artifact_model_provenance(
+            stage,
+            role=role,
+            default_model=model,
+            default_revision=revision,
+        )
         if role == "master":
             generation_ms = float(stage.get("image_seconds", 0)) * 1000
         elif role == "depth":
             generation_ms = float(stage.get("depth_seconds", 0)) * 1000
         else:
             generation_ms = float(stage.get("inference_seconds", 0)) * 1000
-        provider_label = f"{self.provider_name}:{model}@{revision}"
+        artifact_provider = str(bundle.manifest.get("provider", self.provider_name))
+        provider_label = f"{artifact_provider}:{model}@{revision}"
         record = AssetRecord(
             asset_id=artifact_id,
             page_id="page-01",
@@ -2148,7 +2157,7 @@ class FiniteModalLiveSceneProvider:
             uri=uri,
             checksum_sha256=digest,
             media_type=source.mime_type,
-            provider=self.provider_name,
+            provider=artifact_provider,
             model=f"{model}@{revision}",
             seed=seed,
             width=source.width,
@@ -2199,6 +2208,19 @@ def _live_scene_metrics(
         warm_state = LiveSceneWarmState.COLD
     else:
         warm_state = LiveSceneWarmState.UNKNOWN
+    fast_stage = bundle.manifest["stages"]["fast"]
+    master_model, master_revision = _artifact_model_provenance(
+        fast_stage,
+        role="master",
+        default_model=FAST_MODEL,
+        default_revision=FAST_MODEL_REVISION,
+    )
+    depth_model, depth_revision = _artifact_model_provenance(
+        fast_stage,
+        role="depth",
+        default_model=DEPTH_MODEL,
+        default_revision=DEPTH_MODEL_REVISION,
+    )
     models = [
         planning.provenance,
         *(
@@ -2214,13 +2236,13 @@ def _live_scene_metrics(
         ),
         LiveSceneModelProvenance(
             role="master",
-            model=FAST_MODEL,
-            revision=FAST_MODEL_REVISION,
+            model=master_model,
+            revision=master_revision,
         ),
         LiveSceneModelProvenance(
             role="depth",
-            model=DEPTH_MODEL,
-            revision=DEPTH_MODEL_REVISION,
+            model=depth_model,
+            revision=depth_revision,
         ),
     ]
     if any(stage.get("quality_label") for stage in stages):
@@ -2261,6 +2283,34 @@ def _live_scene_metrics(
         cost_source=LiveSceneCostSource.PROVIDER_MANIFEST,
         models=models,
     )
+
+
+def _artifact_model_provenance(
+    stage: Mapping[str, Any],
+    *,
+    role: str,
+    default_model: str,
+    default_revision: str,
+) -> tuple[str, str]:
+    if role in {"master", "preview", "motion"}:
+        model = stage.get("model")
+        revision = stage.get("model_revision")
+        if isinstance(model, str) and model and isinstance(revision, str) and revision:
+            return model[:200], revision[:200]
+        return default_model, default_revision
+    additional = stage.get("additional_models")
+    if isinstance(additional, list):
+        for candidate in additional:
+            if not isinstance(candidate, dict):
+                continue
+            candidate_role = candidate.get("role")
+            if candidate_role not in {None, role}:
+                continue
+            model = candidate.get("model")
+            revision = candidate.get("model_revision")
+            if isinstance(model, str) and model and isinstance(revision, str) and revision:
+                return model[:200], revision[:200]
+    return default_model, default_revision
 
 
 def _preview_scene_metrics(preview: _GeneratedLivePreview) -> LiveSceneMetrics:

@@ -233,7 +233,10 @@ def test_standalone_profile_keeps_raw_story_planning_local() -> None:
     assert "BOOKFORGE_MODEL_REQUIRE_GPU=true" in profile
     assert "BOOKFORGE_LIVE_SCENE_PLANNER=model" in profile
     assert "BOOKFORGE_LIVE_SCENE_PLANNER_COMPACT_WIRE=false" in profile
-    assert "BOOKFORGE_LIVE_SCENE_BACKEND=modal_warm" in profile
+    assert "BOOKFORGE_LIVE_SCENE_BACKEND=gcp_resilient" in profile
+    assert "BOOKFORGE_LIVE_SCENE_VERTEX_MODEL=gemini-2.5-flash-image" in profile
+    assert "BOOKFORGE_LIVE_SCENE_AUTO_PREWARM_ON_SUBMIT=false" in profile
+    assert "BOOKFORGE_LIVE_SCENE_FIDELITY_MODE=deferred" in profile
     assert "BOOKFORGE_ASSET_MODAL_COMMAND=/opt/bookforge/.venv/bin/modal" in profile
     assert (
         "BOOKFORGE_LIVE_SCENE_MODAL_PLAN_FILE="
@@ -1363,7 +1366,7 @@ def test_bootstrap_keeps_jetpack_python_packages_visible() -> None:
     assert "python3 -m venv --system-site-packages" in bootstrap
     assert 'pip install --upgrade "$REPO_ROOT"' in bootstrap
     assert "--install-modal-runtime" in bootstrap
-    assert 'pip install --upgrade "${REPO_ROOT}[modal-authoring]"' in bootstrap
+    assert '"${REPO_ROOT}[modal-authoring,gcp]"' in bootstrap
 
 
 def test_api_launchers_bound_shutdown_with_long_lived_scene_streams() -> None:
