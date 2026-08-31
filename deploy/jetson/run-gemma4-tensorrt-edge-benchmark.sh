@@ -58,6 +58,7 @@ export EDGELLM_PLUGIN_PATH="$EDGELLM_PLUGIN"
   --output "$REPORT_PATH" \
   --warmup 1 \
   --prompt-profile production \
+  --suite contest \
   --candidate-model google/gemma-4-E2B-it \
   --candidate-revision 3e22461f65e89153144f8adb70e3b8c2cc9845a7
 

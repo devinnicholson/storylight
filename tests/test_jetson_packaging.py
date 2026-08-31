@@ -310,6 +310,8 @@ def test_tensorrt_edge_llm_candidate_is_pinned_local_and_fail_closed() -> None:
 
     assert "LiveSceneWirePlan.model_validate_json(output_text)" in benchmark
     assert "validate_live_scene_plan_privacy(plan, source_text=case.text)" in benchmark
+    assert "_semantic_evidence(case, generated_text=generated_text)" in benchmark
+    assert 'choices=("five", "contest")' in benchmark
     assert '"candidate_not_promoted_by_this_benchmark": True' in benchmark
     assert '"modal_or_cloud_called": False' in benchmark
     assert "subprocess.run(command, check=False" in benchmark
@@ -357,6 +359,7 @@ def test_gemma4_tensorrt_candidate_is_budgeted_externalized_and_shadow_only() ->
     assert 'models/gemma4-e2b-it-int4-awq-v010' in benchmark_runner
     assert "--candidate-model google/gemma-4-E2B-it" in benchmark_runner
     assert "--candidate-revision 3e22461f65e89153144f8adb70e3b8c2cc9845a7" in benchmark_runner
+    assert "--suite contest" in benchmark_runner
     assert "Gemma 3 remains production" in benchmark_runner
 
 
