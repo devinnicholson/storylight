@@ -15,6 +15,7 @@ from bookforge.finite_modal_provider import (
     FiniteModalUnavailableError,
     FiniteSceneBundle,
     MotionUpgradeRequest,
+    WarmProviderStatus,
 )
 
 
@@ -92,6 +93,16 @@ class ResilientFastSceneProvider:
             if ready:
                 return True, f"resilient route selected {route.name}: {detail}"
         return False, self._unavailable_message(attempts)
+
+    async def warm_status(self) -> WarmProviderStatus:
+        """Expose route readiness without prewarming or starting paid work."""
+
+        ready, detail = await self.probe()
+        return WarmProviderStatus(
+            ready=ready,
+            detail=detail,
+            state="idle",
+        )
 
     async def generate_fast(
         self,

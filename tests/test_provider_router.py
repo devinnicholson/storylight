@@ -115,6 +115,24 @@ def test_router_skips_failed_probe_and_records_selected_fallback(tmp_path: Path)
     assert json.loads(bundle.manifest_path.read_text())["routing"] == bundle.manifest["routing"]
 
 
+def test_router_status_selects_healthy_route_without_generation() -> None:
+    vertex = StubProvider("vertex")
+    modal = StubProvider("modal")
+    router = ResilientFastSceneProvider(
+        [ProviderRoute("vertex", vertex), ProviderRoute("modal", modal)]
+    )
+
+    status = asyncio.run(router.warm_status())
+
+    assert status.ready is True
+    assert status.state == "idle"
+    assert "resilient route selected vertex" in status.detail
+    assert vertex.probes == 1
+    assert vertex.generations == 0
+    assert modal.probes == 0
+    assert modal.generations == 0
+
+
 def test_router_advances_after_explicit_nonbillable_rejection(tmp_path: Path) -> None:
     primary = StubProvider(
         "vertex",

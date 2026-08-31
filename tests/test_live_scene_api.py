@@ -465,6 +465,33 @@ def test_explicit_warm_provider_routes_are_strict_by_default() -> None:
     assert excessive_window.status_code == 422
 
 
+def test_status_only_provider_reports_readiness_without_exposing_prewarm() -> None:
+    class StubStatusProvider:
+        async def warm_status(self) -> WarmProviderStatus:
+            return WarmProviderStatus(
+                ready=True,
+                detail="Vertex managed route is authenticated",
+                state="idle",
+            )
+
+    with TestClient(app) as client:
+        client.app.state.live_scenes.provider = SimpleNamespace(
+            provider=StubStatusProvider(),
+            enable_motion=False,
+        )
+        status_response = client.get("/v1/live-scene-provider/warm-status")
+        prewarm_response = client.post(
+            "/v1/live-scene-provider/prewarm",
+            json={"prewarm_id": "blocked-prewarm", "include_motion": False},
+        )
+
+    assert status_response.status_code == 200
+    assert status_response.json()["ready"] is True
+    assert status_response.json()["state"] == "idle"
+    assert prewarm_response.status_code == 409
+    assert "does not support explicit prewarming" in prewarm_response.json()["detail"]
+
+
 def test_live_scene_session_endpoint_recovers_latest_job_and_advances_monotonically() -> None:
     first_payload = {**_payload(), "text": "The first browser scene."}
     second_payload = {**_payload(), "text": "The replacement browser scene."}

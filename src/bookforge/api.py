@@ -512,13 +512,23 @@ async def create_live_scene(
         raise HTTPException(status_code=503, detail=str(error)) from error
 
 
-def _configured_warm_scene_provider(registry: LiveSceneJobRegistry):
+def _configured_warm_status_provider(registry: LiveSceneJobRegistry):
     adapter = registry.provider
     provider = getattr(adapter, "provider", None)
-    if provider is None or not callable(getattr(provider, "prewarm", None)):
+    if provider is None or not callable(getattr(provider, "warm_status", None)):
         raise HTTPException(
             status_code=409,
-            detail="BOOKFORGE_LIVE_SCENE_BACKEND is not configured as modal_warm",
+            detail="The configured live-scene provider does not expose readiness status",
+        )
+    return adapter, provider
+
+
+def _configured_prewarm_scene_provider(registry: LiveSceneJobRegistry):
+    adapter, provider = _configured_warm_status_provider(registry)
+    if not callable(getattr(provider, "prewarm", None)):
+        raise HTTPException(
+            status_code=409,
+            detail="The configured live-scene provider does not support explicit prewarming",
         )
     return adapter, provider
 
@@ -531,7 +541,7 @@ async def live_scene_warm_status(request: Request) -> LiveSceneWarmProviderStatu
     if not _is_local_connection(request):
         raise HTTPException(status_code=403, detail="Live-scene provider status is local-only")
     registry: LiveSceneJobRegistry = request.app.state.live_scenes
-    _, provider = _configured_warm_scene_provider(registry)
+    _, provider = _configured_warm_status_provider(registry)
     try:
         report = await provider.warm_status()
     except RuntimeError as error:
@@ -552,7 +562,7 @@ async def prewarm_live_scene_provider(
     if not _is_local_connection(request):
         raise HTTPException(status_code=403, detail="Live-scene prewarm is local-only")
     registry: LiveSceneJobRegistry = request.app.state.live_scenes
-    adapter, provider = _configured_warm_scene_provider(registry)
+    adapter, provider = _configured_prewarm_scene_provider(registry)
     if payload.include_motion and not adapter.enable_motion:
         raise HTTPException(
             status_code=409,
