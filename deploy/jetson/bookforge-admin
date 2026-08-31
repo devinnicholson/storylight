@@ -9,6 +9,7 @@ unset BASH_ENV ENV CDPATH GLOBIGNORE
 
 readonly CONFIG_FILE="/etc/bookforge/admin.conf"
 readonly POWER_RUNNER="/usr/local/libexec/bookforge/run-power-mode-ab.sh"
+readonly SWAP_RUNNER="/usr/local/libexec/bookforge/run-tensorrt-build-swap.sh"
 
 usage() {
   cat <<'EOF'
@@ -20,6 +21,7 @@ Commands:
   restart-controller  Restart only the Bookforge controller system service.
   restart-all         Restart the API and controller system services.
   power ACTION        Run status, prepare-maxn, benchmark-maxn, restore-25w, or finalize.
+  build-swap ACTION   Run status, prepare, or cleanup for the fixed temporary TensorRT swap file.
 
 This wrapper intentionally provides no shell, arbitrary systemctl target, arbitrary file path,
 package installation, network mutation, or unrestricted command execution.
@@ -123,6 +125,25 @@ case "${1:-}" in
       exit 78
     fi
     BOOKFORGE_POWER_AB_USER="$ADMIN_USER" exec "$POWER_RUNNER" "$2"
+    ;;
+  build-swap)
+    if [[ $# -ne 2 ]]; then
+      usage >&2
+      exit 64
+    fi
+    case "$2" in
+      status|prepare|cleanup) ;;
+      *)
+        printf 'Unsupported build-swap action: %s\n' "$2" >&2
+        exit 64
+        ;;
+    esac
+    if [[ ! -x "$SWAP_RUNNER" ]] \
+      || [[ "$(stat -c '%U:%G:%a' "$SWAP_RUNNER")" != "root:root:755" ]]; then
+      printf 'Root-owned Bookforge TensorRT swap runner is missing or unsafe.\n' >&2
+      exit 78
+    fi
+    exec "$SWAP_RUNNER" "$2"
     ;;
   *)
     usage >&2

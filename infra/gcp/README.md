@@ -211,9 +211,10 @@ before the output can be measured.
 
 Cloud Run Jobs is not required to prepare the Jetson's Gemma 4 checkpoint. The bounded Compute
 Engine launcher in `compute/run-gemma4-tensorrt-export.sh` uses the same immutable exporter image on
-one `g4-standard-48` VM. It has a 45-minute automatic-delete deadline, no restart, one task, and no
-production routing changes. The exporter uploads its completion manifest last; incomplete prefixes
-are never accepted by the Jetson installer.
+one `g4-standard-48` Flex-start VM. It can wait up to 30 minutes for scarce capacity and, once
+running, has a 45-minute automatic-delete deadline, no restart, one task, and no production routing
+changes. The exporter uploads its completion manifest last; incomplete prefixes are never accepted
+by the Jetson installer.
 
 The dedicated runtime identity needs only its existing private-bucket object role plus read access
 to the single private Artifact Registry repository. Grant that narrow repository role explicitly:

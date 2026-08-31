@@ -141,10 +141,14 @@ not a price guarantee. The project-level gross-cost disconnect remains authorita
 
 ### 3. Finish the edge TensorRT decision
 
-1. Retry the existing one-task, zero-retry Cloud Run export job only when the RTX service is not
-   holding the project's one-GPU quota.
-2. Require a completion manifest before downloading anything from GCS.
-3. Build the device-specific engine on the Jetson; never reuse a cloud-built TensorRT engine.
+1. Use the completed, checksum-bound G4 Flex-start export
+   `compute-g4-20260831-053351`; do not repeat the paid export unless its immutable manifest fails.
+2. Keep the GCP VM and boot disk deleted. The accepted checkpoint has nine files totaling
+   7,318,589,073 bytes and was verified both before and after its atomic Jetson install.
+3. Retry the device-specific engine build with the fixed temporary 8 GiB NVMe swap. The first
+   no-swap attempt completed TensorRT engine generation in 269.546 seconds, then was OOM-killed
+   during in-memory serialization. Remove swap after the shadow benchmark; steady-state inference
+   must pass with swap absent.
 4. Run the same five semantic cases plus adversarial privacy/schema cases against Gemma 3/Ollama and
    Gemma 4/TensorRT Edge-LLM in counterbalanced order.
 5. Record output tokens, p50/p95, peak RAM, GPU utilization, thermals, schema validity, semantic

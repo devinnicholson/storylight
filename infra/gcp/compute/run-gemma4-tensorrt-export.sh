@@ -14,6 +14,8 @@ readonly SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 readonly STARTUP_SCRIPT="$SCRIPT_DIR/gemma4-tensorrt-export-startup.sh"
 readonly APPLY_TOKEN="${BOOKFORGE_GCP_EXPORT_APPLY:-}"
 readonly REQUIRED_APPLY_TOKEN="I_UNDERSTAND_THIS_CREATES_A_FINITE_BILLABLE_G4_VM"
+readonly PROVISIONING_MODEL="FLEX_START"
+readonly REQUEST_VALID_FOR_DURATION="${BOOKFORGE_GCP_EXPORT_WAIT:-30m}"
 
 if [[ "$PROJECT_ID" != "your-gcp-project" ]]; then
   echo "Refusing unexpected GCP project: $PROJECT_ID" >&2
@@ -43,6 +45,7 @@ Project: $PROJECT_ID
 Instance: $INSTANCE_NAME
 Zone: $ZONE
 Machine: $MACHINE_TYPE (one NVIDIA RTX PRO 6000, 96 GB VRAM)
+Provisioning: $PROVISIONING_MODEL with a $REQUEST_VALID_FOR_DURATION capacity wait window
 Image: $EXPORT_IMAGE
 Run ID: $RUN_ID
 Hard lifetime: 45 minutes with automatic deletion.
@@ -61,8 +64,11 @@ gcloud compute instances create "$INSTANCE_NAME" \
   --image-family common-cu129-ubuntu-2204-nvidia-580 \
   --image-project deeplearning-platform-release \
   --boot-disk-size 200GB \
-  --boot-disk-type pd-balanced \
+  --boot-disk-type hyperdisk-balanced \
   --maintenance-policy TERMINATE \
+  --provisioning-model "$PROVISIONING_MODEL" \
+  --request-valid-for-duration "$REQUEST_VALID_FOR_DURATION" \
+  --reservation-affinity none \
   --no-restart-on-failure \
   --max-run-duration 45m \
   --instance-termination-action DELETE \
@@ -71,13 +77,15 @@ gcloud compute instances create "$INSTANCE_NAME" \
   --labels bookforge-purpose=tensorrt-export,bookforge-finite=true \
   --metadata-from-file "startup-script=$STARTUP_SCRIPT" \
   --metadata \
-    "bookforge-export-image=$EXPORT_IMAGE,bookforge-export-bucket=$EXPORT_BUCKET,bookforge-export-run-id=$RUN_ID,bookforge-export-log-object=$LOG_OBJECT"
+    "bookforge-export-image=$EXPORT_IMAGE,bookforge-export-bucket=$EXPORT_BUCKET,bookforge-export-run-id=$RUN_ID,bookforge-export-log-object=$LOG_OBJECT" \
+  --async
 
 cat <<EOF
 Started finite Gemma 4 TensorRT export.
 Instance: $INSTANCE_NAME
 Zone: $ZONE
 Machine: $MACHINE_TYPE
+Provisioning: $PROVISIONING_MODEL; capacity wait window: $REQUEST_VALID_FOR_DURATION
 Run ID: $RUN_ID
 Hard lifetime: 45 minutes, then Compute Engine deletes the VM.
 Delete the VM sooner after observing either the completion manifest or a terminal startup log.

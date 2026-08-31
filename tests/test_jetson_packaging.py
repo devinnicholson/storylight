@@ -24,6 +24,7 @@ GEMMA4_EDGELLM_BENCHMARK_RUNNER = ROOT / "deploy/jetson/run-gemma4-tensorrt-edge
 POWER_MODE_AB = ROOT / "deploy/jetson/run-power-mode-ab.sh"
 BOOKFORGE_ADMIN = ROOT / "deploy/jetson/bookforge-admin"
 BOOKFORGE_ADMIN_INSTALLER = ROOT / "deploy/jetson/install-bookforge-admin.sh"
+TENSORRT_BUILD_SWAP = ROOT / "deploy/jetson/run-tensorrt-build-swap.sh"
 RESILIENT_ROUTING_CONFIGURATOR = (
     ROOT / "deploy/jetson/configure-resilient-routing.sh"
 )
@@ -387,7 +388,11 @@ def test_gemma4_tensorrt_candidate_is_budgeted_externalized_and_shadow_only() ->
     assert 'models/gemma4-e2b-it-int4-awq-v010' in engine_builder
     assert "Externalized Gemma 4 INT4 weights are missing" in engine_builder
     assert 'readonly GEMMA_MODEL="${BOOKFORGE_GEMMA_MODEL:-gemma3:1b-it-q4_K_M}"' in engine_builder
-    assert "trap restore_runtime EXIT INT TERM" in engine_builder
+    assert "trap cleanup EXIT INT TERM" in engine_builder
+    assert 'tegrastats --interval 500 >"$EVIDENCE_DIR/tegrastats.log"' in engine_builder
+    assert '/usr/bin/time -v "$LLM_BUILD"' in engine_builder
+    assert 'tee "$EVIDENCE_DIR/build.log"' in engine_builder
+    assert 'build_status=${PIPESTATUS[0]}' in engine_builder
     assert "--maxKVCacheCapacity 1536" in engine_builder
 
     assert 'models/gemma4-e2b-it-int4-awq-v010' in benchmark_runner
@@ -436,20 +441,38 @@ def test_bookforge_admin_delegation_is_root_owned_narrow_and_validated() -> None
     assert 'PATH=/usr/sbin:/usr/bin:/sbin:/bin' in admin
     assert 'unset BASH_ENV ENV CDPATH GLOBIGNORE' in admin
     assert 'readonly POWER_RUNNER="/usr/local/libexec/bookforge/run-power-mode-ab.sh"' in admin
+    assert 'readonly SWAP_RUNNER="/usr/local/libexec/bookforge/run-tensorrt-build-swap.sh"' in admin
     assert "restart-api" in admin
     assert "restart-controller" in admin
     assert "restart-all" in admin
     assert "status|prepare-maxn|benchmark-maxn|restore-25w|finalize" in admin
+    assert "status|prepare|cleanup" in admin
     assert "eval " not in admin
     assert "/home/" not in admin
     assert "/opt/bookforge/deploy" not in admin
     assert 'install -o root -g root -m 0755 "$ADMIN_SOURCE" "$ADMIN_TARGET"' in installer
     assert 'install -o root -g root -m 0755 "$POWER_SOURCE" "$POWER_TARGET"' in installer
+    assert 'install -o root -g root -m 0755 "$SWAP_SOURCE" "$SWAP_TARGET"' in installer
     assert "NOPASSWD: %s" in installer
     assert 'visudo -cf "$sudoers_tmp"' in installer
     assert 'visudo -cf "$SUDOERS_TARGET"' in installer
     assert "NOPASSWD: ALL" not in installer
     assert "/bin/sh" not in installer
+
+
+def test_tensorrt_build_swap_is_fixed_bounded_and_nonpersistent() -> None:
+    runner = TENSORRT_BUILD_SWAP.read_text()
+
+    subprocess.run(["bash", "-n", str(TENSORRT_BUILD_SWAP)], check=True)
+    assert 'readonly SWAP_FILE="/var/lib/bookforge/tensorrt-build.swap"' in runner
+    assert 'readonly SWAP_BYTES=$((8 * 1024 * 1024 * 1024))' in runner
+    assert 'fallocate --length "$SWAP_BYTES" "$partial"' in runner
+    assert 'chmod 0600 "$partial"' in runner
+    assert 'swapon --priority -2 "$SWAP_FILE"' in runner
+    assert 'swapoff "$SWAP_FILE"' in runner
+    assert 'rm -- "$SWAP_FILE"' in runner
+    assert "/etc/fstab" not in runner
+    assert "eval " not in runner
 
 
 def test_standalone_installer_waits_for_both_local_services() -> None:

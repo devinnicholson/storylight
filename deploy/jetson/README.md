@@ -383,11 +383,23 @@ sudo -n /usr/local/sbin/bookforge-admin status
 ```
 
 The sudo rule permits only `/usr/local/sbin/bookforge-admin`. That root-owned wrapper accepts fixed
-status, Bookforge service restart, and power-acceptance actions; it exposes no shell, arbitrary
+status, Bookforge service restart, power-acceptance actions, and lifecycle control for one fixed
+temporary TensorRT build swap file; it exposes no shell, arbitrary
 systemd unit, arbitrary path, package installation, network mutation, or general root command. The
 power runner is copied to a separate root-owned path so editing the Git checkout cannot alter code
 executed through passwordless sudo. Removing `/etc/sudoers.d/bookforge-admin-operator`
 revokes the delegation, but do so only through an explicitly authorized root maintenance action.
+
+The 8 GB Orin Nano can exhaust unified memory while TensorRT materializes a serialized Gemma 4
+engine, even when the final engine fits. Prepare the fixed 8 GiB NVMe-backed build swap immediately
+before this bounded build and remove it immediately after the benchmark. It is never added to
+`/etc/fstab` and is never part of steady-state inference:
+
+```bash
+sudo -n /usr/local/sbin/bookforge-admin build-swap prepare
+# Build and shadow-benchmark the engine.
+sudo -n /usr/local/sbin/bookforge-admin build-swap cleanup
+```
 
 Download the pinned official ARM64 archive into a versioned, user-owned directory. Verify the
 release digest before extracting it; do not pipe an unverified installer into a shell:

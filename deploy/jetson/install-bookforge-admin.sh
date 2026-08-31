@@ -46,12 +46,14 @@ fi
 readonly SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd -P)"
 readonly ADMIN_SOURCE="$SCRIPT_DIR/bookforge-admin"
 readonly POWER_SOURCE="$SCRIPT_DIR/run-power-mode-ab.sh"
+readonly SWAP_SOURCE="$SCRIPT_DIR/run-tensorrt-build-swap.sh"
 readonly ADMIN_TARGET="/usr/local/sbin/bookforge-admin"
 readonly POWER_TARGET="/usr/local/libexec/bookforge/run-power-mode-ab.sh"
+readonly SWAP_TARGET="/usr/local/libexec/bookforge/run-tensorrt-build-swap.sh"
 readonly CONFIG_TARGET="/etc/bookforge/admin.conf"
 readonly SUDOERS_TARGET="/etc/sudoers.d/bookforge-admin-${admin_user}"
 
-for source_file in "$ADMIN_SOURCE" "$POWER_SOURCE"; do
+for source_file in "$ADMIN_SOURCE" "$POWER_SOURCE" "$SWAP_SOURCE"; do
   if [[ ! -f "$source_file" ]]; then
     printf 'Required source file is missing: %s\n' "$source_file" >&2
     exit 69
@@ -62,6 +64,7 @@ install -d -o root -g root -m 0755 /usr/local/libexec/bookforge /usr/local/sbin
 install -d -o root -g root -m 0755 /etc/bookforge /etc/sudoers.d
 install -o root -g root -m 0755 "$ADMIN_SOURCE" "$ADMIN_TARGET"
 install -o root -g root -m 0755 "$POWER_SOURCE" "$POWER_TARGET"
+install -o root -g root -m 0755 "$SWAP_SOURCE" "$SWAP_TARGET"
 
 config_tmp="$(mktemp /etc/bookforge/.admin.conf.XXXXXX)"
 sudoers_tmp="$(mktemp /etc/sudoers.d/.bookforge-admin.XXXXXX)"
@@ -86,6 +89,7 @@ visudo -cf "$SUDOERS_TARGET" >/dev/null
 
 if [[ "$(stat -c '%U:%G:%a' "$ADMIN_TARGET")" != "root:root:755" ]] \
   || [[ "$(stat -c '%U:%G:%a' "$POWER_TARGET")" != "root:root:755" ]] \
+  || [[ "$(stat -c '%U:%G:%a' "$SWAP_TARGET")" != "root:root:755" ]] \
   || [[ "$(stat -c '%U:%G:%a' "$CONFIG_TARGET")" != "root:root:600" ]] \
   || [[ "$(stat -c '%U:%G:%a' "$SUDOERS_TARGET")" != "root:root:440" ]]; then
   printf 'Installed Bookforge delegation failed its ownership/mode verification.\n' >&2

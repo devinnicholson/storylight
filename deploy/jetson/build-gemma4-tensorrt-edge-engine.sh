@@ -15,6 +15,7 @@ readonly GEMMA_MODEL="${BOOKFORGE_GEMMA_MODEL:-gemma3:1b-it-q4_K_M}"
 readonly OLLAMA_BIN="${BOOKFORGE_OLLAMA_BIN:-$HOME/.local/opt/ollama-v0.32.15/bin/ollama}"
 readonly LLM_BUILD="$BUILD_DIR/examples/llm/llm_build"
 readonly EDGELLM_PLUGIN="$BUILD_DIR/libNvInfer_edgellm_plugin.so"
+monitor_pid=""
 
 if [[ ${EUID:-$(id -u)} -eq 0 ]]; then
   printf 'Run this engine builder as the Bookforge user, not root.\n' >&2
@@ -46,7 +47,14 @@ restore_runtime() {
     --data "{\"model\":\"$GEMMA_MODEL\",\"messages\":[{\"role\":\"user\",\"content\":\"Return ready as JSON.\"}],\"stream\":false,\"format\":{\"type\":\"object\",\"properties\":{\"ready\":{\"type\":\"boolean\"}},\"required\":[\"ready\"]},\"keep_alive\":\"-1m\",\"options\":{\"temperature\":0,\"num_ctx\":4096,\"num_predict\":16}}" \
     >"$EVIDENCE_DIR/gemma3-restore.json" || true
 }
-trap restore_runtime EXIT INT TERM
+cleanup() {
+  if [[ -n "$monitor_pid" ]] && kill -0 "$monitor_pid" >/dev/null 2>&1; then
+    kill "$monitor_pid" >/dev/null 2>&1 || true
+    wait "$monitor_pid" >/dev/null 2>&1 || true
+  fi
+  restore_runtime
+}
+trap cleanup EXIT INT TERM
 
 "$OLLAMA_BIN" stop "$GEMMA_MODEL" >/dev/null 2>&1 || true
 for _ in $(seq 1 20); do
@@ -58,17 +66,44 @@ if "$OLLAMA_BIN" ps | grep -Fq "$GEMMA_MODEL"; then
   exit 70
 fi
 
+free -b >"$EVIDENCE_DIR/free-before-build.txt"
+if command -v tegrastats >/dev/null 2>&1; then
+  tegrastats --interval 500 >"$EVIDENCE_DIR/tegrastats.log" 2>&1 &
+  monitor_pid=$!
+fi
+
 build_started_ns=$(date +%s%N)
 export EDGELLM_PLUGIN_PATH="$EDGELLM_PLUGIN"
-"$LLM_BUILD" \
-  --onnxDir "$CHECKPOINT_DIR" \
-  --engineDir "$ENGINE_DIR" \
-  --maxBatchSize 1 \
-  --maxInputLen 1024 \
-  --maxKVCacheCapacity 1536
+set +e
+{
+  if [[ -x /usr/bin/time ]]; then
+    /usr/bin/time -v "$LLM_BUILD" \
+      --onnxDir "$CHECKPOINT_DIR" \
+      --engineDir "$ENGINE_DIR" \
+      --maxBatchSize 1 \
+      --maxInputLen 1024 \
+      --maxKVCacheCapacity 1536
+  else
+    "$LLM_BUILD" \
+      --onnxDir "$CHECKPOINT_DIR" \
+      --engineDir "$ENGINE_DIR" \
+      --maxBatchSize 1 \
+      --maxInputLen 1024 \
+      --maxKVCacheCapacity 1536
+  fi
+} 2>&1 | tee "$EVIDENCE_DIR/build.log"
+build_status=${PIPESTATUS[0]}
+set -e
 build_finished_ns=$(date +%s%N)
-printf 'wall_nanoseconds=%s\n' "$((build_finished_ns - build_started_ns))" \
+printf 'wall_nanoseconds=%s\nexit_status=%s\n' \
+  "$((build_finished_ns - build_started_ns))" "$build_status" \
   >"$EVIDENCE_DIR/time.txt"
+free -b >"$EVIDENCE_DIR/free-after-build.txt"
+if [[ "$build_status" -ne 0 ]]; then
+  printf 'TensorRT engine build failed with status %s; see %s.\n' \
+    "$build_status" "$EVIDENCE_DIR/build.log" >&2
+  exit "$build_status"
+fi
 
 test -s "$ENGINE_DIR/llm.engine"
 find "$ENGINE_DIR" -maxdepth 2 -type f -print0 | sort -z | xargs -0 sha256sum \
