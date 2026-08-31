@@ -268,6 +268,10 @@ def test_resilient_routing_configurator_is_atomic_bounded_and_reversible() -> No
     assert "before-resilient-" in configurator
     assert "os.replace(temporary_name, config_path)" in configurator
     assert "root:root:600" in configurator
+    assert "application_default_credentials.json" in configurator
+    assert "/var/cache/bookforge/home/.config/gcloud" in configurator
+    assert 'install -o "$TARGET_UID" -g "$TARGET_GID" -m 0600' in configurator
+    assert "ADC is not configured; the router will safely use Modal fallback" in configurator
     assert "MODAL_TOKEN_ID" not in configurator
     assert "MODAL_TOKEN_SECRET" not in configurator
     assert "rm " not in configurator

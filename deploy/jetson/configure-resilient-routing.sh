@@ -62,6 +62,13 @@ if [[ ! "$TARGET_USER" =~ ^[a-z_][a-z0-9_-]{0,31}$ ]] || ! id "$TARGET_USER" >/d
   printf 'Select a valid Bookforge service user with --user.\n' >&2
   exit 2
 fi
+TARGET_UID="$(id -u "$TARGET_USER")"
+TARGET_GID="$(id -g "$TARGET_USER")"
+TARGET_HOME="$(getent passwd "$TARGET_USER" | cut -d: -f6)"
+if [[ -z "$TARGET_HOME" || ! -d "$TARGET_HOME" ]]; then
+  printf 'Cannot resolve the home directory for %s.\n' "$TARGET_USER" >&2
+  exit 2
+fi
 if [[ -n "$CLOUD_RUN_URL" && ! "$CLOUD_RUN_URL" =~ ^https://[^[:space:]]+$ ]]; then
   printf 'The Cloud Run URL must be empty or use HTTPS.\n' >&2
   exit 2
@@ -154,6 +161,23 @@ PY
 
 if ((DRY_RUN == 1)); then
   exit 0
+fi
+
+# The hardened system service has an isolated HOME under CacheDirectory and
+# cannot read the interactive user's ~/.config/gcloud. Copy only ADC, with
+# private permissions, so google-auth works without exposing the rest of HOME.
+source_adc="$TARGET_HOME/.config/gcloud/application_default_credentials.json"
+service_gcloud_dir="/var/cache/bookforge/home/.config/gcloud"
+if [[ -f "$source_adc" ]]; then
+  install -d -o "$TARGET_UID" -g "$TARGET_GID" -m 0700 \
+    /var/cache/bookforge/home \
+    /var/cache/bookforge/home/.config \
+    "$service_gcloud_dir"
+  install -o "$TARGET_UID" -g "$TARGET_GID" -m 0600 \
+    "$source_adc" "$service_gcloud_dir/application_default_credentials.json"
+  printf 'Installed ADC into the private Bookforge service home.\n'
+else
+  printf 'ADC is not configured; the router will safely use Modal fallback.\n' >&2
 fi
 
 systemctl restart "bookforge@${TARGET_USER}.service" "bookforge-controller@${TARGET_USER}.service"
