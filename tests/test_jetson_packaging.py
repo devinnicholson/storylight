@@ -237,7 +237,8 @@ def test_standalone_profile_keeps_raw_story_planning_local() -> None:
     assert "BOOKFORGE_LIVE_SCENE_PLANNER=model" in profile
     assert "BOOKFORGE_LIVE_SCENE_PLANNER_COMPACT_WIRE=false" in profile
     assert "BOOKFORGE_LIVE_SCENE_BACKEND=gcp_resilient" in profile
-    assert "BOOKFORGE_LIVE_SCENE_VERTEX_MODEL=gemini-2.5-flash-image" in profile
+    assert "BOOKFORGE_LIVE_SCENE_VERTEX_MODEL=gemini-3.1-flash-lite-image" in profile
+    assert "BOOKFORGE_LIVE_SCENE_VERTEX_ESTIMATED_IMAGE_USD=0.034" in profile
     assert "BOOKFORGE_LIVE_SCENE_AUTO_PREWARM_ON_SUBMIT=false" in profile
     assert "BOOKFORGE_LIVE_SCENE_FIDELITY_MODE=deferred" in profile
     assert "BOOKFORGE_ASSET_MODAL_COMMAND=/opt/bookforge/.venv/bin/modal" in profile

@@ -113,10 +113,10 @@ def test_resilient_cloud_route_has_bounded_managed_provider_defaults() -> None:
         live_scene_vertex_project_id="your-gcp-project",
     )
 
-    assert settings.live_scene_vertex_model == "gemini-2.5-flash-image"
+    assert settings.live_scene_vertex_model == "gemini-3.1-flash-lite-image"
     assert settings.live_scene_vertex_location == "global"
     assert settings.live_scene_vertex_timeout_seconds == 90
-    assert settings.live_scene_vertex_estimated_image_usd == 0.05
+    assert settings.live_scene_vertex_estimated_image_usd == 0.034
     assert settings.live_scene_vertex_session_cost_cap_usd == 0.50
     assert settings.live_scene_routing_probe_timeout_seconds == 2
     assert settings.live_scene_routing_failure_cooldown_seconds == 300

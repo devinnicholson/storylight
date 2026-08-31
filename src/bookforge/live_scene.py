@@ -1671,10 +1671,10 @@ def build_live_scene_provider(
     gcp_session_gpu_cap_usd: float = 0.50,
     vertex_project_id: str = "",
     vertex_location: str = "global",
-    vertex_model: str = "gemini-2.5-flash-image",
+    vertex_model: str = "gemini-3.1-flash-lite-image",
     vertex_timeout_seconds: float = 90.0,
     vertex_session_cost_cap_usd: float = 0.50,
-    vertex_estimated_image_usd: float = 0.05,
+    vertex_estimated_image_usd: float = 0.034,
     routing_probe_timeout_seconds: float = 2.0,
     routing_failure_cooldown_seconds: float = 300.0,
     planner_mode: str = "deterministic",
@@ -1842,6 +1842,11 @@ def build_live_scene_provider(
                         session_cost_cap_usd=vertex_session_cost_cap_usd,
                         estimated_image_usd=vertex_estimated_image_usd,
                     ),
+                    # Vertex credentials are cached for five minutes. Matching
+                    # that lifetime removes a redundant ADC refresh from the
+                    # generation hot path while leaving other routes on the
+                    # router's shorter availability window.
+                    healthy_probe_ttl_seconds=300,
                 )
             )
         routes.append(

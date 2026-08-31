@@ -31,7 +31,7 @@ def _jpeg(width: int, height: int) -> bytes:
 def _response(width: int = 1024, height: int = 576) -> dict[str, object]:
     return {
         "responseId": "vertex-response-1",
-        "modelVersion": "gemini-2.5-flash-image",
+        "modelVersion": "gemini-3.1-flash-lite-image",
         "candidates": [
             {
                 "content": {
@@ -86,11 +86,15 @@ def test_vertex_provider_generates_checksum_bound_master_and_local_depth(
     assert requests[0].headers["authorization"] == "Bearer vertex-token"
     assert token_calls == 1
     assert requests[0].url.path.endswith(
-        "/publishers/google/models/gemini-2.5-flash-image:generateContent"
+        "/publishers/google/models/gemini-3.1-flash-lite-image:generateContent"
     )
     body = json.loads(requests[0].content)
     assert body["generationConfig"]["responseModalities"] == ["TEXT", "IMAGE"]
     assert body["generationConfig"]["imageConfig"]["aspectRatio"] == "16:9"
+    contract = body["contents"][0]["parts"][0]["text"]
+    assert "NON-NEGOTIABLE VISUAL CONTRACT" in contract
+    assert "body pose and physical contact" in contract
+    assert "Preserve exact counts and directions" in contract
     assert bundle.manifest["provider"] == PROVIDER_NAME
     assert bundle.master.mime_type == "image/jpeg"
     assert (bundle.master.width, bundle.master.height) == (1024, 576)
@@ -99,7 +103,7 @@ def test_vertex_provider_generates_checksum_bound_master_and_local_depth(
     assert bundle.manifest["stages"]["fast"]["additional_models"][0]["model"] == DEPTH_MODEL
     assert bundle.manifest["request"]["prompt_sha256"]
     assert "One silver fox" not in bundle.manifest_path.read_text()
-    assert bundle.estimated_gpu_usd == pytest.approx(0.05)
+    assert bundle.estimated_gpu_usd == pytest.approx(0.034)
 
 
 def test_vertex_explicit_http_rejection_is_safe_to_fallback(tmp_path: Path) -> None:
@@ -156,7 +160,7 @@ def test_vertex_billable_invalid_response_fails_closed_and_reserves_cost(
                 output_dir=tmp_path / "invalid",
             )
         )
-    assert provider._reserved_usd == pytest.approx(0.05)
+    assert provider._reserved_usd == pytest.approx(0.034)
     with pytest.raises(Exception, match="session estimate"):
         asyncio.run(
             provider.generate_fast(

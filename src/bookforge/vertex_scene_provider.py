@@ -26,11 +26,11 @@ from bookforge.finite_modal_provider import (
 from bookforge.provider_router import SafeProviderFallbackError
 
 PROVIDER_NAME = "gcp-vertex-gemini-image"
-DEFAULT_MODEL = "gemini-2.5-flash-image"
+DEFAULT_MODEL = "gemini-3.1-flash-lite-image"
 MODEL_REVISION = "vertex-managed"
 DEPTH_MODEL = "bookforge-projection-depth-bootstrap"
 DEPTH_MODEL_REVISION = "vertical-gradient-v1"
-DEFAULT_ESTIMATED_IMAGE_USD = 0.05
+DEFAULT_ESTIMATED_IMAGE_USD = 0.034
 _SAFE_COMPONENT = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._:-]{0,126}$")
 
 AccessTokenSource = Callable[[], Awaitable[str]]
@@ -266,11 +266,19 @@ async def google_access_token() -> str:
 
 def _request_payload(request: FastSceneRequest) -> dict[str, Any]:
     prompt = (
-        f"{request.prompt}\n\n"
-        "Create exactly one full-bleed 16:9 storybook projection image. "
-        "Make the primary subject unambiguous and preserve every described action and object. "
-        "Use projection-bright midtones, clean silhouettes, tactile depth, and no interface. "
-        f"Do not include: {request.negative_prompt}. Do not return a caption in the image."
+        f"STORY SCENE:\n{request.prompt}\n\n"
+        "NON-NEGOTIABLE VISUAL CONTRACT:\n"
+        "- Show every explicitly named subject, object, count, color, action, and spatial "
+        "relationship.\n"
+        "- Make each action unmistakable in body pose and physical contact; never replace an "
+        "action with mere proximity.\n"
+        "- Preserve exact counts and directions such as left, right, above, below, in front, "
+        "and behind.\n"
+        "- Create one coherent, full-bleed 16:9 storybook projection frame with an "
+        "unambiguous primary subject, projection-bright midtones, clean silhouettes, and "
+        "tactile foreground-to-background depth.\n"
+        f"- Exclude: {request.negative_prompt}.\n"
+        "Return no written words, caption, border, or interface inside the image."
     )
     return {
         "contents": [{"role": "USER", "parts": [{"text": prompt[:4_000]}]}],

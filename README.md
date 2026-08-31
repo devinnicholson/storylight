@@ -155,19 +155,20 @@ the depth-aware local motion that already runs on the Jetson.
 ### Resilient edge-to-cloud rendering
 
 `gcp_resilient` is the showcase route. It tries the private Cloud Run RTX renderer first, then the
-managed Vertex `gemini-2.5-flash-image` model, and finally the authenticated Modal deployment. Each
-candidate must pass a bounded, non-generation readiness gate before it receives the privacy-safe
-visual brief. Explicit non-billable rejection can advance to the next route; a timeout, connection
-reset, malformed successful response, or other ambiguous paid result fails closed so Bookforge never
-silently buys two conflicting images.
+managed Vertex `gemini-3.1-flash-lite-image` model, and finally the authenticated Modal deployment.
+Each candidate must pass a bounded, non-generation readiness gate before it receives the
+privacy-safe visual brief. Explicit non-billable rejection can advance to the next route; a timeout,
+connection reset, malformed successful response, or other ambiguous paid result fails closed so
+Bookforge never silently buys two conflicting images.
 
 The managed Vertex route does not require project GPU quota. It returns a 16:9 master and Bookforge
 immediately pairs it with a deterministic local projection-depth bootstrap, so the projector can
 move while an eventual Jetson TensorRT depth result is prepared. The raw passage, audio, camera
-frames, and identity data remain local. Google now recommends `gemini-2.5-flash-image` as the
-replacement for deprecated Imagen generation endpoints; see the
-[Vertex image model documentation](https://cloud.google.com/vertex-ai/generative-ai/docs/models/gemini/2-5-flash-image)
-and [Vertex release notes](https://cloud.google.com/vertex-ai/generative-ai/docs/release-notes).
+frames, and identity data remain local. Bookforge's bounded August 30 A/B selected
+`gemini-3.1-flash-lite-image`: it averaged 3.389 seconds on the original prompt and 4.015 seconds
+with the stricter visual contract, versus 5.506 seconds for the previous production model. The
+model is Google's fastest image-generation option, supports 16:9 1K output in `global`, and is
+documented in the [Gemini 3.1 Flash-Lite Image model card](https://docs.cloud.google.com/gemini-enterprise-agent-platform/models/gemini/3-1-flash-lite-image).
 
 ```bash
 BOOKFORGE_LIVE_SCENE_BACKEND=gcp_resilient \
@@ -177,7 +178,7 @@ BOOKFORGE_LIVE_SCENE_GCP_IMPERSONATE_SERVICE_ACCOUNT=bookforge-renderer@your-gcp
 BOOKFORGE_LIVE_SCENE_GCP_GPU=RTX_PRO_6000 \
 BOOKFORGE_LIVE_SCENE_VERTEX_PROJECT_ID=your-gcp-project \
 BOOKFORGE_LIVE_SCENE_VERTEX_LOCATION=global \
-BOOKFORGE_LIVE_SCENE_VERTEX_MODEL=gemini-2.5-flash-image \
+BOOKFORGE_LIVE_SCENE_VERTEX_MODEL=gemini-3.1-flash-lite-image \
 BOOKFORGE_LIVE_SCENE_ROUTING_PROBE_TIMEOUT_SECONDS=2 \
 BOOKFORGE_ASSET_MODAL_COMMAND=/opt/bookforge/.venv/bin/modal \
 BOOKFORGE_LIVE_SCENE_FIDELITY_MODE=deferred \

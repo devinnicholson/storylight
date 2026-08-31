@@ -84,10 +84,10 @@ class Settings(BaseSettings):
     live_scene_gcp_session_gpu_cap_usd: Annotated[float, Field(gt=0, le=10)] = 0.50
     live_scene_vertex_project_id: str = ""
     live_scene_vertex_location: str = "global"
-    live_scene_vertex_model: str = "gemini-2.5-flash-image"
+    live_scene_vertex_model: str = "gemini-3.1-flash-lite-image"
     live_scene_vertex_timeout_seconds: Annotated[float, Field(gt=0, le=300)] = 90.0
     live_scene_vertex_session_cost_cap_usd: Annotated[float, Field(gt=0, le=10)] = 0.50
-    live_scene_vertex_estimated_image_usd: Annotated[float, Field(gt=0, le=1)] = 0.05
+    live_scene_vertex_estimated_image_usd: Annotated[float, Field(gt=0, le=1)] = 0.034
     live_scene_routing_probe_timeout_seconds: Annotated[float, Field(gt=0, le=60)] = 2.0
     live_scene_routing_failure_cooldown_seconds: Annotated[
         float,

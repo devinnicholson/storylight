@@ -42,6 +42,7 @@ class RoutedFastSceneProvider(Protocol):
 class ProviderRoute:
     name: str
     provider: RoutedFastSceneProvider
+    healthy_probe_ttl_seconds: float | None = None
 
     def __post_init__(self) -> None:
         if (
@@ -50,6 +51,11 @@ class ProviderRoute:
             or any(not (character.isalnum() or character in "-_") for character in self.name)
         ):
             raise ValueError("provider route names require 1-64 safe characters")
+        if self.healthy_probe_ttl_seconds is not None and (
+            not math.isfinite(self.healthy_probe_ttl_seconds)
+            or not 0 < self.healthy_probe_ttl_seconds <= 300
+        ):
+            raise ValueError("provider route healthy probe TTL must be between 0 and 300")
 
 
 class ResilientFastSceneProvider:
@@ -154,7 +160,7 @@ class ResilientFastSceneProvider:
                 # Cancellation and ambiguous paid failures must never cascade to
                 # another provider. The original request may still finish remotely.
                 raise
-            await self._mark_healthy(route.name)
+            await self._mark_healthy(route)
             attempts.append(
                 {
                     "provider": route.name,
@@ -232,7 +238,7 @@ class ResilientFastSceneProvider:
         probe_ms = (time.perf_counter() - started) * 1_000
         detail = _bounded_detail(detail)
         if ready:
-            await self._mark_healthy(route.name, detail=detail)
+            await self._mark_healthy(route, detail=detail)
             return True, detail, probe_ms
         await self._mark_unavailable(route.name, detail)
         attempts.append(
@@ -245,12 +251,17 @@ class ResilientFastSceneProvider:
         )
         return False, detail, probe_ms
 
-    async def _mark_healthy(self, name: str, *, detail: str = "") -> None:
+    async def _mark_healthy(self, route: ProviderRoute, *, detail: str = "") -> None:
+        ttl_seconds = (
+            route.healthy_probe_ttl_seconds
+            if route.healthy_probe_ttl_seconds is not None
+            else self.healthy_probe_ttl_seconds
+        )
         async with self._lock:
-            self._unavailable_until.pop(name, None)
-            self._healthy_until[name] = time.monotonic() + self.healthy_probe_ttl_seconds
+            self._unavailable_until.pop(route.name, None)
+            self._healthy_until[route.name] = time.monotonic() + ttl_seconds
             if detail:
-                self._last_detail[name] = detail
+                self._last_detail[route.name] = detail
 
     async def _mark_unavailable(self, name: str, detail: str) -> None:
         async with self._lock:
