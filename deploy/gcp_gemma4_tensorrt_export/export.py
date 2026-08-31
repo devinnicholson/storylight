@@ -28,6 +28,22 @@ JOB_TIMEOUT_SECONDS = 1_200
 COMPLETION_OBJECT = "export.manifest.json"
 
 
+def _progress(stage: str, **details: Any) -> None:
+    """Emit prompt-free structured progress for bounded Cloud Run diagnosis."""
+
+    print(
+        json.dumps(
+            {
+                "event": "bookforge_tensorrt_export_progress",
+                "stage": stage,
+                **details,
+            },
+            sort_keys=True,
+        ),
+        flush=True,
+    )
+
+
 def _required_environment(name: str) -> str:
     value = os.environ.get(name, "").strip()
     if not value:
@@ -104,6 +120,7 @@ def _upload_export(
 
 
 def main() -> None:
+    _progress("python_entrypoint")
     import torch
     from huggingface_hub import snapshot_download
 
@@ -125,8 +142,15 @@ def main() -> None:
     gpu_name = torch.cuda.get_device_name(0)
     if "RTX PRO 6000" not in gpu_name.upper():
         raise RuntimeError(f"Expected RTX PRO 6000, got {gpu_name}")
+    _progress(
+        "cuda_ready",
+        gpu=gpu_name,
+        torch_version=torch.__version__,
+        cuda_version=torch.version.cuda,
+    )
 
     stage_seconds: dict[str, float] = {}
+    _progress("model_download_started", model_revision=MODEL_REVISION)
     download_started = time.perf_counter()
     snapshot_download(
         repo_id=MODEL_ID,
@@ -134,8 +158,10 @@ def main() -> None:
         local_dir=source_dir,
     )
     stage_seconds["download"] = time.perf_counter() - download_started
+    _progress("model_download_complete", elapsed_seconds=stage_seconds["download"])
 
     temporary_quantized = root / "quantized.partial"
+    _progress("quantization_started", calibration_samples=CALIBRATION_SAMPLES)
     stage_seconds["quantize"] = _run(
         [
             "tensorrt-edgellm-quantize",
@@ -155,8 +181,10 @@ def main() -> None:
         reserve=180,
     )
     os.replace(temporary_quantized, quantized_dir)
+    _progress("quantization_complete", elapsed_seconds=stage_seconds["quantize"])
 
     temporary_onnx = root / "onnx.partial"
+    _progress("onnx_export_started")
     stage_seconds["export"] = _run(
         [
             "tensorrt-edgellm-export",
@@ -173,6 +201,7 @@ def main() -> None:
         reserve=90,
     )
     os.replace(temporary_onnx, onnx_dir)
+    _progress("onnx_export_complete", elapsed_seconds=stage_seconds["export"])
 
     files = _file_manifest(onnx_dir)
     if not files or not (onnx_dir / "llm" / "config.json").is_file():
@@ -212,6 +241,7 @@ def main() -> None:
         "engine_built_in_cloud": False,
     }
     upload_started = time.perf_counter()
+    _progress("artifact_upload_started", file_count=len(files))
     _upload_export(
         bucket_name=bucket_name,
         object_prefix=object_prefix,
@@ -220,6 +250,11 @@ def main() -> None:
     )
     manifest["upload_seconds_observed_client_side"] = time.perf_counter() - upload_started
     manifest["elapsed_seconds_observed_client_side"] = time.perf_counter() - started
+    _progress(
+        "artifact_upload_complete",
+        elapsed_seconds=manifest["upload_seconds_observed_client_side"],
+        total_bytes=manifest["total_bytes"],
+    )
     print(json.dumps(manifest, indent=2, sort_keys=True), flush=True)
     shutil.rmtree(root)
 
