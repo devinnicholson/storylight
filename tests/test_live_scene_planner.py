@@ -944,6 +944,27 @@ def test_privacy_gate_rejects_source_proper_name_candidate() -> None:
         )
 
 
+@pytest.mark.parametrize(
+    ("source", "background"),
+    [
+        ("Inside a dusty attic, a moth opens a map.", "inside attic, dim paper rafters"),
+        ("Beneath a stone bridge, a rabbit waits.", "under bridge, soft rainy light"),
+        ("Toward a distant library, fireflies form a path.", "toward library, warm window light"),
+    ],
+)
+def test_privacy_gate_does_not_treat_sentence_initial_relations_as_names(
+    source: str,
+    background: str,
+) -> None:
+    payload = _plan().model_dump()
+    payload["background_prompt"] = background
+
+    validate_live_scene_plan_privacy(
+        LiveScenePlan.model_validate(payload),
+        source_text=source,
+    )
+
+
 def test_privacy_gate_accepts_visual_semantic_paraphrase() -> None:
     validate_live_scene_plan_privacy(
         _plan(),
