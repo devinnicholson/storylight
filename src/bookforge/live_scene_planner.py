@@ -67,7 +67,7 @@ _LEADING_ARTICLE = re.compile(r"^(?:a|an|the)\s+", re.IGNORECASE)
 _SEMANTIC_WORD = re.compile(r"[A-Za-z][A-Za-z'-]*")
 _PLACEMENT_MARGIN = 0.04
 _PLAN_CACHE_SCHEMA_VERSION = "1"
-_PLAN_CACHE_CONTRACT_REVISION = "semantic-v15-relations-transformations-setting-repair"
+_PLAN_CACHE_CONTRACT_REVISION = "semantic-v16-relations-transformations-layout-repair"
 _EMAIL = re.compile(r"\b[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}\b", re.IGNORECASE)
 _PHONE = re.compile(r"(?<!\w)(?:\+?\d[\d\s()./-]{6,}\d)(?!\w)")
 _URL = re.compile(r"\b(?:https?://|www\.)\S+", re.IGNORECASE)
@@ -566,7 +566,9 @@ class LiveScenePlan(FrozenStrictModel):
             if _semantically_redundant(background_prompt, art_direction)
             else f" Background: {_prompt_fragment(background_prompt)}."
         )
-        setting_guard = _open_setting_guard(background_prompt)
+        setting_guard = _open_setting_guard(
+            " ".join((background_prompt, focus_prompt, accent_prompt))
+        )
         composition_clause = (
             "Composition: place the main subject "
             f"{_placement_label(focus_placement)}, clearly larger and nearer; place the "
@@ -751,6 +753,27 @@ def _wire_ambience(background_prompt: str) -> list[LiveSceneAmbience]:
 
 def _open_setting_guard(background_prompt: str) -> str:
     tokens = {token.casefold() for token in _SEMANTIC_WORD.findall(background_prompt)}
+    if tokens.intersection(
+        {
+            "attic",
+            "bakery",
+            "bedroom",
+            "cave",
+            "ceiling",
+            "classroom",
+            "desk",
+            "interior",
+            "library",
+            "observatory",
+            "oven",
+            "room",
+            "station",
+        }
+    ):
+        return (
+            "Keep this setting visibly indoors with a readable room interior and ceiling; "
+            "do not replace it with an outdoor field, open landscape, or distant horizon. "
+        )
     if not tokens.intersection(
         {"beach", "daisies", "field", "garden", "meadow", "prairie", "shore"}
     ):

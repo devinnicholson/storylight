@@ -745,6 +745,29 @@ def test_open_landscape_prompt_rejects_giant_unrequested_structures() -> None:
     assert "walls, caves, portals, stage frames, monoliths" in prompt
 
 
+def test_indoor_setting_overrides_garden_landscape_guard() -> None:
+    plan = _plan().model_copy(
+        update={
+            "background_prompt": "desk ceiling blooms floating garden",
+            "accent": _plan().accent.model_copy(
+                update={"prompt": "classroom ceiling blooming into paper flowers"}
+            ),
+        }
+    )
+
+    page = plan.to_page(
+        source_text="A room changes as a student raises a folded shape.",
+        visual_style="joyful watercolor paper theater",
+        seed=29,
+    )
+
+    assert page.scene_spec is not None
+    prompt = page.scene_spec.master_prompt
+    assert "setting visibly indoors" in prompt
+    assert "do not replace it with an outdoor field" in prompt
+    assert "outdoor setting open and unobstructed" not in prompt
+
+
 def test_background_drops_repeated_foreground_actor_or_tool() -> None:
     plan = _plan().model_copy(
         update={
