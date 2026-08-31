@@ -1,5 +1,5 @@
 import asyncio
-from contextlib import asynccontextmanager
+from contextlib import asynccontextmanager, suppress
 from dataclasses import asdict
 from ipaddress import ip_address
 from pathlib import Path
@@ -101,12 +101,34 @@ def _completed_pack_matches_planner_mode(
 
     compiler = pack.compiler_model.casefold()
     if planner_mode == "model":
-        return not any(
-            marker in compiler for marker in ("deterministic", "fallback", "fixture")
-        )
+        return not any(marker in compiler for marker in ("deterministic", "fallback", "fixture"))
     if compiler.startswith("deterministic-live-scene-planner-"):
         return compiler == DETERMINISTIC_LIVE_SCENE_COMPILER_MODEL
     return True
+
+
+async def _warm_live_scene_planner_at_startup(registry: LiveSceneJobRegistry) -> None:
+    """Load the private planner before the first reader request reaches it.
+
+    The task deliberately runs in the background so model loading does not hold
+    API readiness hostage. ``StructuredLiveScenePlanner`` coalesces this call
+    with browser warmups and with an early generation request, so at most one
+    local model-load request can occupy Ollama's single inference slot.
+    """
+
+    planner = getattr(registry.provider, "planner", None)
+    warmup = getattr(planner, "warmup", None)
+    if not callable(warmup):
+        return
+    try:
+        await warmup()
+    except asyncio.CancelledError:
+        raise
+    except Exception:
+        # Generation still fails closed before a paid render if the local
+        # planner is unavailable. A best-effort latency optimization must not
+        # prevent the appliance from exposing diagnostics and repair controls.
+        return
 
 
 @asynccontextmanager
@@ -193,9 +215,7 @@ async def lifespan(app: FastAPI):
             modal_ledger_path=modal_ledger_path,
             gcp_url=settings.live_scene_gcp_url,
             gcp_audience=settings.live_scene_gcp_audience,
-            gcp_impersonate_service_account=(
-                settings.live_scene_gcp_impersonate_service_account
-            ),
+            gcp_impersonate_service_account=(settings.live_scene_gcp_impersonate_service_account),
             gcp_gpu=settings.live_scene_gcp_gpu,
             gcp_timeout_seconds=settings.live_scene_gcp_timeout_seconds,
             gcp_session_gpu_cap_usd=settings.live_scene_gcp_session_gpu_cap_usd,
@@ -205,12 +225,8 @@ async def lifespan(app: FastAPI):
             vertex_timeout_seconds=settings.live_scene_vertex_timeout_seconds,
             vertex_session_cost_cap_usd=settings.live_scene_vertex_session_cost_cap_usd,
             vertex_estimated_image_usd=settings.live_scene_vertex_estimated_image_usd,
-            routing_probe_timeout_seconds=(
-                settings.live_scene_routing_probe_timeout_seconds
-            ),
-            routing_failure_cooldown_seconds=(
-                settings.live_scene_routing_failure_cooldown_seconds
-            ),
+            routing_probe_timeout_seconds=(settings.live_scene_routing_probe_timeout_seconds),
+            routing_failure_cooldown_seconds=(settings.live_scene_routing_failure_cooldown_seconds),
             planner_mode=settings.live_scene_planner,
             model_client=client,
             planner_timeout_seconds=settings.live_scene_planner_timeout_seconds,
@@ -232,7 +248,19 @@ async def lifespan(app: FastAPI):
         completed_pack_source=find_completed_live_scene,
         completed_pack_validator=validate_completed_live_scene,
     )
+    app.state.live_scene_planner_warmup_task = None
+    if settings.live_scene_planner_auto_warmup:
+        app.state.live_scene_planner_warmup_task = asyncio.create_task(
+            _warm_live_scene_planner_at_startup(app.state.live_scenes),
+            name="bookforge-live-planner-startup-warmup",
+        )
     yield
+    planner_warmup_task = app.state.live_scene_planner_warmup_task
+    if planner_warmup_task is not None:
+        if not planner_warmup_task.done():
+            planner_warmup_task.cancel()
+        with suppress(asyncio.CancelledError):
+            await planner_warmup_task
     await app.state.live_scenes.close()
     await app.state.reader_events.close()
     http_client = getattr(client, "client", None)

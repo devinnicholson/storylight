@@ -1,6 +1,7 @@
 import hashlib
 import json
 import os
+from threading import Event
 from types import SimpleNamespace
 
 import pytest
@@ -13,7 +14,10 @@ os.environ["BOOKFORGE_CACHE_DIR"] = "/tmp/bookforge-live-scene-api-tests/cache"
 
 from fastapi.testclient import TestClient  # noqa: E402
 
-from bookforge.api import _completed_pack_matches_planner_mode, app  # noqa: E402
+from bookforge.api import (  # noqa: E402
+    _completed_pack_matches_planner_mode,
+    app,
+)
 from bookforge.config import Settings  # noqa: E402
 from bookforge.finite_modal_provider import (  # noqa: E402
     WarmPrewarmReport,
@@ -383,6 +387,47 @@ def test_live_scene_planner_warmup_uses_no_request_body_or_story_text() -> None:
         "output_tokens": 5,
     }
     assert calls == 1
+
+
+def test_live_scene_planner_auto_warmup_starts_with_the_api(
+    monkeypatch,
+    tmp_path,
+) -> None:
+    started = Event()
+    closed = Event()
+
+    class StubPlanner:
+        async def warmup(self):
+            started.set()
+            return SimpleNamespace()
+
+    class StubProvider:
+        name = "startup-warmup-stub"
+        planner = StubPlanner()
+
+        async def aclose(self):
+            closed.set()
+
+    settings = Settings(
+        _env_file=None,
+        model_backend="fake",
+        model_name="fake",
+        asset_backend="fake",
+        live_scene_planner="model",
+        live_scene_planner_auto_warmup=True,
+        data_dir=tmp_path / "data",
+        cache_dir=tmp_path / "cache",
+    )
+    monkeypatch.setattr("bookforge.api.get_settings", lambda: settings)
+    monkeypatch.setattr(
+        "bookforge.api.build_live_scene_provider",
+        lambda *args, **kwargs: StubProvider(),
+    )
+
+    with TestClient(app):
+        assert started.wait(timeout=1)
+
+    assert closed.wait(timeout=1)
 
 
 def test_explicit_warm_provider_routes_are_strict_by_default() -> None:
