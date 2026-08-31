@@ -43,6 +43,7 @@ class ProviderRoute:
     name: str
     provider: RoutedFastSceneProvider
     healthy_probe_ttl_seconds: float | None = None
+    readiness_warm_seconds: float = 0
 
     def __post_init__(self) -> None:
         if (
@@ -56,6 +57,11 @@ class ProviderRoute:
             or not 0 < self.healthy_probe_ttl_seconds <= 300
         ):
             raise ValueError("provider route healthy probe TTL must be between 0 and 300")
+        if (
+            not math.isfinite(self.readiness_warm_seconds)
+            or not 0 <= self.readiness_warm_seconds <= 300
+        ):
+            raise ValueError("provider route readiness warm window must be between 0 and 300")
 
 
 class ResilientFastSceneProvider:
@@ -107,10 +113,30 @@ class ResilientFastSceneProvider:
     async def warm_status(self) -> WarmProviderStatus:
         """Expose route readiness without prewarming or starting paid work."""
 
-        ready, detail = await self.probe()
+        attempts: list[dict[str, Any]] = []
+        for route in self.routes:
+            ready, detail, _ = await self._probe_route(route, attempts=attempts)
+            if not ready:
+                continue
+            expires_in_seconds = 0.0
+            if route.readiness_warm_seconds > 0:
+                async with self._lock:
+                    healthy_until = self._healthy_until.get(route.name, 0.0)
+                expires_in_seconds = min(
+                    route.readiness_warm_seconds,
+                    max(0.0, healthy_until - time.monotonic()),
+                )
+            return WarmProviderStatus(
+                ready=True,
+                detail=f"resilient route selected {route.name}: {detail}",
+                state="prewarmed" if expires_in_seconds > 0 else "idle",
+                prewarm_id=(f"readiness-{route.name}" if expires_in_seconds > 0 else None),
+                expires_in_seconds=expires_in_seconds,
+                scaledown_window_seconds=max(90, round(expires_in_seconds)),
+            )
         return WarmProviderStatus(
-            ready=ready,
-            detail=detail,
+            ready=False,
+            detail=self._unavailable_message(attempts),
             state="idle",
         )
 

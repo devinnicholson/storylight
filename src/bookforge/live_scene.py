@@ -1847,6 +1847,7 @@ def build_live_scene_provider(
                     # generation hot path while leaving other routes on the
                     # router's shorter availability window.
                     healthy_probe_ttl_seconds=300,
+                    readiness_warm_seconds=300,
                 )
             )
         routes.append(

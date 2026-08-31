@@ -165,6 +165,30 @@ def test_router_status_selects_healthy_route_without_generation() -> None:
     assert modal.generations == 0
 
 
+def test_router_status_reports_managed_route_readiness_window() -> None:
+    vertex = StubProvider("vertex")
+    router = ResilientFastSceneProvider(
+        [
+            ProviderRoute(
+                "vertex",
+                vertex,
+                healthy_probe_ttl_seconds=300,
+                readiness_warm_seconds=300,
+            )
+        ]
+    )
+
+    status = asyncio.run(router.warm_status())
+
+    assert status.ready is True
+    assert status.state == "prewarmed"
+    assert status.prewarm_id == "readiness-vertex"
+    assert status.expires_in_seconds > 299
+    assert status.scaledown_window_seconds == 300
+    assert vertex.probes == 1
+    assert vertex.generations == 0
+
+
 def test_route_can_extend_only_its_healthy_probe_window(tmp_path: Path) -> None:
     vertex = StubProvider("vertex")
     modal = StubProvider("modal")
@@ -194,6 +218,9 @@ def test_route_can_extend_only_its_healthy_probe_window(tmp_path: Path) -> None:
 def test_route_rejects_invalid_healthy_probe_window() -> None:
     with pytest.raises(ValueError, match="route healthy probe TTL"):
         ProviderRoute("vertex", StubProvider("vertex"), healthy_probe_ttl_seconds=301)
+
+    with pytest.raises(ValueError, match="readiness warm window"):
+        ProviderRoute("vertex", StubProvider("vertex"), readiness_warm_seconds=301)
 
 
 def test_router_recovers_exact_paid_bundle_without_second_provider_call(
