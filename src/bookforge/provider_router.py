@@ -1,8 +1,11 @@
 from __future__ import annotations
 
 import asyncio
+import hashlib
 import json
 import math
+import re
+import shutil
 import time
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, replace
@@ -15,6 +18,7 @@ from bookforge.finite_modal_provider import (
     FiniteModalUnavailableError,
     FiniteSceneBundle,
     MotionUpgradeRequest,
+    SceneArtifact,
     WarmProviderStatus,
 )
 
@@ -110,6 +114,13 @@ class ResilientFastSceneProvider:
         *,
         output_dir: Path,
     ) -> FiniteSceneBundle:
+        recovered = await asyncio.to_thread(
+            _recover_exact_bundle,
+            request,
+            output_dir,
+        )
+        if recovered is not None:
+            return recovered
         attempts: list[dict[str, Any]] = []
         for route in self.routes:
             ready, _, probe_ms = await self._probe_route(route, attempts=attempts)
@@ -275,6 +286,190 @@ def _record_routing_evidence(
     temporary.write_bytes(serialized)
     temporary.replace(bundle.manifest_path)
     return replace(bundle, manifest=payload)
+
+
+def _recover_exact_bundle(
+    request: FastSceneRequest,
+    output_dir: Path,
+) -> FiniteSceneBundle | None:
+    """Reuse a completed paid bundle after local packaging failed.
+
+    The lookup uses only privacy-safe request hashes and render parameters. It
+    never treats a partial directory or a checksum-invalid artifact as usable.
+    A recovered copy records zero new provider time and zero incremental cost.
+    """
+
+    destination = output_dir.resolve()
+    root = destination.parent
+    candidates: list[Path] = []
+    direct_manifest = destination / "scene.manifest.json"
+    if direct_manifest.is_file():
+        candidates.append(direct_manifest)
+    if root.is_dir():
+        discovered = sorted(
+            (
+                path
+                for path in root.glob("*/scene.manifest.json")
+                if path != direct_manifest
+            ),
+            key=lambda path: path.stat().st_mtime,
+            reverse=True,
+        )
+        candidates.extend(discovered[:128])
+
+    for manifest_path in candidates:
+        try:
+            payload = json.loads(manifest_path.read_text())
+            if not _request_identity_matches(payload, request):
+                continue
+            source = _load_routed_bundle(manifest_path, payload=payload)
+        except (OSError, ValueError, json.JSONDecodeError, FiniteModalProviderError):
+            continue
+        if manifest_path == direct_manifest:
+            return source
+        if destination.exists():
+            raise FiniteModalProviderError(
+                f"scene output already exists without an exact recoverable bundle: {destination}"
+            )
+        return _copy_recovered_bundle(source, request=request, destination=destination)
+    if destination.exists():
+        raise FiniteModalProviderError(
+            f"scene output already exists without an exact recoverable bundle: {destination}"
+        )
+    return None
+
+
+def _request_identity_matches(
+    payload: Mapping[str, Any],
+    request: FastSceneRequest,
+) -> bool:
+    identity = payload.get("request")
+    if not isinstance(identity, Mapping):
+        return False
+    expected = {
+        "prompt_sha256": hashlib.sha256(request.prompt.encode()).hexdigest(),
+        "seed": request.seed,
+        "requested_width": request.width,
+        "requested_height": request.height,
+    }
+    if any(identity.get(key) != value for key, value in expected.items()):
+        return False
+    optional = {
+        "negative_prompt_sha256": hashlib.sha256(request.negative_prompt.encode()).hexdigest(),
+        "steps": request.steps,
+        "guidance_scale": request.guidance_scale,
+    }
+    return all(key not in identity or identity.get(key) == value for key, value in optional.items())
+
+
+def _copy_recovered_bundle(
+    source: FiniteSceneBundle,
+    *,
+    request: FastSceneRequest,
+    destination: Path,
+) -> FiniteSceneBundle:
+    started = time.perf_counter()
+    destination.mkdir(parents=True, exist_ok=False)
+    payload = json.loads(json.dumps(source.manifest))
+    for role in ("master", "depth"):
+        artifact = source.artifacts[role]
+        target = destination / artifact.path.name
+        shutil.copyfile(artifact.path, target)
+        payload["artifacts"][role]["path"] = target.name
+    payload["scene_id"] = request.scene_id
+    stage = payload["stages"]["fast"]
+    original_estimate = float(stage.get("estimated_gpu_usd", 0.0))
+    stage.update(
+        {
+            "recovered_without_provider_call": True,
+            "original_estimated_gpu_usd": original_estimate,
+            "estimated_gpu_usd": 0.0,
+            "estimated_managed_service_usd": 0.0,
+            "remote_seconds": 0.0,
+            "inference_seconds": 0.0,
+            "provider_overhead_seconds": 0.0,
+            "image_seconds": 0.0,
+            "depth_seconds": 0.0,
+            "packaging_seconds": time.perf_counter() - started,
+            "warm_state": "cache",
+        }
+    )
+    routing = payload.setdefault("routing", {})
+    routing["recovery"] = {
+        "source_scene_id": source.scene_id,
+        "provider_call": False,
+        "policy": "exact-hashed-request-and-checksum-v1",
+    }
+    manifest_path = destination / "scene.manifest.json"
+    temporary = manifest_path.with_suffix(".json.tmp")
+    temporary.write_text(json.dumps(payload, indent=2, sort_keys=True) + "\n")
+    temporary.replace(manifest_path)
+    return _load_routed_bundle(manifest_path, payload=payload)
+
+
+def _load_routed_bundle(
+    manifest_path: Path,
+    *,
+    payload: Mapping[str, Any] | None = None,
+) -> FiniteSceneBundle:
+    path = manifest_path.resolve()
+    if payload is None:
+        payload = json.loads(path.read_text())
+    if payload.get("schema_version") != "1.0":
+        raise FiniteModalProviderError("unsupported routed scene manifest schema")
+    provider = payload.get("provider")
+    if not isinstance(provider, str) or not provider:
+        raise FiniteModalProviderError("routed scene manifest has no provider")
+    scene_id = payload.get("scene_id")
+    if not isinstance(scene_id, str) or not re.fullmatch(
+        r"[A-Za-z0-9][A-Za-z0-9_.-]{0,127}",
+        scene_id,
+    ):
+        raise FiniteModalProviderError("routed scene manifest has an invalid scene_id")
+    raw_artifacts = payload.get("artifacts")
+    if not isinstance(raw_artifacts, Mapping) or not {"master", "depth"}.issubset(
+        raw_artifacts
+    ):
+        raise FiniteModalProviderError("routed scene manifest requires master and depth")
+    artifacts: dict[str, SceneArtifact] = {}
+    for role in ("master", "depth"):
+        raw = raw_artifacts[role]
+        if not isinstance(raw, Mapping):
+            raise FiniteModalProviderError(f"invalid routed {role} artifact")
+        relative = raw.get("path")
+        if not isinstance(relative, str) or not relative or Path(relative).is_absolute():
+            raise FiniteModalProviderError(f"routed {role} artifact has an invalid path")
+        artifact_path = (path.parent / relative).resolve()
+        if not artifact_path.is_relative_to(path.parent):
+            raise FiniteModalProviderError(f"routed {role} artifact escapes its scene directory")
+        content = artifact_path.read_bytes()
+        digest = hashlib.sha256(content).hexdigest()
+        if digest != raw.get("sha256"):
+            raise FiniteModalProviderError(f"routed {role} checksum mismatch")
+        width = int(raw.get("width", 0))
+        height = int(raw.get("height", 0))
+        if not 1 <= width <= 4_096 or not 1 <= height <= 4_096:
+            raise FiniteModalProviderError(f"routed {role} dimensions are invalid")
+        artifacts[role] = SceneArtifact(
+            role=role,
+            path=artifact_path,
+            sha256=digest,
+            mime_type=str(raw.get("mime_type", "")),
+            width=width,
+            height=height,
+            duration_ms=int(raw.get("duration_ms", 0)),
+            frames=int(raw.get("frames", 1)),
+            fps=int(raw.get("fps", 0)),
+        )
+    stages = payload.get("stages")
+    if not isinstance(stages, Mapping) or not isinstance(stages.get("fast"), Mapping):
+        raise FiniteModalProviderError("routed scene manifest requires fast-stage provenance")
+    return FiniteSceneBundle(
+        manifest_path=path,
+        scene_id=scene_id,
+        artifacts=artifacts,
+        manifest=dict(payload),
+    )
 
 
 def _bounded_detail(value: object) -> str:

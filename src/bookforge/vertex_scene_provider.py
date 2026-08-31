@@ -433,9 +433,14 @@ def _write_bundle(
         "updated_at": now,
         "request": {
             "prompt_sha256": hashlib.sha256(request.prompt.encode()).hexdigest(),
+            "negative_prompt_sha256": hashlib.sha256(
+                request.negative_prompt.encode()
+            ).hexdigest(),
             "seed": request.seed,
             "requested_width": request.width,
             "requested_height": request.height,
+            "steps": request.steps,
+            "guidance_scale": request.guidance_scale,
         },
         "policy": {
             "source_text_allowed": False,

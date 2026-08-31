@@ -320,6 +320,8 @@ _HEAVY_ARTIFACTS = {
     LiveSceneArtifactKind.MOTION,
 }
 
+_ROUTED_PROVIDER_ORCHESTRATORS = {"resilient-cloud"}
+
 
 class LiveSceneJob(FrozenStrictModel):
     job_id: LiveSceneJobId
@@ -396,7 +398,11 @@ class LiveSceneJob(FrozenStrictModel):
                     artifact.provider,
                     f"{artifact.provider}:{artifact.model}",
                 }
-                if self.provider != artifact.provider or asset.provider not in accepted_provenance:
+                provider_matches = (
+                    self.provider == artifact.provider
+                    or self.provider in _ROUTED_PROVIDER_ORCHESTRATORS
+                )
+                if not provider_matches or asset.provider not in accepted_provenance:
                     raise ValueError(
                         f"artifact {artifact.artifact_id!r} provider provenance is inconsistent"
                     )

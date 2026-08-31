@@ -208,6 +208,22 @@ def test_fake_provider_emits_valid_progressive_story_packs_and_cached_assets(
             "motion",
         ]
         assert revisions[1:] == list(range(1, terminal.revision + 1))
+
+        routed_payload = terminal.model_dump(mode="json")
+        routed_payload["provider"] = "resilient-cloud"
+        routed_artifacts = {
+            artifact["artifact_id"]: artifact for artifact in routed_payload["artifacts"]
+        }
+        for artifact in routed_artifacts.values():
+            artifact["provider"] = "gcp-vertex-gemini-image"
+        for asset in routed_payload["story_pack"]["assets"]:
+            artifact = routed_artifacts[asset["asset_id"]]
+            asset["provider"] = f"{artifact['provider']}:{artifact['model']}"
+        assert LiveSceneJob.model_validate(routed_payload).provider == "resilient-cloud"
+
+        routed_payload["provider"] = "unrelated-wrapper"
+        with pytest.raises(ValidationError, match="provider provenance is inconsistent"):
+            LiveSceneJob.model_validate(routed_payload)
         await registry.close()
 
     asyncio.run(exercise())

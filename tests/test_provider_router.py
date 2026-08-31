@@ -54,6 +54,17 @@ class StubProvider:
             "schema_version": "1.0",
             "provider": self.name,
             "scene_id": request.scene_id,
+            "request": {
+                "prompt_sha256": hashlib.sha256(request.prompt.encode()).hexdigest(),
+                "negative_prompt_sha256": hashlib.sha256(
+                    request.negative_prompt.encode()
+                ).hexdigest(),
+                "seed": request.seed,
+                "requested_width": request.width,
+                "requested_height": request.height,
+                "steps": request.steps,
+                "guidance_scale": request.guidance_scale,
+            },
             "stages": {
                 "fast": {
                     "model": "stub",
@@ -61,7 +72,28 @@ class StubProvider:
                     "estimated_gpu_usd": 0,
                 }
             },
-            "artifacts": {},
+            "artifacts": {
+                "master": {
+                    "path": "master.jpg",
+                    "sha256": hashlib.sha256(b"master").hexdigest(),
+                    "mime_type": "image/jpeg",
+                    "width": 1024,
+                    "height": 576,
+                    "duration_ms": 0,
+                    "frames": 1,
+                    "fps": 0,
+                },
+                "depth": {
+                    "path": "depth.jpg",
+                    "sha256": hashlib.sha256(b"depth").hexdigest(),
+                    "mime_type": "image/jpeg",
+                    "width": 1024,
+                    "height": 576,
+                    "duration_ms": 0,
+                    "frames": 1,
+                    "fps": 0,
+                },
+            },
         }
         manifest_path = output_dir / "scene.manifest.json"
         manifest_path.write_text(json.dumps(manifest))
@@ -133,6 +165,37 @@ def test_router_status_selects_healthy_route_without_generation() -> None:
     assert modal.generations == 0
 
 
+def test_router_recovers_exact_paid_bundle_without_second_provider_call(
+    tmp_path: Path,
+) -> None:
+    vertex = StubProvider("vertex")
+    router = ResilientFastSceneProvider([ProviderRoute("vertex", vertex)])
+    first_request = _request("first-scene")
+    first = asyncio.run(
+        router.generate_fast(first_request, output_dir=tmp_path / "first-scene")
+    )
+    recovered_request = FastSceneRequest(
+        scene_id="recovered-scene",
+        prompt=first_request.prompt,
+    )
+
+    recovered = asyncio.run(
+        router.generate_fast(recovered_request, output_dir=tmp_path / "recovered-scene")
+    )
+
+    assert vertex.generations == 1
+    assert recovered.scene_id == "recovered-scene"
+    assert recovered.master.sha256 == first.master.sha256
+    assert recovered.depth.sha256 == first.depth.sha256
+    assert recovered.manifest["routing"]["recovery"] == {
+        "source_scene_id": "first-scene",
+        "provider_call": False,
+        "policy": "exact-hashed-request-and-checksum-v1",
+    }
+    assert recovered.manifest["stages"]["fast"]["estimated_gpu_usd"] == 0
+    assert recovered.manifest["stages"]["fast"]["remote_seconds"] == 0
+
+
 def test_router_advances_after_explicit_nonbillable_rejection(tmp_path: Path) -> None:
     primary = StubProvider(
         "vertex",
@@ -202,7 +265,10 @@ def test_failed_probe_opens_circuit_for_later_scenes(tmp_path: Path) -> None:
 
     async def exercise() -> None:
         await router.generate_fast(_request("first"), output_dir=tmp_path / "first")
-        await router.generate_fast(_request("second"), output_dir=tmp_path / "second")
+        await router.generate_fast(
+            FastSceneRequest(scene_id="second", prompt="A different luminous paper owl."),
+            output_dir=tmp_path / "second",
+        )
 
     asyncio.run(exercise())
 
