@@ -508,7 +508,9 @@ def test_kiosk_preserves_chromium_sandbox_and_waits_for_readiness() -> None:
 
     assert unit.count("[Service]") == 1
     assert "Restart=always" in unit
-    assert "RestartPreventExitStatus=78" in unit
+    assert "StartLimitIntervalSec=0" in unit
+    assert "RestartPreventExitStatus" not in unit
+    assert "RestartSec=10" in unit
     assert "/readyz" in launcher
     assert "--no-sandbox" not in launcher
 
@@ -687,12 +689,13 @@ def test_firefox_kiosk_profile_disables_first_run_and_telemetry(tmp_path: Path) 
     assert (profile / "user.js").stat().st_mode & 0o777 == 0o600
 
 
-def test_kiosk_restart_loop_is_rate_limited() -> None:
+def test_kiosk_retries_fail_closed_boot_race_until_projector_session_exists() -> None:
     unit = (ROOT / "deploy/jetson/systemd/bookforge-kiosk.service").read_text()
 
     assert "Restart=always" in unit
-    assert "StartLimitIntervalSec=60" in unit
-    assert "StartLimitBurst=5" in unit
+    assert "StartLimitIntervalSec=0" in unit
+    assert "StartLimitBurst" not in unit
+    assert "RestartSec=10" in unit
 
 
 def test_live_waiting_stage_is_static_to_leave_the_gpu_for_edge_planning() -> None:

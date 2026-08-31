@@ -1,16 +1,17 @@
 [Unit]
 Description=Bookforge projector browser kiosk
 After=graphical-session.target
-StartLimitIntervalSec=60
-StartLimitBurst=5
+# Autologin and projector EDID can appear after the user manager starts. Keep
+# retrying the fail-closed session check so an early boot race cannot strand the
+# appliance on the desktop until somebody opens a keyboard session.
+StartLimitIntervalSec=0
 
 [Service]
 Type=simple
 EnvironmentFile=-%h/.config/bookforge/kiosk.env
 ExecStart=/opt/bookforge/deploy/jetson/launch-kiosk.sh
 Restart=always
-RestartPreventExitStatus=78
-RestartSec=5
+RestartSec=10
 TimeoutStartSec=120
 
 [Install]
