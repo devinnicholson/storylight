@@ -22,6 +22,9 @@ GEMMA4_EDGELLM_BENCHMARK_RUNNER = ROOT / "deploy/jetson/run-gemma4-tensorrt-edge
 POWER_MODE_AB = ROOT / "deploy/jetson/run-power-mode-ab.sh"
 BOOKFORGE_ADMIN = ROOT / "deploy/jetson/bookforge-admin"
 BOOKFORGE_ADMIN_INSTALLER = ROOT / "deploy/jetson/install-bookforge-admin.sh"
+RESILIENT_ROUTING_CONFIGURATOR = (
+    ROOT / "deploy/jetson/configure-resilient-routing.sh"
+)
 
 
 def _write_executable(path: Path, body: str) -> None:
@@ -250,6 +253,24 @@ def test_standalone_profile_keeps_raw_story_planning_local() -> None:
     assert "BOOKFORGE_ASR_BACKEND=disabled" in profile
     assert "MODAL_TOKEN_ID=\n" in profile
     assert "MODAL_TOKEN_SECRET=\n" in profile
+
+
+def test_resilient_routing_configurator_is_atomic_bounded_and_reversible() -> None:
+    configurator = RESILIENT_ROUTING_CONFIGURATOR.read_text()
+
+    subprocess.run(["bash", "-n", str(RESILIENT_ROUTING_CONFIGURATOR)], check=True)
+    assert "--dry-run" in configurator
+    assert "--cloud-run-url" in configurator
+    assert "--user" in configurator
+    assert 'BOOKFORGE_LIVE_SCENE_BACKEND": "gcp_resilient"' in configurator
+    assert 'BOOKFORGE_LIVE_SCENE_ENABLE_PREVIEW": "false"' in configurator
+    assert 'BOOKFORGE_LIVE_SCENE_FIDELITY_MODE": "deferred"' in configurator
+    assert "before-resilient-" in configurator
+    assert "os.replace(temporary_name, config_path)" in configurator
+    assert "root:root:600" in configurator
+    assert "MODAL_TOKEN_ID" not in configurator
+    assert "MODAL_TOKEN_SECRET" not in configurator
+    assert "rm " not in configurator
 
 
 def test_tensorrt_edge_llm_candidate_is_pinned_local_and_fail_closed() -> None:
