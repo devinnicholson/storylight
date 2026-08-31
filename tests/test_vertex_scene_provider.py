@@ -12,8 +12,10 @@ from bookforge.provider_router import SafeProviderFallbackError
 from bookforge.vertex_scene_provider import (
     DEPTH_MODEL,
     PROVIDER_NAME,
+    REQUEST_CONTRACT_REVISION,
     VertexGeminiImageSceneProvider,
     VertexSceneAmbiguousError,
+    _request_payload,
 )
 
 
@@ -105,8 +107,27 @@ def test_vertex_provider_generates_checksum_bound_master_and_local_depth(
     assert bundle.depth.path.read_bytes().startswith(b"\x89PNG\r\n\x1a\n")
     assert bundle.manifest["stages"]["fast"]["additional_models"][0]["model"] == DEPTH_MODEL
     assert bundle.manifest["request"]["prompt_sha256"]
+    assert bundle.manifest["request"]["contract_revision"] == REQUEST_CONTRACT_REVISION
     assert "One silver fox" not in bundle.manifest_path.read_text()
     assert bundle.estimated_gpu_usd == pytest.approx(0.034)
+
+
+def test_vertex_request_reinforces_sanitized_exact_counts() -> None:
+    payload = _request_payload(
+        FastSceneRequest(
+            scene_id="count-lock-scene",
+            prompt=(
+                "A rabbit under a bridge. Required supporting visual: 3 paper lanterns "
+                "overhead and 2 silver comet-fish arcing through the sky."
+            ),
+            seed=79,
+        )
+    )
+
+    contract = payload["contents"][0]["parts"][0]["text"]
+    assert "Show exactly 3 paper lanterns total across the entire frame" in contract
+    assert "Show exactly 2 silver comet-fish total across the entire frame" in contract
+    assert "show no additional paper lanterns" in contract
 
 
 def test_vertex_probe_fails_closed_when_preconnect_rejects_credentials() -> None:

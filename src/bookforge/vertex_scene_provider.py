@@ -28,10 +28,17 @@ from bookforge.provider_router import SafeProviderFallbackError
 PROVIDER_NAME = "gcp-vertex-gemini-image"
 DEFAULT_MODEL = "gemini-3.1-flash-lite-image"
 MODEL_REVISION = "vertex-managed"
+REQUEST_CONTRACT_REVISION = "story-scene-v2-exact-count-lock"
 DEPTH_MODEL = "bookforge-projection-depth-bootstrap"
 DEPTH_MODEL_REVISION = "vertical-gradient-v1"
 DEFAULT_ESTIMATED_IMAGE_USD = 0.034
 _SAFE_COMPONENT = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._:-]{0,126}$")
+_EXACT_COUNT_PHRASE = re.compile(
+    r"\b(?P<count>[2-9]|10)\s+"
+    r"(?P<label>(?:[A-Za-z][A-Za-z-]*\s+){0,2}"
+    r"[A-Za-z][A-Za-z-]*(?:s|fish))\b",
+    re.IGNORECASE,
+)
 
 AccessTokenSource = Callable[[], Awaitable[str]]
 
@@ -281,6 +288,7 @@ async def google_access_token() -> str:
 
 
 def _request_payload(request: FastSceneRequest) -> dict[str, Any]:
+    exact_count_contract = _exact_count_contract(request.prompt)
     prompt = (
         f"STORY SCENE:\n{request.prompt}\n\n"
         "NON-NEGOTIABLE VISUAL CONTRACT:\n"
@@ -290,6 +298,7 @@ def _request_payload(request: FastSceneRequest) -> dict[str, Any]:
         "action with mere proximity.\n"
         "- Preserve exact counts and directions such as left, right, above, below, in front, "
         "and behind.\n"
+        f"{exact_count_contract}"
         "- Create one coherent, full-bleed 16:9 storybook projection frame with an "
         "unambiguous primary subject, projection-bright midtones, clean silhouettes, and "
         "tactile foreground-to-background depth.\n"
@@ -312,6 +321,25 @@ def _request_payload(request: FastSceneRequest) -> dict[str, Any]:
             },
         },
     }
+
+
+def _exact_count_contract(prompt: str) -> str:
+    """Reinforce sanitized supporting-object counts without source-text access."""
+
+    locks: list[str] = []
+    seen: set[tuple[str, str]] = set()
+    for match in _EXACT_COUNT_PHRASE.finditer(prompt):
+        count = match.group("count")
+        label = " ".join(match.group("label").split())
+        key = (count, label.casefold())
+        if key in seen:
+            continue
+        seen.add(key)
+        locks.append(
+            f"- COUNT LOCK: Show exactly {count} {label} total across the entire frame; "
+            f"show no additional {label} and do not duplicate them.\n"
+        )
+    return "".join(locks)
 
 
 def _extract_image(payload: object) -> tuple[bytes, str]:
@@ -456,6 +484,7 @@ def _write_bundle(
         "created_at": now,
         "updated_at": now,
         "request": {
+            "contract_revision": REQUEST_CONTRACT_REVISION,
             "prompt_sha256": hashlib.sha256(request.prompt.encode()).hexdigest(),
             "negative_prompt_sha256": hashlib.sha256(
                 request.negative_prompt.encode()
