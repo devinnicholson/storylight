@@ -169,6 +169,9 @@ frames, and identity data remain local. Bookforge's bounded August 30 A/B select
 with the stricter visual contract, versus 5.506 seconds for the previous production model. The
 model is Google's fastest image-generation option, supports 16:9 1K output in `global`, and is
 documented in the [Gemini 3.1 Flash-Lite Image model card](https://docs.cloud.google.com/gemini-enterprise-agent-platform/models/gemini/3-1-flash-lite-image).
+The readiness gate also performs a POST-incapable `HEAD` preconnect to the exact managed endpoint.
+The accepted test left just 7.6 ms of client overhead on the following image call, instead of making
+the reader wait for DNS, TLS, and HTTP/2 setup after requesting a scene.
 
 ```bash
 BOOKFORGE_LIVE_SCENE_BACKEND=gcp_resilient \

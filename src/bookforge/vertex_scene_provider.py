@@ -115,8 +115,24 @@ class VertexGeminiImageSceneProvider:
             return False, f"Vertex credentials are unavailable: {error}"
         if not token:
             return False, "Vertex credentials returned no access token"
+        try:
+            # generateContent is POST-only, so HEAD cannot create a prediction
+            # or a billable image. It does establish the same DNS/TLS/HTTP/2
+            # path that the first generation would otherwise pay for.
+            client = await self._get_client()
+            response = await client.head(
+                self.endpoint,
+                headers={"Authorization": f"Bearer {token}"},
+            )
+        except (httpx.TimeoutException, httpx.TransportError) as error:
+            return False, f"Vertex preconnect failed: {error}"
+        if response.status_code in {401, 403}:
+            return False, f"Vertex preconnect rejected credentials with HTTP {response.status_code}"
+        if response.status_code >= 500:
+            return False, f"Vertex preconnect returned HTTP {response.status_code}"
         return True, (
-            f"Vertex managed image route is configured for {self.model} in {self.location}"
+            f"Vertex managed image route is configured for {self.model} in {self.location}; "
+            f"HTTP/2 path is warm"
         )
 
     async def generate_fast(

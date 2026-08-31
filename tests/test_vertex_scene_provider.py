@@ -58,6 +58,8 @@ def test_vertex_provider_generates_checksum_bound_master_and_local_depth(
 
     def handler(request: httpx.Request) -> httpx.Response:
         requests.append(request)
+        if request.method == "HEAD":
+            return httpx.Response(404)
         return httpx.Response(200, json=_response())
 
     async def token_source() -> str:
@@ -83,12 +85,13 @@ def test_vertex_provider_generates_checksum_bound_master_and_local_depth(
 
     bundle = asyncio.run(exercise())
 
-    assert requests[0].headers["authorization"] == "Bearer vertex-token"
+    assert [item.method for item in requests] == ["HEAD", "POST"]
+    assert requests[-1].headers["authorization"] == "Bearer vertex-token"
     assert token_calls == 1
-    assert requests[0].url.path.endswith(
+    assert requests[-1].url.path.endswith(
         "/publishers/google/models/gemini-3.1-flash-lite-image:generateContent"
     )
-    body = json.loads(requests[0].content)
+    body = json.loads(requests[-1].content)
     assert body["generationConfig"]["responseModalities"] == ["TEXT", "IMAGE"]
     assert body["generationConfig"]["imageConfig"]["aspectRatio"] == "16:9"
     contract = body["contents"][0]["parts"][0]["text"]
@@ -104,6 +107,27 @@ def test_vertex_provider_generates_checksum_bound_master_and_local_depth(
     assert bundle.manifest["request"]["prompt_sha256"]
     assert "One silver fox" not in bundle.manifest_path.read_text()
     assert bundle.estimated_gpu_usd == pytest.approx(0.034)
+
+
+def test_vertex_probe_fails_closed_when_preconnect_rejects_credentials() -> None:
+    async def token_source() -> str:
+        return "expired-token"
+
+    provider = VertexGeminiImageSceneProvider(
+        project_id="your-gcp-project",
+        token_source=token_source,
+        client_factory=lambda **kwargs: httpx.AsyncClient(
+            transport=httpx.MockTransport(
+                lambda request: httpx.Response(401, json={"error": "unauthorized"})
+            ),
+            **kwargs,
+        ),
+    )
+
+    ready, detail = asyncio.run(provider.probe())
+
+    assert ready is False
+    assert "rejected credentials with HTTP 401" in detail
 
 
 def test_vertex_explicit_http_rejection_is_safe_to_fallback(tmp_path: Path) -> None:
