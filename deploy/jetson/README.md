@@ -278,6 +278,14 @@ control evidence is in `benchmarks/bookforge-tensorrt-edge-llm-2026-08-26.json`;
 baseline, blocked export attempts, cost reconciliation, and promotion gate are in
 `benchmarks/bookforge-gemma4-tensorrt-edge-llm-2026-08-26.json`.
 
+Two later executions of the same digest-pinned GPU job waited 28–30 minutes and then failed inside
+Cloud Run with contradictory exit-code-zero `Unknown error` / `Internal error running task`
+messages. Neither emitted the exporter's first progress record or wrote a bucket object. A bounded
+CPU-only control using the identical image also remained in the regional Jobs scheduler for five
+minutes and was cancelled before the entrypoint ran. Do not keep repeating the same GPU job: send
+the execution IDs and `benchmarks/bookforge-gemma4-cloud-run-scheduler-2026-08-30.json` to Google
+Cloud support, then retry only after capacity or service state changes.
+
 A later resident-server experiment isolated the most important latency finding. Starting the
 TensorRT process for each passage took 8.105 seconds for a one-case control, while NVIDIA's
 resident server handled the 20-case contest suite at 846.5 ms mean and 807.9 ms median per case.
