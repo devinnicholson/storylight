@@ -16,6 +16,7 @@ EDGELLM_ENGINE_BUILDER = ROOT / "deploy/jetson/build-tensorrt-edge-engine.sh"
 EDGELLM_BENCHMARK = ROOT / "deploy/jetson/benchmark-tensorrt-edge-llm.py"
 EDGELLM_BENCHMARK_RUNNER = ROOT / "deploy/jetson/run-tensorrt-edge-benchmark.sh"
 EDGELLM_EXPORTER = ROOT / "deploy/modal_tensorrt_edge_export.py"
+QWEN15_EDGELLM_INSTALLER = ROOT / "deploy/jetson/install-qwen15-tensorrt-checkpoint.py"
 GEMMA4_EDGELLM_EXPORTER = ROOT / "deploy/modal_gemma4_tensorrt_edge_export.py"
 GEMMA4_EDGELLM_ENGINE_BUILDER = ROOT / "deploy/jetson/build-gemma4-tensorrt-edge-engine.sh"
 GEMMA4_EDGELLM_BENCHMARK_RUNNER = ROOT / "deploy/jetson/run-gemma4-tensorrt-edge-benchmark.sh"
@@ -299,6 +300,7 @@ def test_tensorrt_edge_llm_candidate_is_pinned_local_and_fail_closed() -> None:
     assert "Run this installer as the Bookforge user, not root" in installer
 
     assert 'readonly EDGELLM_REVISION="71dd1bae032e70771265917ec74d3ff4cad07a10"' in engine_builder
+    assert "BOOKFORGE_EDGELLM_MODEL_ROOT" in engine_builder
     assert 'readonly GEMMA_MODEL="${BOOKFORGE_GEMMA_MODEL:-gemma3:1b-it-q4_K_M}"' in engine_builder
     assert '"$OLLAMA_BIN" stop "$GEMMA_MODEL"' in engine_builder
     assert 'export EDGELLM_PLUGIN_PATH="$EDGELLM_PLUGIN"' in engine_builder
@@ -319,7 +321,10 @@ def test_tensorrt_edge_llm_candidate_is_pinned_local_and_fail_closed() -> None:
         'readonly PROMPT_PROFILE="${BOOKFORGE_EDGELLM_PROMPT_PROFILE:-production}"'
         in benchmark_runner
     )
-    assert 'readonly REPORT_PATH="$EVIDENCE_DIR/benchmark-$PROMPT_PROFILE.json"' in benchmark_runner
+    assert 'readonly SUITE="${BOOKFORGE_EDGELLM_SUITE:-five}"' in benchmark_runner
+    assert "BOOKFORGE_EDGELLM_CANDIDATE_MODEL" in benchmark_runner
+    assert "BOOKFORGE_EDGELLM_CANDIDATE_REVISION" in benchmark_runner
+    assert 'readonly REPORT_PATH="$EVIDENCE_DIR/benchmark-$PROMPT_PROFILE-$SUITE.json"' in benchmark_runner
     assert '"$OLLAMA_BIN" stop "$GEMMA_MODEL"' in benchmark_runner
     assert '\\"keep_alive\\":\\"-1m\\"' in benchmark_runner
     assert "trap restore_runtime EXIT INT TERM" in benchmark_runner
@@ -327,8 +332,14 @@ def test_tensorrt_edge_llm_candidate_is_pinned_local_and_fail_closed() -> None:
     assert 'EDGELLM_VERSION = "v0.10.0"' in exporter
     assert 'EDGELLM_REVISION = "71dd1bae032e70771265917ec74d3ff4cad07a10"' in exporter
     assert 'MODEL_REVISION = "db09cd27ead7fee40cdee309693cf83601b9c899"' in exporter
-    assert "revision=MODEL_REVISION" in exporter
-    assert '"model_revision": MODEL_REVISION' in exporter
+    assert 'QWEN15_MODEL_ID = "Qwen/Qwen2.5-1.5B-Instruct-AWQ"' in exporter
+    assert 'QWEN15_MODEL_REVISION = "3ecffa0ceb27851800f45519bab9c457a04405e1"' in exporter
+    assert "revision=model_revision" in exporter
+    assert '"model_revision": model_revision' in exporter
+    qwen15_installer = QWEN15_EDGELLM_INSTALLER.read_text()
+    assert 'MODEL_ID = "Qwen/Qwen2.5-1.5B-Instruct-AWQ"' in qwen15_installer
+    assert 'MODEL_REVISION = "3ecffa0ceb27851800f45519bab9c457a04405e1"' in qwen15_installer
+    assert "refusing to overwrite" in qwen15_installer
 
 
 def test_gemma4_tensorrt_candidate_is_budgeted_externalized_and_shadow_only() -> None:

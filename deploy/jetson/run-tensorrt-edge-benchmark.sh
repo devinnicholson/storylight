@@ -5,7 +5,7 @@ set -euo pipefail
 
 readonly INSTALL_ROOT="${BOOKFORGE_EDGELLM_ROOT:-$HOME/.local/share/bookforge/tensorrt-edgellm-v0.10.0}"
 readonly BUILD_DIR="$INSTALL_ROOT/build"
-readonly MODEL_ROOT="$INSTALL_ROOT/models/qwen2.5-0.5b-instruct-awq-v010"
+readonly MODEL_ROOT="${BOOKFORGE_EDGELLM_MODEL_ROOT:-$INSTALL_ROOT/models/qwen2.5-0.5b-instruct-awq-v010}"
 readonly ENGINE_DIR="$MODEL_ROOT/engines/llm"
 readonly CHECKPOINT_DIR="$MODEL_ROOT/onnx/llm"
 readonly EVIDENCE_DIR="$MODEL_ROOT/inference-evidence"
@@ -16,7 +16,10 @@ readonly OLLAMA_BIN="${BOOKFORGE_OLLAMA_BIN:-$HOME/.local/opt/ollama-v0.32.15/bi
 readonly LLM_INFERENCE="$BUILD_DIR/examples/llm/llm_inference"
 readonly EDGELLM_PLUGIN="$BUILD_DIR/libNvInfer_edgellm_plugin.so"
 readonly PROMPT_PROFILE="${BOOKFORGE_EDGELLM_PROMPT_PROFILE:-production}"
-readonly REPORT_PATH="$EVIDENCE_DIR/benchmark-$PROMPT_PROFILE.json"
+readonly SUITE="${BOOKFORGE_EDGELLM_SUITE:-five}"
+readonly CANDIDATE_MODEL="${BOOKFORGE_EDGELLM_CANDIDATE_MODEL:-Qwen/Qwen2.5-0.5B-Instruct-AWQ}"
+readonly CANDIDATE_REVISION="${BOOKFORGE_EDGELLM_CANDIDATE_REVISION:-db09cd27ead7fee40cdee309693cf83601b9c899}"
+readonly REPORT_PATH="$EVIDENCE_DIR/benchmark-$PROMPT_PROFILE-$SUITE.json"
 
 if [[ ${EUID:-$(id -u)} -eq 0 ]]; then
   printf 'Run this benchmark as the Bookforge user, not root.\n' >&2
@@ -70,7 +73,10 @@ export EDGELLM_PLUGIN_PATH="$EDGELLM_PLUGIN"
   --work-dir "$EVIDENCE_DIR/work" \
   --output "$REPORT_PATH" \
   --warmup 1 \
-  --prompt-profile "$PROMPT_PROFILE"
+  --prompt-profile "$PROMPT_PROFILE" \
+  --suite "$SUITE" \
+  --candidate-model "$CANDIDATE_MODEL" \
+  --candidate-revision "$CANDIDATE_REVISION"
 
 test -s "$REPORT_PATH"
 sha256sum "$REPORT_PATH" >"$EVIDENCE_DIR/sha256sums-$PROMPT_PROFILE.txt"

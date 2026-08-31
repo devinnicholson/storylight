@@ -9,6 +9,10 @@ Run the bounded export, then download the resulting directory::
     modal run deploy/modal_tensorrt_edge_export.py::export_cli
     modal volume get bookforge-tensorrt-edge-llm \
       qwen2.5-0.5b-instruct-awq-v010/onnx artifacts/tensorrt-edge-llm/onnx
+
+The 1.5B shadow candidate uses the same pinned exporter image and volume::
+
+    modal run deploy/modal_tensorrt_edge_export.py::export_qwen15_cli
 """
 
 from __future__ import annotations
@@ -28,6 +32,9 @@ EDGELLM_REVISION = "71dd1bae032e70771265917ec74d3ff4cad07a10"
 MODEL_ID = "Qwen/Qwen2.5-0.5B-Instruct-AWQ"
 MODEL_REVISION = "db09cd27ead7fee40cdee309693cf83601b9c899"
 EXPORT_ID = "qwen2.5-0.5b-instruct-awq-v010"
+QWEN15_MODEL_ID = "Qwen/Qwen2.5-1.5B-Instruct-AWQ"
+QWEN15_MODEL_REVISION = "3ecffa0ceb27851800f45519bab9c457a04405e1"
+QWEN15_EXPORT_ID = "qwen2.5-1.5b-instruct-awq-v010"
 EXPORT_ROOT = Path("/exports")
 TIMEOUT_SECONDS = 1_800
 
@@ -73,27 +80,20 @@ def _file_manifest(root: Path) -> list[dict[str, Any]]:
     return files
 
 
-@app.function(
-    image=export_image,
-    cpu=8,
-    memory=32_768,
-    timeout=TIMEOUT_SECONDS,
-    volumes={str(EXPORT_ROOT): export_volume},
-)
-def export_checkpoint() -> dict[str, Any]:
+def _export_checkpoint(*, model_id: str, model_revision: str, export_id: str) -> dict[str, Any]:
     from huggingface_hub import snapshot_download
 
     started = time.perf_counter()
-    destination = EXPORT_ROOT / EXPORT_ID / "onnx"
-    manifest_path = EXPORT_ROOT / EXPORT_ID / "export.manifest.json"
+    destination = EXPORT_ROOT / export_id / "onnx"
+    manifest_path = EXPORT_ROOT / export_id / "export.manifest.json"
 
     if not manifest_path.is_file():
         if destination.exists() and any(destination.iterdir()):
             raise RuntimeError("partial export exists without a manifest; refusing to overwrite it")
         destination.mkdir(parents=True, exist_ok=True)
         checkpoint = snapshot_download(
-            repo_id=MODEL_ID,
-            revision=MODEL_REVISION,
+            repo_id=model_id,
+            revision=model_revision,
         )
         subprocess.run(
             [
@@ -108,9 +108,9 @@ def export_checkpoint() -> dict[str, Any]:
         files = _file_manifest(destination)
         manifest = {
             "schema_version": 1,
-            "model_id": MODEL_ID,
-            "model_revision": MODEL_REVISION,
-            "export_id": EXPORT_ID,
+            "model_id": model_id,
+            "model_revision": model_revision,
+            "export_id": export_id,
             "tensorrt_edge_llm_version": EDGELLM_VERSION,
             "tensorrt_edge_llm_revision": EDGELLM_REVISION,
             "elapsed_seconds": time.perf_counter() - started,
@@ -126,6 +126,41 @@ def export_checkpoint() -> dict[str, Any]:
     return json.loads(manifest_path.read_text(encoding="utf-8"))
 
 
+@app.function(
+    image=export_image,
+    cpu=8,
+    memory=32_768,
+    timeout=TIMEOUT_SECONDS,
+    volumes={str(EXPORT_ROOT): export_volume},
+)
+def export_checkpoint() -> dict[str, Any]:
+    return _export_checkpoint(
+        model_id=MODEL_ID,
+        model_revision=MODEL_REVISION,
+        export_id=EXPORT_ID,
+    )
+
+
+@app.function(
+    image=export_image,
+    cpu=8,
+    memory=32_768,
+    timeout=TIMEOUT_SECONDS,
+    volumes={str(EXPORT_ROOT): export_volume},
+)
+def export_qwen15_checkpoint() -> dict[str, Any]:
+    return _export_checkpoint(
+        model_id=QWEN15_MODEL_ID,
+        model_revision=QWEN15_MODEL_REVISION,
+        export_id=QWEN15_EXPORT_ID,
+    )
+
+
 @app.local_entrypoint()
 def export_cli() -> None:
     print(json.dumps(export_checkpoint.remote(), indent=2, sort_keys=True))
+
+
+@app.local_entrypoint()
+def export_qwen15_cli() -> None:
+    print(json.dumps(export_qwen15_checkpoint.remote(), indent=2, sort_keys=True))
