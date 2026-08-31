@@ -716,6 +716,10 @@ def test_compact_plan_normalizes_to_canonical_scene_spec_and_layers() -> None:
     assert "duplicate person" in page.scene_spec.negative_prompt
     assert "main subject at left" in page.scene_spec.master_prompt
     assert "supporting detail at upper right" in page.scene_spec.master_prompt
+    assert "within the same continuous scene" in page.scene_spec.master_prompt
+    assert "Never use an inset, panel, cutaway, collage, or split screen" in (
+        page.scene_spec.master_prompt
+    )
     assert page.source_text == "A child opened a book and the birds showed the way."
     assert "readable text" in page.scene_spec.negative_prompt
     assert page.scene_spec.camera.kind == "slow_push"

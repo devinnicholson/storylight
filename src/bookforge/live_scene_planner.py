@@ -67,7 +67,7 @@ _LEADING_ARTICLE = re.compile(r"^(?:a|an|the)\s+", re.IGNORECASE)
 _SEMANTIC_WORD = re.compile(r"[A-Za-z][A-Za-z'-]*")
 _PLACEMENT_MARGIN = 0.04
 _PLAN_CACHE_SCHEMA_VERSION = "1"
-_PLAN_CACHE_CONTRACT_REVISION = "semantic-v16-relations-transformations-layout-repair"
+_PLAN_CACHE_CONTRACT_REVISION = "semantic-v17-relations-transformations-composition-repair"
 _EMAIL = re.compile(r"\b[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}\b", re.IGNORECASE)
 _PHONE = re.compile(r"(?<!\w)(?:\+?\d[\d\s()./-]{6,}\d)(?!\w)")
 _URL = re.compile(r"\b(?:https?://|www\.)\S+", re.IGNORECASE)
@@ -572,7 +572,9 @@ class LiveScenePlan(FrozenStrictModel):
         composition_clause = (
             "Composition: place the main subject "
             f"{_placement_label(focus_placement)}, clearly larger and nearer; place the "
-            f"supporting detail {_placement_label(accent_placement)}, smaller and separated."
+            f"supporting detail {_placement_label(accent_placement)}, smaller and separated "
+            "within the same continuous scene. Never use an inset, panel, cutaway, collage, "
+            "or split screen."
         )
         master_prompt = (
             f"{_prompt_fragment(visual_style)}. {_prompt_fragment(art_direction)}. "
