@@ -206,3 +206,34 @@ architecture now keeps Gemma on the Jetson for privacy and uses Cloud Run only f
 Once the complete Story Pack schema
 is stable, benchmark a larger Gemma model for cloud compilation instead of increasing model size
 before the output can be measured.
+
+## Finite Compute Engine TensorRT export
+
+Cloud Run Jobs is not required to prepare the Jetson's Gemma 4 checkpoint. The bounded Compute
+Engine launcher in `compute/run-gemma4-tensorrt-export.sh` uses the same immutable exporter image on
+one `g4-standard-48` VM. It has a 45-minute automatic-delete deadline, no restart, one task, and no
+production routing changes. The exporter uploads its completion manifest last; incomplete prefixes
+are never accepted by the Jetson installer.
+
+The dedicated runtime identity needs only its existing private-bucket object role plus read access
+to the single private Artifact Registry repository. Grant that narrow repository role explicitly:
+
+```bash
+gcloud artifacts repositories add-iam-policy-binding bookforge \
+  --project your-gcp-project \
+  --location us-central1 \
+  --member serviceAccount:bookforge-tensorrt-export@your-gcp-project.iam.gserviceaccount.com \
+  --role roles/artifactregistry.reader
+```
+
+Then start exactly one finite attempt:
+
+```bash
+export BOOKFORGE_GCP_EXPORT_APPLY=I_UNDERSTAND_THIS_CREATES_A_FINITE_BILLABLE_G4_VM
+./infra/gcp/compute/run-gemma4-tensorrt-export.sh
+```
+
+Delete the VM as soon as the immutable completion manifest or a terminal diagnostic log appears.
+The automatic deadline is a last-resort guard if the operator disconnects; it is not a reason to
+leave a completed VM running. Do not use the default Compute Engine service account or add a
+project-wide role to the exporter identity.
