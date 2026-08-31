@@ -493,15 +493,18 @@ prewarmed model; keep the independent
 20-second model-client timeout for
 diagnostics and ensure the prewarm completes before a live reading.
 
-The optional workbench warmup sends only a fixed `{"ready":true}` readiness task to the local
-model while the user types. It never includes the textarea, visual style, audio, or a renderer call.
-While the visible workbench remains open, it refreshes that text-free readiness task every eight
-minutes and when a stale tab becomes visible again, staying inside Ollama's ten-minute keep-alive.
+When `BOOKFORGE_LIVE_SCENE_PLANNER_AUTO_WARMUP=true`, the API now starts a fixed
+`{"ready":true}` readiness task in the background during service startup. API readiness is not
+blocked, and an early request, the lifecycle task, and the workbench warmup coalesce onto one local
+Ollama call. The task never includes a story passage, visual style, audio, or renderer call. The
+workbench also refreshes this text-free task while visible, and the standalone `-1m` keep-alive
+retains the accepted planner until the appliance service stops.
 If Gemma still times out or fails privacy/validation, the job now stops before the paid renderer;
 it never promotes a generic fallback as if it were the requested scene.
-The Mac A/B converted a 12-second cold planner timeout into a 3.53-second uncached plan after a
-6.39-second background warmup. Keep it opt-in until the same unload/warmup/plan sequence passes on
-Jetson with the projector browser running and the service memory limits enforced.
+The exact Jetson restart acceptance observed the 877 MB GPU-resident model 4.80 seconds after API
+readiness; a warm uncached plan took 3.18 seconds and an exact private cache hit took 0.426 ms. See
+`benchmarks/bookforge-edge-planner-residency-2026-08-30.json` for the bounded evidence and rejected
+2048-token context A/B.
 
 The live planner keeps up to 32 privacy-gated semantic plans in memory. Identical-passage rereads,
 visual-style auditions, and alternate-seed retries skip Gemma decode while still deriving a new
