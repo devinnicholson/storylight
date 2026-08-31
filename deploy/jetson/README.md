@@ -33,6 +33,8 @@ explicit device-administration task that must follow NVIDIA's documentation.
   unload/restore and thermal evidence.
 - `benchmark-tensorrt-edge-llm.py` and `run-tensorrt-edge-benchmark.sh`: local-only five-passage
   schema, privacy, fidelity, latency, memory, and power acceptance; never auto-promotes a model.
+- `run-tensorrt-edge-server.sh`: loopback-only launcher for NVIDIA's resident OpenAI-compatible
+  TensorRT Edge-LLM server; remains an evaluation component until promotion gates pass.
 - `run-power-mode-ab.sh`: explicit, reboot-aware 25W/MAXN_SUPER comparison with persistent evidence
   and a required restore verification.
 - `bookforge-admin` and `install-bookforge-admin.sh`: root-owned, fixed-command administration with
@@ -276,11 +278,30 @@ control evidence is in `benchmarks/bookforge-tensorrt-edge-llm-2026-08-26.json`;
 baseline, blocked export attempts, cost reconciliation, and promotion gate are in
 `benchmarks/bookforge-gemma4-tensorrt-edge-llm-2026-08-26.json`.
 
+A later resident-server experiment isolated the most important latency finding. Starting the
+TensorRT process for each passage took 8.105 seconds for a one-case control, while NVIDIA's
+resident server handled the 20-case contest suite at 846.5 ms mean and 807.9 ms median per case.
+The 1.5B candidate passed the automatic semantic screen on 13/20 cases; sending only the seven
+failures to resident Gemma recovered all seven, for 20/20 automatic coverage and a projected
+2.049-second mean. That two-model configuration was not promoted because it left only 739–774 MiB
+of unified memory available for the desktop and renderer. The complete comparison, including
+rejected 0.5B, split-request, and over-instruction experiments, is recorded in
+`benchmarks/bookforge-tensorrt-resident-cascade-2026-08-30.json`.
+
 Reproduce the already-pinned control only when validating a new JetPack image:
 
 ```bash
 deploy/jetson/install-tensorrt-edge-llm.sh
 deploy/jetson/build-tensorrt-edge-engine.sh
+# Start NVIDIA's server in one terminal. It is hard-bound to loopback.
+deploy/jetson/run-tensorrt-edge-server.sh \
+  "$HOME/.local/share/bookforge/tensorrt-edgellm-v0.10.0/models/qwen2.5-1.5b-instruct-awq-v010/engines/llm"
+# Point the acceptance harness at the already-resident process.
+deploy/jetson/benchmark-tensorrt-edge-llm.py \
+  --suite contest \
+  --prompt-profile slots \
+  --resident-base-url http://127.0.0.1:11435 \
+  --resident-model Qwen/Qwen2.5-1.5B-Instruct-AWQ
 BOOKFORGE_EDGELLM_PROMPT_PROFILE=production \
   deploy/jetson/run-tensorrt-edge-benchmark.sh
 ```

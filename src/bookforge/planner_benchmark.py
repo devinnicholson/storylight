@@ -515,6 +515,22 @@ def _contract_order_for_case(
     return tuple(reversed(contracts))
 
 
+def _select_cases(
+    suite: str,
+    case_ids: list[str] | None = None,
+) -> tuple[BenchmarkCase, ...]:
+    cases = CASES if suite == "five" else CONTEST_CASES
+    if not case_ids:
+        return cases
+    requested = set(case_ids)
+    selected = tuple(case for case in cases if case.case_id in requested)
+    unknown = requested - {case.case_id for case in selected}
+    if unknown:
+        rendered = ", ".join(sorted(unknown))
+        raise ValueError(f"unknown benchmark case IDs for {suite!r}: {rendered}")
+    return selected
+
+
 async def _run_case(
     planner: StructuredLiveScenePlanner,
     *,
@@ -552,7 +568,7 @@ async def _run_case(
 
 async def benchmark(args: argparse.Namespace) -> dict[str, object]:
     base_url = _require_loopback(args.base_url)
-    cases = CASES if args.suite == "five" else CONTEST_CASES
+    cases = _select_cases(args.suite, args.case_id)
     settings = Settings(
         _env_file=None,
         model_backend=args.backend,
@@ -685,6 +701,11 @@ def _parser() -> argparse.ArgumentParser:
     parser.add_argument("--model-revision", default="configured-local-model")
     parser.add_argument("--contract", choices=("standard", "compact", "both"), default="both")
     parser.add_argument("--suite", choices=("five", "contest"), default="five")
+    parser.add_argument(
+        "--case-id",
+        action="append",
+        help="Run only this named case; repeat to benchmark a validator-selected subset.",
+    )
     parser.add_argument("--context-tokens", type=int, default=4096)
     parser.add_argument("--max-output-tokens", type=int, default=180)
     parser.add_argument("--planner-timeout-seconds", type=float, default=12)

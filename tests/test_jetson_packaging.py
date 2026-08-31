@@ -15,6 +15,7 @@ EDGELLM_INSTALLER = ROOT / "deploy/jetson/install-tensorrt-edge-llm.sh"
 EDGELLM_ENGINE_BUILDER = ROOT / "deploy/jetson/build-tensorrt-edge-engine.sh"
 EDGELLM_BENCHMARK = ROOT / "deploy/jetson/benchmark-tensorrt-edge-llm.py"
 EDGELLM_BENCHMARK_RUNNER = ROOT / "deploy/jetson/run-tensorrt-edge-benchmark.sh"
+EDGELLM_SERVER = ROOT / "deploy/jetson/run-tensorrt-edge-server.sh"
 EDGELLM_EXPORTER = ROOT / "deploy/modal_tensorrt_edge_export.py"
 QWEN15_EDGELLM_INSTALLER = ROOT / "deploy/jetson/install-qwen15-tensorrt-checkpoint.py"
 GEMMA4_EDGELLM_EXPORTER = ROOT / "deploy/modal_gemma4_tensorrt_edge_export.py"
@@ -284,20 +285,39 @@ def test_tensorrt_edge_llm_candidate_is_pinned_local_and_fail_closed() -> None:
     engine_builder = EDGELLM_ENGINE_BUILDER.read_text()
     benchmark = EDGELLM_BENCHMARK.read_text()
     benchmark_runner = EDGELLM_BENCHMARK_RUNNER.read_text()
+    server = EDGELLM_SERVER.read_text()
     exporter = EDGELLM_EXPORTER.read_text()
 
     subprocess.run(["bash", "-n", str(EDGELLM_INSTALLER)], check=True)
     subprocess.run(["bash", "-n", str(EDGELLM_ENGINE_BUILDER)], check=True)
     subprocess.run(["bash", "-n", str(EDGELLM_BENCHMARK_RUNNER)], check=True)
+    subprocess.run(["bash", "-n", str(EDGELLM_SERVER)], check=True)
     assert 'readonly EDGELLM_VERSION="v0.10.0"' in installer
     assert 'readonly EDGELLM_REVISION="71dd1bae032e70771265917ec74d3ff4cad07a10"' in installer
     assert "JetPack 7.2.1 / L4T 39.2.1" in installer
     assert "-DEMBEDDED_TARGET=jetson-orin" in installer
     assert "-DCUDA_CTK_VERSION=13.2" in installer
     assert "-DENABLE_CUTE_DSL=ALL" in installer
-    assert "--target NvInfer_edgellm_plugin llm_build llm_inference llm_bench -j1" in installer
+    assert "-DBUILD_PYTHON_BINDINGS=ON" in installer
+    assert "pybind11==3.0.4" in installer
+    assert "fastapi==0.139.2" in installer
+    assert "uvicorn==0.51.0" in installer
+    assert "python-multipart==0.0.32" in installer
+    assert (
+        "--target NvInfer_edgellm_plugin llm_build llm_inference llm_bench "
+        "_edgellm_runtime -j1"
+    ) in installer
     assert 'test -s "$BUILD_DIR/libNvInfer_edgellm_plugin.so"' in installer
+    assert "'*_edgellm_runtime*.so'" in installer
     assert "Run this installer as the Bookforge user, not root" in installer
+
+    assert '--host 127.0.0.1' in server
+    assert 'readonly PORT="${BOOKFORGE_EDGELLM_SERVER_PORT:-11435}"' in server
+    assert 'readonly ENGINE_DIR="${1:-${BOOKFORGE_EDGELLM_ENGINE_DIR:-}}"' in server
+    assert 'export EDGELLM_PYBIND_DIR="$PYBIND_DIR"' in server
+    assert 'export EDGELLM_PLUGIN_PATH="$PLUGIN_PATH"' in server
+    assert "experimental.server" in server
+    assert "Run the TensorRT Edge-LLM server as the Bookforge user, not root" in server
 
     assert 'readonly EDGELLM_REVISION="71dd1bae032e70771265917ec74d3ff4cad07a10"' in engine_builder
     assert "BOOKFORGE_EDGELLM_MODEL_ROOT" in engine_builder
@@ -324,7 +344,10 @@ def test_tensorrt_edge_llm_candidate_is_pinned_local_and_fail_closed() -> None:
     assert 'readonly SUITE="${BOOKFORGE_EDGELLM_SUITE:-five}"' in benchmark_runner
     assert "BOOKFORGE_EDGELLM_CANDIDATE_MODEL" in benchmark_runner
     assert "BOOKFORGE_EDGELLM_CANDIDATE_REVISION" in benchmark_runner
-    assert 'readonly REPORT_PATH="$EVIDENCE_DIR/benchmark-$PROMPT_PROFILE-$SUITE.json"' in benchmark_runner
+    assert (
+        'readonly REPORT_PATH="$EVIDENCE_DIR/benchmark-$PROMPT_PROFILE-$SUITE.json"'
+        in benchmark_runner
+    )
     assert '"$OLLAMA_BIN" stop "$GEMMA_MODEL"' in benchmark_runner
     assert '\\"keep_alive\\":\\"-1m\\"' in benchmark_runner
     assert "trap restore_runtime EXIT INT TERM" in benchmark_runner

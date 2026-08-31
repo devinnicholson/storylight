@@ -47,7 +47,14 @@ git -C "$SOURCE_DIR" submodule update --init --recursive
 
 python3 -m venv "$VENV_DIR"
 "$VENV_DIR/bin/pip" install --disable-pip-version-check --no-input \
-  cmake==4.1.0 ninja==1.13.0
+  cmake==4.1.0 \
+  ninja==1.13.0 \
+  pybind11==3.0.4 \
+  fastapi==0.139.2 \
+  uvicorn==0.51.0 \
+  python-multipart==0.0.32
+
+readonly PYBIND11_CMAKE_DIR="$("$VENV_DIR/bin/python" -m pybind11 --cmakedir)"
 
 export PATH="/usr/local/cuda/bin:$VENV_DIR/bin:$PATH"
 export CUDACXX=/usr/local/cuda/bin/nvcc
@@ -58,16 +65,21 @@ cmake -S "$SOURCE_DIR" -B "$BUILD_DIR" -G Ninja \
   -DCMAKE_TOOLCHAIN_FILE="$SOURCE_DIR/cmake/aarch64_linux_toolchain.cmake" \
   -DEMBEDDED_TARGET=jetson-orin \
   -DCUDA_CTK_VERSION=13.2 \
-  -DENABLE_CUTE_DSL=ALL
+  -DENABLE_CUTE_DSL=ALL \
+  -DBUILD_PYTHON_BINDINGS=ON \
+  -Dpybind11_DIR="$PYBIND11_CMAKE_DIR" \
+  -DPython_EXECUTABLE="$VENV_DIR/bin/python"
 
 # A single build worker avoids memory pressure on the 8 GB Orin Nano while the
 # kiosk and local Gemma runtime remain available.
 cmake --build "$BUILD_DIR" \
-  --target NvInfer_edgellm_plugin llm_build llm_inference llm_bench -j1
+  --target NvInfer_edgellm_plugin llm_build llm_inference llm_bench _edgellm_runtime -j1
 
 for binary in llm_build llm_inference llm_bench; do
   test -x "$BUILD_DIR/examples/llm/$binary"
 done
 test -s "$BUILD_DIR/libNvInfer_edgellm_plugin.so"
+find "$BUILD_DIR/pybind" -maxdepth 1 -type f -name '*_edgellm_runtime*.so' -print -quit \
+  | grep -q .
 
 printf 'TensorRT Edge-LLM %s is ready at %s.\n' "$EDGELLM_VERSION" "$INSTALL_ROOT"

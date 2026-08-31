@@ -8,6 +8,7 @@ from bookforge.planner_benchmark import (
     _contract_order_for_case,
     _parser,
     _require_loopback,
+    _select_cases,
     _semantic_evidence,
     _semantic_summary,
     _summarize,
@@ -69,6 +70,15 @@ def test_contest_suite_has_twenty_unique_synthetic_cases() -> None:
     assert len(CONTEST_CASES) == 20
     assert len({case.case_id for case in CONTEST_CASES}) == 20
     assert all(case.expectations for case in CONTEST_CASES)
+
+
+def test_planner_benchmark_can_select_validator_failed_subset() -> None:
+    selected = _select_cases("contest", ["teacup_boat", "bottle_city"])
+
+    assert [case.case_id for case in selected] == ["teacup_boat", "bottle_city"]
+
+    with pytest.raises(ValueError, match="unknown_case"):
+        _select_cases("contest", ["unknown_case"])
 
 
 def test_semantic_alternative_matching_normalizes_punctuation_and_inflection() -> None:
