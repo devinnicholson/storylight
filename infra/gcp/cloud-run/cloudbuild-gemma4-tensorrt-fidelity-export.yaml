@@ -1,0 +1,20 @@
+steps:
+  - name: gcr.io/cloud-builders/docker
+    entrypoint: bash
+    args:
+      - -ceu
+      - |
+        printf '%s' "${_NVIDIA_PYTORCH_IMAGE}" | grep -Eq '^nvcr\.io/nvidia/pytorch:[^@]+@sha256:[0-9a-f]{64}$'
+        docker build \
+          --file deploy/gcp_gemma4_tensorrt_export/Dockerfile.fidelity \
+          --build-arg NVIDIA_PYTORCH_IMAGE="${_NVIDIA_PYTORCH_IMAGE}" \
+          --build-arg EDGELLM_REVISION=71dd1bae032e70771265917ec74d3ff4cad07a10 \
+          --tag "${_IMAGE}" \
+          .
+  - name: gcr.io/cloud-builders/docker
+    args: ["push", "${_IMAGE}"]
+images:
+  - "${_IMAGE}"
+options:
+  machineType: E2_HIGHCPU_8
+timeout: 1800s

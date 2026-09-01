@@ -1,0 +1,100 @@
+{
+  "displayName": "Bookforge JAX fidelity finite training",
+  "mosaicLayout": {
+    "columns": 12,
+    "tiles": [
+      {
+        "xPos": 0,
+        "yPos": 0,
+        "width": 6,
+        "height": 4,
+        "widget": {
+          "title": "TPU duty cycle",
+          "xyChart": {
+            "dataSets": [
+              {
+                "plotType": "LINE",
+                "timeSeriesQuery": {
+                  "timeSeriesFilter": {
+                    "filter": "resource.type=\"aiplatform_custom_job\" AND metric.type=\"aiplatform.googleapis.com/custom_job/accelerator/duty_cycle\"",
+                    "aggregation": {"alignmentPeriod": "60s", "perSeriesAligner": "ALIGN_MEAN"}
+                  }
+                }
+              }
+            ],
+            "yAxis": {"label": "percent", "scale": "LINEAR"}
+          }
+        }
+      },
+      {
+        "xPos": 6,
+        "yPos": 0,
+        "width": 6,
+        "height": 4,
+        "widget": {
+          "title": "Accelerator memory used",
+          "xyChart": {
+            "dataSets": [
+              {
+                "plotType": "LINE",
+                "timeSeriesQuery": {
+                  "timeSeriesFilter": {
+                    "filter": "resource.type=\"aiplatform_custom_job\" AND metric.type=\"aiplatform.googleapis.com/custom_job/accelerator/memory_used\"",
+                    "aggregation": {"alignmentPeriod": "60s", "perSeriesAligner": "ALIGN_MAX"}
+                  }
+                }
+              }
+            ],
+            "yAxis": {"label": "bytes", "scale": "LINEAR"}
+          }
+        }
+      },
+      {
+        "xPos": 0,
+        "yPos": 4,
+        "width": 6,
+        "height": 4,
+        "widget": {
+          "title": "Worker CPU utilization",
+          "xyChart": {
+            "dataSets": [
+              {
+                "plotType": "LINE",
+                "timeSeriesQuery": {
+                  "timeSeriesFilter": {
+                    "filter": "resource.type=\"aiplatform_custom_job\" AND metric.type=\"aiplatform.googleapis.com/custom_job/cpu/utilization\"",
+                    "aggregation": {"alignmentPeriod": "60s", "perSeriesAligner": "ALIGN_MEAN"}
+                  }
+                }
+              }
+            ],
+            "yAxis": {"label": "utilization", "scale": "LINEAR"}
+          }
+        }
+      },
+      {
+        "xPos": 6,
+        "yPos": 4,
+        "width": 6,
+        "height": 4,
+        "widget": {
+          "title": "Job log errors",
+          "xyChart": {
+            "dataSets": [
+              {
+                "plotType": "BAR",
+                "timeSeriesQuery": {
+                  "timeSeriesFilter": {
+                    "filter": "resource.type=\"aiplatform_custom_job\" AND metric.type=\"logging.googleapis.com/log_entry_count\" AND metric.label.\"severity\"=\"ERROR\"",
+                    "aggregation": {"alignmentPeriod": "60s", "perSeriesAligner": "ALIGN_SUM"}
+                  }
+                }
+              }
+            ],
+            "yAxis": {"label": "errors per minute", "scale": "LINEAR"}
+          }
+        }
+      }
+    ]
+  }
+}

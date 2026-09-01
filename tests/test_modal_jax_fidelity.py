@@ -1,0 +1,355 @@
+# ruff: noqa: E402
+from __future__ import annotations
+
+import hashlib
+import importlib.util
+import json
+import shutil
+import sys
+from pathlib import Path
+
+import pytest
+
+ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(ROOT))
+
+from training.jax_fidelity.integrity import sha256_file
+from training.jax_fidelity.manifests import complete_run, start_run
+from training.jax_fidelity.remote_release import package_training_release
+
+PLAN = ROOT / "experiments/jax-fidelity-lab/modal-plan-2026-09.json"
+
+
+def _load(name: str, path: Path):
+    spec = importlib.util.spec_from_file_location(name, path)
+    assert spec is not None and spec.loader is not None
+    module = importlib.util.module_from_spec(spec)
+    sys.modules[name] = module
+    spec.loader.exec_module(module)
+    return module
+
+
+modal_jax_fidelity = _load("modal_jax_fidelity", Path("deploy/modal_jax_fidelity.py"))
+fetch_modal_jax_release = _load(
+    "fetch_modal_jax_release", Path("scripts/fetch_modal_jax_release.py")
+)
+modal_reconciliation = _load("modal_reconciliation", Path("infra/gcp/jax/modal_reconciliation.py"))
+
+
+def _request(**updates: object) -> dict[str, object]:
+    run_id = "bookforge-modal-smoke-20260901"
+    config_sha = "a" * 64
+    dataset_sha = "b" * 64
+    rejection = {
+        "schema_version": "1.0",
+        "producer": "bookforge-gcp-jax-submitter",
+        "run_id": run_id,
+        "spec_sha256": "9" * 64,
+        "status": "rejected-pre-billable",
+        "submission_intent_created": False,
+        "custom_job_created": False,
+        "reason": "quota unavailable",
+    }
+    rejection["input_bindings"] = {
+        "config_sha256": config_sha,
+        "dataset_manifest_sha256": dataset_sha,
+        "prepared_train_sha256": "c" * 64,
+        "input_manifest_sha256": "d" * 64,
+        "base_checkpoint_manifest_sha256": "e" * 64,
+        "tokenizer_manifest_sha256": "f" * 64,
+    }
+    rejection["input_bindings_sha256"] = hashlib.sha256(
+        json.dumps(rejection["input_bindings"], sort_keys=True, separators=(",", ":")).encode()
+    ).hexdigest()
+    rejection_sha = hashlib.sha256(
+        (json.dumps(rejection, indent=2, sort_keys=True) + "\n").encode()
+    ).hexdigest()
+    request: dict[str, object] = {
+        "run_id": run_id,
+        "config_sha256": config_sha,
+        "dataset_manifest_sha256": dataset_sha,
+        "prepared_train_sha256": "c" * 64,
+        "input_manifest_sha256": "d" * 64,
+        "base_checkpoint_manifest_sha256": "e" * 64,
+        "tokenizer_manifest_sha256": "f" * 64,
+        "smoke": True,
+        "gcp_rejection": rejection,
+        "gcp_rejection_sha256": rejection_sha,
+        "approval_token": (
+            f"APPROVE_MODAL_JAX_RUN:{run_id}:{config_sha}:{dataset_sha}:{'c' * 64}:"
+            f"{'d' * 64}:{'e' * 64}:{'f' * 64}:{rejection_sha}:smoke"
+        ),
+    }
+    request.update(updates)
+    return request
+
+
+def test_modal_fallback_is_finite_pinned_and_has_no_endpoint() -> None:
+    plan = json.loads(PLAN.read_text())
+    source = Path("deploy/modal_jax_fidelity.py").read_text()
+
+    assert plan["gpu"] == "L40S"
+    assert plan["container_count"] == 1
+    assert plan["function_calls"] == 1
+    assert plan["timeout_seconds"] == 2700
+    assert plan["automatic_retries"] == 0
+    assert plan["minimum_containers"] == 0
+    assert plan["web_endpoint"] is False
+    assert plan["allowed_gcp_terminal_state"] == "rejected-pre-billable"
+    assert plan["gross_ceiling_policy"] == "declared-estimate-not-provider-enforced"
+    assert "@sha256:" in modal_jax_fidelity._pinned_image_uri()
+    assert "gpu=GPU" in source
+    assert "retries=0" in source
+    assert "max_containers=MAX_CONTAINERS" in source
+    assert "@modal.web_endpoint" not in source
+
+
+def test_modal_request_requires_hashes_exact_approval_and_prebillable_rejection() -> None:
+    validated = modal_jax_fidelity._validate_request(_request())
+    assert validated[-1] is True
+
+    with pytest.raises(ValueError, match="pre-billable"):
+        modal_jax_fidelity._validate_request(_request(gcp_rejection={}))
+    with pytest.raises(ValueError, match="approval"):
+        modal_jax_fidelity._validate_request(_request(approval_token="approve"))
+    with pytest.raises(ValueError, match="SHA-256"):
+        modal_jax_fidelity._validate_request(_request(config_sha256="latest"))
+    request = _request()
+    rejection = dict(request["gcp_rejection"])
+    rejection["input_bindings"] = dict(rejection["input_bindings"])
+    rejection["input_bindings"]["prepared_train_sha256"] = "0" * 64
+    request["gcp_rejection"] = rejection
+    request["gcp_rejection_sha256"] = hashlib.sha256(
+        (json.dumps(rejection, indent=2, sort_keys=True) + "\n").encode()
+    ).hexdigest()
+    with pytest.raises(ValueError, match="staged inputs"):
+        modal_jax_fidelity._validate_request(request)
+
+
+def test_modal_budget_gate_is_present_and_maxtext_checkout_is_exact() -> None:
+    source = Path("deploy/modal_jax_fidelity.py").read_text()
+    assert 'BUDGET_MONTH = "2026-09"' in source
+    assert "workspace_total + float(ceiling) > WORKSPACE_HARD_STOP_USD" in source
+    assert "git clone https://github.com/AI-Hypercomputer/maxtext.git /opt/MaxText" in source
+    assert "maxtext_revision" in source
+    assert "git -C /opt/MaxText rev-parse HEAD" in source
+    assert "--write-lock /opt/bookforge/runtime.lock.json" in source
+    assert "--lock /opt/bookforge/runtime.lock.json" in source
+
+
+def test_modal_release_fetch_verifies_every_file_before_copy(monkeypatch, tmp_path: Path) -> None:
+    run_id = "bookforge-modal-smoke-20260901"
+    output = tmp_path / "output"
+    output.mkdir()
+    (output / "model.bin").write_bytes(b"checkpoint")
+    runtime_lock = tmp_path / "runtime.lock.json"
+    runtime_lock.write_text('{"schema_version":"1.0"}\n')
+    runs = tmp_path / "runs"
+    run_manifest = start_run(
+        runs,
+        run_id=run_id,
+        stage="lora-smoke",
+        config_sha256="a" * 64,
+        dataset_manifest_sha256="b" * 64,
+        command=["maxtext"],
+    )
+    complete_run(
+        runs,
+        run_id=run_id,
+        status="succeeded",
+        artifacts=[output / "model.bin"],
+        evidence={
+            "inputs": {"prepared_train": {"sha256": "c" * 64}},
+            "runtime_lock": {
+                "path": str(runtime_lock),
+                "sha256": sha256_file(runtime_lock),
+            },
+        },
+    )
+    assert run_manifest.is_file()
+    package = tmp_path / "package"
+    package_training_release(
+        output_directory=output,
+        run_directory=runs,
+        training_run_id=run_id,
+        runtime_lock=runtime_lock,
+        destination=package,
+    )
+    rows = [
+        {
+            "path": path.relative_to(package).as_posix(),
+            "bytes": path.stat().st_size,
+            "sha256": sha256_file(path),
+        }
+        for path in sorted(item for item in package.rglob("*") if item.is_file())
+    ]
+    outer = {"run_id": run_id, "status": "succeeded", "files": rows}
+
+    def fake_get(remote_path: str, destination: Path) -> None:
+        if remote_path.endswith("completion.json"):
+            destination.write_text(json.dumps(outer))
+            return
+        shutil.copytree(package, destination)
+
+    monkeypatch.setattr(fetch_modal_jax_release, "_modal_get", fake_get)
+    destination = tmp_path / "release"
+    manifest = fetch_modal_jax_release.fetch_release(run_id, destination)
+
+    assert manifest["status"] == "succeeded"
+    assert (destination / "adapter/model.bin").read_bytes() == b"checkpoint"
+    assert (destination / "completion.json").is_file()
+    assert (destination / "training/run.json").is_file()
+    assert (destination / "training/completion.json").is_file()
+
+
+def test_modal_release_fetch_rejects_checksum_mismatch(monkeypatch, tmp_path: Path) -> None:
+    run_id = "bookforge-modal-smoke-20260901"
+
+    def fake_get(remote_path: str, destination: Path) -> None:
+        if remote_path.endswith("completion.json"):
+            destination.write_text(
+                json.dumps(
+                    {
+                        "run_id": run_id,
+                        "status": "succeeded",
+                        "files": [{"path": "model.bin", "bytes": 3, "sha256": "0" * 64}],
+                    }
+                )
+            )
+            return
+        destination.mkdir(parents=True)
+        (destination / "model.bin").write_bytes(b"bad")
+
+    monkeypatch.setattr(fetch_modal_jax_release, "_modal_get", fake_get)
+    with pytest.raises(ValueError, match="failed verification"):
+        fetch_modal_jax_release.fetch_release(run_id, tmp_path / "release")
+
+
+def test_modal_export_fetch_builds_checksummed_jetson_bridge(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    candidate_id = "fidelity-" + "a" * 20
+    release_sha = "b" * 64
+    files = {
+        "llm/config.json": b"{}\n",
+        "llm/model.onnx": b"onnx",
+        "llm/rank0.safetensors": b"int4",
+    }
+    document = {
+        "schema_version": "1.0",
+        "status": "succeeded",
+        "candidate_id": candidate_id,
+        "base_model": {
+            "id": "google/gemma-4-E2B-it",
+            "revision": "3e22461f65e89153144f8adb70e3b8c2cc9845a7",
+        },
+        "source_release_manifest_sha256": release_sha,
+        "source_files_content_sha256": "c" * 64,
+        "config_sha256": "d" * 64,
+        "dataset_manifest_sha256": "e" * 64,
+        "training_run_id": "lora-train-fidelity-001",
+        "private_output_prefix": (
+            "modal-private://bookforge-tensorrt-edge-llm-fidelity/"
+            f"{candidate_id}/{release_sha[:20]}"
+        ),
+        "quantization": "int4_awq",
+        "calibration_dataset": "wikitext",
+        "calibration_samples": 128,
+        "components": ["thinker"],
+        "skip_visual": True,
+        "skip_audio": True,
+        "externalized_weights": ["int4_ffn"],
+        "tensorrt_edge_llm_version": "v0.10.0",
+        "tensorrt_edge_llm_revision": "71dd1bae032e70771265917ec74d3ff4cad07a10",
+        "engine_built_in_cloud": False,
+        "files": [
+            {
+                "path": relative,
+                "bytes": len(content),
+                "sha256": hashlib.sha256(content).hexdigest(),
+            }
+            for relative, content in sorted(files.items())
+        ],
+    }
+    document["file_count"] = len(document["files"])
+    document["total_bytes"] = sum(row["bytes"] for row in document["files"])
+    manifest_bytes = (json.dumps(document, indent=2, sort_keys=True) + "\n").encode()
+    manifest_sha = hashlib.sha256(manifest_bytes).hexdigest()
+
+    def fake_get(remote_path: str, destination: Path) -> None:
+        if remote_path.endswith("export.manifest.json"):
+            destination.write_bytes(manifest_bytes)
+            return
+        marker = "/onnx/"
+        destination.write_bytes(files[remote_path.split(marker, 1)[1]])
+
+    monkeypatch.setattr(fetch_modal_jax_release, "_modal_export_get", fake_get)
+    destination = tmp_path / "export"
+    result = fetch_modal_jax_release.fetch_export(
+        candidate_id=candidate_id,
+        source_release_manifest_sha256=release_sha,
+        expected_export_manifest_sha256=manifest_sha,
+        destination=destination,
+    )
+
+    assert result["jetson_builder_compatible"] is True
+    assert (destination / "export.manifest.json").read_bytes() == manifest_bytes
+    assert (destination / "onnx/llm/model.onnx").read_bytes() == b"onnx"
+
+
+def test_modal_reconciliation_retains_remote_state_and_rejects_duplicate_attempts(
+    tmp_path: Path,
+) -> None:
+    ledger = tmp_path / "ledger.json"
+    entry = modal_reconciliation.append_reconciliation(
+        ledger,
+        attempt_id="jax:fixture",
+        stage="jax-training",
+        workspace_before_usd=1.0,
+        workspace_after_usd=1.25,
+        declared_ceiling_usd=3.5,
+        status="succeeded",
+        result={"status": "succeeded"},
+    )
+
+    assert entry["reported_delta_usd"] == pytest.approx(0.25)
+    assert entry["declared_ceiling_provider_enforced"] is False
+    assert entry["remote_state_retained"] is True
+    assert entry["automatic_remote_deletion"] is False
+    with pytest.raises(ValueError, match="already reconciled"):
+        modal_reconciliation.append_reconciliation(
+            ledger,
+            attempt_id="jax:fixture",
+            stage="jax-training",
+            workspace_before_usd=1.0,
+            workspace_after_usd=1.25,
+            declared_ceiling_usd=3.5,
+            status="succeeded",
+            result={"status": "succeeded"},
+        )
+
+
+def test_modal_export_bridge_invokes_builder_then_installer_verification(tmp_path: Path) -> None:
+    export = tmp_path / "export"
+    export.mkdir()
+    candidate = tmp_path / "candidate"
+    commands: list[list[str]] = []
+
+    def runner(command, **_kwargs):
+        commands.append(command)
+        if command[0].endswith("build-trained-planner-candidate.sh"):
+            candidate.mkdir()
+            (candidate / "candidate.manifest.json").write_text('{"result":"fixture"}\n')
+        return None
+
+    result = fetch_modal_jax_release.build_jetson_candidate(
+        export_bundle=export,
+        export_manifest_sha256="a" * 64,
+        candidate_output=candidate,
+        runner=runner,
+    )
+
+    assert commands[0][0].endswith("build-trained-planner-candidate.sh")
+    assert commands[1][0].endswith("install-trained-planner-candidate.sh")
+    assert "--verify-only" in commands[1]
+    assert result["status"] == "built-and-installer-verified"

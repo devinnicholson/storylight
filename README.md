@@ -625,6 +625,8 @@ passes the real I/O and latency run on JetPack 7.2.1.
 
 - [`docs/architecture.md`](docs/architecture.md): data boundary and cloud/edge responsibilities
 - [`docs/gcp-handoff.md`](docs/gcp-handoff.md): portable offline bundle and GCP promotion boundary
+- [`docs/jax-story-fidelity-orchestration-plan.md`](docs/jax-story-fidelity-orchestration-plan.md): guarded JAX/MaxText post-training, TensorRT export, hidden evaluation, and rollback sequence
+- [`docs/story-fidelity-model-card.md`](docs/story-fidelity-model-card.md): intended use, acceptance thresholds, privacy contract, and candidate evidence template
 - [`docs/full-stack-optimization-program.md`](docs/full-stack-optimization-program.md): measured Google Cloud and NVIDIA optimization sequence, gates, cost ceilings, and teardown rules
 - [`infra/gcp/README.md`](infra/gcp/README.md): guarded GKE and Gemma serving workflow
 - [`benchmarks/macbook-m4-smoke-2026-08-20.json`](benchmarks/macbook-m4-smoke-2026-08-20.json): first real-model latency measurements

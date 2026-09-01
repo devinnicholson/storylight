@@ -1,0 +1,41 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  repository:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    env:
+      UV_CACHE_DIR: ${{ github.workspace }}/.uv-cache
+      BOOKFORGE_ALLOW_PAID_WORK: "false"
+      BOOKFORGE_CLOUD_EXECUTION: "disabled"
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: astral-sh/setup-uv@v6
+        with:
+          version: "0.11.6"
+          enable-cache: false
+
+      - name: Install locked development environment
+        run: uv sync --locked --dev --extra modal-authoring
+
+      - name: Lint tracked Python files
+        run: git ls-files -z '*.py' | xargs -0 uv run ruff check
+
+      - name: Validate tracked shell scripts
+        run: git ls-files -z '*.sh' | xargs -0 -n 50 bash -n
+
+      - name: Run repository tests and fidelity validation
+        run: uv run pytest -q

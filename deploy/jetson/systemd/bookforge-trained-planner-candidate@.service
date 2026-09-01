@@ -1,0 +1,43 @@
+[Unit]
+Description=Bookforge trained TensorRT planner candidate %i
+After=network-online.target
+Wants=network-online.target
+Conflicts=bookforge-tensorrt-planner.service bookforge-gemma.service
+Before=bookforge-kiosk.service
+StartLimitIntervalSec=60
+StartLimitBurst=3
+
+[Service]
+Type=simple
+Environment=EDGELLM_GEMMA4_PLE_STORAGE_BACKED=1
+# Shadow evaluation is always isolated on 11436. A root-owned, non-secret
+# EnvironmentFile changes the accepted candidate to 11435 only during promotion.
+Environment=BOOKFORGE_EDGELLM_SERVER_PORT=11436
+EnvironmentFile=-/etc/bookforge/trained-planner/%i.env
+ExecStart=/opt/bookforge/deploy/jetson/run-tensorrt-edge-server.sh /var/lib/bookforge/trained-planner-candidates/%i/engines/llm
+ExecStartPost=/opt/bookforge/deploy/jetson/wait-tensorrt-planner-ready.sh
+# Never serve accepted bytes while the API advertises a trained revision. Shadow,
+# promotion, and rollback own exact restoration; an exhausted restart fails closed.
+Restart=on-failure
+RestartSec=2
+TimeoutStartSec=90
+TimeoutStopSec=30
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=read-only
+ReadWritePaths=%h/.local/share/bookforge/tensorrt-edgellm-v0.10.0 %h/.nv
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+RestrictNamespaces=true
+RestrictSUIDSGID=true
+LockPersonality=true
+SystemCallArchitectures=native
+MemoryHigh=5G
+MemoryMax=6G
+MemorySwapMax=0
+TasksMax=128
+OOMScoreAdjust=100
+UMask=0077
+
+[Install]
+WantedBy=default.target

@@ -1,0 +1,8 @@
+title: Bookforge JAX Vertex worker
+description: Read staged inputs and one HF secret; write immutable release objects.
+stage: GA
+includedPermissions:
+  - storage.objects.create
+  - storage.objects.get
+  - storage.objects.list
+  - secretmanager.versions.access

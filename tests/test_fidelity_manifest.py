@@ -1,0 +1,66 @@
+import copy
+import json
+from pathlib import Path
+
+import pytest
+from pydantic import ValidationError
+
+from bookforge.fidelity_dataset import DatasetSplit, load_jsonl
+from bookforge.fidelity_manifest import (
+    FidelityDatasetManifest,
+    build_split_manifest,
+    record_schema_sha256,
+    sha256_path,
+    validate_manifest,
+)
+
+DATASET_ROOT = Path("datasets/story-fidelity-v1")
+
+
+def test_committed_manifest_validates_public_content_and_schema() -> None:
+    manifest = validate_manifest(DATASET_ROOT / "manifest.json")
+
+    assert manifest.total_records == 5120
+    assert manifest.record_schema_sha256 == record_schema_sha256()
+    assert manifest.splits[DatasetSplit.TRAIN].records == 4096
+    assert manifest.splits[DatasetSplit.DEVELOPMENT].records == 512
+    assert manifest.splits[DatasetSplit.HIDDEN].records == 512
+    assert manifest.splits[DatasetSplit.HIDDEN].path is None
+    assert manifest.splits[DatasetSplit.HIDDEN].public is False
+
+
+def test_split_manifest_recomputes_committed_development_metadata() -> None:
+    manifest = FidelityDatasetManifest.model_validate_json(
+        (DATASET_ROOT / "manifest.json").read_text()
+    )
+    path = DATASET_ROOT / "development.jsonl"
+    records = load_jsonl(path)
+
+    recomputed = build_split_manifest(
+        records,
+        content_sha256=sha256_path(path),
+        path="development.jsonl",
+    )
+
+    assert recomputed == manifest.splits[DatasetSplit.DEVELOPMENT]
+
+
+def test_manifest_rejects_published_hidden_split_and_wrong_counts() -> None:
+    payload = json.loads((DATASET_ROOT / "manifest.json").read_text())
+    published = copy.deepcopy(payload)
+    published["splits"]["hidden"]["path"] = "hidden.jsonl"
+    published["splits"]["hidden"]["public"] = True
+    with pytest.raises(ValidationError, match="hidden records may not be published"):
+        FidelityDatasetManifest.model_validate(published)
+
+    wrong_count = copy.deepcopy(payload)
+    wrong_count["splits"]["train"]["records"] = 4095
+    with pytest.raises(ValidationError, match="total_records|incorrect train count"):
+        FidelityDatasetManifest.model_validate(wrong_count)
+
+
+def test_manifest_rejects_unsafe_public_path() -> None:
+    payload = json.loads((DATASET_ROOT / "manifest.json").read_text())
+    payload["splits"]["train"]["path"] = "../train.jsonl"
+    with pytest.raises(ValidationError, match="safe relative path"):
+        FidelityDatasetManifest.model_validate(payload)
