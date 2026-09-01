@@ -30,6 +30,7 @@ from training.jax_fidelity.integrity import (
     sha256_file,
     verify_conversion_manifest,
 )
+from training.jax_fidelity.manifests import stable_run_id
 from training.jax_fidelity.release import (
     ReleaseError,
     produce_release,
@@ -78,6 +79,43 @@ def _evidence(config, checkpoint: Path) -> dict:
 def _write_json(path: Path, document: dict) -> str:
     path.write_text(json.dumps(document, indent=2, sort_keys=True) + "\n")
     return sha256_file(path)
+
+
+def _passing_development_evaluation(
+    *, candidate_id: str, dataset_manifest_sha256: str, training_run_id: str
+) -> dict[str, object]:
+    return {
+        "schema_version": "1.0",
+        "candidate_id": candidate_id,
+        "stage": "development",
+        "dataset_manifest_sha256": dataset_manifest_sha256,
+        "training_run_id": training_run_id,
+        "eligibility_decision": {"passed": True, "hidden_evaluated": False},
+        "checks": {"schema_valid": True, "development_improvement": True},
+        "reasons": [],
+        "baseline_summary_sha256": "a" * 64,
+        "candidate_summary_sha256": "b" * 64,
+        "summary": {
+            "surface": "raw",
+            "split": "development",
+            "records": 512,
+            "record_ids_sha256": "c" * 64,
+            "category_record_counts": {"action_binding": 512},
+            "schema_valid_rate": 1.0,
+            "privacy_pass_rate": 1.0,
+            "semantic_atom_recall": 0.99,
+            "exact_example_pass_rate": 0.97,
+            "category_pass_rates": {"action_binding": 0.99},
+            "counterfactual_pairs": 0,
+            "counterfactual_sensitivity": 1.0,
+            "unsupported_concept_rate": 0.0,
+            "pii_leaks": 0,
+            "privacy_term_leaks": 0,
+            "source_echoes": 0,
+            "injection_leaks": 0,
+            "forbidden_hits": 0,
+        },
+    }
 
 
 def _checkpoint(path: Path, files: dict[str, bytes]) -> tuple[Path, str]:
@@ -298,13 +336,11 @@ def test_release_producer_emits_exact_checksum_bound_consumer_schema(tmp_path: P
     candidate_id = expected_candidate_id(candidate_document)
     evaluation_sha = _write_json(
         evaluation,
-        {
-            "schema_version": "1.0",
-            "candidate_id": candidate_id,
-            "stage": "development",
-            "eligibility_decision": {"passed": True, "hidden_evaluated": False},
-            "summary": {"records": 512, "exact_match": 0.99},
-        },
+        _passing_development_evaluation(
+            candidate_id=candidate_id,
+            dataset_manifest_sha256=dataset_sha,
+            training_run_id=training_run_id,
+        ),
     )
     release_directory = tmp_path / "release"
 
@@ -367,7 +403,11 @@ def test_conversion_execution_is_write_once_and_has_terminal_evidence(
     )
     output = tmp_path / "orbax"
     runs = tmp_path / "runs"
-    run_id = f"hf-to-maxtext-{config.sha256[:12]}-{input_manifest_sha[:12]}"
+    run_id = stable_run_id(
+        stage="hf-to-maxtext",
+        config_sha256=config.sha256,
+        dataset_manifest_sha256=input_manifest_sha,
+    )
     monkeypatch.setenv(
         "BOOKFORGE_JAX_EXECUTION_APPROVAL",
         f"HF-TO-MAXTEXT:{run_id}:{config.sha256}:{input_manifest_sha}",
@@ -478,4 +518,24 @@ def test_release_rejects_failed_or_premature_hidden_evaluation(decision: dict) -
                 "summary": {"records": 512},
             },
             candidate_id="fidelity-00000000000000000000",
+            dataset_manifest_sha256="e" * 64,
+            training_run_id="lora-train-test",
+        )
+
+
+def test_release_rejects_hand_authored_generic_development_success() -> None:
+    with pytest.raises(ReleaseError, match="complete passing development-only"):
+        verify_development_evaluation(
+            {
+                "schema_version": "1.0",
+                "candidate_id": "fidelity-00000000000000000000",
+                "stage": "development",
+                "dataset_manifest_sha256": "e" * 64,
+                "training_run_id": "lora-train-test",
+                "eligibility_decision": {"passed": True, "hidden_evaluated": False},
+                "summary": {"records": 512},
+            },
+            candidate_id="fidelity-00000000000000000000",
+            dataset_manifest_sha256="e" * 64,
+            training_run_id="lora-train-test",
         )

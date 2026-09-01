@@ -13,6 +13,7 @@ readonly ACTIVE_STATE="$STATE_DIR/active.env"
 readonly CANDIDATE_ROOT="/var/lib/bookforge/trained-planner-candidates"
 readonly SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd -P)"
 readonly INSTALLER="${BOOKFORGE_CANDIDATE_INSTALLER:-$SCRIPT_DIR/install-trained-planner-candidate.sh}"
+readonly TERMINAL_RECORDER="$SCRIPT_DIR/record-trained-planner-terminal-evidence.py"
 readonly ACCEPTED_ENGINE_SHA256="95b69991b68c57a2d2d4bfa4116feb9ec57295588551d109353a42a9c16c4fdf"
 readonly CACHE_CONTRACT_REVISION="semantic-v18-tensorrt-slot-privacy"
 target_user="${BOOKFORGE_SERVICE_USER:-${SUDO_USER:-}}"
@@ -21,6 +22,7 @@ manifest_sha256=""
 gate_evidence=""
 gate_evidence_sha256=""
 approval_token=""
+terminal_evidence_dir=""
 dry_run=0
 
 usage() {
@@ -34,6 +36,7 @@ Required:
   --gate-evidence PATH         Passed orchestrator gate artifact.
   --gate-evidence-sha256 SHA256
   --approval-token TOKEN       Exact token printed by --dry-run.
+  --terminal-evidence-directory PATH  New root-owned terminal artifact directory.
 
 Options:
   --dry-run                    Verify and print the one-purpose token only.
@@ -73,6 +76,14 @@ while (($#)); do
       approval_token="$2"
       shift 2
       ;;
+    --terminal-evidence-directory)
+      [[ $# -ge 2 ]] || {
+        printf '%s\n' '--terminal-evidence-directory requires a value' >&2
+        exit 64
+      }
+      terminal_evidence_dir="$2"
+      shift 2
+      ;;
     --dry-run) dry_run=1; shift ;;
     -h|--help) usage; exit 0 ;;
     *) printf 'Unknown option: %s\n' "$1" >&2; usage >&2; exit 64 ;;
@@ -84,9 +95,14 @@ if [[ ! "$target_user" =~ ^[a-z_][a-z0-9_-]{0,31}$ ]] \
   printf 'Select a valid Bookforge service user with --user.\n' >&2
   exit 65
 fi
-if [[ ! "$candidate_id" =~ ^[a-z0-9][a-z0-9-]{2,63}$ ]] \
+if [[ ! "$candidate_id" =~ ^[a-z0-9][a-z0-9-]{2,95}$ ]] \
   || [[ ! "$manifest_sha256" =~ ^[a-f0-9]{64}$ ]] \
-  || [[ ! "$gate_evidence_sha256" =~ ^[a-f0-9]{64}$ ]]; then
+  || [[ ! "$gate_evidence_sha256" =~ ^[a-f0-9]{64}$ ]] \
+  || [[ "$terminal_evidence_dir" != /var/lib/bookforge/trained-planner/evidence/* ]] \
+  || [[ "$(realpath -m -- "$terminal_evidence_dir")" != "$terminal_evidence_dir" ]] \
+  || [[ "$(dirname -- "$terminal_evidence_dir")" != /var/lib/bookforge/trained-planner/evidence ]] \
+  || [[ -e "$terminal_evidence_dir" || -L "$terminal_evidence_dir" ]] \
+  || [[ ! -x "$TERMINAL_RECORDER" ]]; then
   usage >&2
   exit 64
 fi
@@ -264,11 +280,12 @@ if evidence["candidate_manifest"] != candidate_manifest_sha256:
 if evidence["dataset_manifest"] != document["dataset_manifest_sha256"]:
     raise SystemExit("Gate dataset evidence is not the candidate dataset.")
 PY
-readonly EXPECTED_APPROVAL_TOKEN="PROMOTE_BOOKFORGE_TRAINED_PLANNER:${candidate_id}:${manifest_sha256}:${gate_evidence_sha256}"
+readonly EXPECTED_APPROVAL_TOKEN="PROMOTE_BOOKFORGE_TRAINED_PLANNER:${target_user}:${candidate_id}:${manifest_sha256}:${gate_evidence_sha256}:${terminal_evidence_dir}"
 
 if ((dry_run == 1)); then
   printf '%s\n' "$verification"
   printf 'Required approval token: %s\n' "$EXPECTED_APPROVAL_TOKEN"
+  printf 'terminal_evidence_directory=%s\n' "$terminal_evidence_dir"
   printf 'Would atomically back up %s, route the trained model on 11435, and retain exact rollback.\n' \
     "$CONFIG_FILE"
   printf 'Dry run complete; no files or services changed.\n'
@@ -509,6 +526,19 @@ fi
 user_systemctl disable "$ACCEPTED_UNIT" >/dev/null
 user_systemctl enable "$UNIT" >/dev/null
 write_state ACTIVE
+"$TERMINAL_RECORDER" \
+  --outcome promoted \
+  --user "$target_user" \
+  --gate-artifact "$gate_evidence" \
+  --gate-artifact-sha256 "$gate_evidence_sha256" \
+  --candidate-manifest "$CANDIDATE_DIR/candidate.manifest.json" \
+  --candidate-manifest-sha256 "$manifest_sha256" \
+  --active-engine "$CANDIDATE_DIR/engines/llm/llm.engine" \
+  --active-engine-sha256 "$engine_sha256" \
+  --baseline-engine-sha256 "$ACCEPTED_ENGINE_SHA256" \
+  --backup-config "$BACKUP_FILE" \
+  --one-purpose-approval-token "$EXPECTED_APPROVAL_TOKEN" \
+  --output-directory "$terminal_evidence_dir"
 promotion_complete=1
 trap - EXIT INT TERM
 printf 'Trained planner %s is active with exact rollback at %s.\n' \

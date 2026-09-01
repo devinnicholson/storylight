@@ -49,6 +49,9 @@ _STAGE_EVIDENCE = {
         "adapter_manifest",
         "package_manifest",
         "runtime_lock",
+        "base_snapshot_completion",
+        "base_checkpoint_manifest",
+        "tokenizer_manifest",
     },
     "candidate-eval": {
         "development_summary",

@@ -14,6 +14,7 @@ readonly PYTHON="python3"
 bundle=""
 expected_manifest_sha256=""
 target_user="${BOOKFORGE_SERVICE_USER:-${SUDO_USER:-}}"
+approval_token=""
 dry_run=0
 verify_only=0
 installed_layout=0
@@ -28,6 +29,7 @@ Required:
 
 Options:
   --user USER          Bookforge service user (required for installation).
+  --approval-token TOKEN  Exact token printed by --dry-run.
   --verify-only        Verify the bundle without writing.
   --installed-layout   Permit the installer-created .manifest.sha256 marker.
   --dry-run            Verify and print the destination without writing.
@@ -58,6 +60,11 @@ while (($#)); do
       target_user="$2"
       shift 2
       ;;
+    --approval-token)
+      [[ $# -ge 2 ]] || { printf '%s\n' '--approval-token requires a value' >&2; exit 64; }
+      approval_token="$2"
+      shift 2
+      ;;
     --verify-only) verify_only=1; shift ;;
     --installed-layout) installed_layout=1; shift ;;
     --dry-run) dry_run=1; shift ;;
@@ -73,6 +80,11 @@ fi
 if ! command -v "$PYTHON" >/dev/null 2>&1; then
   printf 'Python is required to validate the candidate manifest.\n' >&2
   exit 69
+fi
+readonly EXPECTED_APPROVAL_TOKEN="INSTALL_BOOKFORGE_TRAINED_PLANNER_CANDIDATE:${target_user}:${expected_manifest_sha256}"
+if ((verify_only == 0 && dry_run == 0)) && [[ "$approval_token" != "$EXPECTED_APPROVAL_TOKEN" ]]; then
+  printf 'Candidate installation requires the exact one-purpose token printed by --dry-run.\n' >&2
+  exit 77
 fi
 if ((verify_only == 0 && dry_run == 0)); then
   if [[ ${EUID:-$(id -u)} -ne 0 ]]; then
@@ -296,7 +308,7 @@ for key, expected in required.items():
         raise ValueError(f"candidate manifest {key!r} does not match the pinned value")
 
 candidate_id = manifest.get("candidate_id")
-if not isinstance(candidate_id, str) or not re.fullmatch(r"[a-z0-9][a-z0-9-]{2,63}", candidate_id):
+if not isinstance(candidate_id, str) or not re.fullmatch(r"[a-z0-9][a-z0-9-]{2,95}", candidate_id):
     raise ValueError("candidate manifest contains an invalid candidate_id")
 model_revision = manifest.get("model_revision")
 if not isinstance(model_revision, str) or not re.fullmatch(r"sha256:[a-f0-9]{64}", model_revision):
@@ -419,6 +431,9 @@ print(f"Installed immutable candidate: {destination}")
 PY
 
 if ((verify_only == 1 || dry_run == 1)); then
+  if ((dry_run == 1)); then
+    printf 'Required approval token: %s\n' "$EXPECTED_APPROVAL_TOKEN"
+  fi
   exit 0
 fi
 

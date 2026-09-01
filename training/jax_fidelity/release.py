@@ -13,6 +13,10 @@ from pathlib import Path
 from typing import Any
 
 from .configuration import load_config
+from .development_eligibility import (
+    DevelopmentEligibilityError,
+    validate_development_eligibility,
+)
 from .integrity import (
     artifact_manifest,
     sha256_file,
@@ -199,16 +203,22 @@ def verify_training_lineage(
         raise ReleaseError("training completion contains artifacts outside the adapter manifest")
 
 
-def verify_development_evaluation(evaluation: Mapping[str, Any], *, candidate_id: str) -> None:
-    if (
-        evaluation.get("schema_version") != "1.0"
-        or evaluation.get("candidate_id") != candidate_id
-        or evaluation.get("stage") != "development"
-        or evaluation.get("eligibility_decision") != {"passed": True, "hidden_evaluated": False}
-        or not isinstance(evaluation.get("summary"), dict)
-        or not evaluation["summary"]
-    ):
-        raise ReleaseError("evaluation is not a passing development-only eligibility decision")
+def verify_development_evaluation(
+    evaluation: Mapping[str, Any],
+    *,
+    candidate_id: str,
+    dataset_manifest_sha256: str,
+    training_run_id: str,
+) -> None:
+    try:
+        validate_development_eligibility(
+            evaluation,
+            candidate_id=candidate_id,
+            dataset_manifest_sha256=dataset_manifest_sha256,
+            training_run_id=training_run_id,
+        )
+    except DevelopmentEligibilityError as error:
+        raise ReleaseError(str(error)) from error
 
 
 def produce_release(
@@ -314,7 +324,12 @@ def produce_release(
         files=source_files,
     )
     evaluation = _verified_json(evaluation_evidence_path, evaluation_evidence_sha256)
-    verify_development_evaluation(evaluation, candidate_id=candidate_id)
+    verify_development_evaluation(
+        evaluation,
+        candidate_id=candidate_id,
+        dataset_manifest_sha256=dataset.manifest_sha256,
+        training_run_id=training_run_id,
+    )
 
     release_root = Path(release_directory).resolve()
     if release_root.exists():

@@ -13,9 +13,10 @@ sys.path.insert(0, str(ROOT))
 from bookforge.fidelity_lineage import stable_run_id
 from bookforge.fidelity_orchestration import FidelityRun, StageStatus, stage_plan
 from training.jax_fidelity.configuration import EOS_TOKEN_IDS, load_config
-from training.jax_fidelity.integrity import artifact_manifest, sha256_file
+from training.jax_fidelity.integrity import artifact_manifest, canonical_sha256, sha256_file
 from training.jax_fidelity.manifests import complete_run, start_run
 from training.jax_fidelity.release import candidate_id_for_checkpoint
+from training.jax_fidelity.remote_release import package_training_release
 from training.jax_fidelity.roundtrip_smoke import (
     REQUIRED_BOOLEAN_CHECKS,
     contract_document,
@@ -60,6 +61,43 @@ def _environment(**updates: str) -> dict[str, str]:
     environment = {key: value for key, value in os.environ.items() if key != "PYTHONPATH"}
     environment.update(updates)
     return environment
+
+
+def _passing_development_evaluation(
+    *, candidate_id: str, dataset_manifest_sha256: str, training_run_id: str
+) -> dict[str, object]:
+    return {
+        "schema_version": "1.0",
+        "candidate_id": candidate_id,
+        "stage": "development",
+        "dataset_manifest_sha256": dataset_manifest_sha256,
+        "training_run_id": training_run_id,
+        "eligibility_decision": {"passed": True, "hidden_evaluated": False},
+        "checks": {"schema_valid": True, "development_improvement": True},
+        "reasons": [],
+        "baseline_summary_sha256": "a" * 64,
+        "candidate_summary_sha256": "b" * 64,
+        "summary": {
+            "surface": "raw",
+            "split": "development",
+            "records": 512,
+            "record_ids_sha256": "c" * 64,
+            "category_record_counts": {"action_binding": 512},
+            "schema_valid_rate": 1.0,
+            "privacy_pass_rate": 1.0,
+            "semantic_atom_recall": 0.99,
+            "exact_example_pass_rate": 0.97,
+            "category_pass_rates": {"action_binding": 0.99},
+            "counterfactual_pairs": 0,
+            "counterfactual_sensitivity": 1.0,
+            "unsupported_concept_rate": 0.0,
+            "pii_leaks": 0,
+            "privacy_term_leaks": 0,
+            "source_echoes": 0,
+            "injection_leaks": 0,
+            "forbidden_hits": 0,
+        },
+    }
 
 
 def test_direct_orchestrator_cli_bootstraps_its_repo_imports() -> None:
@@ -144,7 +182,7 @@ def test_roundtrip_recorder_requires_numerical_and_five_step_smoke_evidence(
             run_id=run_id,
             status="succeeded",
             artifacts=[evidence_path],
-            evidence={"direction": direction},
+            evidence={"direction": direction, "input_manifest_sha256": input_sha},
         )
 
     smoke = tmp_path / "smoke-adapter"
@@ -264,15 +302,11 @@ def test_candidate_recorder_derives_identity_from_merged_checkpoint_bytes(
     evaluation = tmp_path / "development-evaluation.json"
     evaluation.write_text(
         json.dumps(
-            {
-                "schema_version": "1.0",
-                "candidate_id": candidate_id,
-                "stage": "development",
-                "dataset_manifest_sha256": campaign.dataset_manifest_sha256,
-                "training_run_id": campaign.training_run_id,
-                "eligibility_decision": {"passed": True, "hidden_evaluated": False},
-                "summary": {"records": 512, "surface": "raw"},
-            },
+            _passing_development_evaluation(
+                candidate_id=candidate_id,
+                dataset_manifest_sha256=campaign.dataset_manifest_sha256,
+                training_run_id=str(campaign.training_run_id),
+            ),
             sort_keys=True,
         )
         + "\n"
@@ -304,3 +338,165 @@ def test_candidate_recorder_derives_identity_from_merged_checkpoint_bytes(
     resumed = FidelityRun.read(state)
     assert resumed.candidate_id == candidate_id
     assert resumed.next_stage().name == "hf-export"
+
+
+def test_training_recorder_accepts_exact_portable_completion_lineage(
+    tmp_path: Path,
+) -> None:
+    campaign, state = _campaign(tmp_path, through="roundtrip")
+    training_id = stable_run_id(
+        stage="lora-train",
+        config_sha256=campaign.config_sha256,
+        dataset_manifest_sha256=campaign.dataset_manifest_sha256,
+    )
+    runs = tmp_path / "runs"
+    base = tmp_path / "base-snapshot"
+    base.mkdir()
+    (base / "model.safetensors").write_bytes(b"pinned base")
+    tokenizer = tmp_path / "tokenizer-snapshot"
+    tokenizer.mkdir()
+    (tokenizer / "tokenizer.json").write_text("{}\n")
+    base_manifest = artifact_manifest(base)
+    tokenizer_manifest = artifact_manifest(tokenizer)
+    base_manifest_path = tmp_path / "base.manifest.json"
+    tokenizer_manifest_path = tmp_path / "tokenizer.manifest.json"
+    base_manifest_path.write_text(json.dumps(base_manifest, sort_keys=True) + "\n")
+    tokenizer_manifest_path.write_text(json.dumps(tokenizer_manifest, sort_keys=True) + "\n")
+    config = load_config(CONFIG)
+    snapshot_completion = tmp_path / "snapshot-completion.json"
+    snapshot_completion.write_text(
+        json.dumps(
+            {
+                "schema_version": "1.0",
+                "status": "succeeded",
+                "config_sha256": campaign.config_sha256,
+                "model_id": config.production["model_id"],
+                "model_revision": config.production["model_revision"],
+                "resolved_revision": config.production["model_revision"],
+                "snapshot_manifest_sha256": sha256_file(base_manifest_path),
+                "tokenizer_manifest_sha256": sha256_file(tokenizer_manifest_path),
+                "snapshot_content_sha256": base_manifest["content_sha256"],
+                "tokenizer_content_sha256": tokenizer_manifest["content_sha256"],
+            },
+            sort_keys=True,
+        )
+        + "\n"
+    )
+    checkpoint_inputs = {
+        "base_checkpoint": {
+            "content_sha256": base_manifest["content_sha256"],
+            "files": len(base_manifest["files"]),
+            "bytes": sum(row["bytes"] for row in base_manifest["files"]),
+        },
+        "tokenizer_checkpoint": {
+            "content_sha256": tokenizer_manifest["content_sha256"],
+            "files": len(tokenizer_manifest["files"]),
+            "bytes": sum(row["bytes"] for row in tokenizer_manifest["files"]),
+        },
+    }
+    start_run(
+        runs,
+        run_id=training_id,
+        stage="lora-train",
+        config_sha256=campaign.config_sha256,
+        dataset_manifest_sha256=campaign.dataset_manifest_sha256,
+        command=["train"],
+        metadata={"smoke": False, "inputs": checkpoint_inputs},
+    )
+    adapter = tmp_path / "adapter-source"
+    adapter.mkdir()
+    (adapter / "adapter.bin").write_bytes(b"trained adapter")
+    packages = [{"name": "jax", "version": "0.8.2"}]
+    runtime_lock = tmp_path / "runtime.lock.json"
+    runtime_lock.write_text(
+        json.dumps(
+            {
+                "schema_version": "1.0",
+                "packages": packages,
+                "packages_sha256": canonical_sha256(packages),
+            },
+            sort_keys=True,
+        )
+        + "\n"
+    )
+    original_completion = complete_run(
+        runs,
+        run_id=training_id,
+        status="succeeded",
+        artifacts=[adapter / "adapter.bin"],
+        evidence={"runtime_lock": {"sha256": sha256_file(runtime_lock)}},
+    )
+    package = tmp_path / "portable"
+    portable = package_training_release(
+        output_directory=adapter,
+        run_directory=runs,
+        training_run_id=training_id,
+        runtime_lock=runtime_lock,
+        destination=package,
+    )
+    remote = tmp_path / "remote-completion.json"
+    remote.write_text(
+        json.dumps(
+            {
+                "schema_version": "1.0",
+                "run_id": campaign.run_id,
+                "training_run_id": training_id,
+                "status": "succeeded",
+                "backend": "modal-l40s",
+                "config_sha256": campaign.config_sha256,
+                "dataset_manifest_sha256": campaign.dataset_manifest_sha256,
+                "base_checkpoint_manifest_sha256": sha256_file(base_manifest_path),
+                "tokenizer_manifest_sha256": sha256_file(tokenizer_manifest_path),
+                "source_training_completion_sha256": sha256_file(original_completion),
+                "portable_package": portable,
+                "files": artifact_manifest(package)["files"],
+            },
+            sort_keys=True,
+        )
+        + "\n"
+    )
+    output = tmp_path / "training-stage.json"
+    subprocess.run(
+        [
+            sys.executable,
+            str(SCRIPT),
+            "record-training",
+            "--state",
+            str(state),
+            "--output",
+            str(output),
+            "--remote-completion",
+            str(remote),
+            "--config",
+            str(CONFIG),
+            "--base-snapshot-completion",
+            str(snapshot_completion),
+            "--base-checkpoint-manifest",
+            str(base_manifest_path),
+            "--tokenizer-manifest",
+            str(tokenizer_manifest_path),
+            "--training-run",
+            str(package / "training/run.json"),
+            "--training-completion",
+            str(package / "training/completion.json"),
+            "--adapter",
+            str(package / "adapter"),
+            "--adapter-manifest",
+            str(package / "adapter.manifest.json"),
+            "--package-root",
+            str(package),
+            "--package-manifest",
+            str(package / "package.manifest.json"),
+            "--runtime-lock",
+            str(package / "runtime.lock.json"),
+            "--backend",
+            "modal-l40s",
+        ],
+        check=True,
+        capture_output=True,
+        text=True,
+        env=_environment(
+            BOOKFORGE_JAX_TRAIN="I_APPROVE_THIS_BOUNDED_TPU_JOB"
+        ),
+    )
+    assert FidelityRun.read(state).training_run_id == training_id

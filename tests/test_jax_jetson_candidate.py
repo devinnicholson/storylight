@@ -45,6 +45,19 @@ def _load_acceptance_preflight():
 acceptance_preflight = _load_acceptance_preflight()
 
 
+def _load_tooling_installer():
+    spec = importlib.util.spec_from_file_location(
+        "trained_planner_tooling_installer", TOOLING_INSTALLER
+    )
+    assert spec is not None and spec.loader is not None
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+tooling_installer = _load_tooling_installer()
+
+
 def _sha256(path: Path) -> str:
     return hashlib.sha256(path.read_bytes()).hexdigest()
 
@@ -195,6 +208,7 @@ def test_installer_verifies_checksum_bound_bundle_without_mutation(tmp_path: Pat
         text=True,
     )
     assert "Dry run complete; no files or services changed." in dry_run.stdout
+    assert "INSTALL_BOOKFORGE_TRAINED_PLANNER_CANDIDATE:" in dry_run.stdout
     assert sorted(path.relative_to(bundle) for path in bundle.rglob("*") if path.is_file()) == [
         Path("candidate.manifest.json"),
         Path("engines/llm/llm.engine"),
@@ -337,6 +351,8 @@ def test_tooling_bundle_is_source_and_content_provenance_bound(tmp_path: Path) -
         "run-trained-planner-shadow.sh",
         "promote-trained-planner.sh",
         "rollback-trained-planner.sh",
+        "record-trained-planner-terminal-evidence.py",
+        "record-baseline-retention.sh",
         "systemd/bookforge-trained-planner-candidate@.service",
     }
 
@@ -403,6 +419,75 @@ def test_tooling_installer_rejects_bytes_changed_after_manifest(tmp_path: Path) 
     assert "checksum mismatch" in rejected.stderr
 
 
+def test_tooling_installer_rejects_a_symlink_bundle_root(tmp_path: Path) -> None:
+    output = tmp_path / "tooling"
+    commit = "f" * 40
+    built = subprocess.run(
+        [
+            "python3",
+            str(TOOLING_BUILDER),
+            "--source-commit",
+            commit,
+            "--allow-uncommitted-source",
+            "--output",
+            str(output),
+        ],
+        capture_output=True,
+        text=True,
+        check=True,
+    )
+    receipt = json.loads(built.stdout)
+    linked = tmp_path / "linked-tooling"
+    linked.symlink_to(output, target_is_directory=True)
+    rejected = subprocess.run(
+        [
+            "python3",
+            str(TOOLING_INSTALLER),
+            "--bundle",
+            str(linked),
+            "--expected-manifest-sha256",
+            receipt["manifest_sha256"],
+            "--source-commit",
+            commit,
+            "--dry-run",
+        ],
+        capture_output=True,
+        text=True,
+    )
+    assert rejected.returncode != 0
+    assert "non-symlink directory" in rejected.stderr
+
+
+def test_tooling_staging_copies_only_declared_bounded_files(tmp_path: Path) -> None:
+    output = tmp_path / "tooling"
+    commit = "1" * 40
+    built = subprocess.run(
+        [
+            "python3",
+            str(TOOLING_BUILDER),
+            "--source-commit",
+            commit,
+            "--allow-uncommitted-source",
+            "--output",
+            str(output),
+        ],
+        capture_output=True,
+        text=True,
+        check=True,
+    )
+    receipt = json.loads(built.stdout)
+    manifest = json.loads((output / "tooling.manifest.json").read_text())
+    undeclared = output / "undeclared-large.bin"
+    undeclared.write_bytes(b"x" * 1024 * 1024)
+    staged = tmp_path / "staged"
+
+    tooling_installer.copy_declared_bundle(output, staged, manifest)
+
+    assert not (staged / undeclared.name).exists()
+    verified = tooling_installer.verify_bundle(staged, receipt["manifest_sha256"], commit)
+    assert verified == manifest
+
+
 def test_acceptance_preflight_dry_run_is_non_mutating_and_complete(tmp_path: Path) -> None:
     missing_engine = tmp_path / "not-read-in-dry-run.engine"
     result = subprocess.run(
@@ -429,6 +514,25 @@ def test_acceptance_preflight_dry_run_is_non_mutating_and_complete(tmp_path: Pat
     assert not missing_engine.exists()
 
 
+def test_acceptance_preflight_targets_the_selected_users_systemd_manager(monkeypatch) -> None:
+    class Account:
+        pw_uid = 1234
+
+    captured: list[str] = []
+
+    def fake_command(*args: str):
+        captured.extend(args)
+        return subprocess.CompletedProcess(args, 0, "active\n", "")
+
+    monkeypatch.setattr(acceptance_preflight.pwd, "getpwnam", lambda _user: Account())
+    monkeypatch.setattr(acceptance_preflight, "command", fake_command)
+    acceptance_preflight.user_command("reader", "systemctl", "--user", "is-active", "unit")
+
+    assert captured[:4] == ["runuser", "-u", "reader", "--"]
+    assert "XDG_RUNTIME_DIR=/run/user/1234" in captured
+    assert "DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/1234/bus" in captured
+
+
 def test_acceptance_preflight_requires_checksum_bound_post_oom_evidence(
     tmp_path: Path,
 ) -> None:
@@ -442,9 +546,14 @@ def test_acceptance_preflight_requires_checksum_bound_post_oom_evidence(
                 "status": "passed",
                 "accepted_engine_sha256": engine_sha,
                 "oom_events": 0,
+                "restart_failures": 0,
                 "swap_events": 0,
                 "projector_flow_passed": True,
                 "restoration_demonstrated": True,
+                "engine_sha256_after": engine_sha,
+                "action_sha256": "a" * 64,
+                "config_sha256": "b" * 64,
+                "config_sha256_before": "b" * 64,
                 "completed_realtime_usec": 200,
                 "minimum_available_memory_mib": 1024,
                 "planner_ready_seconds": 12.5,
@@ -453,15 +562,30 @@ def test_acceptance_preflight_requires_checksum_bound_post_oom_evidence(
         )
         + "\n"
     )
+    evidence_path.chmod(0o600)
     valid, detail, completed = acceptance_preflight.evidence_is_fresh(
-        evidence_path, _sha256(evidence_path), engine_sha, 100, 768
+        evidence_path,
+        _sha256(evidence_path),
+        engine_sha,
+        100,
+        768,
+        trusted_root=tmp_path,
+        required_owner_uid=evidence_path.stat().st_uid,
+        required_owner_gid=evidence_path.stat().st_gid,
     )
     assert valid is True
     assert completed == 200
     assert "post-OOM" in detail
 
     valid, _, completed = acceptance_preflight.evidence_is_fresh(
-        evidence_path, "e" * 64, engine_sha, 100, 768
+        evidence_path,
+        "e" * 64,
+        engine_sha,
+        100,
+        768,
+        trusted_root=tmp_path,
+        required_owner_uid=evidence_path.stat().st_uid,
+        required_owner_gid=evidence_path.stat().st_gid,
     )
     assert valid is False
     assert completed == 0
@@ -502,6 +626,8 @@ def test_shadow_is_counterbalanced_checksum_bound_and_trap_restored() -> None:
     assert "engine_sha256_after" in shadow
     assert "swapon --show --noheadings" in shadow
     assert "--dry-run" in shadow
+    assert "RUN_BOOKFORGE_TRAINED_PLANNER_SHADOW:${action_sha256}" in shadow
+    assert "--approval-token TOKEN" in shadow
     assert "bookforge.planner_benchmark" in shadow
     assert "modal" not in shadow.casefold()
     assert "gcloud" not in shadow.casefold()
@@ -511,7 +637,7 @@ def test_promotion_is_atomic_one_purpose_and_failure_reversible() -> None:
     promotion = PROMOTE.read_text()
 
     assert (
-        "PROMOTE_BOOKFORGE_TRAINED_PLANNER:${candidate_id}:${manifest_sha256}:"
+        "PROMOTE_BOOKFORGE_TRAINED_PLANNER:${target_user}:${candidate_id}:${manifest_sha256}:"
         "${gate_evidence_sha256}" in promotion
     )
     assert "--gate-evidence PATH" in promotion
@@ -555,7 +681,10 @@ def test_promotion_is_atomic_one_purpose_and_failure_reversible() -> None:
 def test_rollback_restores_checksum_bound_env_and_exact_engine() -> None:
     rollback = ROLLBACK.read_text()
 
-    assert "ROLLBACK_BOOKFORGE_TRAINED_PLANNER:${candidate_id}:${manifest_sha256}" in rollback
+    assert (
+        "ROLLBACK_BOOKFORGE_TRAINED_PLANNER:${target_user}:${candidate_id}:${manifest_sha256}"
+        in rollback
+    )
     assert "BACKUP_SHA256" in rollback
     assert "state_field GATE_EVIDENCE_SHA256" in rollback
     assert "state_field GATE_PRODUCER" in rollback

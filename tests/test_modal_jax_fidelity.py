@@ -48,6 +48,7 @@ def _request(**updates: object) -> dict[str, object]:
         "status": "rejected-pre-billable",
         "submission_intent_created": False,
         "custom_job_created": False,
+        "fallback_allowed": True,
         "reason": "quota unavailable",
     }
     rejection["input_bindings"] = {
@@ -112,6 +113,15 @@ def test_modal_request_requires_hashes_exact_approval_and_prebillable_rejection(
         modal_jax_fidelity._validate_request(_request(gcp_rejection={}))
     with pytest.raises(ValueError, match="approval"):
         modal_jax_fidelity._validate_request(_request(approval_token="approve"))
+    blocked = _request()
+    blocked_rejection = dict(blocked["gcp_rejection"])
+    blocked_rejection["fallback_allowed"] = False
+    blocked["gcp_rejection"] = blocked_rejection
+    blocked["gcp_rejection_sha256"] = hashlib.sha256(
+        (json.dumps(blocked_rejection, indent=2, sort_keys=True) + "\n").encode()
+    ).hexdigest()
+    with pytest.raises(ValueError, match="pre-billable"):
+        modal_jax_fidelity._validate_request(blocked)
     with pytest.raises(ValueError, match="SHA-256"):
         modal_jax_fidelity._validate_request(_request(config_sha256="latest"))
     request = _request()
@@ -327,6 +337,33 @@ def test_modal_reconciliation_retains_remote_state_and_rejects_duplicate_attempt
             status="succeeded",
             result={"status": "succeeded"},
         )
+
+
+def test_modal_attempt_is_atomically_reserved_before_paid_call(tmp_path: Path) -> None:
+    ledger = tmp_path / "ledger.json"
+    attempt_id = "jax:bookforge-jax-smoke-20260901"
+
+    modal_reconciliation.reserve_attempt(
+        ledger, attempt_id=attempt_id, stage="jax-training"
+    )
+
+    with pytest.raises(ValueError, match="already started"):
+        modal_reconciliation.reserve_attempt(
+            ledger, attempt_id=attempt_id, stage="jax-training"
+        )
+    modal_reconciliation.append_reconciliation(
+        ledger,
+        attempt_id=attempt_id,
+        stage="jax-training",
+        workspace_before_usd=1.0,
+        workspace_after_usd=1.5,
+        declared_ceiling_usd=3.5,
+        status="succeeded",
+        result={"status": "succeeded"},
+    )
+    document = json.loads(ledger.read_text())
+    assert len(document["entries"]) == 1
+    assert document["entries"][0]["status"] == "succeeded"
 
 
 def test_modal_export_bridge_invokes_builder_then_installer_verification(tmp_path: Path) -> None:

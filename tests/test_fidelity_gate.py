@@ -11,6 +11,16 @@ from bookforge.fidelity_gate import build_gate_artifact, write_gate_artifact
 from bookforge.fidelity_manifest import FidelityDatasetManifest, sha256_path
 from bookforge.fidelity_schema import DatasetSplit
 
+REVIEW_POPULATION_SHA256 = (
+    "26e34c0d27fb0ed32008156c2e3663a12222073d60a10123a7080f36a9c11703"
+)
+REVIEW_RECORD_IDS_SHA256 = (
+    "e6612fe1281b5d5d539b4cd30897740c1ea6e1a2805407ac3455708863ee86c6"
+)
+REVIEW_PASSAGES_SHA256 = (
+    "0505e0f6132ec5df69ad8a9f3ec0c5c66c00ebc4431c48db94c1d5137d7dc3d9"
+)
+
 
 def _write(path: Path, document: object) -> str:
     path.write_text(json.dumps(document, indent=2, sort_keys=True) + "\n")
@@ -150,7 +160,10 @@ def _evidence(tmp_path: Path) -> dict[str, object]:
             "passed": True,
             "review_protocol": "locked-adversarial-v1",
             "records_reviewed": 25,
-            "record_ids_sha256": "c" * 64,
+            "dataset_manifest_sha256": manifest_sha256,
+            "population_contract_sha256": REVIEW_POPULATION_SHA256,
+            "record_ids_sha256": REVIEW_RECORD_IDS_SHA256,
+            "passage_hashes_sha256": REVIEW_PASSAGES_SHA256,
             "failed_record_ids": [],
             "source_decisions_sha256": "d" * 64,
             "reviewer_attestation": "I_REVIEWED_25_LOCKED_ADVERSARIAL_EXAMPLES",
@@ -184,8 +197,17 @@ def _evidence(tmp_path: Path) -> dict[str, object]:
     paths: dict[str, Path] = {}
     digests: dict[str, str] = {}
     for name, document in documents.items():
+        if name == "jetson_shadow":
+            continue
         paths[name] = tmp_path / f"{name}.json"
         digests[name] = _write(paths[name], document)
+    documents["jetson_shadow"]["evidence_sha256"]["hidden_summary"] = digests[
+        "candidate_hidden"
+    ]
+    paths["jetson_shadow"] = tmp_path / "jetson_shadow.json"
+    digests["jetson_shadow"] = _write(
+        paths["jetson_shadow"], documents["jetson_shadow"]
+    )
     return {
         "run_id": "fidelity-gate-test",
         "config_sha256": "e" * 64,
@@ -217,6 +239,17 @@ def test_trusted_gate_reconstructs_decision_from_separate_populations(tmp_path: 
         "human_review",
         "runtime",
     }
+
+
+def test_gate_rejects_shadow_bound_to_another_hidden_summary(tmp_path: Path) -> None:
+    evidence = _evidence(tmp_path)
+    shadow_path = evidence["jetson_shadow_path"]
+    shadow = json.loads(shadow_path.read_text())
+    shadow["evidence_sha256"]["hidden_summary"] = "0" * 64
+    evidence["jetson_shadow_sha256"] = _write(shadow_path, shadow)
+
+    with pytest.raises(ValueError, match="dependency bindings"):
+        build_gate_artifact(**evidence)  # type: ignore[arg-type]
 
 
 def test_gate_rejects_candidate_summary_from_another_engine(tmp_path: Path) -> None:

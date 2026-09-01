@@ -25,6 +25,9 @@ An ordinary preflight refusal is written once as `*.preflight-rejection.json`; M
 accepts that checksum-bound evidence only when no submission intent and no CustomJob were created.
 The refusal includes the original Vertex spec hash and the exact staged-input binding hash, so a
 refusal for one plan cannot authorize a different Modal input population.
+A refusal caused by an already-existing CustomJob is explicitly marked fallback-ineligible, even
+after billing reconciliation, so a completed Vertex attempt can never authorize a second Modal
+spend for the same run ID.
 
 The worker service account receives the custom role in `least-privilege-role.yaml` only on the
 two private buckets and the one read-only Hugging Face secret. The launcher receives Vertex job
@@ -47,8 +50,15 @@ content-addressed tag. It refuses an unpinned Docker builder and the training Do
 unpinned base image. `image-cloudbuild.yaml` is a build recipe, not a deployment: after the single
 approved build, resolve the Artifact Registry digest and pass only
 `.../trainer:<source-prefix>@sha256:<digest>` to `job_plan.py`. A mutable tag is never accepted by
-the Vertex plan. The Artifact Registry repository and a verified, digest-pinned Cloud Build Docker
+the Vertex plan. Before upload, `--materialize-context` copies only the plan's checksum-bound files;
+the emitted build command's `{MATERIALIZED_CONTEXT}` placeholder must be replaced with that new
+directory. This prevents ignored or untracked local output from entering Docker's `COPY .`. The
+Artifact Registry repository and a verified, digest-pinned Cloud Build Docker
 builder are external prerequisites; this directory does not create either one.
+`submit_image_build.py` is the only repository execution path for that paid command. It re-verifies
+the external context, requires the exact one-purpose approval token, records a write-once intent
+before invoking Cloud Build, disables retries, and refuses any source hash that already has intent
+or receipt state. An ambiguous build therefore remains terminal instead of silently spending twice.
 
 `cloud_preflight.py` performs only `gcloud` describe/list operations. It checks the active account
 and project, billing link, required APIs, absent CustomJob ID, private bucket policies and distinct
@@ -57,6 +67,10 @@ balances are not exposed by a reliable public quota API, so the script requires 
 attestation instead of pretending billing enabled means credits exist. The resulting evidence binds
 the exact job-spec and input-binding hashes. `submit_vertex_job.py` refuses evidence older than 15
 minutes or evidence for any other plan before it records submission intent.
+Every recorded submission intent globally blocks another Vertex attempt until
+`reconcile_vertex_attempt.py` validates a terminal/not-found job observation and internally
+consistent final provider-cost evidence. The reconciliation is write-once and never authorizes a
+retry of the same run. An ambiguous create response therefore cannot lead to a second spend.
 
 `fetch_gcs_release.py` requires the expected SHA-256 of `completion.json`, generation-matches every
 GCS download, rejects extra objects, verifies every declared byte, and validates the same portable
@@ -71,3 +85,6 @@ state. `fetch_modal_jax_release.py` retrieves either a portable training release
 ONNX export laid out for `build-trained-planner-candidate.sh` without changing remote state.
 When its export mode also receives `--candidate-output`, it runs that Jetson builder and then the
 candidate installer's `--verify-only` path, yielding an installable bundle plus its manifest hash.
+The Modal ledger atomically reserves the attempt before the remote call; duplicate or unresolved
+attempts are rejected before another GPU can start, rather than being discovered during post-run
+reconciliation.

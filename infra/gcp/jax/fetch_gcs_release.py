@@ -173,6 +173,7 @@ def fetch_from_gcs(
     by_name = {name: blob for name, blob in zip(names, blobs, strict=True)}
     if len(by_name) != len(blobs) or any(not name for name in names):
         raise ValueError("release prefix contains a duplicate or invalid object")
+    initial_generations = {name: int(blob.generation) for name, blob in by_name.items()}
 
     def download(relative: str, target: Path) -> None:
         blob: BlobLike | None = by_name.get(relative)
@@ -181,13 +182,24 @@ def fetch_from_gcs(
         blob.reload()
         blob.download_to_filename(str(target), if_generation_match=blob.generation)
 
-    return fetch_release(
+    result = fetch_release(
         run_id=run_id,
         expected_completion_sha256=expected_completion_sha256,
         destination=destination,
         download=download,
         remote_objects=names,
     )
+    try:
+        final_blobs = list(client.list_blobs(bucket, prefix=prefix))
+        final_generations = {
+            blob.name.removeprefix(prefix): int(blob.generation) for blob in final_blobs
+        }
+        if final_generations != initial_generations:
+            raise RuntimeError("release prefix changed during verified retrieval")
+    except BaseException:
+        shutil.rmtree(destination)
+        raise
+    return result
 
 
 def main() -> None:

@@ -53,6 +53,8 @@ def parser() -> argparse.ArgumentParser:
         child.add_argument("--output", type=Path, required=True)
         if name == "human-review":
             child.add_argument("--attestation", required=True)
+            child.add_argument("--population-contract", type=Path, required=True)
+            child.add_argument("--population-contract-sha256", required=True)
     return root
 
 
@@ -72,11 +74,22 @@ def main() -> None:
         )
     else:
         decisions = source.get("decisions")
-        if source.get("schema_version") != "1.0" or not isinstance(decisions, list):
+        if (
+            source.get("schema_version") != "story-fidelity-human-review-decisions-v1"
+            or source.get("candidate_manifest_sha256")
+            != args.candidate_manifest_sha256
+            or source.get("population_contract_sha256")
+            != args.population_contract_sha256
+            or not isinstance(decisions, list)
+        ):
             raise ValueError("human-review source must contain a decisions list")
+        if sha256_path(args.population_contract) != args.population_contract_sha256:
+            raise ValueError("population contract differs from its approved SHA-256")
         document = build_human_review_evidence(
             identity,
             decisions,
+            population=json_object(args.population_contract),
+            population_contract_sha256=args.population_contract_sha256,
             source_decisions_sha256=args.source_sha256,
             attestation=args.attestation,
         )

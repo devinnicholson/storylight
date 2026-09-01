@@ -119,6 +119,7 @@ def _shadow(
     config_sha256: str,
     dataset_manifest_sha256: str,
     runtime_sha256: str,
+    hidden_summary_sha256: str,
 ) -> str:
     expected_fields = {
         "schema_version",
@@ -164,7 +165,7 @@ def _shadow(
         or set(evidence) != {"runtime", "candidate_manifest", "hidden_summary"}
         or evidence.get("runtime") != runtime_sha256
         or evidence.get("candidate_manifest") != candidate.candidate_manifest_sha256
-        or _SHA256.fullmatch(str(evidence.get("hidden_summary"))) is None
+        or evidence.get("hidden_summary") != hidden_summary_sha256
     ):
         raise ValueError("Jetson shadow evidence has invalid dependency bindings")
     return str(document["shadow_status"])
@@ -295,6 +296,7 @@ def build_gate_artifact(
         config_sha256=config_sha256,
         dataset_manifest_sha256=dataset_manifest_sha256,
         runtime_sha256=runtime_sha256,
+        hidden_summary_sha256=candidate_hidden_sha256,
     )
 
     hidden_population = population_contract_from_manifest(

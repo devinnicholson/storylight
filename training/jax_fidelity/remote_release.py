@@ -100,6 +100,7 @@ def package_training_release(
         raise RemoteReleaseError("training completion does not declare every adapter artifact")
 
     portable_completion = dict(completion)
+    portable_completion["source_training_completion_sha256"] = sha256_file(completion_path)
     portable_completion["artifacts"] = portable_rows
     evidence = portable_completion.get("evidence")
     runtime_evidence = evidence.get("runtime_lock") if isinstance(evidence, dict) else None

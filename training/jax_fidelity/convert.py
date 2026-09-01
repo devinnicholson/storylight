@@ -21,7 +21,7 @@ from .integrity import (
     sha256_file,
     verify_conversion_manifest,
 )
-from .manifests import complete_run, start_run
+from .manifests import complete_run, stable_run_id, start_run
 from .runtime import (
     ExecutionRefused,
     approval_token,
@@ -114,7 +114,11 @@ def main() -> None:
         artifact_roots=artifact_roots,
     )
 
-    run_id = f"{args.direction}-{config.sha256[:12]}-{args.input_manifest_sha256[:12]}"
+    run_id = stable_run_id(
+        stage=args.direction,
+        config_sha256=config.sha256,
+        dataset_manifest_sha256=args.input_manifest_sha256,
+    )
     token = approval_token(
         stage=args.direction,
         run_id=run_id,

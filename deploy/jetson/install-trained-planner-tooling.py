@@ -110,6 +110,19 @@ def verify_bundle(bundle: Path, expected_sha256: str, source_commit: str) -> dic
     }
     if actual != declared:
         raise ValueError("tooling bundle has undeclared, missing, or linked files")
+    expected_directories = {
+        parent.as_posix()
+        for declared_path in declared
+        for parent in safe_relative(declared_path).parents
+        if parent != Path(".")
+    }
+    actual_directories = {
+        path.relative_to(bundle).as_posix()
+        for path in bundle.rglob("*")
+        if path.is_dir() and not path.is_symlink()
+    }
+    if actual_directories != expected_directories:
+        raise ValueError("tooling bundle has undeclared or missing directories")
     if hashlib.sha256(canonical(normalized)).hexdigest() != manifest["source_manifest_sha256"]:
         raise ValueError("tooling source manifest checksum is invalid")
     return manifest
@@ -139,6 +152,50 @@ def write_atomic(path: Path, payload: bytes, mode: int) -> None:
     os.replace(temporary, path)
 
 
+def copy_declared_bundle(source: Path, destination: Path, manifest: dict[str, object]) -> None:
+    destination.mkdir(mode=0o700)
+
+    def copy_file(source_path: Path, target: Path, maximum_bytes: int) -> None:
+        flags = os.O_RDONLY | os.O_CLOEXEC
+        if hasattr(os, "O_NOFOLLOW"):
+            flags |= os.O_NOFOLLOW
+        source_descriptor = os.open(source_path, flags)
+        try:
+            source_info = os.fstat(source_descriptor)
+            if not stat.S_ISREG(source_info.st_mode) or source_info.st_size > maximum_bytes:
+                raise ValueError(f"staged tooling source is invalid: {source_path}")
+            target.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
+            target_descriptor = os.open(
+                target,
+                os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_CLOEXEC,
+                0o600,
+            )
+            copied = 0
+            try:
+                while block := os.read(source_descriptor, 1024 * 1024):
+                    copied += len(block)
+                    if copied > maximum_bytes:
+                        raise ValueError("tooling source grew beyond its declared bound")
+                    view = memoryview(block)
+                    while view:
+                        written = os.write(target_descriptor, view)
+                        view = view[written:]
+                os.fsync(target_descriptor)
+            finally:
+                os.close(target_descriptor)
+        finally:
+            os.close(source_descriptor)
+
+    copy_file(
+        source / "tooling.manifest.json",
+        destination / "tooling.manifest.json",
+        MAX_BYTES,
+    )
+    for record in manifest["files"]:
+        relative = safe_relative(record["path"])
+        copy_file(source / relative, destination / relative, int(record["bytes"]))
+
+
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser()
     parser.add_argument("--bundle", type=Path, required=True)
@@ -157,9 +214,8 @@ def main() -> None:
         raise SystemExit("invalid --expected-manifest-sha256")
     if not re.fullmatch(r"[a-f0-9]{40}", args.source_commit):
         raise SystemExit("invalid --source-commit")
-    manifest = verify_bundle(
-        args.bundle.resolve(), args.expected_manifest_sha256, args.source_commit
-    )
+    bundle = args.bundle.expanduser().absolute()
+    manifest = verify_bundle(bundle, args.expected_manifest_sha256, args.source_commit)
     source_manifest = str(manifest["source_manifest_sha256"])
     version = f"{args.source_commit[:12]}-{source_manifest[:20]}"
     token = (
@@ -189,6 +245,7 @@ def main() -> None:
     if args.approval_token != token:
         raise SystemExit("approval token does not match the verified staged update")
 
+    secure_directory(Path("/usr/local/lib/bookforge"), 0o755)
     secure_directory(BASE, 0o755)
     secure_directory(BASE / "versions", 0o555)
     lock_path = BASE / ".install.lock"
@@ -205,7 +262,7 @@ def main() -> None:
         fcntl.flock(lock, fcntl.LOCK_EX)
         stage = Path(tempfile.mkdtemp(prefix=".incoming-", dir=BASE))
         try:
-            shutil.copytree(args.bundle.resolve(), stage / "payload", symlinks=True)
+            copy_declared_bundle(bundle, stage / "payload", manifest)
             staged = stage / "payload"
             staged_manifest = verify_bundle(
                 staged, args.expected_manifest_sha256, args.source_commit
@@ -239,7 +296,9 @@ def main() -> None:
 
             secure_directory(Path("/var/lib/bookforge"), 0o755)
             secure_directory(Path("/var/lib/bookforge/trained-planner-candidates"), 0o755)
-            secure_directory(STATE, 0o700)
+            # The current provenance receipt is public metadata consumed by the
+            # sudo/read-only preflight. Sensitive state remains in 0700 children.
+            secure_directory(STATE, 0o755)
             for child in ("evidence", "history", "rollback", "tooling-provenance"):
                 secure_directory(STATE / child, 0o700)
             secure_directory(Path("/etc/bookforge"), 0o755)
@@ -271,8 +330,9 @@ def main() -> None:
             os.symlink(Path("versions") / version, link_tmp)
             os.lchown(link_tmp, 0, 0)
             os.replace(link_tmp, current)
+            receipt_plan = {key: value for key, value in plan.items() if key != "approval_token"}
             receipt = {
-                **plan,
+                **receipt_plan,
                 "artifact_type": "bookforge-jetson-tooling-install-receipt",
                 "unit_sha256": sha256(UNIT),
             }

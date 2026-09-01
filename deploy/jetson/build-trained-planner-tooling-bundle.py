@@ -24,6 +24,8 @@ TOOL_FILES = (
     "preflight-trained-planner-acceptance.py",
     "promote-trained-planner.sh",
     "record-trained-planner-cold-start.py",
+    "record-trained-planner-terminal-evidence.py",
+    "record-baseline-retention.sh",
     "rollback-trained-planner.sh",
     "run-tensorrt-edge-server.sh",
     "run-trained-planner-shadow.sh",

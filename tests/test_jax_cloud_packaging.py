@@ -5,6 +5,7 @@ import importlib.util
 import json
 import shutil
 import sys
+import types
 from datetime import UTC, datetime
 from pathlib import Path
 
@@ -138,6 +139,7 @@ def test_worker_publishes_generation_guarded_completion_last() -> None:
     assert '"retry_allowed": False' in submitter
     assert '"status": "rejected-pre-billable"' in submitter
     assert '"custom_job_created": False' in submitter
+    assert '"fallback_allowed": rejection.fallback_allowed' in submitter
 
 
 def test_input_staging_manifest_binds_every_checkpoint_and_tokenizer_byte(
@@ -271,9 +273,114 @@ def test_image_build_plan_binds_tracked_context_and_requires_pinned_builder() ->
     assert plan["builder_image"] == builder
     assert plan["tagged_image_uri"].endswith(":" + plan["source_sha256"][:20])
     assert plan["digest_resolution_command"][-1] == "--format=value(image_summary.digest)"
+    assert (
+        "--config={MATERIALIZED_CONTEXT}/infra/gcp/jax/image-cloudbuild.yaml"
+        in plan["provider_build_command"]
+    )
+    assert (
+        "--ignore-file={MATERIALIZED_CONTEXT}/infra/gcp/jax/image.gcloudignore"
+        in plan["provider_build_command"]
+    )
+    assert plan["execution_command"][-1] == "--execute"
     assert plan["remote_mutation"] is False
     with pytest.raises(ValueError, match="builder"):
         module.build_plan(ROOT, builder_image="gcr.io/cloud-builders/docker:latest")
+
+
+def test_image_context_contains_only_planned_checksum_bound_files(tmp_path: Path) -> None:
+    module = _load("bookforge_jax_image_context", JAX_ROOT / "build_image_plan.py")
+    source = tmp_path / "source"
+    source.mkdir()
+    (source / "tracked.txt").write_text("tracked\n")
+    (source / "untracked.txt").write_text("must not ship\n")
+    tracked = source / "tracked.txt"
+    plan = {
+        "source_files": [
+            {
+                "path": "tracked.txt",
+                "bytes": tracked.stat().st_size,
+                "sha256": hashlib.sha256(tracked.read_bytes()).hexdigest(),
+            }
+        ]
+    }
+
+    destination = tmp_path / "context"
+    module.materialize_context(source, plan, destination)
+
+    assert (destination / "tracked.txt").read_text() == "tracked\n"
+    assert not (destination / "untracked.txt").exists()
+    tracked.write_text("drift\n")
+    with pytest.raises(ValueError, match="changed after planning"):
+        module.materialize_context(source, plan, tmp_path / "drifted")
+
+
+def test_image_build_is_reserved_before_the_only_provider_call(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    sys.path.insert(0, str(JAX_ROOT))
+    planner = _load("bookforge_jax_image_approval", JAX_ROOT / "build_image_plan.py")
+    submitter = _load("bookforge_jax_image_submitter", JAX_ROOT / "submit_image_build.py")
+    context = tmp_path / "external-context"
+    context.mkdir()
+    source = context / "source.txt"
+    source.write_text("exact\n")
+    builder = "gcr.io/cloud-builders/docker@sha256:" + "b" * 64
+    rows = [
+            {
+                "path": "source.txt",
+                "bytes": source.stat().st_size,
+                "sha256": hashlib.sha256(source.read_bytes()).hexdigest(),
+            }
+        ]
+    source_sha = hashlib.sha256(
+        json.dumps(rows, sort_keys=True, separators=(",", ":")).encode()
+    ).hexdigest()
+    command = [
+            "gcloud",
+            "builds",
+            "submit",
+            "{MATERIALIZED_CONTEXT}",
+            "--format=json",
+        ]
+    token = planner.approval_token(source_sha, builder, command)
+    plan = {
+        "schema_version": "1.0",
+        "mode": "plan-only",
+        "source_sha256": source_sha,
+        "builder_image": builder,
+        "approval_token": token,
+        "source_files": rows,
+        "provider_build_command": command,
+    }
+    plan_path = tmp_path / "plan.json"
+    plan_path.write_text(json.dumps(plan))
+    monkeypatch.setenv(submitter.APPROVAL_ENVIRONMENT, token)
+    calls: list[list[str]] = []
+
+    def runner(command: list[str], **_kwargs: object):
+        calls.append(command)
+        intent = tmp_path / "state" / f"image-{source_sha}.submission-intent.json"
+        assert intent.is_file()
+        return submitter.subprocess.CompletedProcess(
+            command, 0, stdout='{"status":"SUCCESS"}', stderr=""
+        )
+
+    result = submitter.submit(
+        plan_path=plan_path,
+        materialized_context=context,
+        state_directory=tmp_path / "state",
+        runner=runner,
+    )
+
+    assert result["status"] == "SUCCESS"
+    assert calls[0][3] == str(context.resolve())
+    with pytest.raises(RuntimeError, match="retry is forbidden"):
+        submitter.submit(
+            plan_path=plan_path,
+            materialized_context=context,
+            state_directory=tmp_path / "state",
+            runner=runner,
+        )
 
 
 def _private_bucket(*, lifecycle: bool) -> dict[str, object]:
@@ -411,6 +518,166 @@ def test_gcs_release_fetch_is_completion_pinned_and_rejects_extra_objects(
             download=download,
             remote_objects=[*files, "unexpected.bin"],
         )
+
+
+def test_gcs_release_fetch_rejects_prefix_change_during_download(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    module = _load("bookforge_jax_gcs_fetch_race", JAX_ROOT / "fetch_gcs_release.py")
+    run_id = "bookforge-jax-smoke-20260901"
+    source = tmp_path / "remote-race"
+    source.mkdir()
+    files, completion_sha = _portable_release(source, run_id)
+    prefix = f"releases/{run_id}/"
+
+    class Blob:
+        def __init__(self, relative: str, generation: int = 1) -> None:
+            self.name = prefix + relative
+            self.generation = generation
+
+        def reload(self) -> None:
+            return None
+
+        def download_to_filename(self, filename: str, *, if_generation_match: int) -> None:
+            assert if_generation_match == self.generation
+            shutil.copy2(source / self.name.removeprefix(prefix), filename)
+
+    initial = [Blob(name) for name in files]
+
+    class Bucket:
+        iam_configuration = types.SimpleNamespace(
+            public_access_prevention="enforced",
+            uniform_bucket_level_access_enabled=True,
+        )
+
+        def reload(self) -> None:
+            return None
+
+    class Client:
+        def __init__(self, **_kwargs: object) -> None:
+            self.calls = 0
+
+        def bucket(self, _name: str) -> Bucket:
+            return Bucket()
+
+        def list_blobs(self, _bucket: Bucket, *, prefix: str):
+            self.calls += 1
+            assert prefix == f"releases/{run_id}/"
+            return initial if self.calls == 1 else [*initial, Blob("late-object.bin")]
+
+    cloud = types.ModuleType("google.cloud")
+    cloud.storage = types.SimpleNamespace(Client=Client)
+    monkeypatch.setitem(sys.modules, "google.cloud", cloud)
+
+    destination = tmp_path / "raced-fetch"
+    with pytest.raises(RuntimeError, match="changed during"):
+        module.fetch_from_gcs(
+            bucket_name="bookforge-jax-release",
+            run_id=run_id,
+            expected_completion_sha256=completion_sha,
+            destination=destination,
+        )
+    assert not destination.exists()
+
+
+def test_vertex_reconciliation_blocks_new_spend_until_terminal_cost_evidence(
+    tmp_path: Path,
+) -> None:
+    sys.path.insert(0, str(JAX_ROOT))
+    submitter = _load("bookforge_jax_submitter_state", JAX_ROOT / "submit_vertex_job.py")
+    reconciler = _load(
+        "bookforge_jax_vertex_reconciler", JAX_ROOT / "reconcile_vertex_attempt.py"
+    )
+    run_id = "bookforge-jax-smoke-20260901"
+    intent = tmp_path / f"{run_id}.submission-intent.json"
+    intent.write_text(
+        json.dumps(
+            {
+                "run_id": run_id,
+                "spec_sha256": "a" * 64,
+                "status": "submission-intent-recorded",
+                "retry_allowed": False,
+            }
+        )
+    )
+    with pytest.raises(RuntimeError, match="unreconciled"):
+        submitter._assert_no_unreconciled_paid_attempt(tmp_path)
+    job = tmp_path / "job.json"
+    job.write_text(
+        json.dumps(
+            {
+                "custom_job_found": True,
+                "displayName": run_id,
+                "state": "JOB_STATE_SUCCEEDED",
+            }
+        )
+    )
+    billing = tmp_path / "billing.json"
+    billing.write_text(
+        json.dumps(
+            {
+                "run_id": run_id,
+                "status": "verified-final-provider-cost",
+                "source": "authenticated billing export",
+                "observed_at": datetime.now(UTC).isoformat(),
+                "gross_cost_usd": 2.0,
+                "credits_applied_usd": 2.0,
+                "net_cost_usd": 0.0,
+            }
+        )
+    )
+
+    evidence = reconciler.reconcile(
+        run_id=run_id,
+        state_directory=tmp_path,
+        job_evidence_path=job,
+        billing_evidence_path=billing,
+    )
+
+    assert evidence["status"] == "reconciled"
+    assert evidence["producer"] == "bookforge-gcp-jax-reconciler"
+    assert evidence["submission_intent_sha256"] == hashlib.sha256(intent.read_bytes()).hexdigest()
+    assert evidence["automatic_remote_deletion"] is False
+    submitter._assert_no_unreconciled_paid_attempt(tmp_path)
+    reconciliation = tmp_path / f"{run_id}.billing-reconciliation.json"
+    original = reconciliation.read_text()
+    forged = json.loads(original)
+    forged["producer"] = "hand-authored"
+    reconciliation.write_text(json.dumps(forged))
+    with pytest.raises(RuntimeError, match="invalid Vertex reconciliation"):
+        submitter._assert_no_unreconciled_paid_attempt(tmp_path)
+    reconciliation.write_text(original)
+    canonical_billing = tmp_path / f"{run_id}.final-billing-evidence.json"
+    canonical_billing.chmod(0o600)
+    canonical_billing.write_text('{"forged":true}\n')
+    with pytest.raises(RuntimeError, match="changed Vertex billing evidence"):
+        submitter._assert_no_unreconciled_paid_attempt(tmp_path)
+
+
+def test_vertex_reconciliation_is_bound_to_current_intent_bytes(tmp_path: Path) -> None:
+    sys.path.insert(0, str(JAX_ROOT))
+    submitter = _load("bookforge_jax_submitter_intent", JAX_ROOT / "submit_vertex_job.py")
+    run_id = "bookforge-jax-smoke-20260902"
+    intent = tmp_path / f"{run_id}.submission-intent.json"
+    intent.write_text('{"run_id":"bookforge-jax-smoke-20260902"}\n')
+    reconciliation = tmp_path / f"{run_id}.billing-reconciliation.json"
+    reconciliation.write_text(
+        json.dumps(
+            {
+                "schema_version": "1.0",
+                "producer": "bookforge-gcp-jax-reconciler",
+                "status": "reconciled",
+                "run_id": run_id,
+                "retry_allowed": False,
+                "job_evidence_sha256": "a" * 64,
+                "billing_evidence_sha256": "b" * 64,
+                "submission_intent_sha256": "c" * 64,
+            }
+        )
+    )
+
+    with pytest.raises(RuntimeError, match="stale Vertex reconciliation"):
+        submitter._assert_no_unreconciled_paid_attempt(tmp_path)
 
 
 def test_jax_dashboard_contains_only_operational_dimensions() -> None:

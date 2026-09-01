@@ -27,6 +27,8 @@ def test_cold_start_dry_run_is_non_mutating_and_exactly_bound(tmp_path: Path) ->
         [
             sys.executable,
             str(SCRIPT),
+            "--user",
+            "operator",
             "--accepted-engine",
             str(tmp_path / "engine"),
             "--expected-engine-sha256",
@@ -42,10 +44,31 @@ def test_cold_start_dry_run_is_non_mutating_and_exactly_bound(tmp_path: Path) ->
     plan = json.loads(result.stdout)
     assert plan["mode"] == "plan-only"
     assert plan["service_restart"] is True
-    assert plan["approval_token"] == (
-        "RECORD_BOOKFORGE_TRAINED_PLANNER_COLD_START:" + engine_sha
-    )
+    assert plan["approval_token"].startswith("RECORD_BOOKFORGE_TRAINED_PLANNER_COLD_START:")
+    assert len(plan["approval_token"].rsplit(":", 1)[1]) == 64
     assert not output.exists()
+
+    changed = subprocess.run(
+        [
+            sys.executable,
+            str(SCRIPT),
+            "--user",
+            "operator",
+            "--accepted-engine",
+            str(tmp_path / "engine"),
+            "--expected-engine-sha256",
+            engine_sha,
+            "--minimum-available-mib",
+            "1024",
+            "--output",
+            str(output),
+            "--dry-run",
+        ],
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+    assert json.loads(changed.stdout)["approval_token"] != plan["approval_token"]
 
 
 def test_cold_start_route_requires_exact_backend_revision_and_loopback() -> None:

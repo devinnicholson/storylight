@@ -70,7 +70,7 @@ if [[ ${EUID:-$(id -u)} -ne 0 ]]; then
 fi
 if [[ ! "$target_user" =~ ^[a-z_][a-z0-9_-]{0,31}$ ]] \
   || ! id "$target_user" >/dev/null 2>&1 \
-  || [[ ! "$candidate_id" =~ ^[a-z0-9][a-z0-9-]{2,63}$ ]] \
+  || [[ ! "$candidate_id" =~ ^[a-z0-9][a-z0-9-]{2,95}$ ]] \
   || [[ ! "$manifest_sha256" =~ ^[a-f0-9]{64}$ ]]; then
   usage >&2
   exit 64
@@ -132,7 +132,7 @@ if [[ "$verified_model_revision" != "$state_model_revision" ]] \
   printf 'Installed candidate identity differs from the durable promotion state.\n' >&2
   exit 78
 fi
-readonly EXPECTED_APPROVAL_TOKEN="ROLLBACK_BOOKFORGE_TRAINED_PLANNER:${candidate_id}:${manifest_sha256}"
+readonly EXPECTED_APPROVAL_TOKEN="ROLLBACK_BOOKFORGE_TRAINED_PLANNER:${target_user}:${candidate_id}:${manifest_sha256}:${backup_sha256}:${state_gate_evidence}"
 if ((dry_run == 1)); then
   printf '%s\n' "$verification"
   printf 'Required approval token: %s\n' "$EXPECTED_APPROVAL_TOKEN"

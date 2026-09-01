@@ -124,7 +124,7 @@ def validate_candidate_manifest(
     training_run_id = document.get("training_run_id")
     if (
         not isinstance(candidate_id, str)
-        or not re.fullmatch(r"[a-z0-9][a-z0-9-]{2,63}", candidate_id)
+        or not re.fullmatch(r"[a-z0-9][a-z0-9-]{2,95}", candidate_id)
         or not isinstance(engine_sha256, str)
         or not SHA256.fullmatch(engine_sha256)
         or model_revision != f"sha256:{engine_sha256}"
@@ -383,7 +383,7 @@ def build_shadow_evidence(
     candidate_revision = candidate_manifest.get("model_revision")
     if (
         not isinstance(candidate_id, str)
-        or not re.fullmatch(r"[a-z0-9][a-z0-9-]{2,63}", candidate_id)
+        or not re.fullmatch(r"[a-z0-9][a-z0-9-]{2,95}", candidate_id)
         or not isinstance(candidate_engine_sha256, str)
         or not SHA256.fullmatch(candidate_engine_sha256)
         or candidate_revision != f"sha256:{candidate_engine_sha256}"

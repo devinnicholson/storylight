@@ -271,11 +271,16 @@ Exit only when all promotion gates pass.
 
 Promotion requires an exact one-purpose approval token. The promotion script backs up the active
 configuration, switches atomically, restarts and probes the service, exercises one live scene, and
-automatically restores the previous TensorRT engine on any failure.
+automatically restores the previous TensorRT engine on any failure. It does not report success
+until a root-owned recorder has atomically written a receipt, post-action health report, and exact
+rollback state bound to the gated candidate engine. Rejection uses the same recorder through a
+separate baseline-retention approval, proving that the accepted engine stayed active.
 
 The finalizer reconciles actual cost; verifies zero active GCP jobs, Modal tasks, and paid minimum
 instances; archives immutable manifests and reports; and lists any proposed scratch-resource
-deletion or billing unlink for separate approval.
+deletion or billing unlink for separate approval. Cost and resource aggregates are built only from
+explicitly checksum-approved provider reports with `build_fidelity_closure_evidence.py`; boolean
+or non-finite values cannot masquerade as zero resources or valid cost.
 
 ## Promotion gates
 
@@ -398,9 +403,10 @@ The final no-spend integration run used:
   `e717eb38c44fceeeae3a2bc88981767c316ca1339198ce1077b893252afeb1de`;
 - 4,096 public training records, 512 public development records, and 512 private hidden records;
 - successful dataset, 32-record CPU smoke, and production-format compatibility stages; and
-- 710 passing repository tests after trusted stage-producer, cloud-admission,
-  immutable Jetson-tooling, checkpoint-evidence, fixed contest-suite, locked
-  human-review, and post-OOM cold-start integration.
+- 746 passing repository tests after trusted stage-producer, cloud-admission,
+  paid-attempt reservation, immutable Jetson tooling, terminal evidence,
+  checkpoint evidence, fixed contest-suite, locked human-review, and post-OOM
+  cold-start integration.
 
 The accepted engine's 512-case development baseline is now frozen separately
 from model outputs: 100% schema validity, 58.7109375% semantic-atom recall,

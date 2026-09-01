@@ -373,6 +373,14 @@ re-verifies every byte inside a root-owned staging directory, publishes a conten
 version atomically, and prints an exact one-purpose token. Candidate, promotion, and rollback
 scripts then resolve only that installed tooling, never the mutable `/opt/bookforge` checkout.
 
+Promotion also requires a new immediate child of
+`/var/lib/bookforge/trained-planner/evidence`. After the candidate is active, the promotion script
+runs fresh planner, API, controller, kiosk, live-scene, output-token, and swap checks. It then
+atomically publishes the terminal receipt, post-action health, and rollback state before declaring
+success. If the gate rejects the candidate, use the installed `record-baseline-retention.sh`
+dry-run and its exact approval token to prove that the accepted engine remained active. These
+files are the only supported inputs to the orchestrator's `record-terminal-decision` command.
+
 If the planner journal contains an earlier OOM, produce the required post-OOM evidence with the
 installed `record-trained-planner-cold-start.py`. Its dry run is non-mutating. Execution requires
 the exact printed token, restarts only the accepted user service, exercises the loopback planner

@@ -6,6 +6,7 @@ import argparse
 import json
 import os
 import re
+from collections.abc import Mapping
 from dataclasses import asdict
 from pathlib import Path
 from typing import Any
@@ -19,9 +20,21 @@ from bookforge.fidelity_benchmark import (
 from bookforge.fidelity_schema import DatasetSplit
 
 from .integrity import canonical_json_bytes, sha256_file
-from .release import candidate_id_for_checkpoint
 
 _SHA256 = re.compile(r"[a-f0-9]{64}\Z")
+_ELIGIBILITY_FIELDS = {
+    "schema_version",
+    "candidate_id",
+    "stage",
+    "eligibility_decision",
+    "checks",
+    "reasons",
+    "summary",
+    "baseline_summary_sha256",
+    "candidate_summary_sha256",
+    "dataset_manifest_sha256",
+    "training_run_id",
+}
 
 
 class DevelopmentEligibilityError(ValueError):
@@ -114,6 +127,44 @@ def decide_development_eligibility(
     return checks
 
 
+def validate_development_eligibility(
+    document: Mapping[str, Any],
+    *,
+    candidate_id: str,
+    dataset_manifest_sha256: str,
+    training_run_id: str,
+) -> FidelitySummary:
+    """Validate the complete producer contract for a passing development decision."""
+
+    checks = document.get("checks")
+    reasons = document.get("reasons")
+    if (
+        set(document) != _ELIGIBILITY_FIELDS
+        or document.get("schema_version") != "1.0"
+        or document.get("candidate_id") != candidate_id
+        or document.get("stage") != "development"
+        or document.get("dataset_manifest_sha256") != dataset_manifest_sha256
+        or document.get("training_run_id") != training_run_id
+        or document.get("eligibility_decision")
+        != {"passed": True, "hidden_evaluated": False}
+        or not isinstance(checks, dict)
+        or not checks
+        or any(type(result) is not bool or not result for result in checks.values())
+        or reasons != []
+        or _SHA256.fullmatch(str(document.get("baseline_summary_sha256"))) is None
+        or _SHA256.fullmatch(str(document.get("candidate_summary_sha256"))) is None
+    ):
+        raise DevelopmentEligibilityError(
+            "candidate evaluation is not a complete passing development-only decision"
+        )
+    summary = _summary(dict(document), "candidate development evaluation")
+    if summary.surface != "raw" or summary.split != "development" or summary.records < 1:
+        raise DevelopmentEligibilityError(
+            "candidate development evaluation has the wrong summary population"
+        )
+    return summary
+
+
 def _write_once(path: Path, document: dict[str, Any]) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     descriptor = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o400)
@@ -124,6 +175,8 @@ def _write_once(path: Path, document: dict[str, Any]) -> None:
 
 
 def main() -> None:
+    from .release import candidate_id_for_checkpoint
+
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--config", type=Path, required=True)
     parser.add_argument("--dataset-manifest", type=Path, required=True)

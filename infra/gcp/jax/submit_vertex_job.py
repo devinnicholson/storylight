@@ -18,6 +18,10 @@ from job_plan import PROJECT_ID, REGION, approval_token
 class PreflightRejected(RuntimeError):
     """The job was rejected before any billable resource was requested."""
 
+    def __init__(self, message: str, *, fallback_allowed: bool = True) -> None:
+        super().__init__(message)
+        self.fallback_allowed = fallback_allowed
+
 
 def _gcloud(*arguments: str) -> str:
     completed = subprocess.run(
@@ -102,7 +106,10 @@ def _preflight(plan: dict[str, object]) -> None:
         )
     )
     if jobs != []:
-        raise PreflightRejected("run ID already exists or the job lookup was not empty")
+        raise PreflightRejected(
+            "run ID already exists or the job lookup was not empty",
+            fallback_allowed=False,
+        )
     credits_verification = os.environ.get("BOOKFORGE_GCP_CREDITS_VERIFIED")
     if credits_verification != f"VERIFIED:{run_id}":
         raise PreflightRejected("promotional-credit verification is missing for this run")
@@ -156,7 +163,7 @@ def _write_once_json(path: Path, document: dict[str, object]) -> None:
 
 
 def _record_preflight_rejection(
-    state_directory: Path, plan: dict[str, object], reason: str
+    state_directory: Path, plan: dict[str, object], rejection: PreflightRejected
 ) -> Path:
     path = state_directory / f"{plan['run_id']}.preflight-rejection.json"
     _write_once_json(
@@ -171,7 +178,8 @@ def _record_preflight_rejection(
             "status": "rejected-pre-billable",
             "submission_intent_created": False,
             "custom_job_created": False,
-            "reason": reason,
+            "fallback_allowed": rejection.fallback_allowed,
+            "reason": str(rejection),
         },
     )
     return path
@@ -197,15 +205,68 @@ def _create_intent(state_directory: Path, plan: dict[str, object]) -> Path:
     return path
 
 
+def _assert_no_unreconciled_paid_attempt(state_directory: Path) -> None:
+    """Block every new paid request while any prior intent lacks final cost evidence."""
+
+    if not state_directory.exists():
+        return
+    for intent in sorted(state_directory.glob("*.submission-intent.json")):
+        run_id = intent.name.removesuffix(".submission-intent.json")
+        reconciliation = state_directory / f"{run_id}.billing-reconciliation.json"
+        if not reconciliation.is_file() or reconciliation.is_symlink():
+            raise RuntimeError(
+                f"unreconciled paid Vertex attempt blocks new submissions: {run_id}"
+            )
+        try:
+            document = json.loads(reconciliation.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError) as error:
+            message = f"invalid Vertex reconciliation blocks spending: {run_id}"
+            raise RuntimeError(message) from error
+        if (
+            not isinstance(document, dict)
+            or document.get("schema_version") != "1.0"
+            or document.get("producer") != "bookforge-gcp-jax-reconciler"
+            or document.get("status") != "reconciled"
+            or document.get("run_id") != run_id
+            or document.get("retry_allowed") is not False
+            or any(
+                not isinstance(document.get(name), str)
+                or len(str(document[name])) != 64
+                or any(character not in "0123456789abcdef" for character in str(document[name]))
+                for name in ("job_evidence_sha256", "billing_evidence_sha256")
+            )
+        ):
+            raise RuntimeError(f"invalid Vertex reconciliation blocks spending: {run_id}")
+        intent_sha256 = hashlib.sha256(intent.read_bytes()).hexdigest()
+        if document.get("submission_intent_sha256") != intent_sha256:
+            raise RuntimeError(f"stale Vertex reconciliation blocks spending: {run_id}")
+        expected_evidence = {
+            "job": state_directory / f"{run_id}.terminal-job-evidence.json",
+            "billing": state_directory / f"{run_id}.final-billing-evidence.json",
+        }
+        for kind, evidence_path in expected_evidence.items():
+            if (
+                document.get(f"{kind}_evidence_path") != evidence_path.name
+                or not evidence_path.is_file()
+                or evidence_path.is_symlink()
+                or document.get(f"{kind}_evidence_sha256")
+                != hashlib.sha256(evidence_path.read_bytes()).hexdigest()
+            ):
+                raise RuntimeError(
+                    f"missing or changed Vertex {kind} evidence blocks spending: {run_id}"
+                )
+
+
 def submit(
     plan_path: Path, state_directory: Path, admission_evidence_path: Path
 ) -> dict[str, object]:
     plan = _validated_plan(plan_path)
+    _assert_no_unreconciled_paid_attempt(state_directory)
     try:
         _validated_admission_evidence(admission_evidence_path, plan)
         _preflight(plan)
     except PreflightRejected as error:
-        _record_preflight_rejection(state_directory, plan, str(error))
+        _record_preflight_rejection(state_directory, plan, error)
         raise
     intent = _create_intent(state_directory, plan)
     token = _gcloud("auth", "print-access-token")

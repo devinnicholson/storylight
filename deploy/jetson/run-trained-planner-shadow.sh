@@ -28,6 +28,7 @@ run_id=""
 config_sha256=""
 dataset_manifest_sha256=""
 int4_export_sha256=""
+approval_token=""
 dry_run=0
 
 usage() {
@@ -48,6 +49,7 @@ Options:
   --suite five|contest  Semantic suite (default: contest).
   --runtime-output PATH New gate-compatible runtime evidence JSON path.
   --stage-output PATH   New hash-chained jetson-shadow stage JSON path.
+  --approval-token TOKEN  Exact token printed by --dry-run.
   --dry-run             Verify immutable inputs without changing services.
   -h, --help            Show this help.
 
@@ -123,6 +125,11 @@ while (($#)); do
       int4_export_sha256="$2"
       shift 2
       ;;
+    --approval-token)
+      [[ $# -ge 2 ]] || { printf '%s\n' '--approval-token requires a value' >&2; exit 64; }
+      approval_token="$2"
+      shift 2
+      ;;
     --dry-run) dry_run=1; shift ;;
     -h|--help) usage; exit 0 ;;
     *) printf 'Unknown option: %s\n' "$1" >&2; usage >&2; exit 64 ;;
@@ -131,7 +138,7 @@ done
 
 if [[ ! "$target_user" =~ ^[a-z_][a-z0-9_-]{0,31}$ ]] \
   || ! id "$target_user" >/dev/null 2>&1 \
-  || [[ ! "$candidate_id" =~ ^[a-z0-9][a-z0-9-]{2,63}$ ]] \
+  || [[ ! "$candidate_id" =~ ^[a-z0-9][a-z0-9-]{2,95}$ ]] \
   || [[ "$suite" != "five" && "$suite" != "contest" ]] \
   || [[ ! "$run_id" =~ ^[a-z0-9][a-z0-9-]{2,63}$ ]] \
   || [[ ! "$hidden_report_sha256" =~ ^[a-f0-9]{64}$ ]] \
@@ -214,11 +221,22 @@ for evidence_path in "$runtime_output" "$stage_output"; do
   esac
 done
 
+action_sha256="$(
+  printf '%s\0' \
+    "$target_user" "$candidate_id" "$manifest_sha256" "$suite" \
+    "$runtime_output" "$stage_output" "$hidden_report_sha256" "$run_id" \
+    "$config_sha256" "$dataset_manifest_sha256" "$int4_export_sha256" \
+    | sha256sum | cut -d' ' -f1
+)"
+readonly EXPECTED_APPROVAL_TOKEN="RUN_BOOKFORGE_TRAINED_PLANNER_SHADOW:${action_sha256}"
+
 if ((dry_run == 1)); then
   printf '%s\n' "$verification"
   printf 'hidden_evaluation_report_sha256=%s\n' "$hidden_report_sha256"
   printf 'run_id=%s\nconfig_sha256=%s\ndataset_manifest_sha256=%s\nint4_export_sha256=%s\n' \
     "$run_id" "$config_sha256" "$dataset_manifest_sha256" "$int4_export_sha256"
+  printf 'runtime_output=%s\nstage_output=%s\n' "$runtime_output" "$stage_output"
+  printf 'Required approval token: %s\n' "$EXPECTED_APPROVAL_TOKEN"
   printf 'Would run ABBA on 127.0.0.1:11435, exercise the projector flow, and restore %s.\n' \
     "$ACCEPTED_ENGINE_SHA256"
   printf 'Dry run complete; no files or services changed.\n'
@@ -227,6 +245,10 @@ fi
 if [[ ${EUID:-$(id -u)} -ne 0 ]]; then
   printf 'Run the physical shadow acceptance with sudo.\n' >&2
   exit 64
+fi
+if [[ "$approval_token" != "$EXPECTED_APPROVAL_TOKEN" ]]; then
+  printf 'Shadow acceptance requires the exact one-purpose token printed by --dry-run.\n' >&2
+  exit 77
 fi
 if [[ ! -f "$CONFIG_FILE" || -L "$CONFIG_FILE" ]] \
   || [[ "$(stat -c '%U:%G:%a' "$CONFIG_FILE")" != "root:root:600" ]]; then

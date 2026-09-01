@@ -129,6 +129,7 @@ def _validate_request(
         or rejection.get("status") != "rejected-pre-billable"
         or rejection.get("submission_intent_created") is not False
         or rejection.get("custom_job_created") is not False
+        or rejection.get("fallback_allowed") is not True
         or not isinstance(rejection.get("spec_sha256"), str)
         or _SHA256.fullmatch(str(rejection["spec_sha256"])) is None
         or not isinstance(rejection.get("reason"), str)
@@ -451,7 +452,15 @@ def run_cli(
         "approval_token": approval_token_value,
     }
     _validate_request(request)
-    from infra.gcp.jax.modal_reconciliation import append_reconciliation
+    from infra.gcp.jax.modal_reconciliation import (
+        append_reconciliation,
+        assert_attempt_available,
+        reserve_attempt,
+    )
+
+    attempt_id = f"jax:{run_id}"
+    assert_attempt_available(LEDGER_PATH, attempt_id=attempt_id)
+    reserve_attempt(LEDGER_PATH, attempt_id=attempt_id, stage="jax-training")
 
     result: dict[str, object] | None = None
     status = "remote-error"
@@ -467,7 +476,7 @@ def run_cli(
             postrun_error = f"{type(error).__name__}: {error}"
         append_reconciliation(
             LEDGER_PATH,
-            attempt_id=f"jax:{run_id}",
+            attempt_id=attempt_id,
             stage="jax-training",
             workspace_before_usd=workspace_total,
             workspace_after_usd=postrun_total,

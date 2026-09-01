@@ -4,10 +4,14 @@
 from __future__ import annotations
 
 import argparse
+import atexit
 import hashlib
 import json
 import os
+import pwd
 import re
+import signal
+import stat
 import subprocess
 import time
 import urllib.request
@@ -29,8 +33,9 @@ def canonical(value: object) -> bytes:
     return json.dumps(value, sort_keys=True, separators=(",", ":")).encode() + b"\n"
 
 
-def approval_token(engine_sha256: str) -> str:
-    return f"RECORD_BOOKFORGE_TRAINED_PLANNER_COLD_START:{engine_sha256}"
+def approval_token(action: dict[str, object]) -> str:
+    action_sha256 = hashlib.sha256(canonical(action)).hexdigest()
+    return f"RECORD_BOOKFORGE_TRAINED_PLANNER_COLD_START:{action_sha256}"
 
 
 def loopback_base_url(value: str) -> str:
@@ -88,24 +93,19 @@ def swap_counters() -> tuple[int, int]:
     return values["pswpin"], values["pswpout"]
 
 
-def journal_failures(since_realtime_usec: int) -> tuple[int, int]:
+def journal_failures(user: str, since_realtime_usec: int) -> tuple[int, int]:
     since = f"@{since_realtime_usec / 1_000_000:.6f}"
-    completed = subprocess.run(
-        [
-            "journalctl",
-            "--user",
-            "-u",
-            "bookforge-tensorrt-planner.service",
-            "--since",
-            since,
-            "-o",
-            "cat",
-            "--no-pager",
-        ],
-        check=False,
-        capture_output=True,
-        text=True,
-        timeout=15,
+    completed = user_command(
+        user,
+        "journalctl",
+        "--user",
+        "-u",
+        "bookforge-tensorrt-planner.service",
+        "--since",
+        since,
+        "-o",
+        "cat",
+        "--no-pager",
     )
     if completed.returncode != 0:
         raise RuntimeError("could not inspect the planner journal after restart")
@@ -138,9 +138,32 @@ def request_json(
     return value
 
 
+def user_command(user: str, *args: str, check: bool = False) -> subprocess.CompletedProcess[str]:
+    account = pwd.getpwnam(user)
+    return subprocess.run(
+        [
+            "runuser",
+            "-u",
+            user,
+            "--",
+            "env",
+            f"XDG_RUNTIME_DIR=/run/user/{account.pw_uid}",
+            f"DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/{account.pw_uid}/bus",
+            *args,
+        ],
+        check=check,
+        capture_output=True,
+        text=True,
+        timeout=120,
+    )
+
+
 def write_once(path: Path, document: dict[str, object]) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
-    descriptor = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+    flags = os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_CLOEXEC
+    if hasattr(os, "O_NOFOLLOW"):
+        flags |= os.O_NOFOLLOW
+    descriptor = os.open(path, flags, 0o600)
     with os.fdopen(descriptor, "wb") as stream:
         stream.write(canonical(document))
         stream.flush()
@@ -149,6 +172,7 @@ def write_once(path: Path, document: dict[str, object]) -> None:
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--user", required=True)
     parser.add_argument("--accepted-engine", type=Path, required=True)
     parser.add_argument("--expected-engine-sha256", required=True)
     parser.add_argument("--config", type=Path, default=Path("/etc/bookforge/bookforge.env"))
@@ -168,13 +192,31 @@ def main() -> None:
     args = parse_args()
     if _SHA256.fullmatch(args.expected_engine_sha256) is None:
         raise SystemExit("--expected-engine-sha256 must be a lowercase SHA-256")
+    if re.fullmatch(r"[a-z_][a-z0-9_-]{0,31}", args.user) is None:
+        raise SystemExit("--user is invalid")
     if not 1 <= args.timeout_seconds <= 180:
         raise SystemExit("--timeout-seconds must be between 1 and 180")
     if args.minimum_available_mib < 512:
         raise SystemExit("--minimum-available-mib must be at least 512")
     planner_base = loopback_base_url(args.planner_base_url)
     api_base = loopback_base_url(args.api_base_url)
-    token = approval_token(args.expected_engine_sha256)
+    action = {
+        "user": args.user,
+        "accepted_engine": str(args.accepted_engine.expanduser().absolute()),
+        "expected_engine_sha256": args.expected_engine_sha256,
+        "config": str(args.config.expanduser().absolute()),
+        "planner_base_url": planner_base,
+        "api_base_url": api_base,
+        "timeout_seconds": args.timeout_seconds,
+        "minimum_available_memory_mib": args.minimum_available_mib,
+        "output": str(args.output.expanduser().absolute()),
+        "service": "bookforge-tensorrt-planner.service",
+    }
+    action_sha256 = hashlib.sha256(canonical(action)).hexdigest()
+    token = approval_token(action)
+    args.accepted_engine = Path(action["accepted_engine"])
+    args.config = Path(action["config"])
+    args.output = Path(action["output"])
     plan = {
         "schema_version": "1.0",
         "producer": "bookforge-cold-start-recorder",
@@ -185,6 +227,7 @@ def main() -> None:
         "timeout_seconds": args.timeout_seconds,
         "minimum_available_memory_mib": args.minimum_available_mib,
         "service_restart": True,
+        "action_sha256": action_sha256,
         "approval_token": token,
     }
     if args.dry_run:
@@ -192,11 +235,46 @@ def main() -> None:
         return
     if args.approval_token != token:
         raise SystemExit("--approval-token must match the exact dry-run token")
+    if os.geteuid() != 0:
+        raise SystemExit("--execute must run with sudo to inspect root state safely")
+    try:
+        pwd.getpwnam(args.user)
+    except KeyError as error:
+        raise SystemExit("--user does not identify an existing account") from error
     if args.output.exists() or args.output.is_symlink():
         raise SystemExit("cold-start evidence output is write-once")
+    evidence_root = Path("/var/lib/bookforge/trained-planner/evidence")
+    evidence_root_info = evidence_root.lstat()
+    if (
+        not args.output.is_relative_to(evidence_root)
+        or evidence_root.is_symlink()
+        or not stat.S_ISDIR(evidence_root_info.st_mode)
+        or evidence_root_info.st_uid != 0
+        or evidence_root_info.st_gid != 0
+        or evidence_root_info.st_mode & 0o077
+    ):
+        raise SystemExit("cold-start evidence must remain below the safe root-owned evidence root")
     engine = args.accepted_engine
-    if engine.is_symlink() or not engine.is_file() or sha256(engine) != args.expected_engine_sha256:
+    engine_info = engine.lstat()
+    if (
+        engine.is_symlink()
+        or not stat.S_ISREG(engine_info.st_mode)
+        or engine_info.st_uid != 0
+        or engine_info.st_gid != 0
+        or engine_info.st_mode & 0o222
+        or sha256(engine) != args.expected_engine_sha256
+    ):
         raise SystemExit("accepted engine bytes differ from the approved identity")
+    config_info = args.config.lstat()
+    if (
+        args.config.is_symlink()
+        or not stat.S_ISREG(config_info.st_mode)
+        or config_info.st_uid != 0
+        or config_info.st_gid != 0
+        or config_info.st_mode & 0o077
+    ):
+        raise SystemExit("Bookforge root environment is missing or unsafe")
+    config_sha256_before = sha256(args.config)
     before_route = parse_environment(args.config)
     if not route_is_accepted(
         before_route,
@@ -208,11 +286,38 @@ def main() -> None:
     started_realtime_usec = time.time_ns() // 1_000
     swap_before = swap_counters()
     minimum_memory = memory_available_mib()
-    subprocess.run(
-        ["systemctl", "--user", "restart", "bookforge-tensorrt-planner.service"],
-        check=True,
-        timeout=args.timeout_seconds + 30,
+    service_window_open = True
+
+    def ensure_accepted_service() -> None:
+        if not service_window_open:
+            return
+        active = user_command(
+            args.user, "systemctl", "--user", "is-active", "bookforge-tensorrt-planner.service"
+        )
+        if active.stdout.strip() != "active":
+            user_command(
+                args.user,
+                "systemctl",
+                "--user",
+                "start",
+                "bookforge-tensorrt-planner.service",
+            )
+
+    def interrupted(_signal: int, _frame: object) -> None:
+        raise SystemExit("cold-start window interrupted; accepted service restoration requested")
+
+    atexit.register(ensure_accepted_service)
+    signal.signal(signal.SIGINT, interrupted)
+    signal.signal(signal.SIGTERM, interrupted)
+    restarted = user_command(
+        args.user,
+        "systemctl",
+        "--user",
+        "restart",
+        "bookforge-tensorrt-planner.service",
     )
+    if restarted.returncode != 0:
+        raise RuntimeError(f"accepted planner restart failed: {restarted.stderr.strip()}")
     deadline = time.monotonic() + args.timeout_seconds
     planner_model: dict[str, object] | None = None
     while time.monotonic() < deadline:
@@ -242,12 +347,12 @@ def main() -> None:
         projector_status = response.status
 
     after_route = parse_environment(args.config)
+    config_sha256_after = sha256(args.config)
+    engine_sha256_after = sha256(engine)
     swap_after = swap_counters()
-    oom_events, restart_failures = journal_failures(started_realtime_usec)
+    oom_events, restart_failures = journal_failures(args.user, started_realtime_usec)
     minimum_memory = min(minimum_memory, memory_available_mib())
-    swap_events = max(0, swap_after[0] - swap_before[0]) + max(
-        0, swap_after[1] - swap_before[1]
-    )
+    swap_events = max(0, swap_after[0] - swap_before[0]) + max(0, swap_after[1] - swap_before[1])
     planning_ms = prepared.get("planning_ms")
     plan_revision = prepared.get("revision")
     projector_flow_passed = (
@@ -264,14 +369,16 @@ def main() -> None:
             engine_sha256=args.expected_engine_sha256,
             planner_base_url=planner_base,
         )
-        and subprocess.run(
-            ["systemctl", "--user", "is-active", "bookforge-tensorrt-planner.service"],
-            check=False,
-            capture_output=True,
-            text=True,
-            timeout=5,
+        and user_command(
+            args.user,
+            "systemctl",
+            "--user",
+            "is-active",
+            "bookforge-tensorrt-planner.service",
         ).stdout.strip()
         == "active"
+        and config_sha256_after == config_sha256_before
+        and engine_sha256_after == args.expected_engine_sha256
     )
     passed = (
         oom_events == 0
@@ -288,6 +395,7 @@ def main() -> None:
         "producer": "bookforge-cold-start-recorder",
         "status": "passed" if passed else "blocked",
         "accepted_engine_sha256": args.expected_engine_sha256,
+        "action_sha256": action_sha256,
         "started_realtime_usec": started_realtime_usec,
         "completed_realtime_usec": completed_realtime_usec,
         "planner_ready_seconds": round(planner_ready_seconds, 3),
@@ -297,9 +405,11 @@ def main() -> None:
         "swap_events": swap_events,
         "projector_flow_passed": projector_flow_passed,
         "restoration_demonstrated": restoration_demonstrated,
+        "engine_sha256_after": engine_sha256_after,
         "planner_model_response_sha256": hashlib.sha256(canonical(planner_model)).hexdigest(),
         "planner_prepare_response_sha256": hashlib.sha256(canonical(prepared)).hexdigest(),
-        "config_sha256": sha256(args.config),
+        "config_sha256": config_sha256_after,
+        "config_sha256_before": config_sha256_before,
     }
     write_once(args.output, evidence)
     print(json.dumps({**evidence, "evidence_sha256": sha256(args.output)}, sort_keys=True))
