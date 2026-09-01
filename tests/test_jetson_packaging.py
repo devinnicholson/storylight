@@ -39,6 +39,13 @@ TENSORRT_BUILD_SWAP = ROOT / "deploy/jetson/run-tensorrt-build-swap.sh"
 RESILIENT_ROUTING_CONFIGURATOR = (
     ROOT / "deploy/jetson/configure-resilient-routing.sh"
 )
+TENSORRT_PLANNER_CONFIGURATOR = (
+    ROOT / "deploy/jetson/configure-tensorrt-planner.sh"
+)
+TENSORRT_PLANNER_SERVICE = (
+    ROOT / "deploy/jetson/systemd/bookforge-tensorrt-planner.service"
+)
+TENSORRT_PLANNER_READY = ROOT / "deploy/jetson/wait-tensorrt-planner-ready.sh"
 
 
 def _write_executable(path: Path, body: str) -> None:
@@ -249,6 +256,7 @@ def test_standalone_profile_keeps_raw_story_planning_local() -> None:
     assert "Environment=OLLAMA_KEEP_ALIVE=-1m" in gemma_unit
     assert "BOOKFORGE_MODEL_REQUIRE_GPU=true" in profile
     assert "BOOKFORGE_LIVE_SCENE_PLANNER=model" in profile
+    assert "BOOKFORGE_LIVE_SCENE_PLANNER_BACKEND=configured" in profile
     assert "BOOKFORGE_LIVE_SCENE_PLANNER_COMPACT_WIRE=false" in profile
     assert "BOOKFORGE_LIVE_SCENE_BACKEND=gcp_resilient" in profile
     assert "BOOKFORGE_LIVE_SCENE_VERTEX_MODEL=gemini-3.1-flash-lite-image" in profile
@@ -268,6 +276,38 @@ def test_standalone_profile_keeps_raw_story_planning_local() -> None:
     assert "BOOKFORGE_ASR_BACKEND=disabled" in profile
     assert "MODAL_TOKEN_ID=\n" in profile
     assert "MODAL_TOKEN_SECRET=\n" in profile
+
+
+def test_tensorrt_planner_promotion_is_local_bounded_and_reversible() -> None:
+    configurator = TENSORRT_PLANNER_CONFIGURATOR.read_text()
+    service = TENSORRT_PLANNER_SERVICE.read_text()
+    readiness = TENSORRT_PLANNER_READY.read_text()
+
+    subprocess.run(["bash", "-n", str(TENSORRT_PLANNER_CONFIGURATOR)], check=True)
+    subprocess.run(["bash", "-n", str(TENSORRT_PLANNER_READY)], check=True)
+    assert "--dry-run" in configurator
+    assert 'BOOKFORGE_LIVE_SCENE_PLANNER_BACKEND": "tensorrt_slots"' in configurator
+    assert 'BOOKFORGE_LIVE_SCENE_PLANNER_BASE_URL": "http://127.0.0.1:11435"' in configurator
+    assert 'BOOKFORGE_LIVE_SCENE_PLANNER_MAX_OUTPUT_TOKENS": "64"' in configurator
+    assert "before-tensorrt-" in configurator
+    assert "os.replace(temporary_name, config_path)" in configurator
+    assert "restoring the previous configuration" in configurator
+    assert "bookforge-kiosk.service" in configurator
+    assert "available_kib < 4194304" in configurator
+    assert "MODAL_TOKEN_ID" not in configurator
+    assert "MODAL_TOKEN_SECRET" not in configurator
+
+    assert "EDGELLM_GEMMA4_PLE_STORAGE_BACKED=1" in service
+    assert "BOOKFORGE_EDGELLM_SERVER_PORT=11435" in service
+    assert "Conflicts=bookforge-gemma.service" in service
+    assert "Before=bookforge-kiosk.service" in service
+    assert "ExecStartPost=/opt/bookforge/deploy/jetson/wait-tensorrt-planner-ready.sh" in service
+    assert "ExecStopPost=-/usr/bin/systemctl --user --no-block start" in service
+    assert "Restart=no" in service
+    assert "ProtectSystem=strict" in service
+    assert "MemorySwapMax=0" in service
+    assert "http://127.0.0.1:${PORT}/v1/models" in readiness
+    assert "ATTEMPTS < 1 || ATTEMPTS > 180" in readiness
 
 
 def test_resilient_routing_configurator_is_atomic_bounded_and_reversible() -> None:

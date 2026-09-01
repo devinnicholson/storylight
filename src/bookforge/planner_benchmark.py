@@ -17,6 +17,7 @@ from urllib.parse import urlparse
 from bookforge.config import Settings
 from bookforge.live_scene_planner import StructuredLiveScenePlanner
 from bookforge.model_client import OllamaClient, OpenAICompatibleClient
+from bookforge.tensorrt_slot_client import TensorRTSlotModelClient
 
 Contract = Literal["standard", "compact"]
 Suite = Literal["five", "contest"]
@@ -610,9 +611,11 @@ async def _run_case(
 async def benchmark(args: argparse.Namespace) -> dict[str, object]:
     base_url = _require_loopback(args.base_url)
     cases = _select_cases(args.suite, args.case_id)
+    if args.backend == "tensorrt_slots" and args.contract != "standard":
+        raise ValueError("TensorRT slots require the accepted standard wire contract")
     settings = Settings(
         _env_file=None,
-        model_backend=args.backend,
+        model_backend=("openai" if args.backend == "tensorrt_slots" else args.backend),
         model_name=args.model,
         model_base_url=base_url,
         model_timeout_seconds=args.model_timeout_seconds,
@@ -620,9 +623,17 @@ async def benchmark(args: argparse.Namespace) -> dict[str, object]:
         model_context_tokens=args.context_tokens,
         model_max_output_tokens=args.max_output_tokens,
     )
-    client = (
-        OllamaClient(settings) if args.backend == "ollama" else OpenAICompatibleClient(settings)
-    )
+    if args.backend == "ollama":
+        client = OllamaClient(settings)
+    elif args.backend == "tensorrt_slots":
+        client = TensorRTSlotModelClient(
+            base_url=base_url,
+            model=args.model,
+            timeout_seconds=args.model_timeout_seconds,
+            max_output_tokens=min(args.max_output_tokens, 128),
+        )
+    else:
+        client = OpenAICompatibleClient(settings)
     contracts: tuple[Contract, ...] = (
         ("standard", "compact") if args.contract == "both" else (args.contract,)
     )
@@ -736,7 +747,11 @@ async def benchmark(args: argparse.Namespace) -> dict[str, object]:
 
 def _parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--backend", choices=("ollama", "openai"), default="ollama")
+    parser.add_argument(
+        "--backend",
+        choices=("ollama", "openai", "tensorrt_slots"),
+        default="ollama",
+    )
     parser.add_argument("--base-url", default="http://127.0.0.1:11434")
     parser.add_argument("--model", default="gemma3:1b-it-q4_K_M")
     parser.add_argument("--model-revision", default="configured-local-model")

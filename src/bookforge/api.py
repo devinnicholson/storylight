@@ -30,7 +30,7 @@ from bookforge.asset_generator import (
     build_asset_generator,
     build_depth_estimator,
 )
-from bookforge.config import get_settings
+from bookforge.config import Settings, get_settings
 from bookforge.domain import (
     CompileResponse,
     InterventionRequest,
@@ -71,7 +71,11 @@ from bookforge.live_scene import (
     build_live_scene_provider,
     live_scene_request_seed,
 )
-from bookforge.model_client import ModelUnavailableError, build_model_client
+from bookforge.model_client import (
+    ModelUnavailableError,
+    StructuredModelClient,
+    build_model_client,
+)
 from bookforge.nemotron_critic import (
     NemotronCriticEvidence,
     NemotronCriticRequest,
@@ -92,6 +96,7 @@ from bookforge.runtime_status import RuntimeComponent, RuntimeStatus
 from bookforge.scene_foundry import SceneFoundry, SceneFoundryError
 from bookforge.service import BookforgeService
 from bookforge.story_store import StoryPackCorruptError, StoryPackNotFoundError, StoryPackStore
+from bookforge.tensorrt_slot_client import TensorRTSlotModelClient
 
 
 def _completed_pack_matches_planner_mode(
@@ -133,10 +138,30 @@ async def _warm_live_scene_planner_at_startup(registry: LiveSceneJobRegistry) ->
         return
 
 
+def _build_live_scene_planner_client(
+    settings: Settings,
+    *,
+    fallback: StructuredModelClient,
+) -> StructuredModelClient:
+    if settings.live_scene_planner_backend == "configured":
+        return fallback
+    if settings.live_scene_planner_compact_wire:
+        raise ValueError("TensorRT slot planning requires the standard wire contract")
+    return TensorRTSlotModelClient(
+        base_url=settings.live_scene_planner_base_url,
+        model=settings.live_scene_planner_model_name,
+        timeout_seconds=settings.live_scene_planner_timeout_seconds,
+        max_output_tokens=settings.live_scene_planner_max_output_tokens,
+        fallback=fallback,
+        fallback_ready_seconds=settings.live_scene_planner_fallback_ready_seconds,
+    )
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     settings = get_settings()
     client = build_model_client(settings)
+    planner_client = _build_live_scene_planner_client(settings, fallback=client)
     app.state.settings = settings
     app.state.service = BookforgeService(settings, client)
     app.state.transcriber = build_asr_backend(settings)
@@ -231,7 +256,7 @@ async def lifespan(app: FastAPI):
             routing_probe_timeout_seconds=(settings.live_scene_routing_probe_timeout_seconds),
             routing_failure_cooldown_seconds=(settings.live_scene_routing_failure_cooldown_seconds),
             planner_mode=settings.live_scene_planner,
-            model_client=client,
+            model_client=planner_client,
             planner_timeout_seconds=settings.live_scene_planner_timeout_seconds,
             planner_model_revision=settings.live_scene_planner_model_revision,
             planner_cache_entries=settings.live_scene_planner_cache_entries,
@@ -266,9 +291,12 @@ async def lifespan(app: FastAPI):
             await planner_warmup_task
     await app.state.live_scenes.close()
     await app.state.reader_events.close()
-    http_client = getattr(client, "client", None)
-    if http_client is not None:
-        await http_client.aclose()
+    closed_http_clients: set[int] = set()
+    for model_client in (planner_client, client):
+        http_client = getattr(model_client, "client", None)
+        if http_client is not None and id(http_client) not in closed_http_clients:
+            await http_client.aclose()
+            closed_http_clients.add(id(http_client))
 
 
 def _jetson_writable_runtime_path(

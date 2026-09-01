@@ -67,7 +67,7 @@ _LEADING_ARTICLE = re.compile(r"^(?:a|an|the)\s+", re.IGNORECASE)
 _SEMANTIC_WORD = re.compile(r"[A-Za-z][A-Za-z'-]*")
 _PLACEMENT_MARGIN = 0.04
 _PLAN_CACHE_SCHEMA_VERSION = "1"
-_PLAN_CACHE_CONTRACT_REVISION = "semantic-v17-relations-transformations-composition-repair"
+_PLAN_CACHE_CONTRACT_REVISION = "semantic-v18-tensorrt-slot-privacy"
 _EMAIL = re.compile(r"\b[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}\b", re.IGNORECASE)
 _PHONE = re.compile(r"(?<!\w)(?:\+?\d[\d\s()./-]{6,}\d)(?!\w)")
 _URL = re.compile(r"\b(?:https?://|www\.)\S+", re.IGNORECASE)
@@ -1548,18 +1548,24 @@ def _normalized_action(value: str) -> str:
         "carries": "carrying",
         "circle": "circling",
         "circles": "circling",
+        "cast": "casting",
+        "casts": "casting",
         "climb": "climbing",
         "climbs": "climbing",
         "create": "creating",
         "creates": "creating",
         "drift": "drifting",
         "drifts": "drifting",
+        "draw": "drawing",
+        "draws": "drawing",
         "float": "floating",
         "floats": "floating",
         "fold": "folding",
         "folds": "folding",
         "form": "forming",
         "forms": "forming",
+        "guide": "guiding",
+        "guides": "guiding",
         "hold": "holding",
         "holds": "holding",
         "lift": "lifting",
@@ -1568,12 +1574,16 @@ def _normalized_action(value: str) -> str:
         "opens": "opening",
         "plant": "planting",
         "plants": "planting",
+        "play": "playing",
+        "plays": "playing",
         "point": "pointing",
         "points": "pointing",
         "push": "pushing",
         "pushes": "pushing",
         "read": "reading",
         "reads": "reading",
+        "raise": "raising",
+        "raises": "raising",
         "rise": "rising",
         "rises": "rising",
         "run": "running",
@@ -2248,7 +2258,10 @@ class StructuredLiveScenePlanner:
             wire_plan = compact_plan.to_wire_plan()
         else:
             wire_plan = LiveSceneWirePlan.model_validate(plan.model_dump())
-        sanitized_wire_plan = wire_plan.privacy_sanitized(source_text=text)
+        if getattr(self.client, "wire_plans_are_privacy_sanitized", False):
+            sanitized_wire_plan = wire_plan
+        else:
+            sanitized_wire_plan = wire_plan.privacy_sanitized(source_text=text)
         validated = sanitized_wire_plan.to_live_scene_plan(context_text=text)
         validate_live_scene_plan_privacy(validated, source_text=text)
         if self.cache_entries:

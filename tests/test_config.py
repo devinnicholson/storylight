@@ -56,6 +56,11 @@ def test_live_scene_model_planner_has_a_bounded_independent_timeout() -> None:
     )
 
     assert settings.live_scene_planner == "model"
+    assert settings.live_scene_planner_backend == "configured"
+    assert settings.live_scene_planner_base_url == "http://127.0.0.1:11435"
+    assert settings.live_scene_planner_model_name == "llm"
+    assert settings.live_scene_planner_max_output_tokens == 64
+    assert settings.live_scene_planner_fallback_ready_seconds == 5
     assert settings.live_scene_planner_timeout_seconds == 12
     assert settings.live_scene_planner_model_revision == "sha256:gemma3-fixture"
     assert settings.live_scene_planner_cache_entries == 32
@@ -84,6 +89,10 @@ def test_live_scene_model_planner_has_a_bounded_independent_timeout() -> None:
     )
     with pytest.raises(ValidationError):
         Settings(_env_file=None, live_scene_planner_timeout_seconds=61)
+    with pytest.raises(ValidationError):
+        Settings(_env_file=None, live_scene_planner_max_output_tokens=129)
+    with pytest.raises(ValidationError):
+        Settings(_env_file=None, live_scene_planner_fallback_ready_seconds=31)
     with pytest.raises(ValidationError):
         Settings(_env_file=None, model_context_tokens=1_024)
     with pytest.raises(ValidationError):

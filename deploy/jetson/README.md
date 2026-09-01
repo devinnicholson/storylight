@@ -346,6 +346,37 @@ The first pass excludes Gemma 4 MTP. Only add the assistant after the target-onl
 schema, privacy, semantic, memory, and measured end-to-end gates. The shadow runner always restores
 Gemma 3 and cannot change the production backend.
 
+The exact target-only engine has now passed that gate. Through Bookforge's production
+`StructuredLiveScenePlanner`, a resident 20-case run passed 20/20 automatic semantic and privacy
+checks at 1.599 seconds mean, 1.605 seconds median, and 1.927 seconds maximum planning latency. It
+used 35.35 output tokens on average and never exceeded 44 of the 64-token hard limit. A subsequent
+factory-level hardware smoke returned the correct rabbit-under-bridge and lanterns-above-bridge
+relationships in 1.816 seconds. The evidence is
+`benchmarks/jetson-gemma4-tensorrt-integrated-planner-2026-09-01.json`.
+
+Promotion is intentionally one guarded operation rather than a set of hand-edited settings. The
+helper fingerprints the exact engine into the cache revision, backs up the root-only environment,
+installs a loopback-only bounded user service, and rolls back both configuration and runtime if
+readiness fails:
+
+```bash
+sudo /opt/bookforge/deploy/jetson/configure-tensorrt-planner.sh \
+  --user operator --dry-run
+sudo /opt/bookforge/deploy/jetson/configure-tensorrt-planner.sh \
+  --user operator
+```
+
+The TensorRT unit and Gemma 3 Ollama unit are mutually exclusive on the 8 GB board. Any TensorRT
+stop or crash queues Ollama restoration; Bookforge waits up to five seconds for that fallback only
+after a definite loopback connection failure. A timeout, HTTP error, or malformed response fails
+closed, because attempting Ollama while TensorRT may still own unified memory is unsafe.
+Promotion also drains the long-lived projector browser before CUDA-graph capture and requires at
+least 4 GiB available memory. It relaunches a fresh kiosk only after TensorRT and both Bookforge
+services are ready. This closes the measured global-OOM failure where a 1.7 GiB loaded Ollama
+worker and a 1.7 GiB day-old Firefox kiosk overlapped engine initialization; the corrected handoff
+left 1.00 GiB available with the refreshed projector running and completed the relationship smoke
+in 1.466 seconds.
+
 #### Reboot-safe 25W versus MAXN_SUPER measurement
 
 On the measured JetPack 7.2.1 Orin Nano, changing from power mode 1 (`25W`) to mode 2

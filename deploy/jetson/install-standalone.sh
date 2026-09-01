@@ -173,6 +173,9 @@ install -o "$TARGET_UID" -g "$TARGET_GID" -m 0644 \
   "$SCRIPT_DIR/systemd/bookforge-gemma.service" \
   "$TARGET_HOME/.config/systemd/user/bookforge-gemma.service"
 install -o "$TARGET_UID" -g "$TARGET_GID" -m 0644 \
+  "$SCRIPT_DIR/systemd/bookforge-tensorrt-planner.service" \
+  "$TARGET_HOME/.config/systemd/user/bookforge-tensorrt-planner.service"
+install -o "$TARGET_UID" -g "$TARGET_GID" -m 0644 \
   "$SCRIPT_DIR/systemd/bookforge-kiosk.service" \
   "$TARGET_HOME/.config/systemd/user/bookforge-kiosk.service"
 if [[ ! -e "$TARGET_HOME/.config/bookforge/kiosk.env" ]]; then
