@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import re
 from collections.abc import Mapping
 from pathlib import Path
 from typing import Any
@@ -20,6 +21,13 @@ REQUIRED_BOOLEAN_CHECKS = (
     "kv_sharing",
     "gemma4_metadata",
 )
+REQUIRED_LINEAGE_HASHES = (
+    "hf_to_maxtext_completion_sha256",
+    "smoke_completion_sha256",
+    "maxtext_to_hf_completion_sha256",
+    "logit_completion_sha256",
+)
+_SHA256 = re.compile(r"[a-f0-9]{64}\Z")
 
 
 class RoundtripError(ValueError):
@@ -73,6 +81,18 @@ def validate_roundtrip_evidence(
         raise RoundtripError("forward KL divergence is missing")
     if float(divergence) < 0 or float(divergence) > config.conversion["max_kl_divergence"]:
         raise RoundtripError("forward KL divergence exceeds the 0.03 gate")
+    lineage = evidence.get("lineage")
+    if not isinstance(lineage, dict):
+        raise RoundtripError("roundtrip evidence has no terminal lineage")
+    if any(
+        not isinstance(lineage.get(name), str)
+        or _SHA256.fullmatch(lineage[name]) is None
+        for name in REQUIRED_LINEAGE_HASHES
+    ):
+        raise RoundtripError("roundtrip terminal lineage is incomplete")
+    smoke_run_id = lineage.get("smoke_run_id")
+    if not isinstance(smoke_run_id, str) or not smoke_run_id.startswith("lora-smoke-"):
+        raise RoundtripError("roundtrip evidence has no successful LoRA smoke identity")
     manifest = evidence.get("exported_checkpoint_manifest")
     if not isinstance(manifest, dict):
         raise RoundtripError("exported checkpoint artifact manifest is missing")

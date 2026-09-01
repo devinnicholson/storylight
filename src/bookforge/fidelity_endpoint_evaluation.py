@@ -265,6 +265,8 @@ def _claim_hidden_evaluation(
     plan: Mapping[str, object],
     state_root: Path = HIDDEN_EVALUATION_STATE_ROOT,
 ) -> Path:
+    if not state_root.is_absolute():
+        raise ValueError("hidden evaluation state root must be absolute")
     if state_root.is_symlink():
         raise ValueError("hidden evaluation state root may not be a symbolic link")
     state_root.mkdir(parents=True, exist_ok=True, mode=0o700)
@@ -298,6 +300,12 @@ def _parser() -> argparse.ArgumentParser:
     parser.add_argument("--model", default="llm")
     parser.add_argument("--timeout-seconds", type=float, default=12)
     parser.add_argument("--output", type=Path, required=True)
+    parser.add_argument(
+        "--hidden-state-root",
+        type=Path,
+        default=HIDDEN_EVALUATION_STATE_ROOT,
+        help="absolute mode-0700 directory used to enforce one hidden run per candidate",
+    )
     parser.add_argument("--execute", action="store_true")
     return parser
 
@@ -350,7 +358,12 @@ def main() -> None:
         )
         plan["population"] = asdict(population)
         plan["custody_receipt_sha256"] = receipt_sha256
-        state = _claim_hidden_evaluation(identity=identity, population=population, plan=plan)
+        state = _claim_hidden_evaluation(
+            identity=identity,
+            population=population,
+            plan=plan,
+            state_root=args.hidden_state_root,
+        )
     else:
         validate_manifest(args.manifest)
         if _sha256(args.records) != population.content_sha256:

@@ -7,6 +7,7 @@ import json
 import os
 from pathlib import Path
 
+from .checkpoint_evidence import parse_max_kl_divergence
 from .commands import (
     build_hf_to_maxtext_command,
     build_logit_check_command,
@@ -14,13 +15,19 @@ from .commands import (
     shell_join,
 )
 from .configuration import load_config
-from .integrity import artifact_manifest, canonical_json_bytes, verify_conversion_manifest
+from .integrity import (
+    artifact_manifest,
+    canonical_json_bytes,
+    sha256_file,
+    verify_conversion_manifest,
+)
 from .manifests import complete_run, start_run
 from .runtime import (
     ExecutionRefused,
     approval_token,
     require_approval,
     run_checked,
+    run_checked_capture,
     validate_maxtext_checkout,
 )
 
@@ -29,6 +36,14 @@ def _write_once_json(path: Path, document: dict[str, object]) -> None:
     descriptor = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o400)
     with os.fdopen(descriptor, "wb") as stream:
         stream.write(canonical_json_bytes(document))
+        stream.flush()
+        os.fsync(stream.fileno())
+
+
+def _write_once_bytes(path: Path, content: bytes) -> None:
+    descriptor = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o400)
+    with os.fdopen(descriptor, "wb") as stream:
+        stream.write(content)
         stream.flush()
         os.fsync(stream.fileno())
 
@@ -142,17 +157,24 @@ def main() -> None:
         raise
     try:
         checkout = validate_maxtext_checkout(args.maxtext_root, config)
-        run_checked(command, cwd=checkout)
         evidence_path = args.run_directory.resolve() / run_id / "conversion-evidence.json"
         if args.direction == "logit-check":
+            output = run_checked_capture(command, cwd=checkout)
+            log_path = args.run_directory.resolve() / run_id / "logit-check.log"
+            _write_once_bytes(log_path, output.encode())
+            maximum_kl = parse_max_kl_divergence(output)
             evidence: dict[str, object] = {
                 "schema_version": "1.0",
                 "status": "succeeded",
                 "direction": args.direction,
                 "input_manifest_sha256": args.input_manifest_sha256,
+                "forward_kl_divergence": maximum_kl,
+                "maximum_kl_divergence": config.conversion["max_kl_divergence"],
+                "log_sha256": sha256_file(log_path),
             }
-            artifacts = [evidence_path]
+            artifacts = [evidence_path, log_path]
         else:
+            run_checked(command, cwd=checkout)
             output_manifest = artifact_manifest(args.output_directory)
             evidence = {
                 "schema_version": "1.0",

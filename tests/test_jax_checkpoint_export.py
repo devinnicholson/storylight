@@ -62,6 +62,16 @@ def _evidence(config, checkpoint: Path) -> dict:
             "forward_kl_divergence": 0.012,
         },
         "exported_checkpoint_manifest": artifact_manifest(checkpoint),
+        "lineage": {
+            "hf_to_maxtext_completion_sha256": "a" * 64,
+            "smoke_completion_sha256": "b" * 64,
+            "smoke_run_id": "lora-smoke-test",
+            "maxtext_to_hf_completion_sha256": "c" * 64,
+            "logit_completion_sha256": "d" * 64,
+            "hf_to_maxtext_run_id": "hf-to-maxtext-test",
+            "maxtext_to_hf_run_id": "maxtext-to-hf-test",
+            "logit_run_id": "logit-check-test",
+        },
     }
 
 

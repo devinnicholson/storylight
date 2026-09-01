@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import argparse
+import datetime as dt
 import hashlib
 import json
 import os
@@ -109,6 +110,41 @@ def _preflight(plan: dict[str, object]) -> None:
         raise PreflightRejected("exact one-purpose GCP approval token is missing")
 
 
+def _validated_admission_evidence(path: Path, plan: dict[str, object]) -> dict[str, object]:
+    evidence = json.loads(path.read_text(encoding="utf-8"))
+    if not isinstance(evidence, dict):
+        raise PreflightRejected("cloud admission evidence must be an object")
+    exact = {
+        "mode": "read-only-preflight",
+        "project": PROJECT_ID,
+        "region": REGION,
+        "run_id": plan["run_id"],
+        "spec_sha256": plan["spec_sha256"],
+        "input_bindings_sha256": plan["input_bindings_sha256"],
+        "ready": True,
+        "remote_mutation": False,
+    }
+    if any(evidence.get(key) != value for key, value in exact.items()):
+        raise PreflightRejected("cloud admission evidence is stale or belongs to another plan")
+    checks = evidence.get("checks")
+    if (
+        not isinstance(checks, dict)
+        or not checks
+        or not all(value is True for value in checks.values())
+    ):
+        raise PreflightRejected("cloud admission evidence contains a failed check")
+    try:
+        checked_at = dt.datetime.fromisoformat(str(evidence["checked_at"]))
+    except (KeyError, ValueError) as error:
+        raise PreflightRejected("cloud admission evidence has no valid timestamp") from error
+    if checked_at.tzinfo is None:
+        raise PreflightRejected("cloud admission evidence timestamp has no timezone")
+    age = dt.datetime.now(dt.UTC) - checked_at
+    if age < dt.timedelta(0) or age > dt.timedelta(minutes=15):
+        raise PreflightRejected("cloud admission evidence is older than 15 minutes")
+    return evidence
+
+
 def _write_once_json(path: Path, document: dict[str, object]) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     descriptor = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
@@ -161,9 +197,12 @@ def _create_intent(state_directory: Path, plan: dict[str, object]) -> Path:
     return path
 
 
-def submit(plan_path: Path, state_directory: Path) -> dict[str, object]:
+def submit(
+    plan_path: Path, state_directory: Path, admission_evidence_path: Path
+) -> dict[str, object]:
     plan = _validated_plan(plan_path)
     try:
+        _validated_admission_evidence(admission_evidence_path, plan)
         _preflight(plan)
     except PreflightRejected as error:
         _record_preflight_rejection(state_directory, plan, str(error))
@@ -190,6 +229,7 @@ def _parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--plan", type=Path, required=True)
     parser.add_argument("--state-directory", type=Path, required=True)
+    parser.add_argument("--admission-evidence", type=Path, required=True)
     parser.add_argument("--execute", action="store_true")
     return parser
 
@@ -200,7 +240,13 @@ def main() -> None:
     if not args.execute:
         print(json.dumps(plan, indent=2, sort_keys=True))
         return
-    print(json.dumps(submit(args.plan, args.state_directory), indent=2, sort_keys=True))
+    print(
+        json.dumps(
+            submit(args.plan, args.state_directory, args.admission_evidence),
+            indent=2,
+            sort_keys=True,
+        )
+    )
 
 
 if __name__ == "__main__":

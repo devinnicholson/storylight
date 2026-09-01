@@ -92,6 +92,31 @@ def test_hidden_evaluation_claim_is_global_per_candidate_and_engine(tmp_path: Pa
         )
 
 
+def test_hidden_evaluation_claim_requires_absolute_state_root() -> None:
+    identity = CandidateIdentity(
+        candidate_id="candidate-one",
+        candidate_manifest_sha256="1" * 64,
+        engine_sha256="2" * 64,
+        model_revision="sha256:" + "2" * 64,
+    )
+    population = PopulationContract(
+        split="hidden",
+        records=512,
+        pairs=256,
+        record_ids_sha256="3" * 64,
+        category_record_counts={"attributes": 1},
+        content_sha256="4" * 64,
+    )
+
+    with pytest.raises(ValueError, match="must be absolute"):
+        _claim_hidden_evaluation(
+            identity=identity,
+            population=population,
+            plan={"approval": "exact"},
+            state_root=Path("relative-hidden-state"),
+        )
+
+
 def test_private_inputs_require_exact_mode_and_reject_symlinks(tmp_path: Path) -> None:
     private = tmp_path / "hidden.jsonl"
     private.write_text("{}\n")

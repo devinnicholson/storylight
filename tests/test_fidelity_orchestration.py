@@ -111,8 +111,13 @@ def _artifact(
             for name in (
                 "conversion_run",
                 "conversion_completion",
+                "hf_to_maxtext_completion",
+                "maxtext_to_hf_completion",
                 "roundtrip",
                 "exported_checkpoint_manifest",
+                "smoke_training_run",
+                "smoke_training_completion",
+                "smoke_adapter_manifest",
             )
         }
         stage_fields = {
@@ -148,6 +153,7 @@ def _artifact(
             "evidence_sha256": {
                 "development_summary": "a" * 64,
                 "dataset_manifest": run.dataset_manifest_sha256,
+                "merged_checkpoint_manifest": "b" * 64,
             },
         }
     elif stage == "hf-export":
@@ -248,8 +254,8 @@ def _artifact(
                 "schema_version": "1.0",
                 "stage": stage,
                 "run_id": run.run_id,
-                "config_sha256": "8" * 64,
-                "dataset_manifest_sha256": "6" * 64,
+                "config_sha256": run.config_sha256,
+                "dataset_manifest_sha256": run.dataset_manifest_sha256,
                 "status": status,
                 "inputs": {
                     dependency: run.stages[dependency].artifact_sha256

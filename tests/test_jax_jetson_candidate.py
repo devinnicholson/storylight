@@ -14,6 +14,9 @@ ROLLBACK = ROOT / "deploy/jetson/rollback-trained-planner.sh"
 SERVICE = ROOT / "deploy/jetson/systemd/bookforge-trained-planner-candidate@.service"
 SHADOW_EVIDENCE = ROOT / "deploy/jetson/trained-planner-shadow-evidence.py"
 BASELINE_IDENTITY = ROOT / "deploy/jetson/emit-accepted-planner-identity.sh"
+TOOLING_BUILDER = ROOT / "deploy/jetson/build-trained-planner-tooling-bundle.py"
+TOOLING_INSTALLER = ROOT / "deploy/jetson/install-trained-planner-tooling.py"
+ACCEPTANCE_PREFLIGHT = ROOT / "deploy/jetson/preflight-trained-planner-acceptance.py"
 
 
 def _load_shadow_evidence():
@@ -27,6 +30,19 @@ def _load_shadow_evidence():
 
 
 shadow_evidence = _load_shadow_evidence()
+
+
+def _load_acceptance_preflight():
+    spec = importlib.util.spec_from_file_location(
+        "trained_planner_acceptance_preflight", ACCEPTANCE_PREFLIGHT
+    )
+    assert spec is not None and spec.loader is not None
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+acceptance_preflight = _load_acceptance_preflight()
 
 
 def _sha256(path: Path) -> str:
@@ -289,6 +305,177 @@ def test_candidate_service_is_loopback_bounded_swap_free_and_side_by_side() -> N
     assert "StartLimitBurst=3" in service
     assert "MemorySwapMax=0" in service
     assert "ProtectSystem=strict" in service
+    assert "/usr/local/lib/bookforge/trained-planner-tooling/current/" in service
+
+
+def test_tooling_bundle_is_source_and_content_provenance_bound(tmp_path: Path) -> None:
+    output = tmp_path / "tooling"
+    commit = "a" * 40
+    built = subprocess.run(
+        [
+            "python3",
+            str(TOOLING_BUILDER),
+            "--source-commit",
+            commit,
+            "--allow-uncommitted-source",
+            "--output",
+            str(output),
+        ],
+        capture_output=True,
+        text=True,
+    )
+    assert built.returncode == 0, built.stderr
+    build_receipt = json.loads(built.stdout)
+    manifest_path = output / "tooling.manifest.json"
+    manifest = json.loads(manifest_path.read_text())
+    assert build_receipt["manifest_sha256"] == _sha256(manifest_path)
+    assert manifest["source_commit"] == commit
+    assert manifest["source_commit_verified"] is False
+    assert manifest["source_manifest_sha256"] == build_receipt["source_manifest_sha256"]
+    assert {record["path"] for record in manifest["files"]} >= {
+        "install-trained-planner-candidate.sh",
+        "run-trained-planner-shadow.sh",
+        "promote-trained-planner.sh",
+        "rollback-trained-planner.sh",
+        "systemd/bookforge-trained-planner-candidate@.service",
+    }
+
+    planned = subprocess.run(
+        [
+            "python3",
+            str(TOOLING_INSTALLER),
+            "--bundle",
+            str(output),
+            "--expected-manifest-sha256",
+            build_receipt["manifest_sha256"],
+            "--source-commit",
+            commit,
+            "--dry-run",
+        ],
+        capture_output=True,
+        text=True,
+    )
+    assert planned.returncode == 0, planned.stderr
+    plan = json.loads(planned.stdout)
+    assert plan["source_manifest_sha256"] == manifest["source_manifest_sha256"]
+    assert plan["service_restart"] is False
+    assert plan["deployable"] is False
+    assert plan["approval_token"].startswith(f"INSTALL_BOOKFORGE_TRAINED_PLANNER_TOOLING:{commit}:")
+
+
+def test_tooling_installer_rejects_bytes_changed_after_manifest(tmp_path: Path) -> None:
+    output = tmp_path / "tooling"
+    commit = "b" * 40
+    built = subprocess.run(
+        [
+            "python3",
+            str(TOOLING_BUILDER),
+            "--source-commit",
+            commit,
+            "--allow-uncommitted-source",
+            "--output",
+            str(output),
+        ],
+        capture_output=True,
+        text=True,
+        check=True,
+    )
+    receipt = json.loads(built.stdout)
+    target = output / "run-trained-planner-shadow.sh"
+    target.chmod(0o755)
+    target.write_text(target.read_text() + "\n# changed\n")
+    rejected = subprocess.run(
+        [
+            "python3",
+            str(TOOLING_INSTALLER),
+            "--bundle",
+            str(output),
+            "--expected-manifest-sha256",
+            receipt["manifest_sha256"],
+            "--source-commit",
+            commit,
+            "--dry-run",
+        ],
+        capture_output=True,
+        text=True,
+    )
+    assert rejected.returncode != 0
+    assert "checksum mismatch" in rejected.stderr
+
+
+def test_acceptance_preflight_dry_run_is_non_mutating_and_complete(tmp_path: Path) -> None:
+    missing_engine = tmp_path / "not-read-in-dry-run.engine"
+    result = subprocess.run(
+        [
+            "python3",
+            str(ACCEPTANCE_PREFLIGHT),
+            "--user",
+            "operator",
+            "--accepted-engine",
+            str(missing_engine),
+            "--expected-accepted-engine-sha256",
+            "c" * 64,
+            "--dry-run",
+        ],
+        capture_output=True,
+        text=True,
+    )
+    assert result.returncode == 0, result.stderr
+    evidence = json.loads(result.stdout)
+    assert evidence["read_only"] is True
+    assert evidence["status"] == "planned"
+    assert "historical-oom-and-checksum-bound-cold-start" in evidence["probes"]
+    assert "projector-kiosk-and-connected-display" in evidence["probes"]
+    assert not missing_engine.exists()
+
+
+def test_acceptance_preflight_requires_checksum_bound_post_oom_evidence(
+    tmp_path: Path,
+) -> None:
+    engine_sha = "d" * 64
+    evidence_path = tmp_path / "cold-start.json"
+    evidence_path.write_text(
+        json.dumps(
+            {
+                "schema_version": "1.0",
+                "producer": "bookforge-cold-start-recorder",
+                "status": "passed",
+                "accepted_engine_sha256": engine_sha,
+                "oom_events": 0,
+                "swap_events": 0,
+                "projector_flow_passed": True,
+                "restoration_demonstrated": True,
+                "completed_realtime_usec": 200,
+                "minimum_available_memory_mib": 1024,
+                "planner_ready_seconds": 12.5,
+            },
+            sort_keys=True,
+        )
+        + "\n"
+    )
+    valid, detail, completed = acceptance_preflight.evidence_is_fresh(
+        evidence_path, _sha256(evidence_path), engine_sha, 100
+    )
+    assert valid is True
+    assert completed == 200
+    assert "post-OOM" in detail
+
+    valid, _, completed = acceptance_preflight.evidence_is_fresh(
+        evidence_path, "e" * 64, engine_sha, 100
+    )
+    assert valid is False
+    assert completed == 0
+
+
+def test_candidate_scripts_resolve_the_immutable_coinstalled_installer() -> None:
+    assert "BOOKFORGE_CANDIDATE_UNIT_SOURCE" in INSTALLER.read_text()
+    assert (
+        "$SCRIPT_DIR/systemd/bookforge-trained-planner-candidate@.service" in INSTALLER.read_text()
+    )
+    for path in (PROMOTE, ROLLBACK):
+        text = path.read_text()
+        assert "BOOKFORGE_CANDIDATE_INSTALLER" in text
+        assert "$SCRIPT_DIR/install-trained-planner-candidate.sh" in text
 
 
 def test_shadow_is_counterbalanced_checksum_bound_and_trap_restored() -> None:

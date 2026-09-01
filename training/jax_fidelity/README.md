@@ -42,6 +42,27 @@ python -m training.jax_fidelity.prepare \
   --output artifacts/jax-fidelity/prepared-train.jsonl
 ```
 
+Download the gated base model only through an injected read-only Hugging Face
+token. The command is plan-only until `--execute` and the printed exact
+`BOOKFORGE_JAX_EXECUTION_APPROVAL` value are both supplied; the token itself is
+never written to an artifact:
+
+```bash
+python -m training.jax_fidelity.hf_snapshot \
+  --config experiments/jax-fidelity-lab/config.json \
+  --snapshot artifacts/jax-fidelity/hf-base \
+  --tokenizer artifacts/jax-fidelity/tokenizer \
+  --snapshot-manifest artifacts/jax-fidelity/hf-base.manifest.json \
+  --tokenizer-manifest artifacts/jax-fidelity/tokenizer.manifest.json \
+  --completion artifacts/jax-fidelity/hf-snapshot.completion.json
+```
+
+`artifact_contract.py` builds the named, checksum-bound inputs for conversion.
+`checkpoint_evidence.py` and `roundtrip_evidence.py` derive architecture,
+tokenizer, PLE, KV-sharing, EOS, and measured MaxText KL evidence from the real
+artifacts and terminal completion receipts; a converter exit code is never
+treated as compatibility proof by itself.
+
 `train`, `convert`, and `evaluate` print their complete command and a
 one-purpose approval token by default. They execute only with `--execute` and
 an exact `BOOKFORGE_JAX_EXECUTION_APPROVAL` environment value. MaxText commands
@@ -72,6 +93,14 @@ python -m training.jax_fidelity.evaluate \
   --output candidate-report.json
 ```
 
+`predict.py` generates all 512 development predictions from one immutable
+merged checkpoint on CUDA. `development_eligibility.py` compares that raw
+report against the checksum-bound accepted baseline and refuses hidden
+evaluation unless the development improvement and non-regression gates pass.
+The private endpoint evaluator accepts an explicit absolute
+`--hidden-state-root`, which must be a mode-0700 durable directory, so the
+one-shot claim works on an encrypted workstation as well as `/var/lib`.
+
 Hidden records are deliberately not materialized by this package. An authorized
-runner may pass them to the same evaluator once; public evidence should retain
-only IDs and hashes.
+runner may pass them to the endpoint evaluator once; public evidence retains
+only population hashes and aggregate metrics, never passages or raw generations.

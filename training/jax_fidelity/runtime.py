@@ -58,3 +58,16 @@ def validate_maxtext_checkout(root: Path | str, config: ExperimentConfig) -> Pat
 
 def run_checked(command: Sequence[str], *, cwd: Path) -> None:
     subprocess.run(list(command), cwd=cwd, check=True)
+
+
+def run_checked_capture(command: Sequence[str], *, cwd: Path) -> str:
+    """Run a bounded verifier and return its combined machine-parseable log."""
+
+    completed = subprocess.run(
+        list(command),
+        cwd=cwd,
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+    return f"{completed.stdout}\n{completed.stderr}"

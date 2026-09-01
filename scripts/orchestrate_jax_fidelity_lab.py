@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# ruff: noqa: E402
 from __future__ import annotations
 
 import argparse
@@ -6,8 +7,16 @@ import hashlib
 import json
 import os
 import re
+import sys
+from collections.abc import Mapping
 from dataclasses import asdict
 from pathlib import Path
+
+REPOSITORY_ROOT = Path(__file__).resolve().parents[1]
+for import_root in (REPOSITORY_ROOT / "src", REPOSITORY_ROOT):
+    resolved = str(import_root)
+    if resolved not in sys.path:
+        sys.path.insert(0, resolved)
 
 from bookforge.fidelity_benchmark import (
     CandidateIdentity,
@@ -17,18 +26,29 @@ from bookforge.fidelity_benchmark import (
     summarize_evaluations,
 )
 from bookforge.fidelity_evaluation import concept_vocabulary, evaluate_surface
+from bookforge.fidelity_lineage import stable_run_id
 from bookforge.fidelity_manifest import sha256_path, validate_manifest
 from bookforge.fidelity_orchestration import (
     FidelityRun,
     file_sha256,
     locked_fidelity_run,
     stage_plan,
+    typed_stage_document,
+    validate_stage_artifact,
 )
 from bookforge.fidelity_schema import DatasetSplit, FidelityRecord
 from training.jax_fidelity.configuration import load_config
 from training.jax_fidelity.formatting import format_training_record
-from training.jax_fidelity.integrity import canonical_json_bytes
-from training.jax_fidelity.roundtrip_smoke import contract_document
+from training.jax_fidelity.integrity import (
+    canonical_json_bytes,
+    canonical_sha256,
+    verify_artifact_manifest,
+)
+from training.jax_fidelity.release import candidate_id_for_checkpoint
+from training.jax_fidelity.roundtrip_smoke import (
+    contract_document,
+    validate_roundtrip_evidence,
+)
 
 
 def _parser() -> argparse.ArgumentParser:
@@ -85,7 +105,107 @@ def _parser() -> argparse.ArgumentParser:
     baseline.add_argument("--hidden-report", type=Path, required=True)
     baseline.add_argument("--hidden-report-sha256", required=True)
     baseline.add_argument("--output", type=Path, required=True)
+
+    roundtrip = subparsers.add_parser(
+        "record-roundtrip",
+        help="verify conversion, numerical, and five-step smoke evidence",
+    )
+    _add_record_paths(roundtrip)
+    roundtrip.add_argument("--config", type=Path, required=True)
+    roundtrip.add_argument("--conversion-run", type=Path, required=True)
+    roundtrip.add_argument("--conversion-completion", type=Path, required=True)
+    roundtrip.add_argument("--hf-to-maxtext-completion", type=Path, required=True)
+    roundtrip.add_argument("--maxtext-to-hf-completion", type=Path, required=True)
+    roundtrip.add_argument("--roundtrip-evidence", type=Path, required=True)
+    roundtrip.add_argument("--exported-checkpoint", type=Path, required=True)
+    roundtrip.add_argument("--exported-checkpoint-manifest", type=Path, required=True)
+    roundtrip.add_argument("--smoke-training-run", type=Path, required=True)
+    roundtrip.add_argument("--smoke-training-completion", type=Path, required=True)
+    roundtrip.add_argument("--smoke-adapter", type=Path, required=True)
+    roundtrip.add_argument("--smoke-adapter-manifest", type=Path, required=True)
+
+    training = subparsers.add_parser(
+        "record-training",
+        help="verify one finite full-training release package",
+    )
+    _add_record_paths(training)
+    training.add_argument("--remote-completion", type=Path, required=True)
+    training.add_argument("--training-run", type=Path, required=True)
+    training.add_argument("--training-completion", type=Path, required=True)
+    training.add_argument("--adapter", type=Path, required=True)
+    training.add_argument("--adapter-manifest", type=Path, required=True)
+    training.add_argument("--package-root", type=Path, required=True)
+    training.add_argument("--package-manifest", type=Path, required=True)
+    training.add_argument("--runtime-lock", type=Path, required=True)
+    training.add_argument(
+        "--backend",
+        choices=("vertex-tpu-v6e", "modal-l40s"),
+        required=True,
+    )
+
+    evaluation = subparsers.add_parser(
+        "record-candidate-evaluation",
+        help="bind a development-only decision to merged checkpoint bytes",
+    )
+    _add_record_paths(evaluation)
+    evaluation.add_argument("--development-evaluation", type=Path, required=True)
+    evaluation.add_argument("--config", type=Path, required=True)
+    evaluation.add_argument("--merged-checkpoint", type=Path, required=True)
+    evaluation.add_argument("--merged-checkpoint-manifest", type=Path, required=True)
+
+    hf_export = subparsers.add_parser(
+        "record-hf-export",
+        help="verify and record a complete merged-HF release",
+    )
+    _add_record_paths(hf_export)
+    hf_export.add_argument("--release-manifest", type=Path, required=True)
+    hf_export.add_argument("--release-root", type=Path, required=True)
+    hf_export.add_argument("--training-run", type=Path, required=True)
+    hf_export.add_argument("--training-completion", type=Path, required=True)
+    hf_export.add_argument("--roundtrip-evidence", type=Path, required=True)
+    hf_export.add_argument("--development-evaluation", type=Path, required=True)
+
+    int4_export = subparsers.add_parser(
+        "record-int4-export",
+        help="verify a checksum-bound TensorRT Edge-LLM INT4 export",
+    )
+    _add_record_paths(int4_export)
+    int4_export.add_argument("--source-release-manifest", type=Path, required=True)
+    int4_export.add_argument("--export-manifest", type=Path, required=True)
+    int4_export.add_argument("--export-root", type=Path, required=True)
+
+    for command, help_text in (
+        ("record-jetson-shadow", "adopt an exact Jetson shadow stage artifact"),
+        ("record-gate", "adopt an exact fidelity gate stage artifact"),
+    ):
+        adopted = subparsers.add_parser(command, help=help_text)
+        _add_record_paths(adopted)
+        adopted.add_argument("--source", type=Path, required=True)
+        adopted.add_argument("--source-sha256", required=True)
+
+    decision = subparsers.add_parser(
+        "record-terminal-decision",
+        help="record promotion or baseline retention after the gate",
+    )
+    _add_record_paths(decision)
+    decision.add_argument("--deployment-receipt", type=Path, required=True)
+    decision.add_argument("--accepted-engine-health", type=Path, required=True)
+    decision.add_argument("--rollback-state", type=Path)
+
+    reconcile = subparsers.add_parser(
+        "record-reconciliation",
+        help="verify cost/resource closure and finish the campaign",
+    )
+    _add_record_paths(reconcile)
+    reconcile.add_argument("--cost-ledger", type=Path, required=True)
+    reconcile.add_argument("--paid-resource-inventory", type=Path, required=True)
+    reconcile.add_argument("--deployment-artifact", type=Path, required=True)
     return parser
+
+
+def _add_record_paths(parser: argparse.ArgumentParser) -> None:
+    parser.add_argument("--state", type=Path, required=True)
+    parser.add_argument("--output", type=Path, required=True)
 
 
 def main() -> int:
@@ -114,6 +234,20 @@ def main() -> int:
         return 0
     if arguments.command == "record-baseline":
         _record_baseline(arguments)
+        return 0
+    recorder = {
+        "record-roundtrip": _record_roundtrip,
+        "record-training": _record_training,
+        "record-candidate-evaluation": _record_candidate_evaluation,
+        "record-hf-export": _record_hf_export,
+        "record-int4-export": _record_int4_export,
+        "record-jetson-shadow": _record_adopted_stage,
+        "record-gate": _record_adopted_stage,
+        "record-terminal-decision": _record_terminal_decision,
+        "record-reconciliation": _record_reconciliation,
+    }.get(arguments.command)
+    if recorder is not None:
+        recorder(arguments)
         return 0
     with locked_fidelity_run(arguments.state) as run:
         if arguments.command == "begin":
@@ -417,6 +551,762 @@ def _record_baseline(arguments: argparse.Namespace) -> None:
         _publish_artifact(arguments.output, artifact)
         run.complete("baseline", artifact=arguments.output)
         _print_status(run)
+
+
+def _source_json(path: Path, label: str) -> tuple[dict[str, object], str]:
+    digest = file_sha256(path)
+    return _approved_json(path, digest, label), digest
+
+
+def _source_digest(path: Path, label: str) -> str:
+    if not path.is_file() or path.is_symlink() or path.stat().st_size < 1:
+        raise ValueError(f"{label} must be a nonempty regular file")
+    return file_sha256(path)
+
+
+def _require_sha256(value: object, label: str) -> str:
+    if not isinstance(value, str) or re.fullmatch(r"[a-f0-9]{64}", value) is None:
+        raise ValueError(f"{label} must be a lowercase SHA-256")
+    return value
+
+
+def _validate_run_pair(
+    run_document: Mapping[str, object],
+    run_sha256: str,
+    completion: Mapping[str, object],
+    *,
+    expected_run_id: str,
+    expected_stage: str,
+    config_sha256: str,
+    dataset_manifest_sha256: str | None,
+) -> None:
+    if (
+        run_document.get("schema_version") != "1.0"
+        or run_document.get("run_id") != expected_run_id
+        or run_document.get("stage") != expected_stage
+        or run_document.get("status") != "planned"
+        or run_document.get("config_sha256") != config_sha256
+    ):
+        raise ValueError(f"{expected_stage} run manifest changed its immutable lineage")
+    if (
+        dataset_manifest_sha256 is not None
+        and run_document.get("dataset_manifest_sha256") != dataset_manifest_sha256
+    ):
+        raise ValueError(f"{expected_stage} run changed the dataset manifest")
+    if (
+        completion.get("schema_version") != "1.0"
+        or completion.get("run_id") != expected_run_id
+        or completion.get("status") != "succeeded"
+        or completion.get("run_manifest_sha256") != run_sha256
+        or not isinstance(completion.get("artifacts"), list)
+        or not completion["artifacts"]
+        or not isinstance(completion.get("evidence"), dict)
+        or not completion["evidence"]
+    ):
+        raise ValueError(f"{expected_stage} completion is not successful terminal evidence")
+
+
+def _completion_covers_manifest(
+    completion: Mapping[str, object],
+    manifest: Mapping[str, object],
+    *,
+    artifact_root: Path,
+    label: str,
+) -> None:
+    rows = completion.get("artifacts")
+    files = manifest.get("files")
+    if not isinstance(rows, list) or not isinstance(files, list) or not files:
+        raise ValueError(f"{label} has no artifact population")
+    declared = {
+        row.get("path"): row for row in rows if isinstance(row, dict) and row.get("path")
+    }
+    if len(declared) != len(rows):
+        raise ValueError(f"{label} completion contains duplicate or malformed paths")
+    matched: set[str] = set()
+    for item in files:
+        if not isinstance(item, dict) or not isinstance(item.get("path"), str):
+            raise ValueError(f"{label} manifest contains a malformed file")
+        relative = item["path"]
+        absolute = str((artifact_root / relative).resolve())
+        key = absolute if absolute in declared else relative
+        if declared.get(key) != {
+            "path": key,
+            "sha256": item.get("sha256"),
+            "bytes": item.get("bytes"),
+        }:
+            raise ValueError(f"{label} completion differs from artifact bytes: {relative}")
+        matched.add(key)
+    if matched != set(declared):
+        raise ValueError(f"{label} completion declares files outside its manifest")
+
+
+def _verify_package_manifest(root: Path, manifest: Mapping[str, object]) -> None:
+    rows = manifest.get("files")
+    if manifest.get("schema_version") != "1.0" or not isinstance(rows, list) or not rows:
+        raise ValueError("portable package manifest is malformed")
+    declared: set[str] = set()
+    for row in rows:
+        if not isinstance(row, dict) or not isinstance(row.get("path"), str):
+            raise ValueError("portable package manifest contains a malformed file")
+        relative = Path(row["path"])
+        if relative.is_absolute() or ".." in relative.parts or relative.as_posix() in declared:
+            raise ValueError("portable package manifest contains an unsafe path")
+        path = root / relative
+        if (
+            not path.is_file()
+            or path.is_symlink()
+            or path.stat().st_size != row.get("bytes")
+            or file_sha256(path) != row.get("sha256")
+        ):
+            raise ValueError(f"portable package byte verification failed: {relative}")
+        declared.add(relative.as_posix())
+    actual = {
+        path.relative_to(root).as_posix()
+        for path in root.rglob("*")
+        if path.is_file()
+        and path.relative_to(root).as_posix()
+        not in {"package.manifest.json", "completion.json"}
+    }
+    if declared != actual:
+        raise ValueError("portable package contains undeclared or missing files")
+    required = {
+        "adapter.manifest.json",
+        "runtime.lock.json",
+        "training/run.json",
+        "training/completion.json",
+    }
+    if not required.issubset(declared):
+        raise ValueError("portable package is missing required training evidence")
+
+
+def _complete_recorded_stage(
+    snapshot: FidelityRun,
+    *,
+    state: Path,
+    stage: str,
+    artifact: dict[str, object],
+    output: Path,
+) -> None:
+    with locked_fidelity_run(state) as run:
+        if run != snapshot:
+            raise RuntimeError("run state changed while source evidence was being verified")
+        record = run.stages[stage]
+        if record.status.value in {"pending", "blocked"}:
+            run.begin(stage)
+        elif record.status.value != "running":
+            raise RuntimeError(f"stage {stage!r} is not recordable from {record.status.value!r}")
+        _publish_artifact(output, artifact)
+        run.complete(stage, artifact=output)
+        _print_status(run)
+
+
+def _record_roundtrip(arguments: argparse.Namespace) -> None:
+    run = FidelityRun.read(arguments.state)
+    config = load_config(arguments.config)
+    if config.sha256 != run.config_sha256:
+        raise ValueError("roundtrip configuration differs from the campaign")
+    conversion_run, conversion_run_sha = _source_json(
+        arguments.conversion_run, "logit-check run"
+    )
+    conversion_completion, conversion_completion_sha = _source_json(
+        arguments.conversion_completion, "logit-check completion"
+    )
+    conversion_input_sha = _require_sha256(
+        conversion_run.get("dataset_manifest_sha256"),
+        "logit-check input manifest SHA-256",
+    )
+    conversion_id = stable_run_id(
+        stage="logit-check",
+        config_sha256=run.config_sha256,
+        dataset_manifest_sha256=conversion_input_sha,
+    )
+    _validate_run_pair(
+        conversion_run,
+        conversion_run_sha,
+        conversion_completion,
+        expected_run_id=conversion_id,
+        expected_stage="logit-check",
+        config_sha256=run.config_sha256,
+        dataset_manifest_sha256=None,
+    )
+    if conversion_completion.get("evidence", {}).get("direction") != "logit-check":
+        raise ValueError("conversion completion is not the final logit seam")
+    hf_to_maxtext, hf_to_maxtext_sha = _source_json(
+        arguments.hf_to_maxtext_completion,
+        "HF-to-MaxText completion",
+    )
+    maxtext_to_hf, maxtext_to_hf_sha = _source_json(
+        arguments.maxtext_to_hf_completion,
+        "MaxText-to-HF completion",
+    )
+    for document, direction in (
+        (hf_to_maxtext, "hf-to-maxtext"),
+        (maxtext_to_hf, "maxtext-to-hf"),
+    ):
+        evidence = document.get("evidence")
+        if (
+            document.get("schema_version") != "1.0"
+            or document.get("status") != "succeeded"
+            or not isinstance(document.get("artifacts"), list)
+            or not document["artifacts"]
+            or not isinstance(evidence, dict)
+            or evidence.get("direction") != direction
+        ):
+            raise ValueError(f"{direction} completion is not successful terminal evidence")
+
+    roundtrip, roundtrip_sha = _source_json(
+        arguments.roundtrip_evidence, "roundtrip evidence"
+    )
+    exported_manifest, exported_manifest_sha = _source_json(
+        arguments.exported_checkpoint_manifest,
+        "exported checkpoint manifest",
+    )
+    if roundtrip.get("exported_checkpoint_manifest") != exported_manifest:
+        raise ValueError("roundtrip evidence changed the exported checkpoint manifest")
+    verify_artifact_manifest(arguments.exported_checkpoint, exported_manifest)
+    validate_roundtrip_evidence(
+        config,
+        roundtrip,
+        exported_checkpoint=arguments.exported_checkpoint,
+    )
+
+    smoke_run, smoke_run_sha = _source_json(arguments.smoke_training_run, "smoke run")
+    smoke_completion, smoke_completion_sha = _source_json(
+        arguments.smoke_training_completion, "smoke completion"
+    )
+    smoke_id = stable_run_id(
+        stage="lora-smoke",
+        config_sha256=run.config_sha256,
+        dataset_manifest_sha256=run.dataset_manifest_sha256,
+    )
+    _validate_run_pair(
+        smoke_run,
+        smoke_run_sha,
+        smoke_completion,
+        expected_run_id=smoke_id,
+        expected_stage="lora-smoke",
+        config_sha256=run.config_sha256,
+        dataset_manifest_sha256=run.dataset_manifest_sha256,
+    )
+    metadata = smoke_run.get("metadata")
+    if not isinstance(metadata, dict) or metadata.get("smoke") is not True:
+        raise ValueError("roundtrip canary is not an explicit five-step smoke run")
+    smoke_manifest, smoke_manifest_sha = _source_json(
+        arguments.smoke_adapter_manifest, "smoke adapter manifest"
+    )
+    verify_artifact_manifest(arguments.smoke_adapter, smoke_manifest)
+    _completion_covers_manifest(
+        smoke_completion,
+        smoke_manifest,
+        artifact_root=arguments.smoke_adapter.resolve(),
+        label="smoke adapter",
+    )
+    lineage = roundtrip.get("lineage")
+    expected_lineage = {
+        "hf_to_maxtext_completion_sha256": hf_to_maxtext_sha,
+        "smoke_completion_sha256": smoke_completion_sha,
+        "smoke_run_id": smoke_id,
+        "maxtext_to_hf_completion_sha256": maxtext_to_hf_sha,
+        "logit_completion_sha256": conversion_completion_sha,
+        "logit_run_id": conversion_id,
+        "hf_to_maxtext_run_id": hf_to_maxtext.get("run_id"),
+        "maxtext_to_hf_run_id": maxtext_to_hf.get("run_id"),
+    }
+    if not isinstance(lineage, dict) or any(
+        lineage.get(name) != value for name, value in expected_lineage.items()
+    ):
+        raise ValueError("roundtrip lineage differs from its verified terminal evidence")
+    artifact = typed_stage_document(
+        run,
+        "roundtrip",
+        status="succeeded",
+        fields={"roundtrip_status": "passed"},
+        evidence_sha256={
+            "conversion_run": conversion_run_sha,
+            "conversion_completion": conversion_completion_sha,
+            "hf_to_maxtext_completion": hf_to_maxtext_sha,
+            "maxtext_to_hf_completion": maxtext_to_hf_sha,
+            "roundtrip": roundtrip_sha,
+            "exported_checkpoint_manifest": exported_manifest_sha,
+            "smoke_training_run": smoke_run_sha,
+            "smoke_training_completion": smoke_completion_sha,
+            "smoke_adapter_manifest": smoke_manifest_sha,
+        },
+    )
+    _complete_recorded_stage(
+        run,
+        state=arguments.state,
+        stage="roundtrip",
+        artifact=artifact,
+        output=arguments.output,
+    )
+
+
+def _record_training(arguments: argparse.Namespace) -> None:
+    run = FidelityRun.read(arguments.state)
+    training_id = stable_run_id(
+        stage="lora-train",
+        config_sha256=run.config_sha256,
+        dataset_manifest_sha256=run.dataset_manifest_sha256,
+    )
+    training_run, training_run_sha = _source_json(arguments.training_run, "training run")
+    training_completion, training_completion_sha = _source_json(
+        arguments.training_completion, "training completion"
+    )
+    _validate_run_pair(
+        training_run,
+        training_run_sha,
+        training_completion,
+        expected_run_id=training_id,
+        expected_stage="lora-train",
+        config_sha256=run.config_sha256,
+        dataset_manifest_sha256=run.dataset_manifest_sha256,
+    )
+    metadata = training_run.get("metadata")
+    if not isinstance(metadata, dict) or metadata.get("smoke") is not False:
+        raise ValueError("training evidence is not the bounded full run")
+
+    adapter_manifest, adapter_manifest_sha = _source_json(
+        arguments.adapter_manifest, "adapter manifest"
+    )
+    verify_artifact_manifest(arguments.adapter, adapter_manifest)
+    _completion_covers_manifest(
+        training_completion,
+        adapter_manifest,
+        artifact_root=arguments.adapter.resolve(),
+        label="training adapter",
+    )
+    package_manifest, package_manifest_sha = _source_json(
+        arguments.package_manifest, "package manifest"
+    )
+    _verify_package_manifest(arguments.package_root.resolve(), package_manifest)
+    runtime_lock, runtime_lock_sha = _source_json(arguments.runtime_lock, "runtime lock")
+    if (
+        runtime_lock.get("schema_version") != "1.0"
+        or not isinstance(runtime_lock.get("packages"), list)
+        or not runtime_lock["packages"]
+        or runtime_lock.get("packages_sha256") != canonical_sha256(runtime_lock["packages"])
+    ):
+        raise ValueError("training runtime lock is incomplete or internally inconsistent")
+    completion_evidence = training_completion.get("evidence")
+    if (
+        not isinstance(completion_evidence, dict)
+        or completion_evidence.get("runtime_lock", {}).get("sha256") != runtime_lock_sha
+    ):
+        raise ValueError("training completion changed the runtime lock")
+
+    remote, remote_sha = _source_json(arguments.remote_completion, "remote completion")
+    portable = remote.get("portable_package")
+    if (
+        remote.get("schema_version") != "1.0"
+        or remote.get("run_id") != run.run_id
+        or remote.get("training_run_id") != training_id
+        or remote.get("status") != "succeeded"
+        or remote.get("backend") != arguments.backend
+        or remote.get("config_sha256") != run.config_sha256
+        or remote.get("dataset_manifest_sha256") != run.dataset_manifest_sha256
+        or remote.get("source_training_completion_sha256") != training_completion_sha
+        or not isinstance(remote.get("files"), list)
+        or not remote["files"]
+        or not isinstance(portable, dict)
+        or portable.get("training_run_id") != training_id
+        or portable.get("training_run_sha256") != training_run_sha
+        or portable.get("training_completion_sha256") != training_completion_sha
+        or portable.get("adapter_manifest_sha256") != adapter_manifest_sha
+        or portable.get("package_manifest_sha256") != package_manifest_sha
+        or portable.get("runtime_lock_sha256") != runtime_lock_sha
+    ):
+        raise ValueError("remote completion does not bind the verified training package")
+    artifact = typed_stage_document(
+        run,
+        "train",
+        status="succeeded",
+        fields={
+            "training_run_id": training_id,
+            "backend": arguments.backend,
+            "automatic_retries": 0,
+        },
+        evidence_sha256={
+            "remote_completion": remote_sha,
+            "training_run": training_run_sha,
+            "training_completion": training_completion_sha,
+            "adapter_manifest": adapter_manifest_sha,
+            "package_manifest": package_manifest_sha,
+            "runtime_lock": runtime_lock_sha,
+        },
+    )
+    _complete_recorded_stage(
+        run,
+        state=arguments.state,
+        stage="train",
+        artifact=artifact,
+        output=arguments.output,
+    )
+
+
+def _candidate_id_from_checkpoint(
+    run: FidelityRun,
+    *,
+    config_path: Path,
+    checkpoint: Path,
+) -> str:
+    config = load_config(config_path)
+    if config.sha256 != run.config_sha256:
+        raise ValueError("campaign configuration is not the repository-pinned configuration")
+    return candidate_id_for_checkpoint(
+        config_path=config_path,
+        dataset_manifest_sha256=run.dataset_manifest_sha256,
+        training_run_id=str(run.training_run_id),
+        merged_hf_checkpoint=checkpoint,
+    )
+
+
+def _record_candidate_evaluation(arguments: argparse.Namespace) -> None:
+    run = FidelityRun.read(arguments.state)
+    if run.training_run_id is None:
+        raise ValueError("candidate evaluation requires completed training lineage")
+    manifest, manifest_sha = _source_json(
+        arguments.merged_checkpoint_manifest,
+        "merged checkpoint manifest",
+    )
+    verify_artifact_manifest(arguments.merged_checkpoint, manifest)
+    raw_files = manifest.get("files")
+    if not isinstance(raw_files, list) or not raw_files:
+        raise ValueError("merged checkpoint manifest has no files")
+    if any(not isinstance(row, dict) for row in raw_files):
+        raise ValueError("merged checkpoint manifest contains malformed files")
+    candidate_id = _candidate_id_from_checkpoint(
+        run,
+        config_path=arguments.config,
+        checkpoint=arguments.merged_checkpoint,
+    )
+    evaluation, evaluation_sha = _source_json(
+        arguments.development_evaluation,
+        "development evaluation",
+    )
+    if (
+        evaluation.get("schema_version") != "1.0"
+        or evaluation.get("candidate_id") != candidate_id
+        or evaluation.get("stage") != "development"
+        or evaluation.get("dataset_manifest_sha256") != run.dataset_manifest_sha256
+        or evaluation.get("training_run_id") != run.training_run_id
+        or evaluation.get("eligibility_decision")
+        != {"passed": True, "hidden_evaluated": False}
+        or not isinstance(evaluation.get("summary"), dict)
+        or not evaluation["summary"]
+    ):
+        raise ValueError("candidate evaluation is not a passing development-only decision")
+    artifact = typed_stage_document(
+        run,
+        "candidate-eval",
+        status="succeeded",
+        fields={
+            "training_run_id": run.training_run_id,
+            "candidate_id": candidate_id,
+            "development_eligibility": {"passed": True, "hidden_evaluated": False},
+        },
+        evidence_sha256={
+            "development_summary": evaluation_sha,
+            "dataset_manifest": run.dataset_manifest_sha256,
+            "merged_checkpoint_manifest": manifest_sha,
+        },
+    )
+    _complete_recorded_stage(
+        run,
+        state=arguments.state,
+        stage="candidate-eval",
+        artifact=artifact,
+        output=arguments.output,
+    )
+
+
+def _verify_release_files(root: Path, manifest: Mapping[str, object]) -> None:
+    rows = manifest.get("files")
+    if not isinstance(rows, list) or not rows:
+        raise ValueError("merged-HF release has no files")
+    declared: set[str] = set()
+    for row in rows:
+        if not isinstance(row, dict) or not isinstance(row.get("path"), str):
+            raise ValueError("merged-HF release contains a malformed file declaration")
+        relative = Path(row["path"])
+        if relative.is_absolute() or ".." in relative.parts or relative.as_posix() in declared:
+            raise ValueError("merged-HF release contains an unsafe path")
+        path = root / relative
+        if (
+            not path.is_file()
+            or path.is_symlink()
+            or path.stat().st_size != row.get("bytes")
+            or file_sha256(path) != row.get("sha256")
+        ):
+            raise ValueError(f"merged-HF release byte verification failed: {relative}")
+        declared.add(relative.as_posix())
+    actual = {path.relative_to(root).as_posix() for path in root.rglob("*") if path.is_file()}
+    if actual != declared or manifest.get("files_content_sha256") != canonical_sha256(rows):
+        raise ValueError("merged-HF release manifest differs from its checkpoint bytes")
+
+
+def _record_hf_export(arguments: argparse.Namespace) -> None:
+    run = FidelityRun.read(arguments.state)
+    release, release_sha = _source_json(arguments.release_manifest, "release manifest")
+    if (
+        release.get("schema_version") != "1.0"
+        or release.get("status") != "succeeded"
+        or release.get("release_type") != "merged-hf"
+        or release.get("config_sha256") != run.config_sha256
+        or release.get("dataset_manifest_sha256") != run.dataset_manifest_sha256
+        or release.get("training_run_id") != run.training_run_id
+        or release.get("candidate_id") != run.candidate_id
+    ):
+        raise ValueError("merged-HF release changed the selected candidate lineage")
+    _verify_release_files(arguments.release_root.resolve(), release)
+    evidence_paths = {
+        "training_run": arguments.training_run,
+        "training_completion": arguments.training_completion,
+        "roundtrip": arguments.roundtrip_evidence,
+        "development_summary": arguments.development_evaluation,
+    }
+    evidence = {name: _source_digest(path, name) for name, path in evidence_paths.items()}
+    terminal = release.get("terminal_evidence")
+    if not isinstance(terminal, dict) or terminal != {
+        "training_run": evidence["training_run"],
+        "training_completion": evidence["training_completion"],
+        "roundtrip": evidence["roundtrip"],
+        "evaluation": evidence["development_summary"],
+    }:
+        raise ValueError("merged-HF release changed its terminal evidence")
+    artifact = typed_stage_document(
+        run,
+        "hf-export",
+        status="succeeded",
+        fields={
+            "training_run_id": run.training_run_id,
+            "candidate_id": run.candidate_id,
+            "release_manifest_sha256": release_sha,
+        },
+        evidence_sha256={"release_manifest": release_sha, **evidence},
+    )
+    _complete_recorded_stage(
+        run,
+        state=arguments.state,
+        stage="hf-export",
+        artifact=artifact,
+        output=arguments.output,
+    )
+
+
+def _record_int4_export(arguments: argparse.Namespace) -> None:
+    run = FidelityRun.read(arguments.state)
+    source, source_sha = _source_json(
+        arguments.source_release_manifest,
+        "source release manifest",
+    )
+    if (
+        source.get("candidate_id") != run.candidate_id
+        or source.get("training_run_id") != run.training_run_id
+        or source.get("config_sha256") != run.config_sha256
+        or source.get("dataset_manifest_sha256") != run.dataset_manifest_sha256
+    ):
+        raise ValueError("INT4 source release changed the selected candidate lineage")
+    exported, exported_sha = _source_json(arguments.export_manifest, "INT4 export manifest")
+    if (
+        exported.get("schema_version") != "1.0"
+        or exported.get("status") != "succeeded"
+        or exported.get("candidate_id") != run.candidate_id
+        or exported.get("training_run_id") != run.training_run_id
+        or exported.get("config_sha256") != run.config_sha256
+        or exported.get("dataset_manifest_sha256") != run.dataset_manifest_sha256
+        or exported.get("source_release_manifest_sha256") != source_sha
+        or exported.get("quantization") != "int4_awq"
+        or exported.get("components") != ["thinker"]
+        or exported.get("skip_visual") is not True
+        or exported.get("skip_audio") is not True
+        or exported.get("engine_built_in_cloud") is not False
+    ):
+        raise ValueError("INT4 export changed the approved text-only release contract")
+    calibration = exported.get("calibration_provenance")
+    calibration_sha = exported.get("calibration_provenance_sha256")
+    if not isinstance(calibration, dict) or calibration_sha != canonical_sha256(calibration):
+        raise ValueError("INT4 export has invalid calibration provenance")
+    rows = exported.get("files")
+    if not isinstance(rows, list) or not rows:
+        raise ValueError("INT4 export has no ONNX files")
+    declared: set[str] = set()
+    for row in rows:
+        if not isinstance(row, dict) or not isinstance(row.get("path"), str):
+            raise ValueError("INT4 export has a malformed file declaration")
+        relative = Path(row["path"])
+        path = arguments.export_root / "onnx" / relative
+        if (
+            relative.is_absolute()
+            or ".." in relative.parts
+            or relative.as_posix() in declared
+            or not path.is_file()
+            or path.is_symlink()
+            or path.stat().st_size != row.get("bytes")
+            or file_sha256(path) != row.get("sha256")
+        ):
+            raise ValueError(f"INT4 export byte verification failed: {relative}")
+        declared.add(relative.as_posix())
+    actual = {
+        path.relative_to(arguments.export_root / "onnx").as_posix()
+        for path in (arguments.export_root / "onnx").rglob("*")
+        if path.is_file()
+    }
+    if declared != actual:
+        raise ValueError("INT4 export contains undeclared or missing files")
+    artifact = typed_stage_document(
+        run,
+        "int4-export",
+        status="succeeded",
+        fields={
+            "training_run_id": run.training_run_id,
+            "candidate_id": run.candidate_id,
+            "source_release_manifest_sha256": source_sha,
+            "export_manifest_sha256": exported_sha,
+        },
+        evidence_sha256={
+            "source_release_manifest": source_sha,
+            "export_manifest": exported_sha,
+            "calibration_provenance": str(calibration_sha),
+        },
+    )
+    _complete_recorded_stage(
+        run,
+        state=arguments.state,
+        stage="int4-export",
+        artifact=artifact,
+        output=arguments.output,
+    )
+
+
+def _publish_exact(source: Path, destination: Path) -> None:
+    payload = source.read_bytes()
+    destination.parent.mkdir(parents=True, exist_ok=True)
+    try:
+        descriptor = os.open(destination, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+    except FileExistsError:
+        if destination.read_bytes() != payload:
+            raise FileExistsError(f"refusing to replace stage evidence: {destination}") from None
+        return
+    with os.fdopen(descriptor, "wb") as stream:
+        stream.write(payload)
+        stream.flush()
+        os.fsync(stream.fileno())
+
+
+def _record_adopted_stage(arguments: argparse.Namespace) -> None:
+    stage = "jetson-shadow" if arguments.command == "record-jetson-shadow" else "gate"
+    run = FidelityRun.read(arguments.state)
+    if file_sha256(arguments.source) != arguments.source_sha256:
+        raise ValueError(f"approved {stage} source SHA-256 changed")
+    validate_stage_artifact(run, stage, arguments.source)
+    with locked_fidelity_run(arguments.state) as active:
+        if active != run:
+            raise RuntimeError("run state changed while source evidence was being verified")
+        record = active.stages[stage]
+        if record.status.value in {"pending", "blocked"}:
+            active.begin(stage)
+        elif record.status.value != "running":
+            raise RuntimeError(f"stage {stage!r} is not recordable from {record.status.value!r}")
+        _publish_exact(arguments.source, arguments.output)
+        active.complete(stage, artifact=arguments.output)
+        _print_status(active)
+
+
+def _record_terminal_decision(arguments: argparse.Namespace) -> None:
+    run = FidelityRun.read(arguments.state)
+    gate = run.stages["gate"]
+    if gate.status.value != "completed" or gate.artifact_status not in {"passed", "rejected"}:
+        raise ValueError("terminal decision requires completed gate evidence")
+    stage = "promotion" if gate.artifact_status == "passed" else "retain-baseline"
+    receipt_sha = _source_digest(arguments.deployment_receipt, "deployment receipt")
+    health_sha = _source_digest(arguments.accepted_engine_health, "engine health evidence")
+    evidence: dict[str, str]
+    status: str
+    if stage == "promotion":
+        if arguments.rollback_state is None:
+            raise ValueError("promotion requires the durable rollback state")
+        evidence = {
+            "promotion_receipt": receipt_sha,
+            "post_promotion_health": health_sha,
+            "rollback_state": _source_digest(arguments.rollback_state, "rollback state"),
+        }
+        status = "promoted"
+    else:
+        if arguments.rollback_state is not None:
+            raise ValueError("baseline retention does not accept promotion rollback state")
+        evidence = {
+            "retention_receipt": receipt_sha,
+            "accepted_engine_health": health_sha,
+        }
+        status = "retained"
+    artifact = typed_stage_document(
+        run,
+        stage,
+        status=status,
+        fields={
+            "training_run_id": run.training_run_id,
+            "candidate_id": run.candidate_id,
+            "candidate_manifest_sha256": gate.candidate_manifest_sha256,
+            "gate_artifact_sha256": gate.artifact_sha256,
+        },
+        evidence_sha256=evidence,
+    )
+    _complete_recorded_stage(
+        run,
+        state=arguments.state,
+        stage=stage,
+        artifact=artifact,
+        output=arguments.output,
+    )
+
+
+def _record_reconciliation(arguments: argparse.Namespace) -> None:
+    run = FidelityRun.read(arguments.state)
+    cost, cost_sha = _source_json(arguments.cost_ledger, "cost ledger")
+    inventory, inventory_sha = _source_json(
+        arguments.paid_resource_inventory,
+        "paid resource inventory",
+    )
+    if cost.get("schema_version") != "1.0" or cost.get("gross_cost_reconciled") is not True:
+        raise ValueError("cost ledger does not confirm reconciled gross cost")
+    if (
+        inventory.get("schema_version") != "1.0"
+        or inventory.get("active_paid_resources") != 0
+    ):
+        raise ValueError("paid resource inventory does not confirm zero active resources")
+    promoted = run.stages["promotion"].status.value == "completed"
+    outcome_stage = "promotion" if promoted else "retain-baseline"
+    outcome = run.stages[outcome_stage]
+    deployment_sha = _source_digest(arguments.deployment_artifact, "deployment artifact")
+    if deployment_sha != outcome.artifact_sha256:
+        raise ValueError("deployment artifact differs from the completed terminal decision")
+    artifact = typed_stage_document(
+        run,
+        "reconcile",
+        status="succeeded",
+        fields={
+            "training_run_id": run.training_run_id,
+            "candidate_id": run.candidate_id,
+            "gate_artifact_sha256": run.stages["gate"].artifact_sha256,
+            "deployment_artifact_sha256": deployment_sha,
+            "deployment_outcome": "promoted" if promoted else "retained",
+            "gross_cost_reconciled": True,
+            "active_paid_resources": 0,
+        },
+        evidence_sha256={
+            "cost_ledger": cost_sha,
+            "paid_resource_inventory": inventory_sha,
+            "deployment_receipt": deployment_sha,
+        },
+    )
+    _complete_recorded_stage(
+        run,
+        state=arguments.state,
+        stage="reconcile",
+        artifact=artifact,
+        output=arguments.output,
+    )
 
 
 if __name__ == "__main__":

@@ -40,6 +40,30 @@ retrying service is created.
 Success additionally requires the training run's nonempty terminal evidence and a nonempty output
 artifact manifest; process exit zero alone is insufficient.
 
+## Image and admission chain
+
+`build_image_plan.py` hashes every tracked regular file in the Docker build context and derives a
+content-addressed tag. It refuses an unpinned Docker builder and the training Dockerfile refuses an
+unpinned base image. `image-cloudbuild.yaml` is a build recipe, not a deployment: after the single
+approved build, resolve the Artifact Registry digest and pass only
+`.../trainer:<source-prefix>@sha256:<digest>` to `job_plan.py`. A mutable tag is never accepted by
+the Vertex plan. The Artifact Registry repository and a verified, digest-pinned Cloud Build Docker
+builder are external prerequisites; this directory does not create either one.
+
+`cloud_preflight.py` performs only `gcloud` describe/list operations. It checks the active account
+and project, billing link, required APIs, absent CustomJob ID, private bucket policies and distinct
+lifecycle behavior, an enabled numeric secret version, and regional TPU quota. Promotional credit
+balances are not exposed by a reliable public quota API, so the script requires a run-bound manual
+attestation instead of pretending billing enabled means credits exist. The resulting evidence binds
+the exact job-spec and input-binding hashes. `submit_vertex_job.py` refuses evidence older than 15
+minutes or evidence for any other plan before it records submission intent.
+
+`fetch_gcs_release.py` requires the expected SHA-256 of `completion.json`, generation-matches every
+GCS download, rejects extra objects, verifies every declared byte, and validates the same portable
+training package contract as the Modal bridge. It performs no deletion. The trusted checksum must
+come from terminal job evidence or a separately authenticated operator channel, never from the
+bucket listing being verified.
+
 Modal training and TensorRT export append pre/post billing-report observations to the local
 reconciliation ledger. These observations do not claim that the declared ceiling is provider
 enforced, and neither workflow automatically deletes remote release, scratch, export, or intent

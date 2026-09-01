@@ -3,7 +3,9 @@ from __future__ import annotations
 import hashlib
 import importlib.util
 import json
+import shutil
 import sys
+from datetime import UTC, datetime
 from pathlib import Path
 
 import pytest
@@ -257,6 +259,158 @@ def test_cloud_role_and_documentation_exclude_broad_access() -> None:
     assert "uniform access" in readme
     assert "public-access prevention" in readme
     assert "ambiguous" in readme
+
+
+def test_image_build_plan_binds_tracked_context_and_requires_pinned_builder() -> None:
+    module = _load("bookforge_jax_image_plan", JAX_ROOT / "build_image_plan.py")
+    builder = "gcr.io/cloud-builders/docker@sha256:" + "9" * 64
+
+    plan = module.build_plan(ROOT, builder_image=builder)
+
+    assert plan["mode"] == "plan-only"
+    assert plan["builder_image"] == builder
+    assert plan["tagged_image_uri"].endswith(":" + plan["source_sha256"][:20])
+    assert plan["digest_resolution_command"][-1] == "--format=value(image_summary.digest)"
+    assert plan["remote_mutation"] is False
+    with pytest.raises(ValueError, match="builder"):
+        module.build_plan(ROOT, builder_image="gcr.io/cloud-builders/docker:latest")
+
+
+def _private_bucket(*, lifecycle: bool) -> dict[str, object]:
+    document: dict[str, object] = {
+        "public_access_prevention": "enforced",
+        "uniform_bucket_level_access": True,
+    }
+    if lifecycle:
+        document["lifecycle_config"] = {"rule": [{"condition": {"age": 7}}]}
+    return document
+
+
+def test_read_only_cloud_preflight_requires_every_admission_fact() -> None:
+    sys.path.insert(0, str(JAX_ROOT))
+    module = _load("bookforge_jax_cloud_preflight", JAX_ROOT / "cloud_preflight.py")
+    run_id = "bookforge-jax-smoke-20260901"
+    secret = "projects/your-gcp-project/secrets/bookforge-hf-read/versions/3"
+    snapshots = {
+        "configuration": {
+            "core": {"account": "operator@example.com", "project": "your-gcp-project"}
+        },
+        "billing": {"billingEnabled": True, "billingAccountName": "billingAccounts/123"},
+        "services": [
+            {"config": {"name": name}}
+            for name in sorted(module.REQUIRED_SERVICES)
+        ],
+        "jobs": [],
+        "scratch_bucket": _private_bucket(lifecycle=True),
+        "release_bucket": _private_bucket(lifecycle=False),
+        "secret": {"name": secret, "state": "ENABLED"},
+        "quota": {
+            "dimensionsInfos": [
+                {"applicableLocations": ["us-east1"], "details": {"value": 1}}
+            ]
+        },
+    }
+    credits = {
+        "project": "your-gcp-project",
+        "run_id": run_id,
+        "billing_account_name": "billingAccounts/123",
+        "status": "verified-promotional-credit-balance",
+        "verified_at": datetime.now(UTC).isoformat(),
+    }
+
+    report = module.evaluate(
+        snapshots,
+        run_id=run_id,
+        secret_version=secret,
+        credits_attestation=credits,
+        spec_sha256="a" * 64,
+        input_bindings_sha256="b" * 64,
+    )
+
+    assert report["ready"] is True
+    snapshots["billing"] = {"billingEnabled": False}
+    with pytest.raises(module.AdmissionRejected, match="billing_enabled"):
+        module.evaluate(
+            snapshots,
+            run_id=run_id,
+            secret_version=secret,
+            credits_attestation=credits,
+            spec_sha256="a" * 64,
+            input_bindings_sha256="b" * 64,
+        )
+
+
+def _portable_release(source: Path, run_id: str) -> tuple[dict[str, bytes], str]:
+    files = {
+        "adapter.manifest.json": b'{"schema_version":"1.0"}\n',
+        "runtime.lock.json": b'{"schema_version":"1.0"}\n',
+        "training/run.json": b'{"status":"started"}\n',
+        "training/completion.json": b'{"status":"succeeded"}\n',
+    }
+    package_rows = [
+        {"path": name, "bytes": len(data), "sha256": hashlib.sha256(data).hexdigest()}
+        for name, data in sorted(files.items())
+    ]
+    files["package.manifest.json"] = (
+        json.dumps({"schema_version": "1.0", "files": package_rows}, sort_keys=True) + "\n"
+    ).encode()
+    completion_rows = [
+        {"path": name, "bytes": len(data), "sha256": hashlib.sha256(data).hexdigest()}
+        for name, data in sorted(files.items())
+    ]
+    completion = (
+        json.dumps(
+            {
+                "schema_version": "1.0",
+                "run_id": run_id,
+                "status": "succeeded",
+                "backend": "vertex-tpu-v6e",
+                "files": completion_rows,
+            },
+            sort_keys=True,
+        )
+        + "\n"
+    ).encode()
+    files["completion.json"] = completion
+    for name, data in files.items():
+        path = source / name
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_bytes(data)
+    return files, hashlib.sha256(completion).hexdigest()
+
+
+def test_gcs_release_fetch_is_completion_pinned_and_rejects_extra_objects(
+    tmp_path: Path,
+) -> None:
+    module = _load("bookforge_jax_gcs_fetch", JAX_ROOT / "fetch_gcs_release.py")
+    run_id = "bookforge-jax-smoke-20260901"
+    source = tmp_path / "remote"
+    source.mkdir()
+    files, completion_sha = _portable_release(source, run_id)
+
+    def download(relative: str, target: Path) -> None:
+        target.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(source / relative, target)
+
+    destination = tmp_path / "fetched"
+    result = module.fetch_release(
+        run_id=run_id,
+        expected_completion_sha256=completion_sha,
+        destination=destination,
+        download=download,
+        remote_objects=files,
+    )
+
+    assert result["status"] == "succeeded"
+    assert (destination / "training/completion.json").is_file()
+    with pytest.raises(ValueError, match="undeclared"):
+        module.fetch_release(
+            run_id=run_id,
+            expected_completion_sha256=completion_sha,
+            destination=tmp_path / "bad",
+            download=download,
+            remote_objects=[*files, "unexpected.bin"],
+        )
 
 
 def test_jax_dashboard_contains_only_operational_dimensions() -> None:

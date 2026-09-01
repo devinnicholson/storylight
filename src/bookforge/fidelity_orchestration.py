@@ -34,8 +34,13 @@ _STAGE_EVIDENCE = {
     "roundtrip": {
         "conversion_run",
         "conversion_completion",
+        "hf_to_maxtext_completion",
+        "maxtext_to_hf_completion",
         "roundtrip",
         "exported_checkpoint_manifest",
+        "smoke_training_run",
+        "smoke_training_completion",
+        "smoke_adapter_manifest",
     },
     "train": {
         "remote_completion",
@@ -45,7 +50,11 @@ _STAGE_EVIDENCE = {
         "package_manifest",
         "runtime_lock",
     },
-    "candidate-eval": {"development_summary", "dataset_manifest"},
+    "candidate-eval": {
+        "development_summary",
+        "dataset_manifest",
+        "merged_checkpoint_manifest",
+    },
     "hf-export": {
         "release_manifest",
         "training_run",
@@ -524,6 +533,57 @@ def stage_plan() -> list[dict[str, object]]:
         }
         for stage in STAGES
     ]
+
+
+def typed_stage_document(
+    run: FidelityRun,
+    stage_name: str,
+    *,
+    status: str,
+    fields: dict[str, object],
+    evidence_sha256: dict[str, str],
+) -> dict[str, object]:
+    """Build one stage wrapper from already verified, immutable source evidence.
+
+    The caller is responsible for validating each source document before calling this
+    function. Keeping the shared lineage fields here prevents individual recorders from
+    accidentally substituting a campaign, dependency, configuration, or dataset hash.
+    """
+
+    spec = _require_stage(stage_name)
+    try:
+        producer = _STAGE_PRODUCERS[stage_name]
+    except KeyError as error:
+        raise ValueError(f"stage has no typed recorder contract: {stage_name}") from error
+    if "evidence_sha256" in fields or set(fields) & _COMMON_STAGE_FIELDS:
+        raise ValueError("typed stage fields overlap recorder-owned fields")
+    return {
+        "schema_version": RUN_SCHEMA_VERSION,
+        "stage": stage_name,
+        "producer": producer,
+        "run_id": run.run_id,
+        "config_sha256": run.config_sha256,
+        "dataset_manifest_sha256": run.dataset_manifest_sha256,
+        "status": status,
+        "inputs": {
+            dependency: run.stages[dependency].artifact_sha256
+            for dependency in spec.dependencies
+        },
+        **fields,
+        "evidence_sha256": dict(evidence_sha256),
+    }
+
+
+def validate_stage_artifact(
+    run: FidelityRun,
+    stage_name: str,
+    path: Path,
+) -> dict[str, object]:
+    """Validate a producer-owned stage artifact without mutating run state."""
+
+    if not path.is_file() or path.is_symlink():
+        raise FidelityRunError("stage artifact must be a regular file")
+    return _validated_stage_artifact(run, stage_name, path)
 
 
 def _require_stage(name: str) -> StageSpec:

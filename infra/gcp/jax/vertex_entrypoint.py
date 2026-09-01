@@ -16,6 +16,8 @@ from urllib.parse import urlsplit
 
 class Blob(Protocol):
     name: str
+    generation: int
+    metadata: dict[str, str]
 
     def download_to_filename(self, path: Path) -> None: ...
 
@@ -23,7 +25,7 @@ class Blob(Protocol):
 
     def upload_from_string(
         self,
-        value: str,
+        value: str | bytes,
         *,
         content_type: str,
         if_generation_match: int,
@@ -132,14 +134,27 @@ def _upload_release(
     return files
 
 
-def _write_completion(client: StorageClient, release_uri: str, payload: dict[str, object]) -> None:
+def _write_completion(
+    client: StorageClient, release_uri: str, payload: dict[str, object]
+) -> dict[str, object]:
     bucket_name, prefix = _gcs_location(release_uri)
     blob = client.bucket(bucket_name).blob(f"{prefix}/completion.json")
+    encoded = (json.dumps(payload, indent=2, sort_keys=True) + "\n").encode()
+    completion_sha256 = hashlib.sha256(encoded).hexdigest()
+    blob.metadata = {"bookforge-completion-sha256": completion_sha256}
     blob.upload_from_string(
-        json.dumps(payload, indent=2, sort_keys=True) + "\n",
+        encoded,
         content_type="application/json",
         if_generation_match=0,
     )
+    return {
+        "schema_version": "1.0",
+        "status": "release-complete",
+        "run_id": payload["run_id"],
+        "completion_uri": f"{release_uri.rstrip('/')}/completion.json",
+        "completion_sha256": completion_sha256,
+        "completion_generation": blob.generation,
+    }
 
 
 def _parser() -> argparse.ArgumentParser:
@@ -294,7 +309,8 @@ def main() -> None:
         "portable_package": package_evidence,
         "files": files,
     }
-    _write_completion(storage_client, args.release_prefix, completion)
+    terminal_evidence = _write_completion(storage_client, args.release_prefix, completion)
+    print(json.dumps(terminal_evidence, indent=2, sort_keys=True), flush=True)
 
 
 if __name__ == "__main__":

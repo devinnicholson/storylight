@@ -84,7 +84,7 @@ def _copy_checkpoint(source: Path, destination: Path) -> list[dict[str, Any]]:
     return artifact_manifest(destination)["files"]
 
 
-def _candidate_id(
+def candidate_id_from_lineage(
     *,
     config_sha256: str,
     dataset_manifest_sha256: str,
@@ -100,6 +100,29 @@ def _candidate_id(
         "files_content_sha256": _canonical_sha256(files),
     }
     return f"fidelity-{_canonical_sha256(lineage)[:20]}"
+
+
+def candidate_id_for_checkpoint(
+    *,
+    config_path: Path | str,
+    dataset_manifest_sha256: str,
+    training_run_id: str,
+    merged_hf_checkpoint: Path | str,
+) -> str:
+    """Derive the release identity before development inference and packaging."""
+
+    config = load_config(config_path)
+    files = artifact_manifest(merged_hf_checkpoint)["files"]
+    return candidate_id_from_lineage(
+        config_sha256=config.sha256,
+        dataset_manifest_sha256=dataset_manifest_sha256,
+        training_run_id=training_run_id,
+        base_model={
+            "id": config.production["model_id"],
+            "revision": config.production["model_revision"],
+        },
+        files=files,
+    )
 
 
 def verify_training_lineage(
@@ -283,7 +306,7 @@ def produce_release(
         "id": config.production["model_id"],
         "revision": config.production["model_revision"],
     }
-    candidate_id = _candidate_id(
+    candidate_id = candidate_id_from_lineage(
         config_sha256=config.sha256,
         dataset_manifest_sha256=dataset.manifest_sha256,
         training_run_id=training_run_id,
