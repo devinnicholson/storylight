@@ -18,12 +18,16 @@ from pydantic import ValidationError
 
 from bookforge.live_scene_planner import (
     _PHRASE_STOPWORDS,
+    _SEMANTIC_WORD,
     LIVE_SCENE_SYSTEM_PROMPT,
     LiveScenePlannerPrivacyError,
     LiveSceneWirePlan,
+    _bounded_words,
     _distinctive_phrase,
     _privacy_tokens,
     _proper_name_candidates,
+    _recover_action_material,
+    _recover_containment_and_scale,
     _recover_source_grounded_setting,
     live_scene_plan_prompt,
     validate_live_scene_plan_privacy,
@@ -69,14 +73,22 @@ _SLOT_SYSTEM_PROMPT = (
 )
 
 _REPAIR_SYSTEM_PROMPT = (
-    "Read the story carefully. Identify the actual setting, main actor, its visible action, and "
-    "the later magical result. Exclude anything the story says is absent, negated, or replaced. "
-    "Reply with exactly four labeled lines: SETTING, ACTOR, ACTION, MAGIC. No other text."
+    "Read the story carefully and extract the complete visible scene. Exclude anything the story "
+    "says is absent, negated, or replaced. Preserve colors, materials, carried objects, counts, "
+    "directions, destinations, inside/outside containment, relative scale, temporal order, and "
+    "transformed results. For X becomes Y, ACTOR and ACTION describe X before the change; MAGIC "
+    "describes Y after it. ACTOR includes descriptive words. ACTION includes its object and what "
+    "that object is made of (for example: climbs cloud staircase). MAGIC may use semicolons for "
+    "multiple later details. Reply with exactly four lines labeled SETTING:, ACTOR:, ACTION:, "
+    "MAGIC:. No other text."
 )
 
 _SLOT_PROFILES = frozenset({"slots", "repair"})
 
-_SLOT_LABEL_PATTERN = re.compile(r"(?i)(?:^|\s)(SETTING|ACTOR|ACTION|MAGIC)\s*:\s*")
+_SLOT_LABEL_PATTERN = re.compile(
+    r"(?i)(?:^|\s)(SETTING|ACTOR|ACTION|MAGIC)\s*[:,]\s*"
+)
+_MODEL_CONTROL_TOKENS = ("<turn|>", "<end_of_turn>")
 
 
 def _require_loopback_base_url(value: str) -> str:
@@ -138,7 +150,7 @@ def _privacy_separated_value(value: str, *, source_text: str) -> str:
         ]
         candidates = stopword_candidates or [
             index for index in available if len(normalized[index]) >= 5
-        ]
+        ] or available
         if not candidates:
             raise ValueError("slot response could not safely separate a source phrase")
         selected = max(candidates, key=lambda index: len(normalized[index]))
@@ -146,7 +158,7 @@ def _privacy_separated_value(value: str, *, source_text: str) -> str:
         transformed.add(selected)
 
 
-def _compact_magic_slot(value: str, *, maximum_words: int = 10) -> str:
+def _compact_magic_slot(value: str, *, maximum_words: int = 14) -> str:
     words = value.split()
     if len(words) <= maximum_words:
         return value
@@ -160,30 +172,108 @@ def _compact_magic_slot(value: str, *, maximum_words: int = 10) -> str:
     return " ".join([*compact[:7], *compact[-3:]])
 
 
+def _recover_actor_relationship(
+    slots: dict[str, str], *, source_text: str
+) -> dict[str, str]:
+    """Repair bounded actor/object mix-ups without another inference pass."""
+
+    repaired = dict(slots)
+    actor_parts = [
+        part.strip() for part in re.split(r"[,;]", repaired["ACTOR"]) if part.strip()
+    ]
+    if len(actor_parts) > 1:
+        action_tokens = set(_privacy_tokens(repaired["ACTION"]))
+        trailing_objects = [
+            tokens
+            for part in actor_parts[1:]
+            if (tokens := list(_privacy_tokens(part)))
+        ]
+        object_heads = {tokens[-1] for tokens in trailing_objects}
+        if object_heads and object_heads.issubset(action_tokens):
+            repaired["ACTOR"] = actor_parts[0]
+            for object_tokens in trailing_objects:
+                object_phrase = " ".join(object_tokens)
+                if object_phrase in repaired["ACTION"].casefold():
+                    continue
+                repaired["ACTION"] = re.sub(
+                    rf"\b{re.escape(object_tokens[-1])}\b",
+                    object_phrase,
+                    repaired["ACTION"],
+                    count=1,
+                    flags=re.IGNORECASE,
+                )
+
+    passive = re.search(
+        r"\b(?P<object>(?:a|an|the)?\s*(?:[A-Za-z][A-Za-z'-]*\s+){0,2}"
+        r"[A-Za-z][A-Za-z'-]*)\s+is\s+carried\s+"
+        r"(?P<path>[^,.;!?]{0,48}?)\s*\bby\s+"
+        r"(?:a|an|the)?\s*(?P<actor>(?:[A-Za-z][A-Za-z'-]*\s+){0,2}"
+        r"[A-Za-z][A-Za-z'-]*?)\s+and\s+",
+        source_text,
+        flags=re.IGNORECASE,
+    )
+    if passive is None:
+        return repaired
+    selected_actor = set(_privacy_tokens(repaired["ACTOR"])) - _PHRASE_STOPWORDS
+    object_words = [
+        word
+        for word in _SEMANTIC_WORD.findall(passive.group("object"))
+        if word.casefold() not in {"a", "an", "the"}
+    ]
+    object_tokens = {word.casefold() for word in object_words}
+    if not object_tokens or not object_tokens.issubset(selected_actor):
+        return repaired
+    path_words = _SEMANTIC_WORD.findall(passive.group("path"))[-3:]
+    repaired["ACTOR"] = " ".join(_SEMANTIC_WORD.findall(passive.group("actor")))
+    repaired["ACTION"] = _bounded_words(
+        " ".join(["carries", *object_words, *path_words]),
+        10,
+    )
+    return repaired
+
+
 def _rebalance_slots(slots: dict[str, str], *, source_text: str) -> dict[str, str]:
-    balanced = dict(slots)
+    balanced = _recover_actor_relationship(slots, source_text=source_text)
     background = balanced["SETTING"]
     magic = balanced["MAGIC"]
     if len(_privacy_tokens(magic)) <= 3 and re.search(r"\s+and\s+", background, re.I):
         head, tail = re.split(r"\s+and\s+", background, maxsplit=1, flags=re.I)
         balanced["SETTING"] = head
         balanced["MAGIC"] = f"{tail}; {magic}"
+    action = balanced["ACTION"]
+    if len(action) > 70 and ";" in action:
+        action_head, action_tail = action.split(";", maxsplit=1)
+        balanced["ACTION"] = action_head.strip()
+        if len(_privacy_tokens(action_tail)) > len(_privacy_tokens(balanced["MAGIC"])):
+            balanced["MAGIC"] = action_tail.strip()
     balanced["SETTING"] = _recover_source_grounded_setting(
         balanced["SETTING"],
+        source_text=source_text,
+    )
+    balanced["ACTION"] = _recover_action_material(
+        balanced["ACTION"],
+        source_text=source_text,
+    )
+    balanced["MAGIC"] = _recover_containment_and_scale(
+        balanced["MAGIC"],
         source_text=source_text,
     )
     return balanced
 
 
 def _parse_slots(output_text: str) -> dict[str, str]:
-    matches = list(_SLOT_LABEL_PATTERN.finditer(output_text.strip()))
-    if not matches or output_text.strip()[: matches[0].start()].strip():
+    cleaned = output_text
+    for token in _MODEL_CONTROL_TOKENS:
+        cleaned = cleaned.replace(token, "")
+    cleaned = cleaned.strip()
+    matches = list(_SLOT_LABEL_PATTERN.finditer(cleaned))
+    if not matches or cleaned[: matches[0].start()].strip():
         raise ValueError("slot response contained text before its first label")
     values: dict[str, list[str]] = {}
     for index, match in enumerate(matches):
         label = match.group(1).upper()
-        end = matches[index + 1].start() if index + 1 < len(matches) else len(output_text)
-        value = output_text[match.end() : end].strip()
+        end = matches[index + 1].start() if index + 1 < len(matches) else len(cleaned)
+        value = cleaned[match.end() : end].strip()
         if not value:
             raise ValueError("slot response contained an empty value")
         values.setdefault(label, []).append(value)
@@ -274,6 +364,22 @@ def _messages(case: BenchmarkCase, *, prompt_profile: str) -> list[dict[str, str
     if prompt_profile == "repair":
         return [
             {"role": "system", "content": _REPAIR_SYSTEM_PROMPT},
+            {
+                "role": "user",
+                "content": (
+                    "STORY:\nAfter a paper seed falls through blue water, it emerges as a "
+                    "silver fish."
+                ),
+            },
+            {
+                "role": "assistant",
+                "content": (
+                    "SETTING: blue water\n"
+                    "ACTOR: paper seed\n"
+                    "ACTION: falls through blue water\n"
+                    "MAGIC: emerges as silver fish"
+                ),
+            },
             {
                 "role": "user",
                 "content": (
@@ -438,10 +544,19 @@ def _validate_responses(
                     source_text=case.text,
                 )
                 parsed_slots["MAGIC"] = _compact_magic_slot(parsed_slots["MAGIC"])
+                slot_limits = {
+                    "SETTING": 110,
+                    "ACTOR": 80,
+                    "ACTION": 70,
+                    "MAGIC": 110,
+                }
                 slots = {
-                    label: _privacy_separated_value(
-                        _fit_wire_value(value),
-                        source_text=case.text,
+                    label: _fit_wire_value(
+                        _privacy_separated_value(
+                            _fit_wire_value(value),
+                            source_text=case.text,
+                        ),
+                        maximum=slot_limits[label],
                     )
                     for label, value in parsed_slots.items()
                 }
@@ -491,6 +606,10 @@ def _validate_responses(
                 plan.accent.prompt,
             )
         )
+        # The local privacy separator prefixes selected words with a capitalized
+        # ``v`` to break source trigrams without deleting their visual meaning.
+        # Remove that transport-only marker before the lexical semantic screen.
+        semantic_text = re.sub(r"\bv(?=[A-Z])", "", generated_text)
         results.append(
             {
                 "case_id": case.case_id,
@@ -501,7 +620,7 @@ def _validate_responses(
                 "magic": plan.accent.prompt,
                 "scene_summary": plan.scene_summary,
                 "output_text": output_text,
-                **_semantic_evidence(case, generated_text=generated_text),
+                **_semantic_evidence(case, generated_text=semantic_text),
             }
         )
     return results

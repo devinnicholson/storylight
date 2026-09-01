@@ -15,7 +15,10 @@ readonly GEMMA_MODEL="${BOOKFORGE_GEMMA_MODEL:-gemma3:1b-it-q4_K_M}"
 readonly OLLAMA_BIN="${BOOKFORGE_OLLAMA_BIN:-$HOME/.local/opt/ollama-v0.32.15/bin/ollama}"
 readonly LLM_INFERENCE="$BUILD_DIR/examples/llm/llm_inference"
 readonly EDGELLM_PLUGIN="$BUILD_DIR/libNvInfer_edgellm_plugin.so"
-readonly REPORT_PATH="$EVIDENCE_DIR/benchmark-production.json"
+readonly PROMPT_PROFILE="${BOOKFORGE_EDGELLM_PROMPT_PROFILE:-repair}"
+readonly SUITE="${BOOKFORGE_EDGELLM_SUITE:-contest}"
+readonly CASE_ID="${BOOKFORGE_EDGELLM_CASE_ID:-}"
+readonly REPORT_PATH="$EVIDENCE_DIR/benchmark-$PROMPT_PROFILE-$SUITE${CASE_ID:+-$CASE_ID}.json"
 
 if [[ ${EUID:-$(id -u)} -eq 0 ]]; then
   printf 'Run this shadow benchmark as the Bookforge user, not root.\n' >&2
@@ -50,17 +53,23 @@ if "$OLLAMA_BIN" ps | grep -Fq "$GEMMA_MODEL"; then
 fi
 
 export EDGELLM_PLUGIN_PATH="$EDGELLM_PLUGIN"
-"$BOOKFORGE_PYTHON" "$BENCHMARK_SCRIPT" \
-  --binary "$LLM_INFERENCE" \
-  --engine-dir "$ENGINE_DIR" \
-  --checkpoint-dir "$CHECKPOINT_DIR" \
-  --work-dir "$EVIDENCE_DIR/work" \
-  --output "$REPORT_PATH" \
-  --warmup 1 \
-  --prompt-profile production \
-  --suite contest \
-  --candidate-model google/gemma-4-E2B-it \
+export EDGELLM_GEMMA4_PLE_STORAGE_BACKED="${EDGELLM_GEMMA4_PLE_STORAGE_BACKED:-1}"
+benchmark_args=(
+  --binary "$LLM_INFERENCE"
+  --engine-dir "$ENGINE_DIR"
+  --checkpoint-dir "$CHECKPOINT_DIR"
+  --work-dir "$EVIDENCE_DIR/work"
+  --output "$REPORT_PATH"
+  --warmup 1
+  --prompt-profile "$PROMPT_PROFILE"
+  --suite "$SUITE"
+  --candidate-model google/gemma-4-E2B-it
   --candidate-revision 3e22461f65e89153144f8adb70e3b8c2cc9845a7
+)
+if [[ -n "$CASE_ID" ]]; then
+  benchmark_args+=(--case-id "$CASE_ID")
+fi
+"$BOOKFORGE_PYTHON" "$BENCHMARK_SCRIPT" "${benchmark_args[@]}"
 
 test -s "$REPORT_PATH"
 sha256sum "$REPORT_PATH" >"$EVIDENCE_DIR/sha256sums-production.txt"

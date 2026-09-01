@@ -114,10 +114,42 @@ def test_semantic_evidence_requires_expected_ideas_and_rejects_forbidden_ones() 
         case,
         generated_text="A dragon casts a cathedral-shaped shadow.",
     )
+    negated = _semantic_evidence(
+        case,
+        generated_text="A tiny moth, not a dragon, casts a cathedral-shaped shadow.",
+    )
 
     assert passed["automatic_semantic_pass"] is True
     assert failed["automatic_semantic_pass"] is False
     assert failed["forbidden_checks"] == [{"term": "dragon", "pass": False}]
+    assert negated["automatic_semantic_pass"] is True
+
+
+@pytest.mark.parametrize(
+    "generated_text",
+    (
+        "glowing clocks without numbers",
+        "glowing clocks with no numbers",
+        "glowing clocks, numbers omitted",
+        "confetti instead of smoke",
+        "a scene free of smoke",
+    ),
+)
+def test_semantic_evidence_allows_explicitly_negated_forbidden_terms(
+    generated_text: str,
+) -> None:
+    forbidden = "numbers" if "numbers" in generated_text else "smoke"
+    case = BenchmarkCase(
+        case_id="explicit-negation",
+        text="synthetic",
+        visual_style="paper",
+        seed=1,
+        forbidden_terms=(forbidden,),
+    )
+
+    assert _semantic_evidence(case, generated_text=generated_text)[
+        "automatic_semantic_pass"
+    ] is True
 
 
 def test_semantic_summary_counts_passes_and_failures() -> None:

@@ -1,19 +1,16 @@
 # Bookforge full-stack optimization program
 
-Status: active, 2026-08-26
+Status: active, updated 2026-09-01
 
 Implementation checkpoint: the privacy-safe Cloud Monitoring dashboard is deployed as
 `projects/your-gcp-project/dashboards/YOUR_DASHBOARD_ID`; the strict renderer digest
 is staged at zero traffic; and `bookforge.gcp_scene_benchmark` now provides bounded probe/prepared
 experiments with no automatic retry and prompt hashes instead of prompt text.
 
-Current external blocker: two authenticated, zero-traffic health samples were rejected by the Cloud
-Run front end as billing-disabled before the container responded, while the Cloud Billing API
-reported account `000000-000000-000000` open and the project linked/enabled. No emergency-guard
-disable event exists. Google documents that services may take up to 24 hours to resume after billing
-is re-enabled and that some services require a manual restart. Do not spend additional canary calls
-inside that propagation window; after it, take one health-only sample and escalate to Cloud Billing
-Support if the API/front-end contradiction remains.
+The finite GCP export path is no longer blocked: one Flex-start G4 instance produced the pinned
+Gemma 4 E2B INT4-AWQ checkpoint, uploaded it to private Cloud Storage, and deleted the VM and boot
+disk. Cloud Run renderer availability remains a separate gate; it does not block local TensorRT
+planning work and should not trigger a repeat of the completed paid export.
 
 Bookforge is no longer bottlenecked by one slow model. The accepted standalone path already has a
 faithful Jetson planner, a subsecond prepared renderer, stable 30 Hz depth motion, checksum-bound
@@ -28,7 +25,7 @@ quality, reliability, privacy, cost, or presentation gate. Product count is not 
 | Boundary | Current evidence | Promotion target |
 | --- | ---: | ---: |
 | Immediate semantic draft | under 100 ms | p95 under 100 ms; 30 fps; zero blank frames |
-| Uncached Jetson scene plan | 2.70 s mean | p95 under 3.0 s with 5/5 semantic passes |
+| Uncached Jetson scene plan | 2.70 s production; 1.58 s TensorRT shadow estimate | p95 under 3.0 s with 20/20 semantic passes |
 | Prepared cloud preview | 0.685-0.974 s | p95 under 0.8 s |
 | Prepared master plus depth | 0.50-1.99 s | p95 under 1.0 s |
 | Uncached text to master | 4.20-4.86 s | p95 under 4.0 s |
@@ -141,19 +138,28 @@ not a price guarantee. The project-level gross-cost disconnect remains authorita
 
 ### 3. Finish the edge TensorRT decision
 
-1. Use the completed, checksum-bound G4 Flex-start export
-   `compute-g4-20260831-053351`; do not repeat the paid export unless its immutable manifest fails.
-2. Keep the GCP VM and boot disk deleted. The accepted checkpoint has nine files totaling
-   7,318,589,073 bytes and was verified both before and after its atomic Jetson install.
-3. Retry the device-specific engine build with the fixed temporary 8 GiB NVMe swap. The first
-   no-swap attempt completed TensorRT engine generation in 269.546 seconds, then was OOM-killed
-   during in-memory serialization. Remove swap after the shadow benchmark; steady-state inference
-   must pass with swap absent.
-4. Run the same five semantic cases plus adversarial privacy/schema cases against Gemma 3/Ollama and
-   Gemma 4/TensorRT Edge-LLM in counterbalanced order.
-5. Record output tokens, p50/p95, peak RAM, GPU utilization, thermals, schema validity, semantic
-   review, and projector contention.
-6. Promote only if end-to-end latency materially improves and every quality/privacy gate passes.
+Completed:
+
+1. The checksum-bound G4 Flex-start export `compute-g4-20260831-053351` produced nine files totaling
+   7,318,589,073 bytes. The VM and boot disk are deleted; do not repeat the paid export.
+2. A temporary 8 GiB NVMe swap allowed the device-specific engine to serialize. The final engine
+   accepts 1,280 input tokens with a 1,536-token KV capacity. Swap was removed afterward.
+3. The upstream runtime could not fit its 4.4 GiB Gemma PLE table into unified memory. Bookforge now
+   offers a revision- and checksum-pinned, opt-in exact runtime that memory-maps that table from NVMe,
+   gathers only the requested FP16/BF16 rows into pinned host memory, and performs one asynchronous
+   2D copy to the GPU. No model value or quantization changes, and the original resident path remains.
+4. The final no-swap 20-case shadow run completed all requests at 27.12 generated tokens/second,
+   with an estimated 1.58-second steady-state plan and a 3,841.36 MB unified-memory peak. All 20
+   outputs passed schema, privacy, the 80-requirement automatic semantic screen, five forbidden-term
+   checks, and human review of actor/object, temporal, containment, direction, scale, and destination
+   relationships.
+
+Remaining integration gate:
+
+1. Run TensorRT as a resident loopback service behind the existing planner interface; keep Gemma 3
+   as the automatic rollback until the integrated API passes.
+2. Record request p50/p95/max, service restart behavior, and projector contention before changing
+   the default planner backend.
 
 ### 4. Profile and optimize the warm renderer
 

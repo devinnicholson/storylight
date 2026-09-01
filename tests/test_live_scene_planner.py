@@ -200,7 +200,7 @@ def test_wire_privacy_sanitizer_preserves_primary_subject_head_noun() -> None:
         (
             "A turtle climbs a staircase made of clouds while jellyfish drift.",
             "climbs",
-            "climbs staircase",
+            "climbs staircase of clouds",
         ),
     ],
 )
@@ -384,6 +384,32 @@ def test_wire_plan_recovers_both_sides_of_pronominal_transformation() -> None:
     assert "paper boat" in plan.accent.prompt
     assert "swan" in plan.accent.prompt
     assert "lake" in plan.accent.prompt
+    validate_live_scene_plan_privacy(plan, source_text=source)
+
+
+def test_wire_plan_recovers_containment_and_relative_scale() -> None:
+    source = (
+        "A giant turtle carries a glass bottle on its shell; inside the bottle, a miniature "
+        "city shines beneath a storm no larger than a marble."
+    )
+    wire = LiveSceneWirePlan(
+        background_prompt="storm",
+        focus=LiveSceneWireFocus(
+            kind="character",
+            subject="giant turtle",
+            action="carries glass bottle on shell",
+        ),
+        magic=LiveSceneWireMagic(
+            kind="effect",
+            prompt="miniature city shines beneath bottle no larger than marble",
+        ),
+    )
+
+    sanitized = wire.privacy_sanitized(source_text=source)
+    plan = sanitized.to_live_scene_plan(context_text=source)
+
+    assert "inside bottle" in plan.accent.prompt
+    assert "marble sized storm" in plan.accent.prompt
     validate_live_scene_plan_privacy(plan, source_text=source)
 
 
@@ -1002,6 +1028,8 @@ def test_privacy_gate_rejects_source_proper_name_candidate() -> None:
         ("Inside a dusty attic, a moth opens a map.", "inside attic, dim paper rafters"),
         ("Beneath a stone bridge, a rabbit waits.", "under bridge, soft rainy light"),
         ("Toward a distant library, fireflies form a path.", "toward library, warm window light"),
+        ("Each syllable becomes a firefly.", "each syllable, warm firefly glow"),
+        ("Every page becomes a garden.", "every page, layered paper garden"),
     ],
 )
 def test_privacy_gate_does_not_treat_sentence_initial_relations_as_names(

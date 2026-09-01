@@ -21,6 +21,17 @@ QWEN15_EDGELLM_INSTALLER = ROOT / "deploy/jetson/install-qwen15-tensorrt-checkpo
 GEMMA4_EDGELLM_EXPORTER = ROOT / "deploy/modal_gemma4_tensorrt_edge_export.py"
 GEMMA4_EDGELLM_ENGINE_BUILDER = ROOT / "deploy/jetson/build-gemma4-tensorrt-edge-engine.sh"
 GEMMA4_EDGELLM_BENCHMARK_RUNNER = ROOT / "deploy/jetson/run-gemma4-tensorrt-edge-benchmark.sh"
+EDGELLM_STORAGE_BACKED_PLE_INSTALLER = (
+    ROOT / "deploy/jetson/install-tensorrt-edge-storage-backed-ple.sh"
+)
+EDGELLM_STORAGE_BACKED_PLE_SOURCE = (
+    ROOT
+    / "deploy/jetson/tensorrt-edge-llm-overrides/runtime/preprocess/gemma4EmbeddingPreprocessor.cpp"
+)
+EDGELLM_STORAGE_BACKED_PLE_HEADER = (
+    ROOT
+    / "deploy/jetson/tensorrt-edge-llm-overrides/runtime/preprocess/gemma4EmbeddingPreprocessor.h"
+)
 POWER_MODE_AB = ROOT / "deploy/jetson/run-power-mode-ab.sh"
 BOOKFORGE_ADMIN = ROOT / "deploy/jetson/bookforge-admin"
 BOOKFORGE_ADMIN_INSTALLER = ROOT / "deploy/jetson/install-bookforge-admin.sh"
@@ -333,7 +344,7 @@ def test_tensorrt_edge_llm_candidate_is_pinned_local_and_fail_closed() -> None:
 
     assert "LiveSceneWirePlan.model_validate_json(output_text)" in benchmark
     assert "validate_live_scene_plan_privacy(plan, source_text=case.text)" in benchmark
-    assert "_semantic_evidence(case, generated_text=generated_text)" in benchmark
+    assert "_semantic_evidence(case, generated_text=semantic_text)" in benchmark
     assert 'choices=("five", "contest")' in benchmark
     assert '"candidate_not_promoted_by_this_benchmark": True' in benchmark
     assert '"modal_or_cloud_called": False' in benchmark
@@ -393,13 +404,57 @@ def test_gemma4_tensorrt_candidate_is_budgeted_externalized_and_shadow_only() ->
     assert '/usr/bin/time -v "$LLM_BUILD"' in engine_builder
     assert 'tee "$EVIDENCE_DIR/build.log"' in engine_builder
     assert 'build_status=${PIPESTATUS[0]}' in engine_builder
+    assert "--maxInputLen 1280" in engine_builder
     assert "--maxKVCacheCapacity 1536" in engine_builder
 
     assert 'models/gemma4-e2b-it-int4-awq-v010' in benchmark_runner
     assert "--candidate-model google/gemma-4-E2B-it" in benchmark_runner
     assert "--candidate-revision 3e22461f65e89153144f8adb70e3b8c2cc9845a7" in benchmark_runner
-    assert "--suite contest" in benchmark_runner
+    assert 'PROMPT_PROFILE="${BOOKFORGE_EDGELLM_PROMPT_PROFILE:-repair}"' in benchmark_runner
+    assert 'SUITE="${BOOKFORGE_EDGELLM_SUITE:-contest}"' in benchmark_runner
+    assert 'CASE_ID="${BOOKFORGE_EDGELLM_CASE_ID:-}"' in benchmark_runner
+    assert '--prompt-profile "$PROMPT_PROFILE"' in benchmark_runner
+    assert '--suite "$SUITE"' in benchmark_runner
+    assert 'benchmark_args+=(--case-id "$CASE_ID")' in benchmark_runner
+    assert (
+        'EDGELLM_GEMMA4_PLE_STORAGE_BACKED="${EDGELLM_GEMMA4_PLE_STORAGE_BACKED:-1}"'
+        in benchmark_runner
+    )
     assert "Gemma 3 remains production" in benchmark_runner
+
+
+def test_gemma4_storage_backed_ple_is_pinned_exact_and_reproducible() -> None:
+    installer = EDGELLM_STORAGE_BACKED_PLE_INSTALLER.read_text()
+    source = EDGELLM_STORAGE_BACKED_PLE_SOURCE.read_text()
+    header = EDGELLM_STORAGE_BACKED_PLE_HEADER.read_text()
+
+    subprocess.run(
+        ["bash", "-n", str(EDGELLM_STORAGE_BACKED_PLE_INSTALLER)], check=True
+    )
+    assert 'EDGELLM_REVISION="71dd1bae032e70771265917ec74d3ff4cad07a10"' in installer
+    assert (
+        'UPSTREAM_PREPROCESSOR_SHA="270828e2d573d42ee7fbb8b4b6a60ef8506bdc32c4f97a208474114349e085da"'
+        in installer
+    )
+    assert (
+        'UPSTREAM_HEADER_SHA="017f8f80e93bff0572036cf732c4a01a603d0ca53f45c17c8de1c163e9abfb1d"'
+        in installer
+    )
+    assert "Refusing to overwrite an unexpected local source change" in installer
+    assert "--target llm_inference _edgellm_runtime -j1" in installer
+
+    assert 'std::getenv("EDGELLM_GEMMA4_PLE_STORAGE_BACKED")' in source
+    assert "std::make_unique<file_io::MmapReader>" in source
+    assert "safetensors::parseMetadata" in source
+    assert "MADV_RANDOM" in source
+    assert "cudaMemcpy2DAsync" in source
+    assert "cudaMemcpyDeviceToHost" in source
+    assert "cudaMemcpyHostToDevice" in source
+    assert "loadSafetensors" in source  # Upstream resident path remains available.
+    assert "FP16 or BF16" in source
+    assert "mStorageBackedPle" in header
+    assert "mPleMapping" in header
+    assert "mHostPackedPle" in header
 
 
 def test_power_mode_ab_is_reboot_aware_persistent_and_restores_25w() -> None:

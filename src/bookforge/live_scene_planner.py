@@ -89,6 +89,8 @@ _NON_NAME_CAPITALIZED = frozenset(
         "beneath",
         "beside",
         "but",
+        "each",
+        "every",
         "from",
         "he",
         "her",
@@ -308,6 +310,10 @@ class LiveSceneWirePlan(FrozenStrictModel):
             self.focus.action,
             source_text=source_text,
         )
+        recovered_action = _recover_action_material(
+            recovered_action,
+            source_text=source_text,
+        )
         recovered_action = _recover_source_grounded_action_chain(
             recovered_action,
             focus_subject=recovered_subject,
@@ -333,6 +339,10 @@ class LiveSceneWirePlan(FrozenStrictModel):
             source_text=source_text,
         )
         repaired_magic = _recover_pronominal_transformation(
+            repaired_magic,
+            source_text=source_text,
+        )
+        repaired_magic = _recover_containment_and_scale(
             repaired_magic,
             source_text=source_text,
         )
@@ -395,9 +405,10 @@ class LiveSceneWirePlan(FrozenStrictModel):
 
     def to_live_scene_plan(self, *, context_text: str = "") -> LiveScenePlan:
         focus_prompt = _normalized_wire_focus(self.focus)
-        # Local source-grounded repair may need two extra words to preserve both
-        # sides of a transformation (for example paper boat -> swan on lake).
-        accent_prompt = _bounded_words(self.magic.prompt, 10)
+        # Retain both sides of a transformation plus its destination. The wire
+        # schema still caps this field at 110 characters, so 14 words add no
+        # unbounded renderer input.
+        accent_prompt = _bounded_words(self.magic.prompt, 14)
         if context_text:
             focus_prompt = _remove_distinctive_source_overlap(
                 focus_prompt,
@@ -899,6 +910,44 @@ def _recover_missing_action_object(action: str, *, source_text: str) -> str:
     return " ".join([action, *detail]) if detail else action
 
 
+def _recover_action_material(action: str, *, source_text: str) -> str:
+    """Restore a bounded explicit ``made of`` detail for the selected action object."""
+
+    action_tokens = set(_privacy_tokens(action))
+    if not action_tokens:
+        return action
+    for match in re.finditer(
+        r"\b(?P<object>[A-Za-z][A-Za-z'-]*)\s+made\s+(?:of|from)\s+"
+        r"(?P<tail>[^,.;!?]{1,48})",
+        source_text,
+        flags=re.IGNORECASE,
+    ):
+        object_token = match.group("object").casefold()
+        if object_token not in action_tokens:
+            continue
+        material: list[str] = []
+        for word in _SEMANTIC_WORD.findall(match.group("tail")):
+            if word.casefold() in {
+                "and",
+                "as",
+                "at",
+                "but",
+                "when",
+                "where",
+                "while",
+                "who",
+                "with",
+            }:
+                break
+            material.append(word)
+            if len(material) >= 2:
+                break
+        if not material or any(word.casefold() in action_tokens for word in material):
+            return action
+        return _bounded_words(f"{action} made of {' '.join(material)}", 10)
+    return action
+
+
 def _recover_subject_modifier(subject: str, *, source_text: str) -> str:
     """Restore one adjacent story-visible modifier for a bare actor noun."""
 
@@ -1237,6 +1286,43 @@ def _recover_pronominal_transformation(prompt: str, *, source_text: str) -> str:
         " ".join([*initial_subject[-4:], "becomes", *result_words[:6]]),
         10,
     )
+
+
+def _recover_containment_and_scale(prompt: str, *, source_text: str) -> str:
+    """Restore explicit containment and a bounded relative-scale comparison."""
+
+    repaired = prompt
+    containment = re.search(
+        r"\binside\s+(?:a\s+|an\s+|the\s+)?(?P<container>[A-Za-z][A-Za-z'-]*)\s*,\s*"
+        r"(?:a\s+|an\s+|the\s+)?(?P<subject>(?:[A-Za-z][A-Za-z'-]*\s+){0,2}"
+        r"[A-Za-z][A-Za-z'-]*)\s+(?P<verb>shines?|glows?|moves?|floats?|rests?)\b",
+        source_text,
+        flags=re.IGNORECASE,
+    )
+    prompt_tokens = set(_privacy_tokens(prompt))
+    clauses: list[str] = []
+    if containment is not None:
+        container = containment.group("container")
+        subject = containment.group("subject")
+        subject_tokens = set(_privacy_tokens(subject))
+        if subject_tokens & prompt_tokens and not prompt_tokens.intersection({"inside", "within"}):
+            clauses.append(f"{subject} {containment.group('verb')} inside {container}")
+
+    scale = re.search(
+        r"\b(?P<detail>[A-Za-z][A-Za-z'-]*)\s+no\s+(?:larger|bigger)\s+than\s+"
+        r"(?:a\s+|an\s+|the\s+)?(?P<reference>[A-Za-z][A-Za-z'-]*)\b",
+        source_text,
+        flags=re.IGNORECASE,
+    )
+    if scale is not None:
+        detail = scale.group("detail")
+        reference = scale.group("reference")
+        if detail.casefold() not in prompt_tokens or reference.casefold() not in prompt_tokens:
+            clauses.append(f"{reference}-sized {detail}")
+
+    if clauses:
+        return _bounded_words("; ".join(clauses), 14)
+    return repaired
 
 
 def _remove_nonvisual_negative_terms(prompt: str) -> str:

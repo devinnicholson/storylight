@@ -151,6 +151,22 @@ def test_tensorrt_slot_protocol_normalizes_inline_and_repeated_magic() -> None:
     }
 
 
+def test_tensorrt_slot_protocol_accepts_gemma_commas_and_control_token() -> None:
+    slots = BENCHMARK._parse_slots(
+        "SETTING, flooded library\n"
+        "ACTOR, silver whale\n"
+        "ACTION, swims through\n"
+        "MAGIC, books become bright fish<turn|>"
+    )
+
+    assert slots == {
+        "SETTING": "flooded library",
+        "ACTOR": "silver whale",
+        "ACTION": "swims through",
+        "MAGIC": "books become bright fish",
+    }
+
+
 def test_tensorrt_slot_protocol_bounds_long_values_without_losing_tail() -> None:
     value = BENCHMARK._fit_wire_value(
         "every unwritten letter becomes a luminous origami bird forming a bridge of "
@@ -161,6 +177,27 @@ def test_tensorrt_slot_protocol_bounds_long_values_without_losing_tail() -> None
     assert len(value) <= 80
     assert value.startswith("every unwritten")
     assert value.endswith("above the clouds")
+
+
+def test_tensorrt_slot_protocol_preserves_long_magic_destination() -> None:
+    case = next(item for item in CONTEST_CASES if item.case_id == "origami_library")
+    output = (
+        "SETTING: darkest night\n"
+        "ACTOR: child\n"
+        "ACTION: opens silent book\n"
+        "MAGIC: every unwritten letter becomes a luminous origami bird, forming a "
+        "bridge of constellations toward a floating school above the clouds<turn|>"
+    )
+
+    result = BENCHMARK._validate_responses(
+        {"responses": [{"output_text": output, "finish_reason": "end-of-sequence"}]},
+        (case,),
+        prompt_profile="repair",
+    )[0]
+
+    assert result["valid"] is True
+    assert result["magic"].endswith("school above clouds")
+    assert result["automatic_semantic_pass"] is True
 
 
 def test_tensorrt_slot_privacy_separator_preserves_semantic_terms() -> None:
@@ -186,3 +223,137 @@ def test_tensorrt_slot_privacy_separator_does_not_mask_names() -> None:
 
     assert "Alice" in value
     assert "vAlice" not in value
+
+
+def test_tensorrt_slot_privacy_separator_handles_short_non_name_phrase() -> None:
+    value = BENCHMARK._privacy_separated_value(
+        "tiny blue moth",
+        source_text="The shape is not a dragon but a tiny blue moth.",
+    )
+
+    assert "blue moth" in value.casefold()
+    assert "vTiny" in value
+
+
+def test_tensorrt_semantic_screen_ignores_internal_privacy_marker() -> None:
+    case = next(item for item in CONTEST_CASES if item.case_id == "beetle_leaf_tower")
+    output = (
+        "SETTING: rooftop garden\n"
+        "ACTOR: green beetle\n"
+        "ACTION: pushes one seed\n"
+        "MAGIC: twisting tower of giant leaves grows"
+    )
+
+    result = BENCHMARK._validate_responses(
+        {"responses": [{"output_text": output, "finish_reason": "eos"}]},
+        (case,),
+        prompt_profile="repair",
+    )[0]
+
+    assert result["valid"] is True
+    assert result["automatic_semantic_pass"] is True
+
+
+def test_tensorrt_slot_protocol_recovers_explicit_action_material() -> None:
+    case = next(item for item in CONTEST_CASES if item.case_id == "moon_turtle")
+    output = (
+        "SETTING: moonlit stars\n"
+        "ACTOR: turtle\n"
+        "ACTION: climbs staircase\n"
+        "MAGIC: glowing jellyfish drift"
+    )
+
+    result = BENCHMARK._validate_responses(
+        {"responses": [{"output_text": output, "finish_reason": "eos"}]},
+        (case,),
+        prompt_profile="repair",
+    )[0]
+
+    assert result["valid"] is True
+    assert "cloud" in result["focus"].casefold()
+    assert result["automatic_semantic_pass"] is True
+
+
+def test_tensorrt_slot_protocol_rebalances_overlong_action_transformation() -> None:
+    case = next(item for item in CONTEST_CASES if item.case_id == "flashlight_birds")
+    output = (
+        "SETTING: quiet cave\n"
+        "ACTOR: child\n"
+        "ACTION: raises a flashlight; its enormous shadow breaks apart into a flock "
+        "of black birds\n"
+        "MAGIC: flashlight; shadow; black birds"
+    )
+
+    result = BENCHMARK._validate_responses(
+        {"responses": [{"output_text": output, "finish_reason": "eos"}]},
+        (case,),
+        prompt_profile="repair",
+    )[0]
+
+    assert result["valid"] is True
+    assert "flashlight" in result["focus"].casefold()
+    assert "black birds" in result["magic"].casefold()
+    assert result["automatic_semantic_pass"] is True
+
+
+def test_tensorrt_slot_protocol_recovers_containment_and_relative_scale() -> None:
+    case = next(item for item in CONTEST_CASES if item.case_id == "bottle_city")
+    output = (
+        "SETTING: storm\n"
+        "ACTOR: giant turtle\n"
+        "ACTION: carries glass bottle on shell\n"
+        "MAGIC: miniature city shines beneath bottle no larger than marble"
+    )
+
+    result = BENCHMARK._validate_responses(
+        {"responses": [{"output_text": output, "finish_reason": "eos"}]},
+        (case,),
+        prompt_profile="repair",
+    )[0]
+
+    assert result["valid"] is True
+    assert "inside" in result["magic"].casefold()
+    assert "marble sized storm" in result["magic"].casefold()
+    assert result["automatic_semantic_pass"] is True
+
+
+def test_tensorrt_slot_protocol_separates_actor_from_action_object() -> None:
+    case = next(item for item in CONTEST_CASES if item.case_id == "underwater_train")
+    output = (
+        "SETTING: underwater station\n"
+        "ACTOR: octopus conductor, tiny train\n"
+        "ACTION: guides train through station\n"
+        "MAGIC: bubbles swell into glowing clocks with no numbers"
+    )
+
+    result = BENCHMARK._validate_responses(
+        {"responses": [{"output_text": output, "finish_reason": "eos"}]},
+        (case,),
+        prompt_profile="repair",
+    )[0]
+
+    assert result["valid"] is True
+    assert "octopus conductor" in result["focus"].casefold()
+    assert "octopus conductor tiny train" not in result["focus"].casefold()
+    assert result["automatic_semantic_pass"] is True
+
+
+def test_tensorrt_slot_protocol_recovers_passive_actor_relationship() -> None:
+    case = next(item for item in CONTEST_CASES if item.case_id == "owl_passive_key")
+    output = (
+        "SETTING: rain, snowy owl, round door, moon\n"
+        "ACTOR: brass key\n"
+        "ACTION: carried through rain by snowy owl and unlocks door\n"
+        "MAGIC: unlocks round door"
+    )
+
+    result = BENCHMARK._validate_responses(
+        {"responses": [{"output_text": output, "finish_reason": "eos"}]},
+        (case,),
+        prompt_profile="repair",
+    )[0]
+
+    assert result["valid"] is True
+    assert "snowy owl" in result["focus"].casefold()
+    assert "carrying brass key" in result["focus"].casefold()
+    assert result["automatic_semantic_pass"] is True

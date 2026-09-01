@@ -20,7 +20,7 @@ from bookforge.model_client import OllamaClient, OpenAICompatibleClient
 
 Contract = Literal["standard", "compact"]
 Suite = Literal["five", "contest"]
-SEMANTIC_SCREEN_REVISION = "lexical-v2"
+SEMANTIC_SCREEN_REVISION = "lexical-v3-negation-aware"
 PLANNER_INSTRUCTION_REVISION = "semantic-fidelity-v1"
 
 
@@ -464,6 +464,47 @@ def _contains_semantic_alternative(haystack: str, alternative: str) -> bool:
     return any(_semantic_token_matches(token, needle) for token in haystack_tokens)
 
 
+_NEGATION_PREFIXES = frozenset({"no", "not", "without", "excluding", "except"})
+_NEGATION_PREFIX_PAIRS = frozenset(
+    {
+        ("free", "of"),
+        ("instead", "of"),
+        ("rather", "than"),
+    }
+)
+_NEGATION_SUFFIXES = frozenset({"absent", "excluded", "missing", "omitted"})
+
+
+def _contains_unnegated_semantic_alternative(haystack: str, alternative: str) -> bool:
+    """Return whether an idea is asserted, rather than explicitly excluded."""
+
+    haystack_tokens = _normalized_semantic_text(haystack).split()
+    alternative_tokens = _normalized_semantic_text(alternative).split()
+    width = len(alternative_tokens)
+    if not width:
+        return False
+    for index in range(len(haystack_tokens) - width + 1):
+        if not all(
+            _semantic_token_matches(token, needle)
+            for token, needle in zip(
+                haystack_tokens[index : index + width],
+                alternative_tokens,
+                strict=True,
+            )
+        ):
+            continue
+        prefix = haystack_tokens[max(0, index - 3) : index]
+        suffix = haystack_tokens[index + width : index + width + 2]
+        explicitly_negated = (
+            bool(set(prefix) & _NEGATION_PREFIXES)
+            or tuple(prefix[-2:]) in _NEGATION_PREFIX_PAIRS
+            or (bool(suffix) and suffix[0] in _NEGATION_SUFFIXES)
+        )
+        if not explicitly_negated:
+            return True
+    return False
+
+
 def _semantic_evidence(
     case: BenchmarkCase,
     *,
@@ -483,7 +524,7 @@ def _semantic_evidence(
     forbidden_checks = [
         {
             "term": term,
-            "pass": not _contains_semantic_alternative(generated_text, term),
+            "pass": not _contains_unnegated_semantic_alternative(generated_text, term),
         }
         for term in case.forbidden_terms
     ]

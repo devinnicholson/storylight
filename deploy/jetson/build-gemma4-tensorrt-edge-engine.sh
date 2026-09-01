@@ -81,14 +81,14 @@ set +e
       --onnxDir "$CHECKPOINT_DIR" \
       --engineDir "$ENGINE_DIR" \
       --maxBatchSize 1 \
-      --maxInputLen 1024 \
+      --maxInputLen 1280 \
       --maxKVCacheCapacity 1536
   else
     "$LLM_BUILD" \
       --onnxDir "$CHECKPOINT_DIR" \
       --engineDir "$ENGINE_DIR" \
       --maxBatchSize 1 \
-      --maxInputLen 1024 \
+      --maxInputLen 1280 \
       --maxKVCacheCapacity 1536
   fi
 } 2>&1 | tee "$EVIDENCE_DIR/build.log"
