@@ -243,7 +243,7 @@ def main() -> None:
         raise SystemExit("--user does not identify an existing account") from error
     if args.output.exists() or args.output.is_symlink():
         raise SystemExit("cold-start evidence output is write-once")
-    evidence_root = Path("/var/lib/bookforge/trained-planner/evidence")
+    evidence_root = Path("/var/lib/bookforge-trusted/trained-planner/evidence")
     evidence_root_info = evidence_root.lstat()
     if (
         not args.output.is_relative_to(evidence_root)

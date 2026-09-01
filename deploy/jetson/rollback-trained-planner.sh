@@ -8,9 +8,9 @@ export PATH
 unset BASH_ENV ENV CDPATH GLOBIGNORE
 
 readonly CONFIG_FILE="/etc/bookforge/bookforge.env"
-readonly STATE_DIR="/var/lib/bookforge/trained-planner"
+readonly STATE_DIR="/var/lib/bookforge-trusted/trained-planner"
 readonly ACTIVE_STATE="$STATE_DIR/active.env"
-readonly CANDIDATE_ROOT="/var/lib/bookforge/trained-planner-candidates"
+readonly CANDIDATE_ROOT="/var/lib/bookforge-trusted/trained-planner-candidates"
 readonly SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd -P)"
 readonly INSTALLER="${BOOKFORGE_CANDIDATE_INSTALLER:-$SCRIPT_DIR/install-trained-planner-candidate.sh}"
 readonly ACCEPTED_ENGINE_SHA256="95b69991b68c57a2d2d4bfa4116feb9ec57295588551d109353a42a9c16c4fdf"

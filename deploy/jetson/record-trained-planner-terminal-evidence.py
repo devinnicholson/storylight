@@ -21,7 +21,7 @@ SHA = re.compile(r"[a-f0-9]{64}\Z")
 RUN_ID = re.compile(r"[a-z0-9][a-z0-9-]{2,63}\Z")
 CANDIDATE_ID = re.compile(r"[a-z0-9][a-z0-9-]{2,95}\Z")
 USER = re.compile(r"[a-z_][a-z0-9_-]{0,31}\Z")
-EVIDENCE_ROOT = Path("/var/lib/bookforge/trained-planner/evidence")
+EVIDENCE_ROOT = Path("/var/lib/bookforge-trusted/trained-planner/evidence")
 
 
 def canonical(value: object) -> bytes:
@@ -351,7 +351,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--active-state",
         type=Path,
-        default=Path("/var/lib/bookforge/trained-planner/active.env"),
+        default=Path("/var/lib/bookforge-trusted/trained-planner/active.env"),
     )
     parser.add_argument("--one-purpose-approval-token", required=True)
     parser.add_argument("--output-directory", type=Path, required=True)

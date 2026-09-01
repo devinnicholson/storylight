@@ -7,7 +7,8 @@ PATH=/usr/sbin:/usr/bin:/sbin:/bin
 export PATH
 unset BASH_ENV ENV CDPATH GLOBIGNORE
 
-readonly SWAP_FILE="/var/lib/bookforge/tensorrt-build.swap"
+readonly TRUSTED_ROOT="/var/lib/bookforge-trusted"
+readonly SWAP_FILE="$TRUSTED_ROOT/tensorrt-build.swap"
 readonly SWAP_BYTES=$((8 * 1024 * 1024 * 1024))
 
 if [[ ${EUID:-$(id -u)} -ne 0 ]]; then
@@ -23,6 +24,23 @@ verify_file() {
   [[ -f "$SWAP_FILE" && ! -L "$SWAP_FILE" ]] \
     && [[ "$(stat -c '%U:%G:%a' "$SWAP_FILE")" == "root:root:600" ]] \
     && [[ "$(stat -c '%s' "$SWAP_FILE")" -eq "$SWAP_BYTES" ]]
+}
+
+ensure_trusted_root() {
+  if [[ ! -d /var/lib || -L /var/lib ]] \
+    || [[ "$(stat -c '%U:%G:%a' /var/lib)" != "root:root:755" ]]; then
+    printf 'The /var/lib trust anchor is unsafe.\n' >&2
+    exit 78
+  fi
+  if [[ -e "$TRUSTED_ROOT" || -L "$TRUSTED_ROOT" ]]; then
+    if [[ ! -d "$TRUSTED_ROOT" || -L "$TRUSTED_ROOT" ]] \
+      || [[ "$(stat -c '%U:%G:%a' "$TRUSTED_ROOT")" != "root:root:755" ]]; then
+      printf 'The Bookforge trusted state root is unsafe.\n' >&2
+      exit 78
+    fi
+  else
+    install -d -o root -g root -m 0755 "$TRUSTED_ROOT"
+  fi
 }
 
 status() {
@@ -41,7 +59,7 @@ status() {
 case "${1:-}" in
   prepare)
     [[ $# -eq 1 ]] || exit 64
-    install -d -o root -g root -m 0755 /var/lib/bookforge
+    ensure_trusted_root
     if is_active; then
       verify_file || { printf 'Active TensorRT swap file is unsafe.\n' >&2; exit 78; }
       status

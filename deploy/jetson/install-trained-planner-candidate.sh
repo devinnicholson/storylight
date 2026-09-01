@@ -7,7 +7,7 @@ PATH=/usr/sbin:/usr/bin:/sbin:/bin
 export PATH
 
 readonly SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd -P)"
-readonly CANDIDATE_ROOT="/var/lib/bookforge/trained-planner-candidates"
+readonly CANDIDATE_ROOT="/var/lib/bookforge-trusted/trained-planner-candidates"
 readonly UNIT_SOURCE="${BOOKFORGE_CANDIDATE_UNIT_SOURCE:-$SCRIPT_DIR/systemd/bookforge-trained-planner-candidate@.service}"
 readonly UNIT_TARGET="/etc/systemd/user/bookforge-trained-planner-candidate@.service"
 readonly PYTHON="python3"

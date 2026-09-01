@@ -512,7 +512,8 @@ def test_power_mode_ab_is_reboot_aware_persistent_and_restores_25w() -> None:
     runner = POWER_MODE_AB.read_text()
 
     subprocess.run(["bash", "-n", str(POWER_MODE_AB)], check=True)
-    assert 'readonly STATE_DIR="/var/lib/bookforge/power-mode-ab"' in runner
+    assert 'readonly TRUSTED_ROOT="/var/lib/bookforge-trusted"' in runner
+    assert 'readonly STATE_DIR="$TRUSTED_ROOT/power-mode-ab"' in runner
     assert "prepare-maxn" in runner
     assert "awaiting-maxn-reboot" in runner
     assert "benchmark-maxn" in runner
@@ -570,7 +571,8 @@ def test_tensorrt_build_swap_is_fixed_bounded_and_nonpersistent() -> None:
     runner = TENSORRT_BUILD_SWAP.read_text()
 
     subprocess.run(["bash", "-n", str(TENSORRT_BUILD_SWAP)], check=True)
-    assert 'readonly SWAP_FILE="/var/lib/bookforge/tensorrt-build.swap"' in runner
+    assert 'readonly TRUSTED_ROOT="/var/lib/bookforge-trusted"' in runner
+    assert 'readonly SWAP_FILE="$TRUSTED_ROOT/tensorrt-build.swap"' in runner
     assert 'readonly SWAP_BYTES=$((8 * 1024 * 1024 * 1024))' in runner
     assert 'fallocate --length "$SWAP_BYTES" "$partial"' in runner
     assert 'chmod 0600 "$partial"' in runner
@@ -579,6 +581,7 @@ def test_tensorrt_build_swap_is_fixed_bounded_and_nonpersistent() -> None:
     assert 'rm -- "$SWAP_FILE"' in runner
     assert "/etc/fstab" not in runner
     assert "eval " not in runner
+    assert "install -d -o root -g root -m 0755 /var/lib/bookforge" not in runner
 
 
 def test_standalone_installer_waits_for_both_local_services() -> None:

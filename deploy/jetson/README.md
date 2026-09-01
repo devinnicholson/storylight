@@ -374,8 +374,10 @@ version atomically, and prints an exact one-purpose token. Candidate, promotion,
 scripts then resolve only that installed tooling, never the mutable `/opt/bookforge` checkout.
 
 Promotion also requires a new immediate child of
-`/var/lib/bookforge/trained-planner/evidence`. After the candidate is active, the promotion script
-runs fresh planner, API, controller, kiosk, live-scene, output-token, and swap checks. It then
+`/var/lib/bookforge-trusted/trained-planner/evidence`. This root-owned tree is deliberately
+separate from the service-writable `/var/lib/bookforge` runtime data. After the candidate is active,
+the promotion script runs fresh planner, API, controller, kiosk, live-scene, output-token, and swap
+checks. It then
 atomically publishes the terminal receipt, post-action health, and rollback state before declaring
 success. If the gate rejects the candidate, use the installed `record-baseline-retention.sh`
 dry-run and its exact approval token to prove that the accepted engine remained active. These
@@ -405,7 +407,7 @@ On the measured JetPack 7.2.1 Orin Nano, changing from power mode 1 (`25W`) to m
 (`MAXN_SUPER`) required a reboot; returning from mode 2 to mode 1 applied immediately. Do not use a
 one-process switch/benchmark/restore script: a requested reboot destroys that process and `/tmp`
 evidence. The repository runner preserves the accepted 25W baseline under
-`/var/lib/bookforge/power-mode-ab`, records a durable phase before each reboot, validates the mode
+`/var/lib/bookforge-trusted/power-mode-ab`, records a durable phase before each reboot, validates the mode
 after reconnect, and refuses out-of-order commands.
 
 Run exactly one phase at a time. A mode-change phase may prompt for a reboot; enter `YES` only after

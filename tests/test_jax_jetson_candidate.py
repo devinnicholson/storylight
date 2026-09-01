@@ -1,8 +1,10 @@
 import hashlib
 import importlib.util
 import json
+import stat
 import subprocess
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 
@@ -312,7 +314,7 @@ def test_candidate_service_is_loopback_bounded_swap_free_and_side_by_side() -> N
 
     assert "BOOKFORGE_EDGELLM_SERVER_PORT=11436" in service
     assert "EnvironmentFile=-/etc/bookforge/trained-planner/%i.env" in service
-    assert "/var/lib/bookforge/trained-planner-candidates/%i/engines/llm" in service
+    assert "/var/lib/bookforge-trusted/trained-planner-candidates/%i/engines/llm" in service
     assert "Conflicts=bookforge-tensorrt-planner.service bookforge-gemma.service" in service
     assert "ExecStopPost=" not in service
     assert "Restart=on-failure" in service
@@ -377,6 +379,44 @@ def test_tooling_bundle_is_source_and_content_provenance_bound(tmp_path: Path) -
     assert plan["service_restart"] is False
     assert plan["deployable"] is False
     assert plan["approval_token"].startswith(f"INSTALL_BOOKFORGE_TRAINED_PLANNER_TOOLING:{commit}:")
+
+
+def test_trusted_planner_state_is_outside_service_writable_runtime_data() -> None:
+    installer = TOOLING_INSTALLER.read_text()
+    trusted_root = "/var/lib/bookforge-trusted"
+
+    assert f'TRUSTED_STATE = Path("{trusted_root}")' in installer
+    assert 'secure_directory(Path("/var/lib/bookforge"), 0o755)' not in installer
+    assert 'LEGACY_ACTIVE_STATE = Path("/var/lib/bookforge")' in installer
+    assert "legacy trained-planner promotion state requires explicit reconciliation" in installer
+    for path in (
+        INSTALLER,
+        SHADOW,
+        PROMOTE,
+        ROLLBACK,
+        SERVICE,
+        ROOT / "deploy/jetson/record-baseline-retention.sh",
+        ROOT / "deploy/jetson/record-trained-planner-terminal-evidence.py",
+        ROOT / "deploy/jetson/record-trained-planner-cold-start.py",
+        ACCEPTANCE_PREFLIGHT,
+    ):
+        text = path.read_text()
+        assert "/var/lib/bookforge/trained-planner" not in text
+        assert trusted_root in text
+
+
+def test_privileged_directory_ancestry_rejects_non_root_owner() -> None:
+    seen: list[Path] = []
+
+    def fake_lstat(path: Path):
+        seen.append(path)
+        uid = 1000 if path == Path("/var/lib") else 0
+        return SimpleNamespace(st_mode=stat.S_IFDIR | 0o755, st_uid=uid, st_gid=0)
+
+    with pytest.raises(ValueError, match="unsafe privileged directory ancestry: /var/lib"):
+        tooling_installer.validate_root_ancestry(Path("/var/lib"), lstat=fake_lstat)
+
+    assert seen == [Path("/"), Path("/var"), Path("/var/lib")]
 
 
 def test_tooling_installer_rejects_bytes_changed_after_manifest(tmp_path: Path) -> None:

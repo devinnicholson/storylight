@@ -107,7 +107,7 @@ def evidence_is_fresh(
     latest_oom_usec: int,
     minimum_available_mib: int,
     *,
-    trusted_root: Path = Path("/var/lib/bookforge/trained-planner/evidence"),
+    trusted_root: Path = Path("/var/lib/bookforge-trusted/trained-planner/evidence"),
     required_owner_uid: int = 0,
     required_owner_gid: int = 0,
 ) -> tuple[bool, str, int]:
@@ -263,14 +263,14 @@ def main() -> None:
     except OSError as error:
         record("exact_routing_identity", False, str(error))
 
-    active_state = Path("/var/lib/bookforge/trained-planner/active.env")
+    active_state = Path("/var/lib/bookforge-trusted/trained-planner/active.env")
     record(
         "rollback_state_clear",
         not active_state.exists() and not active_state.is_symlink(),
         "no promotion is active" if not active_state.exists() else str(active_state),
     )
     current = Path("/usr/local/lib/bookforge/trained-planner-tooling/current")
-    receipt = Path("/var/lib/bookforge/trained-planner/tooling-current.json")
+    receipt = Path("/var/lib/bookforge-trusted/trained-planner/tooling-current.json")
     receipt_value: dict[str, object] = {}
     try:
         receipt_info = receipt.lstat()
@@ -356,7 +356,7 @@ def main() -> None:
     except OSError as error:
         record("candidate_unit_provenance", False, str(error))
 
-    candidate_root = Path("/var/lib/bookforge/trained-planner-candidates")
+    candidate_root = Path("/var/lib/bookforge-trusted/trained-planner-candidates")
     try:
         candidate_root_info = candidate_root.lstat()
         root_ok = (

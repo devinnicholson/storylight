@@ -12,10 +12,15 @@ import re
 import shutil
 import stat
 import tempfile
+from collections.abc import Callable
+from contextlib import suppress
 from pathlib import Path, PurePosixPath
 
 BASE = Path("/usr/local/lib/bookforge/trained-planner-tooling")
-STATE = Path("/var/lib/bookforge/trained-planner")
+TRUSTED_STATE = Path("/var/lib/bookforge-trusted")
+STATE = TRUSTED_STATE / "trained-planner"
+CANDIDATE_ROOT = TRUSTED_STATE / "trained-planner-candidates"
+LEGACY_ACTIVE_STATE = Path("/var/lib/bookforge") / "trained-planner/active.env"
 UNIT = Path("/etc/systemd/user/bookforge-trained-planner-candidate@.service")
 MAX_FILES = 64
 MAX_BYTES = 16 * 1024 * 1024
@@ -128,10 +133,35 @@ def verify_bundle(bundle: Path, expected_sha256: str, source_commit: str) -> dic
     return manifest
 
 
+def validate_root_ancestry(
+    path: Path, *, lstat: Callable[[Path], os.stat_result] = os.lstat
+) -> None:
+    if not path.is_absolute():
+        raise ValueError(f"privileged path is not absolute: {path}")
+    for ancestor in reversed((path, *path.parents)):
+        info = lstat(ancestor)
+        if (
+            stat.S_ISLNK(info.st_mode)
+            or not stat.S_ISDIR(info.st_mode)
+            or info.st_uid != 0
+            or info.st_gid != 0
+            or info.st_mode & 0o022
+        ):
+            raise ValueError(f"unsafe privileged directory ancestry: {ancestor}")
+
+
 def secure_directory(path: Path, mode: int) -> None:
-    path.mkdir(mode=mode, parents=True, exist_ok=True)
+    validate_root_ancestry(path.parent)
+    with suppress(FileExistsError):
+        os.mkdir(path, mode)
     info = path.lstat()
-    if path.is_symlink() or not stat.S_ISDIR(info.st_mode) or info.st_uid != 0 or info.st_gid != 0:
+    if (
+        path.is_symlink()
+        or not stat.S_ISDIR(info.st_mode)
+        or info.st_uid != 0
+        or info.st_gid != 0
+        or info.st_mode & 0o022
+    ):
         raise ValueError(f"unsafe privileged directory: {path}")
     os.chmod(path, mode)
 
@@ -244,6 +274,10 @@ def main() -> None:
         raise SystemExit("refusing to install tooling that was not clean at its declared commit")
     if args.approval_token != token:
         raise SystemExit("approval token does not match the verified staged update")
+    if LEGACY_ACTIVE_STATE.exists() or LEGACY_ACTIVE_STATE.is_symlink():
+        raise SystemExit(
+            "legacy trained-planner promotion state requires explicit reconciliation"
+        )
 
     secure_directory(Path("/usr/local/lib/bookforge"), 0o755)
     secure_directory(BASE, 0o755)
@@ -294,8 +328,11 @@ def main() -> None:
                 os.replace(staged, destination)
             shutil.rmtree(stage, ignore_errors=True)
 
-            secure_directory(Path("/var/lib/bookforge"), 0o755)
-            secure_directory(Path("/var/lib/bookforge/trained-planner-candidates"), 0o755)
+            # Runtime story packs live in /var/lib/bookforge, which is intentionally
+            # writable by the service account. Privileged model state must not be a
+            # child of that replaceable tree.
+            secure_directory(TRUSTED_STATE, 0o755)
+            secure_directory(CANDIDATE_ROOT, 0o755)
             # The current provenance receipt is public metadata consumed by the
             # sudo/read-only preflight. Sensitive state remains in 0700 children.
             secure_directory(STATE, 0o755)

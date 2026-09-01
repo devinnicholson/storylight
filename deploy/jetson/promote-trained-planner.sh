@@ -8,9 +8,9 @@ export PATH
 unset BASH_ENV ENV CDPATH GLOBIGNORE
 
 readonly CONFIG_FILE="/etc/bookforge/bookforge.env"
-readonly STATE_DIR="/var/lib/bookforge/trained-planner"
+readonly STATE_DIR="/var/lib/bookforge-trusted/trained-planner"
 readonly ACTIVE_STATE="$STATE_DIR/active.env"
-readonly CANDIDATE_ROOT="/var/lib/bookforge/trained-planner-candidates"
+readonly CANDIDATE_ROOT="/var/lib/bookforge-trusted/trained-planner-candidates"
 readonly SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd -P)"
 readonly INSTALLER="${BOOKFORGE_CANDIDATE_INSTALLER:-$SCRIPT_DIR/install-trained-planner-candidate.sh}"
 readonly TERMINAL_RECORDER="$SCRIPT_DIR/record-trained-planner-terminal-evidence.py"
@@ -98,9 +98,9 @@ fi
 if [[ ! "$candidate_id" =~ ^[a-z0-9][a-z0-9-]{2,95}$ ]] \
   || [[ ! "$manifest_sha256" =~ ^[a-f0-9]{64}$ ]] \
   || [[ ! "$gate_evidence_sha256" =~ ^[a-f0-9]{64}$ ]] \
-  || [[ "$terminal_evidence_dir" != /var/lib/bookforge/trained-planner/evidence/* ]] \
+  || [[ "$terminal_evidence_dir" != /var/lib/bookforge-trusted/trained-planner/evidence/* ]] \
   || [[ "$(realpath -m -- "$terminal_evidence_dir")" != "$terminal_evidence_dir" ]] \
-  || [[ "$(dirname -- "$terminal_evidence_dir")" != /var/lib/bookforge/trained-planner/evidence ]] \
+  || [[ "$(dirname -- "$terminal_evidence_dir")" != /var/lib/bookforge-trusted/trained-planner/evidence ]] \
   || [[ -e "$terminal_evidence_dir" || -L "$terminal_evidence_dir" ]] \
   || [[ ! -x "$TERMINAL_RECORDER" ]]; then
   usage >&2

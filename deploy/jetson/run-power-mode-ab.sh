@@ -4,7 +4,8 @@
 set -euo pipefail
 
 readonly TARGET_USER="${BOOKFORGE_POWER_AB_USER:-operator}"
-readonly STATE_DIR="/var/lib/bookforge/power-mode-ab"
+readonly TRUSTED_ROOT="/var/lib/bookforge-trusted"
+readonly STATE_DIR="$TRUSTED_ROOT/power-mode-ab"
 readonly EVIDENCE_DIR="$STATE_DIR/evidence"
 readonly PHASE_FILE="$STATE_DIR/phase"
 readonly BASELINE_SOURCE="/tmp/bookforge-inference-25w-power.json"
@@ -56,8 +57,38 @@ done
 ensure_state_layout() {
   # The benchmark runs as the unprivileged Bookforge user. Keep the phase file root-owned while
   # allowing that user to traverse the parent and write only inside the evidence directory.
-  install -d -o root -g "$TARGET_GROUP" -m 0750 "$STATE_DIR"
-  install -d -o "$TARGET_USER" -g "$TARGET_GROUP" -m 0750 "$EVIDENCE_DIR"
+  if [[ ! -d /var/lib || -L /var/lib ]] \
+    || [[ "$(stat -c '%U:%G:%a' /var/lib)" != "root:root:755" ]]; then
+    printf 'The /var/lib trust anchor is unsafe.\n' >&2
+    exit 78
+  fi
+  if [[ -e "$TRUSTED_ROOT" || -L "$TRUSTED_ROOT" ]]; then
+    if [[ ! -d "$TRUSTED_ROOT" || -L "$TRUSTED_ROOT" ]] \
+      || [[ "$(stat -c '%U:%G:%a' "$TRUSTED_ROOT")" != "root:root:755" ]]; then
+      printf 'The Bookforge trusted state root is unsafe.\n' >&2
+      exit 78
+    fi
+  else
+    install -d -o root -g root -m 0755 "$TRUSTED_ROOT"
+  fi
+  if [[ -e "$STATE_DIR" || -L "$STATE_DIR" ]]; then
+    if [[ ! -d "$STATE_DIR" || -L "$STATE_DIR" ]] \
+      || [[ "$(stat -c '%U:%G:%a' "$STATE_DIR")" != "root:${TARGET_GROUP}:750" ]]; then
+      printf 'The power acceptance state directory is unsafe.\n' >&2
+      exit 78
+    fi
+  else
+    install -d -o root -g "$TARGET_GROUP" -m 0750 "$STATE_DIR"
+  fi
+  if [[ -e "$EVIDENCE_DIR" || -L "$EVIDENCE_DIR" ]]; then
+    if [[ ! -d "$EVIDENCE_DIR" || -L "$EVIDENCE_DIR" ]] \
+      || [[ "$(stat -c '%U:%G:%a' "$EVIDENCE_DIR")" != "${TARGET_USER}:${TARGET_GROUP}:750" ]]; then
+      printf 'The power acceptance evidence directory is unsafe.\n' >&2
+      exit 78
+    fi
+  else
+    install -d -o "$TARGET_USER" -g "$TARGET_GROUP" -m 0750 "$EVIDENCE_DIR"
+  fi
 }
 
 cleanup_monitor() {

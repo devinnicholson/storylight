@@ -61,9 +61,9 @@ if [[ ! "$target_user" =~ ^[a-z_][a-z0-9_-]{0,31}$ ]] \
   || [[ ! "$gate_sha256" =~ ^[a-f0-9]{64}$ ]] \
   || [[ ! "$manifest_sha256" =~ ^[a-f0-9]{64}$ ]] \
   || [[ ! "$baseline_sha256" =~ ^[a-f0-9]{64}$ ]] \
-  || [[ "$output_directory" != /var/lib/bookforge/trained-planner/evidence/* ]] \
+  || [[ "$output_directory" != /var/lib/bookforge-trusted/trained-planner/evidence/* ]] \
   || [[ "$(realpath -m -- "$output_directory")" != "$output_directory" ]] \
-  || [[ "$(dirname -- "$output_directory")" != /var/lib/bookforge/trained-planner/evidence ]] \
+  || [[ "$(dirname -- "$output_directory")" != /var/lib/bookforge-trusted/trained-planner/evidence ]] \
   || [[ ! -x "$RECORDER" ]]; then
   usage >&2
   exit 64
