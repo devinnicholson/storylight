@@ -5,7 +5,6 @@ from pathlib import Path
 
 import pytest
 
-
 ROOT = Path(__file__).parents[1]
 SCRIPT = ROOT / "deploy/jetson/download-gcs-tensorrt-checkpoint.py"
 SPEC = importlib.util.spec_from_file_location("bookforge_gcs_checkpoint_download", SCRIPT)

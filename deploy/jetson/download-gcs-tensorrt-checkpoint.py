@@ -138,7 +138,9 @@ def main() -> None:
     token = sys.stdin.readline().strip()
     if not token:
         raise ValueError("an OAuth access token is required on stdin")
-    result = download_bundle(token, args.bucket, args.prefix.strip("/"), args.destination, args.workers)
+    result = download_bundle(
+        token, args.bucket, args.prefix.strip("/"), args.destination, args.workers
+    )
     print(json.dumps(result, indent=2, sort_keys=True))
 
 
