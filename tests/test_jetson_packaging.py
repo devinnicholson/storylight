@@ -165,7 +165,18 @@ def _run_fake_kiosk(
         }
     )
     (tmp_path / "Xauthority").write_text("test authority")
-    environment.update(overrides or {})
+    browser_overrides = dict(overrides or {})
+    if (
+        "BOOKFORGE_BROWSER_BIN" not in browser_overrides
+        and "BOOKFORGE_CHROMIUM_BIN" not in browser_overrides
+        and "chromium" not in browser_names
+        and "chromium-browser" not in browser_names
+        and "firefox" in browser_names
+    ):
+        # Hosted Linux runners can have a real Chromium in /usr/bin. Keep
+        # Firefox-only tests hermetic instead of launching a host browser.
+        browser_overrides["BOOKFORGE_BROWSER_BIN"] = str(fake_bin / "firefox")
+    environment.update(browser_overrides)
     return subprocess.run(
         [str(KIOSK_LAUNCHER)],
         check=check,
