@@ -1057,13 +1057,16 @@ def test_uncached_model_plan_emits_privacy_safe_preview_before_final_master(
     warm = _warm_provider(tmp_path, invoker)
 
     class UncachedPlanner:
+        def __init__(self, preview_complete: asyncio.Event) -> None:
+            self.preview_complete = preview_complete
+
         async def has_cached_plan(self, *, text: str) -> bool:
             assert "Quenlora" in text
             return False
 
         async def plan(self, **kwargs) -> LiveScenePlanningResult:
             assert "Quenlora" in kwargs["text"]
-            await asyncio.sleep(0.01)
+            await self.preview_complete.wait()
             return LiveScenePlanningResult(
                 plan=_gemma_live_plan(),
                 metrics=ModelMetrics(
@@ -1077,6 +1080,16 @@ def test_uncached_model_plan_emits_privacy_safe_preview_before_final_master(
                 wall_ms=4_050,
             )
 
+    class PreviewFirstProvider(FiniteModalLiveSceneProvider):
+        def __init__(self, *args, preview_complete: asyncio.Event, **kwargs) -> None:
+            super().__init__(*args, **kwargs)
+            self.preview_complete = preview_complete
+
+        async def _generate_preview(self, *args, **kwargs):
+            preview = await super()._generate_preview(*args, **kwargs)
+            self.preview_complete.set()
+            return preview
+
     async def run() -> list[LiveSceneUpdate]:
         cache = AssetCache(tmp_path / "preview-cache")
         await cache.initialize()
@@ -1084,12 +1097,14 @@ def test_uncached_model_plan_emits_privacy_safe_preview_before_final_master(
             prewarm_id="preview-integration-prewarm",
             include_motion=False,
         )
-        adapter = FiniteModalLiveSceneProvider(
+        preview_complete = asyncio.Event()
+        adapter = PreviewFirstProvider(
             warm,
             cache=cache,
             output_root=tmp_path / "preview-output",
-            planner=UncachedPlanner(),
+            planner=UncachedPlanner(preview_complete),
             enable_preview=True,
+            preview_complete=preview_complete,
         )
         return [
             update
