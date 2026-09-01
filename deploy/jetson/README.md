@@ -366,6 +366,20 @@ sudo /opt/bookforge/deploy/jetson/configure-tensorrt-planner.sh \
   --user operator
 ```
 
+Trained-candidate acceptance uses a separate immutable tooling bundle. Build it from a clean Git
+commit with `build-trained-planner-tooling-bundle.py`, copy it to the Jetson, and run
+`install-trained-planner-tooling.py --dry-run` before the root install. The installer copies and
+re-verifies every byte inside a root-owned staging directory, publishes a content-addressed
+version atomically, and prints an exact one-purpose token. Candidate, promotion, and rollback
+scripts then resolve only that installed tooling, never the mutable `/opt/bookforge` checkout.
+
+If the planner journal contains an earlier OOM, produce the required post-OOM evidence with the
+installed `record-trained-planner-cold-start.py`. Its dry run is non-mutating. Execution requires
+the exact printed token, restarts only the accepted user service, exercises the loopback planner
+and projector route, checks swap/OOM/restart events and memory, proves exact accepted routing was
+restored, and writes a checksum-bound report. Pass that report and SHA-256 to
+`preflight-trained-planner-acceptance.py`; do not construct cold-start evidence by hand.
+
 The TensorRT unit and Gemma 3 Ollama unit are mutually exclusive on the 8 GB board. Any TensorRT
 stop or crash queues Ollama restoration; Bookforge waits up to five seconds for that fallback only
 after a definite loopback connection failure. A timeout, HTTP error, or malformed response fails

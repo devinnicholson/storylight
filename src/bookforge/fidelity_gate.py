@@ -20,6 +20,10 @@ from bookforge.fidelity_benchmark import (
     population_contract_from_manifest,
 )
 from bookforge.fidelity_manifest import sha256_path
+from bookforge.fidelity_review_evidence import (
+    validate_contest_evidence,
+    validate_human_review_evidence,
+)
 from bookforge.fidelity_schema import DatasetSplit
 
 _SHA256 = re.compile(r"[a-f0-9]{64}\Z")
@@ -87,20 +91,6 @@ def _summary(
     elif receipt_sha is not None:
         raise ValueError(f"{label} unexpectedly contains hidden custody evidence")
     return summary, _identity(document, label), receipt_sha
-
-
-def _candidate_bound_pass(
-    document: Mapping[str, object],
-    *,
-    label: str,
-    candidate: CandidateIdentity,
-    schema_version: str,
-) -> bool:
-    if document.get("schema_version") != schema_version:
-        raise ValueError(f"{label} has an unsupported schema version")
-    if _identity(document, label) != candidate:
-        raise ValueError(f"{label} identifies another candidate")
-    return document.get("passed") is True
 
 
 def _runtime(document: Mapping[str, object], *, candidate: CandidateIdentity) -> RuntimeEvidence:
@@ -293,17 +283,9 @@ def build_gate_artifact(
         raise ValueError("hidden summaries were not evaluated under the same custody state")
 
     runtime = _runtime(documents["runtime"], candidate=candidate)
-    contest_passed = _candidate_bound_pass(
-        documents["contest"],
-        label="contest evidence",
-        candidate=candidate,
-        schema_version="story-fidelity-contest-suite-v1",
-    )
-    human_review_passed = _candidate_bound_pass(
-        documents["human_review"],
-        label="human review evidence",
-        candidate=candidate,
-        schema_version="story-fidelity-human-review-v1",
+    contest_passed = validate_contest_evidence(documents["contest"], candidate)
+    human_review_passed = validate_human_review_evidence(
+        documents["human_review"], candidate
     )
     shadow_status = _shadow(
         documents["jetson_shadow"],

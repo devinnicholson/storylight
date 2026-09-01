@@ -454,14 +454,14 @@ def test_acceptance_preflight_requires_checksum_bound_post_oom_evidence(
         + "\n"
     )
     valid, detail, completed = acceptance_preflight.evidence_is_fresh(
-        evidence_path, _sha256(evidence_path), engine_sha, 100
+        evidence_path, _sha256(evidence_path), engine_sha, 100, 768
     )
     assert valid is True
     assert completed == 200
     assert "post-OOM" in detail
 
     valid, _, completed = acceptance_preflight.evidence_is_fresh(
-        evidence_path, "e" * 64, engine_sha, 100
+        evidence_path, "e" * 64, engine_sha, 100, 768
     )
     assert valid is False
     assert completed == 0

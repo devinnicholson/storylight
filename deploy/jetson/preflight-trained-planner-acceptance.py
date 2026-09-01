@@ -68,6 +68,7 @@ def evidence_is_fresh(
     expected_sha: str | None,
     engine_sha: str,
     latest_oom_usec: int,
+    minimum_available_mib: int,
 ) -> tuple[bool, str, int]:
     if path is None or expected_sha is None:
         return False, "historical OOM requires checksum-bound cold-start evidence", 0
@@ -96,8 +97,10 @@ def evidence_is_fresh(
         not isinstance(completed, int)
         or completed <= latest_oom_usec
         or not isinstance(available, (int, float))
-        or available <= 0
+        or isinstance(available, bool)
+        or available < minimum_available_mib
         or not isinstance(ready, (int, float))
+        or isinstance(ready, bool)
         or ready <= 0
         or ready > 90
     ):
@@ -306,6 +309,7 @@ def main() -> None:
             args.cold_start_evidence_sha256,
             args.expected_accepted_engine_sha256,
             latest_oom_usec,
+            args.minimum_available_mib,
         )
     else:
         cold_ok = True

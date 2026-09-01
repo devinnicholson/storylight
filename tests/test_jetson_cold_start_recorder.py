@@ -1,0 +1,85 @@
+from __future__ import annotations
+
+import importlib.util
+import json
+import subprocess
+import sys
+from pathlib import Path
+
+import pytest
+
+ROOT = Path(__file__).resolve().parents[1]
+SCRIPT = ROOT / "deploy/jetson/record-trained-planner-cold-start.py"
+
+
+def _load_module():
+    spec = importlib.util.spec_from_file_location("bookforge_cold_start", SCRIPT)
+    assert spec is not None and spec.loader is not None
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+def test_cold_start_dry_run_is_non_mutating_and_exactly_bound(tmp_path: Path) -> None:
+    engine_sha = "a" * 64
+    output = tmp_path / "evidence.json"
+    result = subprocess.run(
+        [
+            sys.executable,
+            str(SCRIPT),
+            "--accepted-engine",
+            str(tmp_path / "engine"),
+            "--expected-engine-sha256",
+            engine_sha,
+            "--output",
+            str(output),
+            "--dry-run",
+        ],
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+    plan = json.loads(result.stdout)
+    assert plan["mode"] == "plan-only"
+    assert plan["service_restart"] is True
+    assert plan["approval_token"] == (
+        "RECORD_BOOKFORGE_TRAINED_PLANNER_COLD_START:" + engine_sha
+    )
+    assert not output.exists()
+
+
+def test_cold_start_route_requires_exact_backend_revision_and_loopback() -> None:
+    module = _load_module()
+    engine_sha = "b" * 64
+    environment = {
+        "BOOKFORGE_LIVE_SCENE_PLANNER_BACKEND": "tensorrt_slots",
+        "BOOKFORGE_LIVE_SCENE_PLANNER_MODEL_REVISION": f"sha256:{engine_sha}",
+        "BOOKFORGE_LIVE_SCENE_PLANNER_BASE_URL": "http://127.0.0.1:11435",
+    }
+    assert module.route_is_accepted(
+        environment,
+        engine_sha256=engine_sha,
+        planner_base_url="http://127.0.0.1:11435",
+    )
+    environment["BOOKFORGE_LIVE_SCENE_PLANNER_MODEL_REVISION"] = "sha256:" + "c" * 64
+    assert not module.route_is_accepted(
+        environment,
+        engine_sha256=engine_sha,
+        planner_base_url="http://127.0.0.1:11435",
+    )
+    with pytest.raises(ValueError, match="loopback"):
+        module.loopback_base_url("https://example.com")
+
+
+def test_cold_start_environment_parser_handles_quotes_and_comments(tmp_path: Path) -> None:
+    module = _load_module()
+    path = tmp_path / "bookforge.env"
+    path.write_text(
+        "# comment\nA=plain\nB=\"quoted\"\nC='single'\ninvalid\n",
+        encoding="utf-8",
+    )
+    assert module.parse_environment(path) == {
+        "A": "plain",
+        "B": "quoted",
+        "C": "single",
+    }

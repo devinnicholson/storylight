@@ -23,6 +23,7 @@ TOOL_FILES = (
     "install-trained-planner-tooling.py",
     "preflight-trained-planner-acceptance.py",
     "promote-trained-planner.sh",
+    "record-trained-planner-cold-start.py",
     "rollback-trained-planner.sh",
     "run-tensorrt-edge-server.sh",
     "run-trained-planner-shadow.sh",

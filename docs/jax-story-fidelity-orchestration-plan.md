@@ -398,8 +398,9 @@ The final no-spend integration run used:
   `e717eb38c44fceeeae3a2bc88981767c316ca1339198ce1077b893252afeb1de`;
 - 4,096 public training records, 512 public development records, and 512 private hidden records;
 - successful dataset, 32-record CPU smoke, and production-format compatibility stages; and
-- 705 passing repository tests after trusted stage-producer, cloud-admission,
-  immutable Jetson-tooling, and checkpoint-evidence integration.
+- 710 passing repository tests after trusted stage-producer, cloud-admission,
+  immutable Jetson-tooling, checkpoint-evidence, fixed contest-suite, locked
+  human-review, and post-OOM cold-start integration.
 
 The accepted engine's 512-case development baseline is now frozen separately
 from model outputs: 100% schema validity, 58.7109375% semantic-atom recall,
