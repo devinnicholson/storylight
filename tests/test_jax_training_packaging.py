@@ -438,8 +438,11 @@ def test_container_and_direct_dependencies_are_immutable() -> None:
         "BOOKFORGE_MAXTEXT_APPROVED_PATCH=/opt/bookforge/patches/"
         "maxtext-native-lora-materialization.patch"
     ) in dockerfile
-    assert "git -C /opt/MaxText apply --check" in dockerfile
-    assert "git -C /opt/MaxText apply \"$BOOKFORGE_MAXTEXT_APPROVED_PATCH\"" in dockerfile
+    assert "git -C /opt/MaxText apply --check --unidiff-zero" in dockerfile
+    assert (
+        'git -C /opt/MaxText apply --unidiff-zero "$BOOKFORGE_MAXTEXT_APPROVED_PATCH"'
+        in dockerfile
+    )
     assert (
         "git -C /opt/MaxText diff --no-ext-diff --binary --abbrev=8 --unified=0"
         in dockerfile

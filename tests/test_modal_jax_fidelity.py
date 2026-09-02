@@ -734,7 +734,8 @@ def test_modal_budget_gate_is_present_and_maxtext_checkout_is_exact() -> None:
     assert "maxtext_revision" in image_source
     assert "git -C /opt/MaxText rev-parse HEAD" in image_source
     assert "maxtext-native-lora-materialization.patch" in image_source
-    assert "git -C /opt/MaxText apply --check" in image_source
+    assert "git -C /opt/MaxText apply --check --unidiff-zero" in image_source
+    assert "git -C /opt/MaxText apply --unidiff-zero" in image_source
     assert "git -C /opt/MaxText diff --check" in image_source
     assert "status --short" in image_source
     assert " M src/maxtext/trainers/pre_train/train.py" in image_source

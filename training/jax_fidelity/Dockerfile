@@ -19,8 +19,8 @@ RUN git clone --filter=blob:none --no-checkout https://github.com/AI-Hypercomput
     && test -z "$(git -C /opt/MaxText status --porcelain)"
 
 COPY training/jax_fidelity/patches/maxtext-native-lora-materialization.patch /opt/bookforge/patches/maxtext-native-lora-materialization.patch
-RUN git -C /opt/MaxText apply --check "$BOOKFORGE_MAXTEXT_APPROVED_PATCH" \
-    && git -C /opt/MaxText apply "$BOOKFORGE_MAXTEXT_APPROVED_PATCH" \
+RUN git -C /opt/MaxText apply --check --unidiff-zero "$BOOKFORGE_MAXTEXT_APPROVED_PATCH" \
+    && git -C /opt/MaxText apply --unidiff-zero "$BOOKFORGE_MAXTEXT_APPROVED_PATCH" \
     && git -C /opt/MaxText diff --check \
     && test "$(git -C /opt/MaxText status --short)" = "$(printf '%s\n%s' \
         ' M src/maxtext/trainers/pre_train/train.py' \

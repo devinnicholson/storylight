@@ -86,9 +86,9 @@ JAX_IMAGE = (
         copy=True,
     )
     .run_commands(
-        "git -C /opt/MaxText apply --check "
+        "git -C /opt/MaxText apply --check --unidiff-zero "
         "/opt/bookforge/patches/maxtext-native-lora-materialization.patch",
-        "git -C /opt/MaxText apply "
+        "git -C /opt/MaxText apply --unidiff-zero "
         "/opt/bookforge/patches/maxtext-native-lora-materialization.patch",
         "git -C /opt/MaxText diff --check",
         "test \"$(git -C /opt/MaxText status --short)\" = "
