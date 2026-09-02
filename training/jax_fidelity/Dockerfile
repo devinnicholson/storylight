@@ -34,6 +34,9 @@ RUN NVTE_BUILD_USE_NVIDIA_WHEELS=1 \
     python -m pip install \
         --no-build-isolation 'transformer-engine-jax==2.18.0'
 RUN python -m pip install --requirement /tmp/bookforge-jax-requirements.lock
+RUN test -f /usr/local/lib/python3.12/site-packages/nvidia/cuda_runtime/lib/libcudart.so.12 \
+    && ln -sfnT cuda_runtime /usr/local/lib/python3.12/site-packages/nvidia/cudart \
+    && python -c "import glob; assert glob.glob('/usr/local/lib/python3.12/site-packages/nvidia/cudart/lib/lib*.so.*[0-9]')"
 
 COPY . /opt/bookforge
 RUN python -m training.jax_fidelity --config experiments/jax-fidelity-lab/config.json \

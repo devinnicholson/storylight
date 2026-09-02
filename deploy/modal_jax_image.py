@@ -61,6 +61,7 @@ CUDA_WHEEL_LIBRARY_DIRS = (
     "/usr/local/nvidia/lib64",
 )
 CUDA_WHEEL_LIBRARY_PATH = ":".join(CUDA_WHEEL_LIBRARY_DIRS)
+NVIDIA_PYTHON_ROOT = "/usr/local/lib/python3.12/site-packages/nvidia"
 TRANSFORMER_ENGINE_BUILD_ENV = {
     "NVTE_BUILD_USE_NVIDIA_WHEELS": "1",
     "LIBRARY_PATH": NCCL_LIBRARY_DIR,
@@ -89,6 +90,16 @@ JAX_IMAGE = (
         env=TRANSFORMER_ENGINE_BUILD_ENV,
     )
     .pip_install_from_requirements(REPOSITORY_ROOT / "training/jax_fidelity/requirements.lock")
+    # Transformer Engine 2.18 searches the NVIDIA Python namespace for
+    # ``cudart``, while the CUDA 12 runtime wheel exposes ``cuda_runtime``.
+    # Keep the vendor wheel intact and provide the compatibility name its
+    # loader expects.
+    .run_commands(
+        f"test -f {NVIDIA_PYTHON_ROOT}/cuda_runtime/lib/libcudart.so.12",
+        f"ln -sfnT cuda_runtime {NVIDIA_PYTHON_ROOT}/cudart",
+        "python -c \"import glob; assert glob.glob("
+        f"'{NVIDIA_PYTHON_ROOT}/cudart/lib/lib*.so.*[0-9]')\"",
+    )
     .add_local_dir(REPOSITORY_ROOT / "training", "/opt/bookforge/training", copy=True)
     .add_local_dir(REPOSITORY_ROOT / "src", "/opt/bookforge/src", copy=True)
     .add_local_dir(REPOSITORY_ROOT / "infra/gcp/jax", "/opt/bookforge/infra/gcp/jax", copy=True)
