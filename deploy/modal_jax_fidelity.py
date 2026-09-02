@@ -377,7 +377,7 @@ def _collect_training_runtime_provenance(
     )
     versions = getattr(experiment, "versions", None)
     training = getattr(experiment, "training", None)
-    if not isinstance(versions, dict) or not isinstance(training, dict):
+    if not isinstance(versions, Mapping) or not isinstance(training, Mapping):
         raise RuntimeError("training configuration has no provenance contract")
     expected_revision = versions.get("maxtext_revision")
     if (

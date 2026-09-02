@@ -21,6 +21,7 @@ from training.jax_fidelity.remote_release import package_training_release
 PLAN = ROOT / "experiments/jax-fidelity-lab/modal-plan-2026-09.json"
 CONFIG = ROOT / "experiments/jax-fidelity-lab/config.json"
 CONFIG_V2 = ROOT / "experiments/jax-fidelity-lab/config-v2.json"
+CONFIG_V3 = ROOT / "experiments/jax-fidelity-lab/config-v3-canary.json"
 
 
 def _load(name: str, path: Path):
@@ -888,6 +889,51 @@ def test_modal_billing_guard_retries_transient_cli_failure(monkeypatch) -> None:
     assert modal_jax_fidelity._authoritative_workspace_total() == 0.125
     assert attempts == 2
     assert sleeps == [1.0]
+
+
+def test_runtime_provenance_accepts_validated_immutable_config(
+    monkeypatch, tmp_path: Path
+) -> None:
+    experiment = load_config(CONFIG_V3)
+    maxtext_root = tmp_path / "MaxText"
+    for _module, relative, _snapshot in modal_jax_fidelity._PATCHED_MAXTEXT_SOURCES:
+        source = maxtext_root / relative
+        source.parent.mkdir(parents=True, exist_ok=True)
+        source.write_text("# patched source\n")
+    runtime_lock = tmp_path / "runtime.lock.json"
+    runtime_lock.write_text('{"schema_version":"1.0"}\n')
+    patch = ROOT / "training/jax_fidelity/patches/maxtext-native-lora-materialization.patch"
+
+    class Completed:
+        stdout = f"{experiment.versions['maxtext_revision']}\n"
+
+    monkeypatch.setattr(
+        modal_jax_fidelity,
+        "_verify_bookforge_source_manifest",
+        lambda *_args, **_kwargs: {"sha256": "a" * 64},
+    )
+    monkeypatch.setattr(
+        modal_jax_fidelity.subprocess,
+        "run",
+        lambda *_args, **_kwargs: Completed(),
+    )
+
+    provenance = modal_jax_fidelity._collect_training_runtime_provenance(
+        experiment,
+        maxtext_root=maxtext_root,
+        environment={
+            "BOOKFORGE_JAX_RUNTIME_LOCK": str(runtime_lock),
+            "BOOKFORGE_MAXTEXT_APPROVED_PATCH": str(patch),
+        },
+        bookforge_root=tmp_path,
+    )
+
+    assert provenance["maxtext"]["observed_revision"] == experiment.versions[
+        "maxtext_revision"
+    ]
+    assert provenance["approved_maxtext_patch"]["sha256"] == experiment.training[
+        "approved_maxtext_patch_sha256"
+    ]
 
 
 def test_modal_release_fetch_verifies_every_file_before_copy(monkeypatch, tmp_path: Path) -> None:
