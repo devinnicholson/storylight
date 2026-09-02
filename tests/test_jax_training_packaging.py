@@ -332,6 +332,7 @@ def test_container_and_direct_dependencies_are_immutable() -> None:
     assert "https://download.pytorch.org/whl/cpu" in lock
     assert "maxtext[cuda12]" in lock
     assert "nvidia-nvtx-cu12==12.9.79" in lock
+    assert "nvidia-curand-cu12==10.3.10.19" in lock
     assert "transformer-engine-jax==2.18.0" in lock
     assert "tpu-post-train" not in lock
     assert "git clone --filter=blob:none --no-checkout" in dockerfile

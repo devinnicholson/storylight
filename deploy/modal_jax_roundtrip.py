@@ -262,26 +262,31 @@ def gpu_configuration_preflight(approval_token_value: str) -> dict[str, object]:
             "'platform': devices[0].platform, 'probe_sum': float(value)}), flush=True)",
         ]
     )
-    completed = subprocess.run(
-        [
-            "python3",
-            "-c",
-            script,
-            "/opt/MaxText/src/maxtext/configs/base.yml",
-            f"model_name={experiment.production['maxtext_model_name']}",
-            "hardware=gpu",
-            "skip_jax_distributed_system=true",
-            f"use_multimodal={str(experiment.production['use_multimodal']).lower()}",
-            f"scan_layers={str(experiment.production['scan_layers']).lower()}",
-            "enable_checkpointing=false",
-        ],
-        cwd="/opt/MaxText",
-        env=offline_environment(os.environ),
-        check=True,
-        capture_output=True,
-        text=True,
-        timeout=240,
-    )
+    command = [
+        "python3",
+        "-c",
+        script,
+        "/opt/MaxText/src/maxtext/configs/base.yml",
+        f"model_name={experiment.production['maxtext_model_name']}",
+        "hardware=gpu",
+        "skip_jax_distributed_system=true",
+        f"use_multimodal={str(experiment.production['use_multimodal']).lower()}",
+        f"scan_layers={str(experiment.production['scan_layers']).lower()}",
+        "enable_checkpointing=false",
+    ]
+    try:
+        completed = subprocess.run(
+            command,
+            cwd="/opt/MaxText",
+            env=offline_environment(os.environ),
+            check=True,
+            capture_output=True,
+            text=True,
+            timeout=240,
+        )
+    except subprocess.CalledProcessError as error:
+        detail = (error.stderr or error.stdout or "no subprocess output").strip()
+        raise RuntimeError(f"GPU configuration preflight failed:\n{detail}") from error
     payload = json.loads(completed.stdout.strip().splitlines()[-1])
     print(json.dumps(payload, sort_keys=True), flush=True)
     return {"schema_version": "1.0", "ready": True, **payload}

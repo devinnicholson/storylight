@@ -24,6 +24,7 @@ RUN python -m pip install \
         'jax[cuda12]==0.11.0' \
         'flax==0.12.8' \
         'nvidia-cudnn-frontend==1.28.0' \
+        'nvidia-curand-cu12==10.3.10.19' \
         'nvidia-nvtx-cu12==12.9.79'
 RUN test -f /usr/local/lib/python3.12/site-packages/nvidia/nccl/lib/libnccl.so.2 \
     && ln -sfn libnccl.so.2 /usr/local/lib/python3.12/site-packages/nvidia/nccl/lib/libnccl.so

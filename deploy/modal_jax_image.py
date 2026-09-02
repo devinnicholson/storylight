@@ -42,6 +42,7 @@ CUDA_BUILD_REQUIREMENTS = (
     "jax[cuda12]==0.11.0",
     "flax==0.12.8",
     "nvidia-cudnn-frontend==1.28.0",
+    "nvidia-curand-cu12==10.3.10.19",
     "nvidia-nvtx-cu12==12.9.79",
 )
 NCCL_LIBRARY_DIR = "/usr/local/lib/python3.12/site-packages/nvidia/nccl/lib"
