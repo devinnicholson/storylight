@@ -135,8 +135,9 @@ def _artifact(
                 "adapter_manifest",
                 "package_manifest",
                 "runtime_lock",
-                "base_snapshot_completion",
+                "base_checkpoint_receipt",
                 "base_checkpoint_manifest",
+                "base_checkpoint_content",
                 "tokenizer_manifest",
             )
         }

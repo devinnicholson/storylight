@@ -19,7 +19,12 @@ from bookforge.fidelity_benchmark import (
 )
 from bookforge.fidelity_schema import DatasetSplit
 
-from .integrity import canonical_json_bytes, sha256_file
+from .configuration import load_config
+from .integrity import canonical_json_bytes, canonical_sha256, sha256_file
+from .prediction_evidence import (
+    PredictionEvidenceError,
+    validate_prediction_completion,
+)
 
 _SHA256 = re.compile(r"[a-f0-9]{64}\Z")
 _ELIGIBILITY_FIELDS = {
@@ -32,8 +37,36 @@ _ELIGIBILITY_FIELDS = {
     "summary",
     "baseline_summary_sha256",
     "candidate_summary_sha256",
+    "config_sha256",
     "dataset_manifest_sha256",
+    "development_records_sha256",
+    "predictions_sha256",
+    "prediction_completion_sha256",
+    "evaluation_completion_sha256",
+    "evaluation_input_sha256",
+    "candidate_manifest_sha256",
+    "checkpoint_manifest_sha256",
+    "checkpoint_content_sha256",
     "training_run_id",
+}
+_EVALUATION_COMPLETION_FIELDS = {
+    "schema_version",
+    "status",
+    "stage",
+    "surface",
+    "candidate_id",
+    "config_sha256",
+    "dataset_manifest_sha256",
+    "development_records_sha256",
+    "predictions_sha256",
+    "prediction_completion_sha256",
+    "evaluation_input_sha256",
+    "candidate_manifest_sha256",
+    "checkpoint_manifest_sha256",
+    "checkpoint_content_sha256",
+    "report_sha256",
+    "predictions",
+    "hidden_evaluated",
 }
 
 
@@ -131,6 +164,7 @@ def validate_development_eligibility(
     document: Mapping[str, Any],
     *,
     candidate_id: str,
+    config_sha256: str,
     dataset_manifest_sha256: str,
     training_run_id: str,
 ) -> FidelitySummary:
@@ -143,6 +177,7 @@ def validate_development_eligibility(
         or document.get("schema_version") != "1.0"
         or document.get("candidate_id") != candidate_id
         or document.get("stage") != "development"
+        or document.get("config_sha256") != config_sha256
         or document.get("dataset_manifest_sha256") != dataset_manifest_sha256
         or document.get("training_run_id") != training_run_id
         or document.get("eligibility_decision")
@@ -153,6 +188,30 @@ def validate_development_eligibility(
         or reasons != []
         or _SHA256.fullmatch(str(document.get("baseline_summary_sha256"))) is None
         or _SHA256.fullmatch(str(document.get("candidate_summary_sha256"))) is None
+        or document.get("evaluation_input_sha256")
+        != canonical_sha256(
+            {
+                "development_records_sha256": document.get(
+                    "development_records_sha256"
+                ),
+                "predictions_sha256": document.get("predictions_sha256"),
+                "prediction_completion_sha256": document.get(
+                    "prediction_completion_sha256"
+                ),
+            }
+        )
+        or any(
+            _SHA256.fullmatch(str(document.get(name))) is None
+            for name in (
+                "development_records_sha256",
+                "predictions_sha256",
+                "prediction_completion_sha256",
+                "evaluation_completion_sha256",
+                "candidate_manifest_sha256",
+                "checkpoint_manifest_sha256",
+                "checkpoint_content_sha256",
+            )
+        )
     ):
         raise DevelopmentEligibilityError(
             "candidate evaluation is not a complete passing development-only decision"
@@ -163,6 +222,109 @@ def validate_development_eligibility(
             "candidate development evaluation has the wrong summary population"
         )
     return summary
+
+
+def _evaluation_completion(
+    path: Path,
+    *,
+    expected_sha256: str,
+    candidate_id: str,
+    config_sha256: str,
+    dataset_manifest_sha256: str,
+    candidate_report_sha256: str,
+    prediction_completion_sha256: str,
+    predictions_sha256: str,
+) -> dict[str, Any]:
+    document = _approved_json(path, expected_sha256, "development evaluation completion")
+    if (
+        set(document) != _EVALUATION_COMPLETION_FIELDS
+        or document.get("schema_version") != "1.0"
+        or document.get("status") != "succeeded"
+        or document.get("stage") != "development-evaluation"
+        or document.get("surface") != "raw"
+        or document.get("candidate_id") != candidate_id
+        or document.get("config_sha256") != config_sha256
+        or document.get("dataset_manifest_sha256") != dataset_manifest_sha256
+        or document.get("report_sha256") != candidate_report_sha256
+        or document.get("prediction_completion_sha256")
+        != prediction_completion_sha256
+        or document.get("predictions_sha256") != predictions_sha256
+        or document.get("evaluation_input_sha256")
+        != canonical_sha256(
+            {
+                "development_records_sha256": document.get(
+                    "development_records_sha256"
+                ),
+                "predictions_sha256": predictions_sha256,
+                "prediction_completion_sha256": prediction_completion_sha256,
+            }
+        )
+        or document.get("predictions") != 512
+        or document.get("hidden_evaluated") is not False
+        or any(
+            _SHA256.fullmatch(str(document.get(name))) is None
+            for name in (
+                "development_records_sha256",
+                "candidate_manifest_sha256",
+                "checkpoint_manifest_sha256",
+                "checkpoint_content_sha256",
+            )
+        )
+    ):
+        raise DevelopmentEligibilityError(
+            "development evaluation completion has another prediction or candidate lineage"
+        )
+    return document
+
+
+def validate_development_evidence_chain(
+    *,
+    predictions_path: Path,
+    predictions_sha256: str,
+    prediction_completion_path: Path,
+    prediction_completion_sha256: str,
+    evaluation_completion_path: Path,
+    evaluation_completion_sha256: str,
+    candidate_id: str,
+    config_sha256: str,
+    dataset_manifest_sha256: str,
+    candidate_report_sha256: str,
+) -> tuple[dict[str, Any], dict[str, Any]]:
+    """Verify that prediction, evaluation, and candidate bytes form one lineage."""
+
+    try:
+        prediction = validate_prediction_completion(
+            prediction_completion_path,
+            expected_sha256=prediction_completion_sha256,
+            predictions_path=predictions_path,
+            expected_predictions_sha256=predictions_sha256,
+            expected_candidate_id=candidate_id,
+            expected_config_sha256=config_sha256,
+            expected_dataset_manifest_sha256=dataset_manifest_sha256,
+        )
+    except PredictionEvidenceError as error:
+        raise DevelopmentEligibilityError(str(error)) from error
+    evaluation = _evaluation_completion(
+        evaluation_completion_path,
+        expected_sha256=evaluation_completion_sha256,
+        candidate_id=candidate_id,
+        config_sha256=config_sha256,
+        dataset_manifest_sha256=dataset_manifest_sha256,
+        candidate_report_sha256=candidate_report_sha256,
+        prediction_completion_sha256=prediction_completion_sha256,
+        predictions_sha256=predictions_sha256,
+    )
+    for name in (
+        "development_records_sha256",
+        "candidate_manifest_sha256",
+        "checkpoint_manifest_sha256",
+        "checkpoint_content_sha256",
+    ):
+        if evaluation[name] != prediction[name]:
+            raise DevelopmentEligibilityError(
+                f"development evaluation completion changed {name}"
+            )
+    return prediction, evaluation
 
 
 def _write_once(path: Path, document: dict[str, Any]) -> None:
@@ -183,6 +345,12 @@ def main() -> None:
     parser.add_argument("--dataset-manifest-sha256", required=True)
     parser.add_argument("--training-run-id", required=True)
     parser.add_argument("--merged-hf-checkpoint", type=Path, required=True)
+    parser.add_argument("--predictions", type=Path, required=True)
+    parser.add_argument("--predictions-sha256", required=True)
+    parser.add_argument("--prediction-completion", type=Path, required=True)
+    parser.add_argument("--prediction-completion-sha256", required=True)
+    parser.add_argument("--evaluation-completion", type=Path, required=True)
+    parser.add_argument("--evaluation-completion-sha256", required=True)
     parser.add_argument("--candidate-report", type=Path, required=True)
     parser.add_argument("--candidate-report-sha256", required=True)
     parser.add_argument("--baseline-report", type=Path, required=True)
@@ -218,6 +386,19 @@ def main() -> None:
         training_run_id=args.training_run_id,
         merged_hf_checkpoint=args.merged_hf_checkpoint,
     )
+    config_sha256 = load_config(args.config).sha256
+    prediction, evaluation_completion = validate_development_evidence_chain(
+        predictions_path=args.predictions,
+        predictions_sha256=args.predictions_sha256,
+        prediction_completion_path=args.prediction_completion,
+        prediction_completion_sha256=args.prediction_completion_sha256,
+        evaluation_completion_path=args.evaluation_completion,
+        evaluation_completion_sha256=args.evaluation_completion_sha256,
+        candidate_id=candidate_id,
+        config_sha256=config_sha256,
+        dataset_manifest_sha256=args.dataset_manifest_sha256,
+        candidate_report_sha256=args.candidate_report_sha256,
+    )
     checks = decide_development_eligibility(candidate, baseline)
     passed = all(checks.values())
     document = {
@@ -230,7 +411,16 @@ def main() -> None:
         "summary": asdict(candidate),
         "baseline_summary_sha256": args.baseline_report_sha256,
         "candidate_summary_sha256": args.candidate_report_sha256,
+        "config_sha256": config_sha256,
         "dataset_manifest_sha256": args.dataset_manifest_sha256,
+        "development_records_sha256": prediction["development_records_sha256"],
+        "predictions_sha256": args.predictions_sha256,
+        "prediction_completion_sha256": args.prediction_completion_sha256,
+        "evaluation_completion_sha256": args.evaluation_completion_sha256,
+        "evaluation_input_sha256": evaluation_completion["evaluation_input_sha256"],
+        "candidate_manifest_sha256": prediction["candidate_manifest_sha256"],
+        "checkpoint_manifest_sha256": prediction["checkpoint_manifest_sha256"],
+        "checkpoint_content_sha256": prediction["checkpoint_content_sha256"],
         "training_run_id": args.training_run_id,
     }
     _write_once(args.output, document)

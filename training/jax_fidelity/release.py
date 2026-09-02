@@ -22,8 +22,9 @@ from .integrity import (
     sha256_file,
     validate_dataset_manifest,
     verify_artifact_manifest,
+    verify_conversion_manifest,
 )
-from .roundtrip_smoke import validate_roundtrip_evidence
+from .roundtrip_smoke import validate_roundtrip_contract
 
 _RUN_ID = re.compile(r"[a-z][a-z0-9-]{7,95}\Z")
 
@@ -207,6 +208,7 @@ def verify_development_evaluation(
     evaluation: Mapping[str, Any],
     *,
     candidate_id: str,
+    config_sha256: str,
     dataset_manifest_sha256: str,
     training_run_id: str,
 ) -> None:
@@ -214,11 +216,317 @@ def verify_development_evaluation(
         validate_development_eligibility(
             evaluation,
             candidate_id=candidate_id,
+            config_sha256=config_sha256,
             dataset_manifest_sha256=dataset_manifest_sha256,
             training_run_id=training_run_id,
         )
     except DevelopmentEligibilityError as error:
         raise ReleaseError(str(error)) from error
+
+
+def _verify_merge_file_table(root: Path, completion: Mapping[str, Any]) -> None:
+    rows = completion.get("files")
+    if not isinstance(rows, list) or not rows:
+        raise ReleaseError("merge completion has no file table")
+    declared: set[str] = set()
+    for row in rows:
+        if not isinstance(row, dict) or not isinstance(row.get("path"), str):
+            raise ReleaseError("merge file declaration is malformed")
+        relative = Path(row["path"])
+        name = relative.as_posix()
+        if relative.is_absolute() or ".." in relative.parts or name in declared:
+            raise ReleaseError("merge file path is unsafe or duplicated")
+        path = root / relative
+        if (
+            not path.is_file()
+            or path.is_symlink()
+            or row.get("bytes") != path.stat().st_size
+            or row.get("sha256") != sha256_file(path)
+        ):
+            raise ReleaseError(f"merge file failed checksum verification: {name}")
+        declared.add(name)
+    actual = {
+        path.relative_to(root).as_posix()
+        for path in root.rglob("*")
+        if path.is_file() and path != root / "completion.json"
+    }
+    if actual != declared:
+        raise ReleaseError("merge release has undeclared or missing files")
+
+
+def _required_merge_file(root: Path, path: Path | str, relative: str) -> Path:
+    expected = (root / relative).resolve()
+    candidate = Path(path).resolve()
+    if candidate != expected or not candidate.is_file() or candidate.is_symlink():
+        raise ReleaseError(f"merge evidence is not the declared {relative}")
+    return candidate
+
+
+def verify_merge_provenance(
+    *,
+    config_path: Path | str,
+    dataset_manifest_sha256: str,
+    training_run_id: str,
+    merged_hf_checkpoint: Path | str,
+    original_hf_checkpoint: Path | str,
+    original_hf_manifest_path: Path | str,
+    original_hf_manifest_sha256: str,
+    base_checkpoint_root: Path | str,
+    base_checkpoint: Path | str,
+    base_manifest_path: Path | str,
+    base_manifest_sha256: str,
+    base_receipt_path: Path | str,
+    base_receipt_sha256: str,
+    adapter_checkpoint: Path | str,
+    adapter_manifest_path: Path | str,
+    adapter_manifest_sha256: str,
+    adapter_receipt_path: Path | str,
+    adapter_receipt_sha256: str,
+    merge_release_root: Path | str,
+    merge_completion_path: Path | str,
+    merge_completion_sha256: str,
+    candidate_manifest_path: Path | str,
+    candidate_manifest_sha256: str,
+    source_bindings_path: Path | str,
+    source_bindings_sha256: str,
+    conversion_input_path: Path | str,
+    conversion_input_sha256: str,
+    conversion_run_path: Path | str,
+    conversion_run_sha256: str,
+    conversion_completion_path: Path | str,
+    conversion_completion_sha256: str,
+    training_run_sha256: str,
+    training_completion_sha256: str,
+) -> dict[str, str]:
+    """Reproduce the exact full-adapter MaxText-to-HF custody chain."""
+
+    from .manifests import stable_run_id
+    from .merged_candidate import validate_merged_candidate_manifest
+    from .orbax_receipt import verify_orbax_leaf_receipt
+
+    config = load_config(config_path)
+    merge_root = Path(merge_release_root).resolve()
+    completion_path = _required_merge_file(
+        merge_root, merge_completion_path, "completion.json"
+    )
+    completion = _verified_json(completion_path, merge_completion_sha256)
+    merged = Path(merged_hf_checkpoint).resolve()
+    if merged != (merge_root / "merged-hf").resolve() or not merged.is_dir():
+        raise ReleaseError("merged checkpoint is not the trusted merge release payload")
+    if (
+        completion.get("schema_version") != "1.0"
+        or completion.get("status") != "succeeded"
+        or completion.get("backend") != "modal-l40s"
+        or completion.get("release_type")
+        != "provisional-merged-hf-development-candidate"
+        or completion.get("config_sha256") != config.sha256
+        or completion.get("dataset_manifest_sha256") != dataset_manifest_sha256
+        or completion.get("training_run_id") != training_run_id
+        or completion.get("development_evaluated") is not False
+        or completion.get("release_authorized") is not False
+    ):
+        raise ReleaseError("merge completion identity or eligibility changed")
+    _verify_merge_file_table(merge_root, completion)
+
+    candidate_path = _required_merge_file(
+        merge_root, candidate_manifest_path, "candidate.manifest.json"
+    )
+    bindings_path = _required_merge_file(
+        merge_root, source_bindings_path, "evidence/source-bindings.json"
+    )
+    input_path = _required_merge_file(
+        merge_root, conversion_input_path, "evidence/maxtext-to-hf.inputs.json"
+    )
+    run_path = _required_merge_file(
+        merge_root, conversion_run_path, "evidence/maxtext-to-hf.run.json"
+    )
+    conversion_path = _required_merge_file(
+        merge_root,
+        conversion_completion_path,
+        "evidence/maxtext-to-hf.completion.json",
+    )
+    adapter_receipt_path = _required_merge_file(
+        merge_root,
+        adapter_receipt_path,
+        "evidence/adapter-orbax.receipt.json",
+    )
+    merged_manifest_path = _required_merge_file(
+        merge_root,
+        merge_root / "merged-hf.manifest.json",
+        "merged-hf.manifest.json",
+    )
+    expected_files = {
+        candidate_path: candidate_manifest_sha256,
+        bindings_path: source_bindings_sha256,
+        input_path: conversion_input_sha256,
+        run_path: conversion_run_sha256,
+        conversion_path: conversion_completion_sha256,
+    }
+    if any(sha256_file(path) != digest for path, digest in expected_files.items()):
+        raise ReleaseError("approved merge or conversion receipt checksum changed")
+    if (
+        completion.get("candidate_manifest_sha256") != candidate_manifest_sha256
+        or completion.get("merged_hf_manifest_sha256")
+        != sha256_file(merged_manifest_path)
+        or completion.get("conversion_input_manifest_sha256") != conversion_input_sha256
+        or completion.get("conversion_run_sha256") != conversion_run_sha256
+        or completion.get("conversion_completion_sha256") != conversion_completion_sha256
+    ):
+        raise ReleaseError("merge completion does not bind the conversion receipts")
+
+    candidate = validate_merged_candidate_manifest(
+        candidate_path,
+        merged,
+        config_path=config_path,
+        expected_manifest_sha256=candidate_manifest_sha256,
+        expected_config_sha256=config.sha256,
+        expected_dataset_manifest_sha256=dataset_manifest_sha256,
+        expected_candidate_id=str(completion.get("candidate_id")),
+    )
+    if candidate.get("training_run_id") != training_run_id:
+        raise ReleaseError("merged candidate training lineage changed")
+    merged_manifest = _json_object(merged_manifest_path)
+    try:
+        verify_artifact_manifest(merged, merged_manifest)
+    except ValueError as error:
+        raise ReleaseError(str(error)) from error
+    if (
+        completion.get("checkpoint_manifest_sha256")
+        != _canonical_sha256(merged_manifest)
+        or completion.get("checkpoint_content_sha256")
+        != merged_manifest.get("content_sha256")
+    ):
+        raise ReleaseError("merge completion does not bind the merged HF manifest")
+
+    base_receipt = _verified_json(base_receipt_path, base_receipt_sha256)
+    adapter_receipt = _verified_json(adapter_receipt_path, adapter_receipt_sha256)
+    try:
+        selected_base = verify_orbax_leaf_receipt(
+            base_checkpoint_root,
+            base_receipt,
+            expected_step=0,
+            role="base-maxtext",
+        )
+        selected_adapter = verify_orbax_leaf_receipt(
+            adapter_checkpoint,
+            adapter_receipt,
+            expected_step=config.training["steps"],
+            role="full-lora",
+        )
+    except ValueError as error:
+        raise ReleaseError(str(error)) from error
+    if selected_base != Path(base_checkpoint).resolve():
+        raise ReleaseError("release base checkpoint is not the receipt-selected Orbax leaf")
+    verified_artifact_binding(selected_base, base_manifest_path, base_manifest_sha256)
+    verified_artifact_binding(
+        original_hf_checkpoint,
+        original_hf_manifest_path,
+        original_hf_manifest_sha256,
+    )
+    # The whole adapter manifest proves the selected leaf belongs to the approved
+    # training package; the receipt proves which terminal step the conversion used.
+    verified_artifact_binding(
+        adapter_checkpoint,
+        adapter_manifest_path,
+        adapter_manifest_sha256,
+    )
+    try:
+        verify_conversion_manifest(
+            input_path,
+            expected_manifest_sha256=conversion_input_sha256,
+            artifact_roots={
+                "adapter_checkpoint": selected_adapter,
+                "base_checkpoint": selected_base,
+                "hf_checkpoint": original_hf_checkpoint,
+            },
+        )
+    except ValueError as error:
+        raise ReleaseError(str(error)) from error
+
+    source = _verified_json(bindings_path, source_bindings_sha256)
+    expected_source = {
+        "hf_snapshot_manifest_sha256": original_hf_manifest_sha256,
+        "base_orbax_receipt_sha256": base_receipt_sha256,
+        "base_orbax_manifest_sha256": base_manifest_sha256,
+        "adapter_manifest_sha256": adapter_manifest_sha256,
+        "adapter_orbax_receipt_sha256": adapter_receipt_sha256,
+        "training_run_sha256": training_run_sha256,
+        "training_completion_sha256": training_completion_sha256,
+        "config_sha256": config.sha256,
+        "dataset_manifest_sha256": dataset_manifest_sha256,
+        "training_run_id": training_run_id,
+        "conversion_input_manifest_sha256": conversion_input_sha256,
+        "conversion_run_sha256": conversion_run_sha256,
+        "conversion_completion_sha256": conversion_completion_sha256,
+    }
+    if any(source.get(name) != digest for name, digest in expected_source.items()):
+        raise ReleaseError("merge source bindings differ from the approved conversion lineage")
+    inherited_hashes = (
+        "input_manifest_sha256",
+        "roundtrip_completion_sha256",
+        "training_release_completion_sha256",
+    )
+    for name in inherited_hashes:
+        digest = source.get(name)
+        if (
+            not isinstance(digest, str)
+            or re.fullmatch(r"[a-f0-9]{64}", digest) is None
+            or completion.get(name) != digest
+        ):
+            raise ReleaseError(f"merge completion changed inherited source hash: {name}")
+    conversion_run_id = source.get("conversion_run_id")
+    expected_conversion_id = stable_run_id(
+        stage="maxtext-to-hf",
+        config_sha256=config.sha256,
+        dataset_manifest_sha256=conversion_input_sha256,
+    )
+    run = _verified_json(run_path, conversion_run_sha256)
+    conversion = _verified_json(conversion_path, conversion_completion_sha256)
+    metadata = run.get("metadata")
+    evidence = conversion.get("evidence")
+    observed_merged_manifest = artifact_manifest(merged)
+    if (
+        conversion_run_id != expected_conversion_id
+        or run.get("schema_version") != "1.0"
+        or run.get("run_id") != conversion_run_id
+        or run.get("stage") != "maxtext-to-hf"
+        or run.get("status") != "planned"
+        or run.get("config_sha256") != config.sha256
+        or run.get("dataset_manifest_sha256") != conversion_input_sha256
+        or not isinstance(metadata, dict)
+        or metadata.get("conversion_input_manifest_sha256") != conversion_input_sha256
+        or metadata.get("direction") != "maxtext-to-hf"
+        or conversion.get("schema_version") != "1.0"
+        or conversion.get("run_id") != conversion_run_id
+        or conversion.get("status") != "succeeded"
+        or conversion.get("run_manifest_sha256") != conversion_run_sha256
+        or not conversion.get("artifacts")
+        or not isinstance(evidence, dict)
+        or evidence.get("direction") != "maxtext-to-hf"
+        or evidence.get("input_manifest_sha256") != conversion_input_sha256
+        or evidence.get("output_manifest") != observed_merged_manifest
+        or merged_manifest != observed_merged_manifest
+    ):
+        raise ReleaseError("MaxText-to-HF conversion receipt or output binding changed")
+    return {
+        "merge_completion": merge_completion_sha256,
+        "candidate_manifest": candidate_manifest_sha256,
+        "merge_source_bindings": source_bindings_sha256,
+        "conversion_input": conversion_input_sha256,
+        "conversion_run": conversion_run_sha256,
+        "conversion_completion": conversion_completion_sha256,
+        "original_hf_manifest": original_hf_manifest_sha256,
+        "base_orbax_receipt": base_receipt_sha256,
+        "base_orbax_manifest": base_manifest_sha256,
+        "full_adapter_manifest": adapter_manifest_sha256,
+        "adapter_orbax_receipt": adapter_receipt_sha256,
+        "merged_hf_manifest": sha256_file(merged_manifest_path),
+        "staged_input_manifest": str(source["input_manifest_sha256"]),
+        "roundtrip_completion": str(source["roundtrip_completion_sha256"]),
+        "training_release_completion": str(
+            source["training_release_completion_sha256"]
+        ),
+    }
 
 
 def produce_release(
@@ -238,6 +546,27 @@ def produce_release(
     adapter_manifest_path: Path | str,
     adapter_manifest_sha256: str,
     merged_hf_checkpoint: Path | str,
+    original_hf_checkpoint: Path | str,
+    original_hf_manifest_path: Path | str,
+    original_hf_manifest_sha256: str,
+    base_checkpoint_root: Path | str,
+    base_receipt_path: Path | str,
+    base_receipt_sha256: str,
+    adapter_receipt_path: Path | str,
+    adapter_receipt_sha256: str,
+    merge_release_root: Path | str,
+    merge_completion_path: Path | str,
+    merge_completion_sha256: str,
+    candidate_manifest_path: Path | str,
+    candidate_manifest_sha256: str,
+    source_bindings_path: Path | str,
+    source_bindings_sha256: str,
+    conversion_input_path: Path | str,
+    conversion_input_sha256: str,
+    conversion_run_path: Path | str,
+    conversion_run_sha256: str,
+    conversion_completion_path: Path | str,
+    conversion_completion_sha256: str,
     training_run_id: str,
     training_run_path: Path | str,
     training_run_sha256: str,
@@ -310,7 +639,45 @@ def produce_release(
         adapter_manifest=adapter_manifest,
     )
     roundtrip = _verified_json(roundtrip_evidence_path, roundtrip_evidence_sha256)
-    validate_roundtrip_evidence(config, roundtrip, exported_checkpoint=merged_hf_checkpoint)
+    # The roundtrip checkpoint is a fixed smoke canary. The trained checkpoint is
+    # expected to contain different weights, so only the checksum-bound canary
+    # contract and lineage apply to this release.
+    validate_roundtrip_contract(config, roundtrip)
+    merge_evidence = verify_merge_provenance(
+        config_path=config_path,
+        dataset_manifest_sha256=dataset.manifest_sha256,
+        training_run_id=training_run_id,
+        merged_hf_checkpoint=merged_hf_checkpoint,
+        original_hf_checkpoint=original_hf_checkpoint,
+        original_hf_manifest_path=original_hf_manifest_path,
+        original_hf_manifest_sha256=original_hf_manifest_sha256,
+        base_checkpoint_root=base_checkpoint_root,
+        base_checkpoint=base_checkpoint,
+        base_manifest_path=base_manifest_path,
+        base_manifest_sha256=base_manifest_sha256,
+        base_receipt_path=base_receipt_path,
+        base_receipt_sha256=base_receipt_sha256,
+        adapter_checkpoint=adapter_checkpoint,
+        adapter_manifest_path=adapter_manifest_path,
+        adapter_manifest_sha256=adapter_manifest_sha256,
+        adapter_receipt_path=adapter_receipt_path,
+        adapter_receipt_sha256=adapter_receipt_sha256,
+        merge_release_root=merge_release_root,
+        merge_completion_path=merge_completion_path,
+        merge_completion_sha256=merge_completion_sha256,
+        candidate_manifest_path=candidate_manifest_path,
+        candidate_manifest_sha256=candidate_manifest_sha256,
+        source_bindings_path=source_bindings_path,
+        source_bindings_sha256=source_bindings_sha256,
+        conversion_input_path=conversion_input_path,
+        conversion_input_sha256=conversion_input_sha256,
+        conversion_run_path=conversion_run_path,
+        conversion_run_sha256=conversion_run_sha256,
+        conversion_completion_path=conversion_completion_path,
+        conversion_completion_sha256=conversion_completion_sha256,
+        training_run_sha256=training_run_sha256,
+        training_completion_sha256=training_completion_sha256,
+    )
     source_files = artifact_manifest(merged_hf_checkpoint)["files"]
     base_model = {
         "id": config.production["model_id"],
@@ -327,6 +694,7 @@ def produce_release(
     verify_development_evaluation(
         evaluation,
         candidate_id=candidate_id,
+        config_sha256=config.sha256,
         dataset_manifest_sha256=dataset.manifest_sha256,
         training_run_id=training_run_id,
     )
@@ -357,6 +725,7 @@ def produce_release(
             "training_completion": training_completion_sha256,
             "roundtrip": roundtrip_evidence_sha256,
             "evaluation": evaluation_evidence_sha256,
+            **merge_evidence,
         },
     }
     document["candidate_id"] = candidate_id
@@ -387,6 +756,27 @@ def main() -> None:
         parser.add_argument(f"--{name}-manifest", type=Path, required=True)
         parser.add_argument(f"--{name}-manifest-sha256", required=True)
     parser.add_argument("--merged-hf-checkpoint", type=Path, required=True)
+    parser.add_argument("--original-hf-checkpoint", type=Path, required=True)
+    parser.add_argument("--original-hf-manifest", type=Path, required=True)
+    parser.add_argument("--original-hf-manifest-sha256", required=True)
+    parser.add_argument("--base-checkpoint-root", type=Path, required=True)
+    parser.add_argument("--base-receipt", type=Path, required=True)
+    parser.add_argument("--base-receipt-sha256", required=True)
+    parser.add_argument("--adapter-receipt", type=Path, required=True)
+    parser.add_argument("--adapter-receipt-sha256", required=True)
+    parser.add_argument("--merge-release-root", type=Path, required=True)
+    parser.add_argument("--merge-completion", type=Path, required=True)
+    parser.add_argument("--merge-completion-sha256", required=True)
+    parser.add_argument("--candidate-manifest", type=Path, required=True)
+    parser.add_argument("--candidate-manifest-sha256", required=True)
+    parser.add_argument("--source-bindings", type=Path, required=True)
+    parser.add_argument("--source-bindings-sha256", required=True)
+    parser.add_argument("--conversion-input", type=Path, required=True)
+    parser.add_argument("--conversion-input-sha256", required=True)
+    parser.add_argument("--conversion-run", type=Path, required=True)
+    parser.add_argument("--conversion-run-sha256", required=True)
+    parser.add_argument("--conversion-completion", type=Path, required=True)
+    parser.add_argument("--conversion-completion-sha256", required=True)
     parser.add_argument("--training-run-id", required=True)
     parser.add_argument("--training-run", type=Path, required=True)
     parser.add_argument("--training-run-sha256", required=True)
@@ -414,6 +804,27 @@ def main() -> None:
         adapter_manifest_path=args.adapter_manifest,
         adapter_manifest_sha256=args.adapter_manifest_sha256,
         merged_hf_checkpoint=args.merged_hf_checkpoint,
+        original_hf_checkpoint=args.original_hf_checkpoint,
+        original_hf_manifest_path=args.original_hf_manifest,
+        original_hf_manifest_sha256=args.original_hf_manifest_sha256,
+        base_checkpoint_root=args.base_checkpoint_root,
+        base_receipt_path=args.base_receipt,
+        base_receipt_sha256=args.base_receipt_sha256,
+        adapter_receipt_path=args.adapter_receipt,
+        adapter_receipt_sha256=args.adapter_receipt_sha256,
+        merge_release_root=args.merge_release_root,
+        merge_completion_path=args.merge_completion,
+        merge_completion_sha256=args.merge_completion_sha256,
+        candidate_manifest_path=args.candidate_manifest,
+        candidate_manifest_sha256=args.candidate_manifest_sha256,
+        source_bindings_path=args.source_bindings,
+        source_bindings_sha256=args.source_bindings_sha256,
+        conversion_input_path=args.conversion_input,
+        conversion_input_sha256=args.conversion_input_sha256,
+        conversion_run_path=args.conversion_run,
+        conversion_run_sha256=args.conversion_run_sha256,
+        conversion_completion_path=args.conversion_completion,
+        conversion_completion_sha256=args.conversion_completion_sha256,
         training_run_id=args.training_run_id,
         training_run_path=args.training_run,
         training_run_sha256=args.training_run_sha256,

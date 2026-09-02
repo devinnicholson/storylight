@@ -15,6 +15,7 @@ from bookforge.fidelity_orchestration import FidelityRun, StageStatus, stage_pla
 from training.jax_fidelity.configuration import EOS_TOKEN_IDS, load_config
 from training.jax_fidelity.integrity import artifact_manifest, canonical_sha256, sha256_file
 from training.jax_fidelity.manifests import complete_run, start_run
+from training.jax_fidelity.orbax_receipt import orbax_leaf_receipt
 from training.jax_fidelity.release import candidate_id_for_checkpoint
 from training.jax_fidelity.remote_release import package_training_release
 from training.jax_fidelity.roundtrip_smoke import (
@@ -70,6 +71,7 @@ def _passing_development_evaluation(
         "schema_version": "1.0",
         "candidate_id": candidate_id,
         "stage": "development",
+        "config_sha256": sha256_file(CONFIG),
         "dataset_manifest_sha256": dataset_manifest_sha256,
         "training_run_id": training_run_id,
         "eligibility_decision": {"passed": True, "hidden_evaluated": False},
@@ -77,6 +79,20 @@ def _passing_development_evaluation(
         "reasons": [],
         "baseline_summary_sha256": "a" * 64,
         "candidate_summary_sha256": "b" * 64,
+        "development_records_sha256": "d" * 64,
+        "predictions_sha256": "e" * 64,
+        "prediction_completion_sha256": "f" * 64,
+        "evaluation_completion_sha256": "1" * 64,
+        "evaluation_input_sha256": canonical_sha256(
+            {
+                "development_records_sha256": "d" * 64,
+                "predictions_sha256": "e" * 64,
+                "prediction_completion_sha256": "f" * 64,
+            }
+        ),
+        "candidate_manifest_sha256": "2" * 64,
+        "checkpoint_manifest_sha256": "3" * 64,
+        "checkpoint_content_sha256": "4" * 64,
         "summary": {
             "surface": "raw",
             "split": "development",
@@ -130,6 +146,7 @@ def test_roundtrip_recorder_requires_numerical_and_five_step_smoke_evidence(
             **{name: True for name in REQUIRED_BOOLEAN_CHECKS},
             "eos_token_ids": list(EOS_TOKEN_IDS),
             "forward_kl_divergence": 0.01,
+            "logit_comparison": "adapted-maxtext-vs-merged-hf",
         },
         "exported_checkpoint_manifest": exported_manifest,
     }
@@ -213,22 +230,18 @@ def test_roundtrip_recorder_requires_numerical_and_five_step_smoke_evidence(
         evidence={"runtime_lock": {"sha256": "b" * 64}},
     )
     roundtrip["lineage"] = {
-        "hf_to_maxtext_completion_sha256": sha256_file(
-            conversion_completions["hf-to-maxtext"]
-        ),
+        "hf_to_maxtext_completion_sha256": sha256_file(conversion_completions["hf-to-maxtext"]),
         "smoke_completion_sha256": sha256_file(smoke_completion),
         "smoke_run_id": smoke_id,
-        "maxtext_to_hf_completion_sha256": sha256_file(
-            conversion_completions["maxtext-to-hf"]
-        ),
+        "maxtext_to_hf_completion_sha256": sha256_file(conversion_completions["maxtext-to-hf"]),
         "logit_completion_sha256": sha256_file(conversion_completion),
         "logit_run_id": conversion_id,
-        "hf_to_maxtext_run_id": json.loads(
-            conversion_completions["hf-to-maxtext"].read_text()
-        )["run_id"],
-        "maxtext_to_hf_run_id": json.loads(
-            conversion_completions["maxtext-to-hf"].read_text()
-        )["run_id"],
+        "hf_to_maxtext_run_id": json.loads(conversion_completions["hf-to-maxtext"].read_text())[
+            "run_id"
+        ],
+        "maxtext_to_hf_run_id": json.loads(conversion_completions["maxtext-to-hf"].read_text())[
+            "run_id"
+        ],
     }
     roundtrip_path.write_text(json.dumps(roundtrip, sort_keys=True) + "\n")
     output = tmp_path / "roundtrip-stage.json"
@@ -269,9 +282,7 @@ def test_roundtrip_recorder_requires_numerical_and_five_step_smoke_evidence(
         check=True,
         capture_output=True,
         text=True,
-        env=_environment(
-            BOOKFORGE_JAX_ROUNDTRIP="I_APPROVE_THIS_BOUNDED_ROUNDTRIP"
-        ),
+        env=_environment(BOOKFORGE_JAX_ROUNDTRIP="I_APPROVE_THIS_BOUNDED_ROUNDTRIP"),
     )
     document = json.loads(output.read_text())
     assert document["roundtrip_status"] == "passed"
@@ -350,9 +361,10 @@ def test_training_recorder_accepts_exact_portable_completion_lineage(
         dataset_manifest_sha256=campaign.dataset_manifest_sha256,
     )
     runs = tmp_path / "runs"
-    base = tmp_path / "base-snapshot"
-    base.mkdir()
-    (base / "model.safetensors").write_bytes(b"pinned base")
+    base_root = tmp_path / "base-maxtext"
+    base = base_root / "roundtrip" / "checkpoints" / "0" / "items"
+    base.mkdir(parents=True)
+    (base / "checkpoint").write_bytes(b"verified step-zero Orbax base")
     tokenizer = tmp_path / "tokenizer-snapshot"
     tokenizer.mkdir()
     (tokenizer / "tokenizer.json").write_text("{}\n")
@@ -362,25 +374,18 @@ def test_training_recorder_accepts_exact_portable_completion_lineage(
     tokenizer_manifest_path = tmp_path / "tokenizer.manifest.json"
     base_manifest_path.write_text(json.dumps(base_manifest, sort_keys=True) + "\n")
     tokenizer_manifest_path.write_text(json.dumps(tokenizer_manifest, sort_keys=True) + "\n")
-    config = load_config(CONFIG)
-    snapshot_completion = tmp_path / "snapshot-completion.json"
-    snapshot_completion.write_text(
+    base_receipt_path = tmp_path / "base.receipt.json"
+    base_receipt_path.write_text(
         json.dumps(
-            {
-                "schema_version": "1.0",
-                "status": "succeeded",
-                "config_sha256": campaign.config_sha256,
-                "model_id": config.production["model_id"],
-                "model_revision": config.production["model_revision"],
-                "resolved_revision": config.production["model_revision"],
-                "snapshot_manifest_sha256": sha256_file(base_manifest_path),
-                "tokenizer_manifest_sha256": sha256_file(tokenizer_manifest_path),
-                "snapshot_content_sha256": base_manifest["content_sha256"],
-                "tokenizer_content_sha256": tokenizer_manifest["content_sha256"],
-            },
+            orbax_leaf_receipt(
+                base_root,
+                base,
+                expected_step=0,
+                role="base-maxtext",
+            ),
             sort_keys=True,
         )
-        + "\n"
+        + "\n",
     )
     checkpoint_inputs = {
         "base_checkpoint": {
@@ -446,6 +451,7 @@ def test_training_recorder_accepts_exact_portable_completion_lineage(
                 "config_sha256": campaign.config_sha256,
                 "dataset_manifest_sha256": campaign.dataset_manifest_sha256,
                 "base_checkpoint_manifest_sha256": sha256_file(base_manifest_path),
+                "base_checkpoint_receipt_sha256": sha256_file(base_receipt_path),
                 "tokenizer_manifest_sha256": sha256_file(tokenizer_manifest_path),
                 "source_training_completion_sha256": sha256_file(original_completion),
                 "portable_package": portable,
@@ -456,47 +462,72 @@ def test_training_recorder_accepts_exact_portable_completion_lineage(
         + "\n"
     )
     output = tmp_path / "training-stage.json"
+    command = [
+        sys.executable,
+        str(SCRIPT),
+        "record-training",
+        "--state",
+        str(state),
+        "--output",
+        str(output),
+        "--remote-completion",
+        str(remote),
+        "--remote-completion-sha256",
+        sha256_file(remote),
+        "--config",
+        str(CONFIG),
+        "--base-checkpoint-root",
+        str(base_root),
+        "--base-checkpoint-receipt",
+        str(base_receipt_path),
+        "--base-checkpoint-receipt-sha256",
+        sha256_file(base_receipt_path),
+        "--base-checkpoint-manifest",
+        str(base_manifest_path),
+        "--base-checkpoint-manifest-sha256",
+        sha256_file(base_manifest_path),
+        "--tokenizer-manifest",
+        str(tokenizer_manifest_path),
+        "--training-run",
+        str(package / "training/run.json"),
+        "--training-completion",
+        str(package / "training/completion.json"),
+        "--adapter",
+        str(package / "adapter"),
+        "--adapter-manifest",
+        str(package / "adapter.manifest.json"),
+        "--package-root",
+        str(package),
+        "--package-manifest",
+        str(package / "package.manifest.json"),
+        "--runtime-lock",
+        str(package / "runtime.lock.json"),
+        "--backend",
+        "modal-l40s",
+    ]
     subprocess.run(
-        [
-            sys.executable,
-            str(SCRIPT),
-            "record-training",
-            "--state",
-            str(state),
-            "--output",
-            str(output),
-            "--remote-completion",
-            str(remote),
-            "--config",
-            str(CONFIG),
-            "--base-snapshot-completion",
-            str(snapshot_completion),
-            "--base-checkpoint-manifest",
-            str(base_manifest_path),
-            "--tokenizer-manifest",
-            str(tokenizer_manifest_path),
-            "--training-run",
-            str(package / "training/run.json"),
-            "--training-completion",
-            str(package / "training/completion.json"),
-            "--adapter",
-            str(package / "adapter"),
-            "--adapter-manifest",
-            str(package / "adapter.manifest.json"),
-            "--package-root",
-            str(package),
-            "--package-manifest",
-            str(package / "package.manifest.json"),
-            "--runtime-lock",
-            str(package / "runtime.lock.json"),
-            "--backend",
-            "modal-l40s",
-        ],
+        command,
         check=True,
         capture_output=True,
         text=True,
-        env=_environment(
-            BOOKFORGE_JAX_TRAIN="I_APPROVE_THIS_BOUNDED_TPU_JOB"
-        ),
+        env=_environment(BOOKFORGE_JAX_TRAIN="I_APPROVE_THIS_BOUNDED_TPU_JOB"),
     )
     assert FidelityRun.read(state).training_run_id == training_id
+    document = json.loads(output.read_text())
+    assert document["evidence_sha256"]["base_checkpoint_receipt"] == sha256_file(base_receipt_path)
+    assert document["evidence_sha256"]["base_checkpoint_manifest"] == sha256_file(
+        base_manifest_path
+    )
+    assert document["evidence_sha256"]["base_checkpoint_content"] == base_manifest["content_sha256"]
+    assert document["evidence_sha256"]["remote_completion"] == sha256_file(remote)
+    bad_command = command.copy()
+    bad_command[bad_command.index("--remote-completion-sha256") + 1] = "0" * 64
+    rejected = subprocess.run(
+        bad_command,
+        check=False,
+        capture_output=True,
+        text=True,
+        env=_environment(BOOKFORGE_JAX_TRAIN="I_APPROVE_THIS_BOUNDED_TPU_JOB"),
+    )
+    assert rejected.returncode != 0
+    assert "remote completion differs from its trusted SHA-256" in rejected.stderr

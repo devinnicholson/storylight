@@ -329,8 +329,8 @@ Before a paid run, the user must explicitly approve:
 1. relinking billing account `000000-000000-000000`;
 2. verifying applicable promotional credits;
 3. the exact run ID, backend, resources, timeout, and gross ceiling;
-4. a read-only Gemma/Hugging Face token delivered through Secret Manager or a Modal Secret, never a
-   repository or password file.
+4. the checksum-bound staged checkpoint and tokenizer population. Snapshot acquisition is a
+   separate approved step; the Vertex training worker accepts no Hugging Face token or secret.
 
 Default first-experiment controls:
 

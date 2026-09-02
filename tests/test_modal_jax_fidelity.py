@@ -48,6 +48,7 @@ def _request(**updates: object) -> dict[str, object]:
         "status": "rejected-pre-billable",
         "submission_intent_created": False,
         "custom_job_created": False,
+        "job_absence_verified": True,
         "fallback_allowed": True,
         "reason": "quota unavailable",
     }
@@ -57,6 +58,7 @@ def _request(**updates: object) -> dict[str, object]:
         "prepared_train_sha256": "c" * 64,
         "input_manifest_sha256": "d" * 64,
         "base_checkpoint_manifest_sha256": "e" * 64,
+        "base_checkpoint_receipt_sha256": "0" * 64,
         "tokenizer_manifest_sha256": "f" * 64,
     }
     rejection["input_bindings_sha256"] = hashlib.sha256(
@@ -72,13 +74,14 @@ def _request(**updates: object) -> dict[str, object]:
         "prepared_train_sha256": "c" * 64,
         "input_manifest_sha256": "d" * 64,
         "base_checkpoint_manifest_sha256": "e" * 64,
+        "base_checkpoint_receipt_sha256": "0" * 64,
         "tokenizer_manifest_sha256": "f" * 64,
         "smoke": True,
         "gcp_rejection": rejection,
         "gcp_rejection_sha256": rejection_sha,
         "approval_token": (
             f"APPROVE_MODAL_JAX_RUN:{run_id}:{config_sha}:{dataset_sha}:{'c' * 64}:"
-            f"{'d' * 64}:{'e' * 64}:{'f' * 64}:{rejection_sha}:smoke"
+            f"{'d' * 64}:{'e' * 64}:{'0' * 64}:{'f' * 64}:{rejection_sha}:smoke"
         ),
     }
     request.update(updates)
@@ -124,6 +127,10 @@ def test_modal_request_requires_hashes_exact_approval_and_prebillable_rejection(
         modal_jax_fidelity._validate_request(blocked)
     with pytest.raises(ValueError, match="SHA-256"):
         modal_jax_fidelity._validate_request(_request(config_sha256="latest"))
+    with pytest.raises(ValueError, match="SHA-256"):
+        modal_jax_fidelity._validate_request(
+            _request(base_checkpoint_receipt_sha256="unverified")
+        )
     request = _request()
     rejection = dict(request["gcp_rejection"])
     rejection["input_bindings"] = dict(rejection["input_bindings"])
@@ -138,13 +145,20 @@ def test_modal_request_requires_hashes_exact_approval_and_prebillable_rejection(
 
 def test_modal_budget_gate_is_present_and_maxtext_checkout_is_exact() -> None:
     source = Path("deploy/modal_jax_fidelity.py").read_text()
+    image_source = Path("deploy/modal_jax_image.py").read_text()
     assert 'BUDGET_MONTH = "2026-09"' in source
     assert "workspace_total + float(ceiling) > WORKSPACE_HARD_STOP_USD" in source
-    assert "git clone https://github.com/AI-Hypercomputer/maxtext.git /opt/MaxText" in source
-    assert "maxtext_revision" in source
-    assert "git -C /opt/MaxText rev-parse HEAD" in source
-    assert "--write-lock /opt/bookforge/runtime.lock.json" in source
-    assert "--lock /opt/bookforge/runtime.lock.json" in source
+    assert "git clone https://github.com/AI-Hypercomputer/maxtext.git /opt/MaxText" in image_source
+    assert "maxtext_revision" in image_source
+    assert "git -C /opt/MaxText rev-parse HEAD" in image_source
+    assert "--write-lock /opt/bookforge/runtime.lock.json" in image_source
+    assert "--lock /opt/bookforge/runtime.lock.json" in image_source
+    assert '"HF_HUB_OFFLINE": "1"' in image_source
+    assert '"HF_DATASETS_OFFLINE": "1"' in image_source
+    assert '"TRANSFORMERS_OFFLINE": "1"' in image_source
+    assert 'for name in ("HF_TOKEN", "HUGGING_FACE_HUB_TOKEN")' in image_source
+    assert "verify_base_orbax(" in source
+    assert "base_checkpoint_receipt_sha256" in source
 
 
 def test_modal_release_fetch_verifies_every_file_before_copy(monkeypatch, tmp_path: Path) -> None:
@@ -203,7 +217,8 @@ def test_modal_release_fetch_verifies_every_file_before_copy(monkeypatch, tmp_pa
 
     monkeypatch.setattr(fetch_modal_jax_release, "_modal_get", fake_get)
     destination = tmp_path / "release"
-    manifest = fetch_modal_jax_release.fetch_release(run_id, destination)
+    completion_sha = hashlib.sha256(json.dumps(outer).encode()).hexdigest()
+    manifest = fetch_modal_jax_release.fetch_release(run_id, completion_sha, destination)
 
     assert manifest["status"] == "succeeded"
     assert (destination / "adapter/model.bin").read_bytes() == b"checkpoint"
@@ -232,7 +247,15 @@ def test_modal_release_fetch_rejects_checksum_mismatch(monkeypatch, tmp_path: Pa
 
     monkeypatch.setattr(fetch_modal_jax_release, "_modal_get", fake_get)
     with pytest.raises(ValueError, match="failed verification"):
-        fetch_modal_jax_release.fetch_release(run_id, tmp_path / "release")
+        completion = {
+            "run_id": run_id,
+            "status": "succeeded",
+            "files": [{"path": "model.bin", "bytes": 3, "sha256": "0" * 64}],
+        }
+        completion_sha = hashlib.sha256(json.dumps(completion).encode()).hexdigest()
+        fetch_modal_jax_release.fetch_release(
+            run_id, completion_sha, tmp_path / "release"
+        )
 
 
 def test_modal_export_fetch_builds_checksummed_jetson_bridge(

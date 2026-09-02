@@ -12,7 +12,7 @@ import tempfile
 from collections.abc import Callable
 from pathlib import Path
 
-from stage_inputs import build_input_manifest, canonical_bytes
+from stage_inputs import build_input_manifest, canonical_bytes, verify_full_training_sources
 
 VOLUME_NAME = "bookforge-jax-fidelity-inputs"
 APPROVAL_ENVIRONMENT = "BOOKFORGE_MODAL_JAX_STAGE_APPROVAL"
@@ -34,6 +34,7 @@ def stage_inputs(
     sources: dict[str, Path],
     runner: Run = subprocess.run,
 ) -> dict[str, object]:
+    verify_full_training_sources(manifest, sources)
     encoded = canonical_bytes(manifest)
     manifest_sha256 = hashlib.sha256(encoded).hexdigest()
     token = approval_token(run_id, manifest_sha256)
@@ -119,6 +120,7 @@ def _parser() -> argparse.ArgumentParser:
     parser.add_argument("--prepared-train", type=Path, required=True)
     parser.add_argument("--checkpoint", type=Path, required=True)
     parser.add_argument("--checkpoint-manifest", type=Path, required=True)
+    parser.add_argument("--checkpoint-receipt", type=Path, required=True)
     parser.add_argument("--tokenizer", type=Path, required=True)
     parser.add_argument("--tokenizer-manifest", type=Path, required=True)
     parser.add_argument("--output", type=Path, required=True)
@@ -137,6 +139,7 @@ def main() -> None:
         prepared_train=args.prepared_train,
         checkpoint=args.checkpoint,
         checkpoint_manifest=args.checkpoint_manifest,
+        checkpoint_receipt=args.checkpoint_receipt,
         tokenizer=args.tokenizer,
         tokenizer_manifest=args.tokenizer_manifest,
     )

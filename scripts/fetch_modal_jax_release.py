@@ -44,7 +44,9 @@ def _modal_export_get(remote_path: str, destination: Path) -> None:
     )
 
 
-def _completion(path: Path, run_id: str) -> dict[str, object]:
+def _completion(path: Path, run_id: str, expected_sha256: str) -> dict[str, object]:
+    if _sha256(path) != expected_sha256:
+        raise ValueError("release completion differs from the trusted completion SHA-256")
     value = json.loads(path.read_text(encoding="utf-8"))
     if not isinstance(value, dict):
         raise ValueError("completion manifest must be an object")
@@ -96,7 +98,9 @@ def _verify_portable_package(root: Path) -> None:
         raise ValueError("portable package contains undeclared or missing files")
 
 
-def fetch_release(run_id: str, destination: Path) -> dict[str, object]:
+def fetch_release(
+    run_id: str, expected_completion_sha256: str, destination: Path
+) -> dict[str, object]:
     if destination.exists():
         raise FileExistsError("destination already exists")
     destination.parent.mkdir(parents=True, exist_ok=True)
@@ -106,9 +110,12 @@ def fetch_release(run_id: str, destination: Path) -> dict[str, object]:
         temporary = Path(raw)
         manifest_path = temporary / "completion.json"
         _modal_get(f"{run_id}/completion.json", manifest_path)
-        manifest = _completion(manifest_path, run_id)
+        manifest = _completion(manifest_path, run_id, expected_completion_sha256)
         payload = temporary / "payload"
         _modal_get(run_id, payload)
+        remote_completion = payload / "completion.json"
+        if remote_completion.is_file() and _sha256(remote_completion) != expected_completion_sha256:
+            raise ValueError("release directory completion differs from the trusted completion")
         declared: set[str] = set()
         for row in cast(list[object], manifest["files"]):
             if not isinstance(row, dict):
@@ -132,7 +139,9 @@ def fetch_release(run_id: str, destination: Path) -> dict[str, object]:
             ):
                 raise ValueError(f"release artifact failed verification: {relative}")
         actual = {
-            path.relative_to(payload).as_posix() for path in payload.rglob("*") if path.is_file()
+            path.relative_to(payload).as_posix()
+            for path in payload.rglob("*")
+            if path.is_file() and path != remote_completion
         }
         if actual != declared:
             raise ValueError("release contains undeclared or missing files")
@@ -270,6 +279,7 @@ def _parser() -> argparse.ArgumentParser:
     source.add_argument("--candidate-id")
     parser.add_argument("--source-release-manifest-sha256")
     parser.add_argument("--expected-export-manifest-sha256")
+    parser.add_argument("--expected-completion-sha256")
     parser.add_argument("--candidate-output", type=Path)
     parser.add_argument("--destination", type=Path, required=True)
     parser.add_argument("--execute", action="store_true")
@@ -317,6 +327,8 @@ def main() -> None:
         return
     if args.candidate_output is not None:
         raise SystemExit("--candidate-output is valid only for a Modal TensorRT export")
+    if not args.expected_completion_sha256:
+        raise SystemExit("--expected-completion-sha256 is required for a Modal training release")
     if not args.execute:
         print(
             json.dumps(
@@ -331,7 +343,17 @@ def main() -> None:
             )
         )
         return
-    print(json.dumps(fetch_release(args.run_id, args.destination), indent=2, sort_keys=True))
+    print(
+        json.dumps(
+            fetch_release(
+                args.run_id,
+                args.expected_completion_sha256,
+                args.destination,
+            ),
+            indent=2,
+            sort_keys=True,
+        )
+    )
 
 
 if __name__ == "__main__":

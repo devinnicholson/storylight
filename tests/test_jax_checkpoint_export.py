@@ -18,6 +18,7 @@ from scripts.validate_fidelity_release import (
     expected_candidate_id,
     validate_release,
 )
+from training.jax_fidelity.artifact_contract import create_artifact_contract
 from training.jax_fidelity.commands import (
     build_hf_to_maxtext_command,
     build_logit_check_command,
@@ -27,10 +28,16 @@ from training.jax_fidelity.configuration import load_config
 from training.jax_fidelity.integrity import (
     DatasetIntegrityError,
     artifact_manifest,
+    canonical_json_bytes,
     sha256_file,
     verify_conversion_manifest,
 )
+from training.jax_fidelity.integrity import (
+    canonical_sha256 as canonical_lineage_sha256,
+)
 from training.jax_fidelity.manifests import stable_run_id
+from training.jax_fidelity.merged_candidate import build_merged_candidate_manifest
+from training.jax_fidelity.orbax_receipt import orbax_leaf_receipt
 from training.jax_fidelity.release import (
     ReleaseError,
     produce_release,
@@ -41,6 +48,7 @@ from training.jax_fidelity.release import (
 from training.jax_fidelity.roundtrip_smoke import (
     RoundtripError,
     contract_document,
+    validate_roundtrip_contract,
     validate_roundtrip_evidence,
 )
 
@@ -61,6 +69,7 @@ def _evidence(config, checkpoint: Path) -> dict:
             "gemma4_metadata": True,
             "eos_token_ids": [1, 106, 50],
             "forward_kl_divergence": 0.012,
+            "logit_comparison": "adapted-maxtext-vs-merged-hf",
         },
         "exported_checkpoint_manifest": artifact_manifest(checkpoint),
         "lineage": {
@@ -88,6 +97,7 @@ def _passing_development_evaluation(
         "schema_version": "1.0",
         "candidate_id": candidate_id,
         "stage": "development",
+        "config_sha256": sha256_file(CONFIG_PATH),
         "dataset_manifest_sha256": dataset_manifest_sha256,
         "training_run_id": training_run_id,
         "eligibility_decision": {"passed": True, "hidden_evaluated": False},
@@ -95,6 +105,20 @@ def _passing_development_evaluation(
         "reasons": [],
         "baseline_summary_sha256": "a" * 64,
         "candidate_summary_sha256": "b" * 64,
+        "development_records_sha256": "d" * 64,
+        "predictions_sha256": "e" * 64,
+        "prediction_completion_sha256": "f" * 64,
+        "evaluation_completion_sha256": "1" * 64,
+        "evaluation_input_sha256": canonical_lineage_sha256(
+            {
+                "development_records_sha256": "d" * 64,
+                "predictions_sha256": "e" * 64,
+                "prediction_completion_sha256": "f" * 64,
+            }
+        ),
+        "candidate_manifest_sha256": "2" * 64,
+        "checkpoint_manifest_sha256": "3" * 64,
+        "checkpoint_content_sha256": "4" * 64,
         "summary": {
             "surface": "raw",
             "split": "development",
@@ -143,6 +167,22 @@ def test_roundtrip_contract_accepts_only_complete_checksummed_evidence(tmp_path:
         validate_roundtrip_evidence(config, evidence, exported_checkpoint=checkpoint)
 
 
+def test_roundtrip_contract_can_authorize_a_distinct_trained_checkpoint(tmp_path: Path) -> None:
+    config = load_config(CONFIG_PATH)
+    canary = tmp_path / "canary"
+    canary.mkdir()
+    (canary / "config.json").write_text("{}\n")
+    evidence = _evidence(config, canary)
+
+    validate_roundtrip_contract(config, evidence)
+
+    trained = tmp_path / "trained"
+    trained.mkdir()
+    (trained / "config.json").write_text('{"trained":true}\n')
+    with pytest.raises(RoundtripError, match="manifest"):
+        validate_roundtrip_evidence(config, evidence, exported_checkpoint=trained)
+
+
 @pytest.mark.parametrize(
     ("key", "value", "match"),
     [
@@ -182,7 +222,8 @@ def test_conversion_commands_pin_text_only_unscanned_gemma4() -> None:
     logit = build_logit_check_command(
         config,
         maxtext_checkpoint="/orbax/base/0/items",
-        hf_checkpoint="/hf/base",
+        adapter_checkpoint="/orbax/lora/5/items",
+        hf_checkpoint="/hf/merged",
     )
 
     for command in (to_maxtext, to_hf, logit):
@@ -191,7 +232,8 @@ def test_conversion_commands_pin_text_only_unscanned_gemma4() -> None:
         assert "use_multimodal=false" in command
     assert "lora.lora_restore_path=/orbax/lora/5/items" in to_hf
     assert "--max_kl_div=0.03" in logit
-    assert "tokenizer_path=/hf/base" in logit
+    assert "tokenizer_path=/hf/merged" in logit
+    assert "lora.lora_restore_path=/orbax/lora/5/items" in logit
 
 
 def test_roundtrip_contract_is_bound_to_config_revision() -> None:
@@ -243,15 +285,37 @@ def test_release_producer_emits_exact_checksum_bound_consumer_schema(tmp_path: P
     prepared = tmp_path / "prepared.jsonl"
     prepared.write_text('{"messages":[]}\n')
 
-    base_manifest, base_manifest_sha = _checkpoint(tmp_path / "base", {"checkpoint": b"base-orbax"})
+    base_root = tmp_path / "base-root"
+    base = base_root / "run/checkpoints/0/items"
+    base.mkdir(parents=True)
+    (base / "checkpoint").write_bytes(b"base-orbax")
+    base_manifest = tmp_path / "base.manifest.json"
+    base_manifest_sha = _write_json(base_manifest, artifact_manifest(base))
+    base_receipt = tmp_path / "base.receipt.json"
+    base_receipt_sha = _write_json(
+        base_receipt,
+        orbax_leaf_receipt(
+            base_root,
+            base,
+            expected_step=0,
+            role="base-maxtext",
+        ),
+    )
     tokenizer_manifest, tokenizer_manifest_sha = _checkpoint(
         tmp_path / "tokenizer", {"tokenizer.json": b"local-tokenizer"}
     )
-    adapter_manifest, adapter_manifest_sha = _checkpoint(
-        tmp_path / "adapter", {"checkpoint": b"trained-lora"}
+    original_hf_manifest, original_hf_manifest_sha = _checkpoint(
+        tmp_path / "original-hf", {"model.safetensors": b"original-hf"}
     )
-    merged = tmp_path / "merged"
-    merged.mkdir()
+    adapter = tmp_path / "adapter"
+    adapter_leaf = adapter / "run/checkpoints/160/items"
+    adapter_leaf.mkdir(parents=True)
+    (adapter_leaf / "checkpoint").write_bytes(b"trained-lora")
+    adapter_manifest = tmp_path / "adapter.manifest.json"
+    adapter_manifest_sha = _write_json(adapter_manifest, artifact_manifest(adapter))
+    merge_root = tmp_path / "merge-release"
+    merged = merge_root / "merged-hf"
+    merged.mkdir(parents=True)
     for relative, content in {
         "config.json": b'{"model_type":"gemma4_text"}\n',
         "model.safetensors": b"merged-weights",
@@ -263,10 +327,10 @@ def test_release_producer_emits_exact_checksum_bound_consumer_schema(tmp_path: P
     training_run_id = "lora-train-fidelity-001"
     release_inputs = {
         "adapter_checkpoint": verified_artifact_binding(
-            tmp_path / "adapter", adapter_manifest, adapter_manifest_sha
+            adapter, adapter_manifest, adapter_manifest_sha
         ),
         "base_checkpoint": verified_artifact_binding(
-            tmp_path / "base", base_manifest, base_manifest_sha
+            base, base_manifest, base_manifest_sha
         ),
         "prepared_train": {
             "sha256": sha256_file(prepared),
@@ -300,7 +364,7 @@ def test_release_producer_emits_exact_checksum_bound_consumer_schema(tmp_path: P
             "metadata": {"inputs": training_inputs, "smoke": False},
         },
     )
-    adapter_file = tmp_path / "adapter" / "checkpoint"
+    adapter_file = adapter_leaf / "checkpoint"
     completion = tmp_path / "completion.json"
     completion_sha = _write_json(
         completion,
@@ -311,7 +375,7 @@ def test_release_producer_emits_exact_checksum_bound_consumer_schema(tmp_path: P
             "run_manifest_sha256": run_sha,
             "artifacts": [
                 {
-                    "path": "checkpoint",
+                    "path": "run/checkpoints/160/items/checkpoint",
                     "sha256": sha256_file(adapter_file),
                     "bytes": adapter_file.stat().st_size,
                 }
@@ -342,6 +406,140 @@ def test_release_producer_emits_exact_checksum_bound_consumer_schema(tmp_path: P
             training_run_id=training_run_id,
         ),
     )
+    evidence_root = merge_root / "evidence"
+    evidence_root.mkdir()
+    adapter_receipt = evidence_root / "adapter-orbax.receipt.json"
+    adapter_receipt_sha = _write_json(
+        adapter_receipt,
+        orbax_leaf_receipt(
+            adapter,
+            adapter_leaf,
+            expected_step=config.training["steps"],
+            role="full-lora",
+        ),
+    )
+    conversion_input = evidence_root / "maxtext-to-hf.inputs.json"
+    conversion_input_sha = _write_json(
+        conversion_input,
+        create_artifact_contract(
+            [
+                f"base_checkpoint={base}",
+                f"adapter_checkpoint={adapter_leaf}",
+                f"hf_checkpoint={tmp_path / 'original-hf'}",
+            ]
+        ),
+    )
+    conversion_id = stable_run_id(
+        stage="maxtext-to-hf",
+        config_sha256=config.sha256,
+        dataset_manifest_sha256=conversion_input_sha,
+    )
+    conversion_run = evidence_root / "maxtext-to-hf.run.json"
+    conversion_run_sha = _write_json(
+        conversion_run,
+        {
+            "schema_version": "1.0",
+            "run_id": conversion_id,
+            "stage": "maxtext-to-hf",
+            "status": "planned",
+            "config_sha256": config.sha256,
+            "dataset_manifest_sha256": conversion_input_sha,
+            "metadata": {
+                "conversion_input_manifest_sha256": conversion_input_sha,
+                "direction": "maxtext-to-hf",
+            },
+        },
+    )
+    conversion_completion = evidence_root / "maxtext-to-hf.completion.json"
+    conversion_completion_sha = _write_json(
+        conversion_completion,
+        {
+            "schema_version": "1.0",
+            "run_id": conversion_id,
+            "status": "succeeded",
+            "run_manifest_sha256": conversion_run_sha,
+            "artifacts": [{"path": "merged", "sha256": "a" * 64, "bytes": 1}],
+            "evidence": {
+                "direction": "maxtext-to-hf",
+                "input_manifest_sha256": conversion_input_sha,
+                "output_manifest": artifact_manifest(merged),
+            },
+        },
+    )
+    candidate_manifest = merge_root / "candidate.manifest.json"
+    candidate_manifest.write_bytes(
+        canonical_json_bytes(
+            build_merged_candidate_manifest(
+                config_path=CONFIG_PATH,
+                dataset_manifest_sha256=dataset_sha,
+                training_run_id=training_run_id,
+                merged_hf_checkpoint=merged,
+            )
+        )
+    )
+    candidate_manifest_sha = sha256_file(candidate_manifest)
+    merged_manifest = merge_root / "merged-hf.manifest.json"
+    merged_manifest.write_bytes(canonical_json_bytes(artifact_manifest(merged)))
+    source_bindings = evidence_root / "source-bindings.json"
+    source_bindings_sha = _write_json(
+        source_bindings,
+        {
+            "input_manifest_sha256": "0" * 64,
+            "hf_snapshot_manifest_sha256": original_hf_manifest_sha,
+            "base_orbax_receipt_sha256": base_receipt_sha,
+            "base_orbax_manifest_sha256": base_manifest_sha,
+            "adapter_manifest_sha256": adapter_manifest_sha,
+            "adapter_orbax_receipt_sha256": adapter_receipt_sha,
+            "training_run_sha256": run_sha,
+            "training_completion_sha256": completion_sha,
+            "config_sha256": config.sha256,
+            "dataset_manifest_sha256": dataset_sha,
+            "training_run_id": training_run_id,
+            "conversion_input_manifest_sha256": conversion_input_sha,
+            "conversion_run_id": conversion_id,
+            "conversion_run_sha256": conversion_run_sha,
+            "conversion_completion_sha256": conversion_completion_sha,
+            "roundtrip_completion_sha256": "1" * 64,
+            "training_release_completion_sha256": "2" * 64,
+        },
+    )
+    merge_files = [
+        {
+            "path": path.relative_to(merge_root).as_posix(),
+            "bytes": path.stat().st_size,
+            "sha256": sha256_file(path),
+        }
+        for path in sorted(item for item in merge_root.rglob("*") if item.is_file())
+    ]
+    merge_completion = merge_root / "completion.json"
+    merge_completion_sha = _write_json(
+        merge_completion,
+        {
+            "schema_version": "1.0",
+            "status": "succeeded",
+            "backend": "modal-l40s",
+            "release_type": "provisional-merged-hf-development-candidate",
+            "merge_run_id": "bookforge-full-merge-20260901",
+            "candidate_id": candidate_id,
+            "training_run_id": training_run_id,
+            "config_sha256": config.sha256,
+            "dataset_manifest_sha256": dataset_sha,
+            "candidate_manifest_sha256": candidate_manifest_sha,
+            "merged_hf_manifest_sha256": sha256_file(merged_manifest),
+            "checkpoint_manifest_sha256": canonical_sha256(artifact_manifest(merged)),
+            "checkpoint_content_sha256": artifact_manifest(merged)["content_sha256"],
+            "input_manifest_sha256": "0" * 64,
+            "roundtrip_completion_sha256": "1" * 64,
+            "training_release_completion_sha256": "2" * 64,
+            "conversion_input_manifest_sha256": conversion_input_sha,
+            "conversion_run_id": conversion_id,
+            "conversion_run_sha256": conversion_run_sha,
+            "conversion_completion_sha256": conversion_completion_sha,
+            "development_evaluated": False,
+            "release_authorized": False,
+            "files": merge_files,
+        },
+    )
     release_directory = tmp_path / "release"
 
     result = produce_release(
@@ -350,16 +548,37 @@ def test_release_producer_emits_exact_checksum_bound_consumer_schema(tmp_path: P
         dataset_manifest_sha256=dataset_sha,
         prepared_train_path=prepared,
         prepared_train_sha256=sha256_file(prepared),
-        base_checkpoint=tmp_path / "base",
+        base_checkpoint=base,
         base_manifest_path=base_manifest,
         base_manifest_sha256=base_manifest_sha,
         tokenizer_checkpoint=tmp_path / "tokenizer",
         tokenizer_manifest_path=tokenizer_manifest,
         tokenizer_manifest_sha256=tokenizer_manifest_sha,
-        adapter_checkpoint=tmp_path / "adapter",
+        adapter_checkpoint=adapter,
         adapter_manifest_path=adapter_manifest,
         adapter_manifest_sha256=adapter_manifest_sha,
         merged_hf_checkpoint=merged,
+        original_hf_checkpoint=tmp_path / "original-hf",
+        original_hf_manifest_path=original_hf_manifest,
+        original_hf_manifest_sha256=original_hf_manifest_sha,
+        base_checkpoint_root=base_root,
+        base_receipt_path=base_receipt,
+        base_receipt_sha256=base_receipt_sha,
+        adapter_receipt_path=adapter_receipt,
+        adapter_receipt_sha256=adapter_receipt_sha,
+        merge_release_root=merge_root,
+        merge_completion_path=merge_completion,
+        merge_completion_sha256=merge_completion_sha,
+        candidate_manifest_path=candidate_manifest,
+        candidate_manifest_sha256=candidate_manifest_sha,
+        source_bindings_path=source_bindings,
+        source_bindings_sha256=source_bindings_sha,
+        conversion_input_path=conversion_input,
+        conversion_input_sha256=conversion_input_sha,
+        conversion_run_path=conversion_run,
+        conversion_run_sha256=conversion_run_sha,
+        conversion_completion_path=conversion_completion,
+        conversion_completion_sha256=conversion_completion_sha,
         training_run_id=training_run_id,
         training_run_path=run,
         training_run_sha256=run_sha,
@@ -382,9 +601,24 @@ def test_release_producer_emits_exact_checksum_bound_consumer_schema(tmp_path: P
     )
     assert validated.document["inputs"]["base_checkpoint"]["content_sha256"]
     assert set(validated.document["terminal_evidence"]) == {
+        "adapter_orbax_receipt",
+        "base_orbax_manifest",
+        "base_orbax_receipt",
+        "candidate_manifest",
+        "conversion_completion",
+        "conversion_input",
+        "conversion_run",
         "evaluation",
+        "full_adapter_manifest",
+        "merge_completion",
+        "merge_source_bindings",
+        "merged_hf_manifest",
+        "original_hf_manifest",
         "roundtrip",
+        "roundtrip_completion",
+        "staged_input_manifest",
         "training_completion",
+        "training_release_completion",
         "training_run",
     }
 
@@ -518,6 +752,7 @@ def test_release_rejects_failed_or_premature_hidden_evaluation(decision: dict) -
                 "summary": {"records": 512},
             },
             candidate_id="fidelity-00000000000000000000",
+            config_sha256=sha256_file(CONFIG_PATH),
             dataset_manifest_sha256="e" * 64,
             training_run_id="lora-train-test",
         )
@@ -536,6 +771,7 @@ def test_release_rejects_hand_authored_generic_development_success() -> None:
                 "summary": {"records": 512},
             },
             candidate_id="fidelity-00000000000000000000",
+            config_sha256=sha256_file(CONFIG_PATH),
             dataset_manifest_sha256="e" * 64,
             training_run_id="lora-train-test",
         )

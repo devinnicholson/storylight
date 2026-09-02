@@ -8,9 +8,16 @@ from types import SimpleNamespace
 
 import pytest
 
+from bookforge.fidelity_benchmark import population_contract_from_manifest
+from bookforge.fidelity_schema import DatasetSplit
+
 ROOT = Path(__file__).parents[1]
 INSTALLER = ROOT / "deploy/jetson/install-trained-planner-candidate.sh"
 SHADOW = ROOT / "deploy/jetson/run-trained-planner-shadow.sh"
+CANDIDATE_EVALUATION = ROOT / "deploy/jetson/run-trained-planner-candidate-evaluation.sh"
+CANDIDATE_DEVELOPMENT_GATE = (
+    ROOT / "deploy/jetson/trained-planner-candidate-evaluation.py"
+)
 PROMOTE = ROOT / "deploy/jetson/promote-trained-planner.sh"
 ROLLBACK = ROOT / "deploy/jetson/rollback-trained-planner.sh"
 SERVICE = ROOT / "deploy/jetson/systemd/bookforge-trained-planner-candidate@.service"
@@ -45,6 +52,19 @@ def _load_acceptance_preflight():
 
 
 acceptance_preflight = _load_acceptance_preflight()
+
+
+def _load_candidate_development_gate():
+    spec = importlib.util.spec_from_file_location(
+        "trained_planner_candidate_evaluation", CANDIDATE_DEVELOPMENT_GATE
+    )
+    assert spec is not None and spec.loader is not None
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+candidate_development_gate = _load_candidate_development_gate()
 
 
 def _load_tooling_installer():
@@ -97,7 +117,12 @@ def _bundle(tmp_path: Path) -> tuple[Path, str]:
     return bundle, _sha256(manifest_path)
 
 
-def _hidden_report(tmp_path: Path, candidate_revision: str) -> tuple[Path, str]:
+def _hidden_report(
+    tmp_path: Path,
+    candidate_revision: str,
+    *,
+    candidate_manifest_sha256: str = "d" * 64,
+) -> tuple[Path, str]:
     summary = {
         "surface": "raw",
         "split": "hidden",
@@ -122,8 +147,16 @@ def _hidden_report(tmp_path: Path, candidate_revision: str) -> tuple[Path, str]:
     report.write_text(
         json.dumps(
             {
-                "schema_version": "1.0",
-                "candidate_revision": candidate_revision,
+                "schema_version": "story-fidelity-evaluation-v1",
+                "split": "hidden",
+                "candidate_identity": {
+                    "candidate_id": "jax-r8-seed-20260901",
+                    "candidate_manifest_sha256": candidate_manifest_sha256,
+                    "engine_sha256": candidate_revision.removeprefix("sha256:"),
+                    "model_revision": candidate_revision,
+                },
+                "dataset_manifest_sha256": "d" * 64,
+                "custody_receipt_sha256": "e" * 64,
                 "privacy": {"passages_recorded": False, "outputs_recorded": False},
                 "summary": summary,
             },
@@ -170,7 +203,10 @@ def _candidate_manifest(candidate_engine: str) -> dict[str, object]:
     }
 
 
-@pytest.mark.parametrize("script", [INSTALLER, SHADOW, PROMOTE, ROLLBACK, BASELINE_IDENTITY])
+@pytest.mark.parametrize(
+    "script",
+    [INSTALLER, CANDIDATE_EVALUATION, SHADOW, PROMOTE, ROLLBACK, BASELINE_IDENTITY],
+)
 def test_candidate_scripts_have_valid_shell_syntax(script: Path) -> None:
     subprocess.run(["bash", "-n", str(script)], check=True)
 
@@ -350,7 +386,9 @@ def test_tooling_bundle_is_source_and_content_provenance_bound(tmp_path: Path) -
     assert manifest["source_manifest_sha256"] == build_receipt["source_manifest_sha256"]
     assert {record["path"] for record in manifest["files"]} >= {
         "install-trained-planner-candidate.sh",
+        "run-trained-planner-candidate-evaluation.sh",
         "run-trained-planner-shadow.sh",
+        "trained-planner-candidate-evaluation.py",
         "promote-trained-planner.sh",
         "rollback-trained-planner.sh",
         "record-trained-planner-terminal-evidence.py",
@@ -673,6 +711,136 @@ def test_shadow_is_counterbalanced_checksum_bound_and_trap_restored() -> None:
     assert "gcloud" not in shadow.casefold()
 
 
+def test_candidate_evaluation_is_local_one_shot_and_trap_restored() -> None:
+    evaluation = CANDIDATE_EVALUATION.read_text()
+
+    assert "trap restore_on_exit EXIT INT TERM" in evaluation
+    assert "http://127.0.0.1:11436" in evaluation
+    assert "http://127.0.0.1:11435" in evaluation
+    assert "bookforge.fidelity_endpoint_evaluation" in evaluation
+    assert "trained-planner-candidate-evaluation.py" in evaluation
+    assert '"$BOOKFORGE_PYTHON" "$DEVELOPMENT_GATE"' in evaluation
+    assert evaluation.index('--output "$eligibility_output"') < evaluation.index(
+        'BOOKFORGE_HIDDEN_EVAL_APPROVAL="$hidden_approval"'
+    )
+    assert "EVALUATE_PRIVATE_HIDDEN_ONCE:" in evaluation
+    assert "RUN_BOOKFORGE_TRAINED_PLANNER_CANDIDATE_EVALUATION:" in evaluation
+    assert 'user_systemctl start "$ACCEPTED_UNIT"' in evaluation
+    assert "hidden-evaluation-state" in evaluation
+    assert "swapon --show --noheadings" in evaluation
+    assert "MemoryPeak" in evaluation
+    assert "OOMKilled" in evaluation
+    assert "NRestarts" in evaluation
+    assert "modal" not in evaluation.casefold()
+    assert "gcloud" not in evaluation.casefold()
+    assert "sudo password" not in evaluation.casefold()
+
+
+def test_candidate_development_gate_uses_device_report_before_hidden(
+    tmp_path: Path,
+) -> None:
+    dataset_manifest = ROOT / "datasets/story-fidelity-v1/manifest.json"
+    dataset_sha256 = _sha256(dataset_manifest)
+    population = population_contract_from_manifest(
+        dataset_manifest,
+        expected_manifest_sha256=dataset_sha256,
+        split=DatasetSplit.DEVELOPMENT,
+    )
+    engine_sha256 = "b" * 64
+    candidate_manifest = tmp_path / "candidate.manifest.json"
+    candidate_manifest.write_text(
+        json.dumps(
+            {
+                "candidate_id": "fidelity-0123456789abcdefabcd",
+                "engine_sha256": engine_sha256,
+                "model_revision": f"sha256:{engine_sha256}",
+                "training_run_id": "lora-train-20260901",
+                "source_dataset_manifest_sha256": dataset_sha256,
+            },
+            sort_keys=True,
+        )
+        + "\n"
+    )
+    candidate_manifest_sha256 = _sha256(candidate_manifest)
+
+    def report(path: Path, *, candidate: bool, perfect: bool) -> str:
+        accepted_engine = (
+            "95b69991b68c57a2d2d4bfa4116feb9ec57295588551d109353a42a9c16c4fdf"
+        )
+        identity = {
+            "candidate_id": (
+                "fidelity-0123456789abcdefabcd" if candidate else "accepted-baseline-test"
+            ),
+            "candidate_manifest_sha256": (
+                candidate_manifest_sha256 if candidate else "a" * 64
+            ),
+            "engine_sha256": engine_sha256 if candidate else accepted_engine,
+            "model_revision": f"sha256:{engine_sha256 if candidate else accepted_engine}",
+        }
+        rate = 1.0 if perfect else 0.0
+        summary = {
+            "surface": "raw",
+            "split": "development",
+            "records": population.records,
+            "record_ids_sha256": population.record_ids_sha256,
+            "category_record_counts": dict(population.category_record_counts),
+            "schema_valid_rate": rate,
+            "privacy_pass_rate": rate,
+            "semantic_atom_recall": rate,
+            "exact_example_pass_rate": rate,
+            "category_pass_rates": {
+                name: rate for name in population.category_record_counts
+            },
+            "counterfactual_pairs": population.pairs,
+            "counterfactual_sensitivity": rate,
+            "unsupported_concept_rate": 0.0,
+            "pii_leaks": 0,
+            "privacy_term_leaks": 0,
+            "source_echoes": 0,
+            "injection_leaks": 0,
+            "forbidden_hits": 0,
+        }
+        path.write_text(
+            json.dumps(
+                {
+                    "schema_version": "story-fidelity-evaluation-v1",
+                    "split": "development",
+                    "candidate_identity": identity,
+                    "dataset_manifest_sha256": dataset_sha256,
+                    "custody_receipt_sha256": None,
+                    "privacy": {
+                        "passages_recorded": False,
+                        "outputs_recorded": False,
+                    },
+                    "summary": summary,
+                },
+                sort_keys=True,
+            )
+            + "\n"
+        )
+        return _sha256(path)
+
+    candidate_report = tmp_path / "candidate-development.json"
+    baseline_report = tmp_path / "baseline-development.json"
+    candidate_report_sha256 = report(candidate_report, candidate=True, perfect=True)
+    baseline_report_sha256 = report(baseline_report, candidate=False, perfect=False)
+    gate = candidate_development_gate.build_development_gate(
+        candidate_manifest_path=candidate_manifest,
+        candidate_manifest_sha256=candidate_manifest_sha256,
+        dataset_manifest_path=dataset_manifest,
+        dataset_manifest_sha256=dataset_sha256,
+        candidate_report_path=candidate_report,
+        candidate_report_sha256=candidate_report_sha256,
+        baseline_report_path=baseline_report,
+        baseline_report_sha256=baseline_report_sha256,
+    )
+
+    assert gate["status"] == "passed"
+    assert gate["reasons"] == []
+    assert all(gate["checks"].values())
+    assert gate["candidate_identity"]["engine_sha256"] == engine_sha256
+
+
 def test_promotion_is_atomic_one_purpose_and_failure_reversible() -> None:
     promotion = PROMOTE.read_text()
 
@@ -797,7 +965,10 @@ def test_hidden_report_binding_retains_no_private_records(tmp_path: Path) -> Non
     binding = shadow_evidence.validate_hidden_report(
         report,
         expected_sha256=digest,
+        candidate_id="jax-r8-seed-20260901",
         candidate_revision=revision,
+        candidate_manifest_sha256="d" * 64,
+        dataset_manifest_sha256="d" * 64,
     )
 
     assert binding["report_sha256"] == digest
@@ -809,7 +980,10 @@ def test_hidden_report_binding_retains_no_private_records(tmp_path: Path) -> Non
         shadow_evidence.validate_hidden_report(
             report,
             expected_sha256="f" * 64,
+            candidate_id="jax-r8-seed-20260901",
             candidate_revision=revision,
+            candidate_manifest_sha256="d" * 64,
+            dataset_manifest_sha256="d" * 64,
         )
 
 
@@ -821,7 +995,10 @@ def test_shadow_evidence_emits_exact_runtime_and_hash_chained_stage(tmp_path: Pa
     hidden = shadow_evidence.validate_hidden_report(
         report,
         expected_sha256=report_sha,
+        candidate_id="jax-r8-seed-20260901",
         candidate_revision=candidate_revision,
+        candidate_manifest_sha256="d" * 64,
+        dataset_manifest_sha256="d" * 64,
     )
     legs = [
         _leg("baseline", 0, "sha256:" + accepted_engine, accepted_engine),
@@ -936,7 +1113,10 @@ def test_shadow_evidence_rejects_candidate_lineage_substitution(
     hidden = shadow_evidence.validate_hidden_report(
         report,
         expected_sha256=report_sha,
+        candidate_id="jax-r8-seed-20260901",
         candidate_revision=candidate_revision,
+        candidate_manifest_sha256="d" * 64,
+        dataset_manifest_sha256="d" * 64,
     )
     manifest = _candidate_manifest(candidate_engine)
     manifest[field] = value
@@ -990,7 +1170,11 @@ def test_shadow_aggregate_cli_publishes_gate_compatible_pair(tmp_path: Path) -> 
     manifest_path.write_text(
         json.dumps(_candidate_manifest(candidate_engine), indent=2, sort_keys=True) + "\n"
     )
-    hidden_path, hidden_sha256 = _hidden_report(tmp_path, candidate_revision)
+    hidden_path, hidden_sha256 = _hidden_report(
+        tmp_path,
+        candidate_revision,
+        candidate_manifest_sha256=_sha256(manifest_path),
+    )
     leg_paths: list[Path] = []
     for index, (label, revision, engine) in enumerate(
         (

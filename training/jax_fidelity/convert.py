@@ -102,11 +102,14 @@ def main() -> None:
             config,
             maxtext_checkpoint=args.maxtext_checkpoint,
             hf_checkpoint=args.hf_checkpoint,
+            adapter_checkpoint=args.adapter_checkpoint,
         )
         artifact_roots = {
             "hf_checkpoint": args.hf_checkpoint,
             "maxtext_checkpoint": args.maxtext_checkpoint,
         }
+        if args.adapter_checkpoint is not None:
+            artifact_roots["adapter_checkpoint"] = args.adapter_checkpoint
 
     verify_conversion_manifest(
         args.input_manifest,
@@ -174,6 +177,11 @@ def main() -> None:
                 "input_manifest_sha256": args.input_manifest_sha256,
                 "forward_kl_divergence": maximum_kl,
                 "maximum_kl_divergence": config.conversion["max_kl_divergence"],
+                "comparison": (
+                    "adapted-maxtext-vs-merged-hf"
+                    if args.adapter_checkpoint is not None
+                    else "base-maxtext-vs-base-hf"
+                ),
                 "log_sha256": sha256_file(log_path),
             }
             artifacts = [evidence_path, log_path]

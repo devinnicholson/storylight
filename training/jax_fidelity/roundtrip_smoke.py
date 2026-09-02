@@ -62,7 +62,21 @@ def validate_roundtrip_evidence(
     *,
     exported_checkpoint: Path | str,
 ) -> None:
-    """Fail unless every architecture and numerical seam has explicit evidence."""
+    """Fail unless the contract is complete and its canary bytes still match."""
+
+    validate_roundtrip_contract(config, evidence)
+    manifest = evidence["exported_checkpoint_manifest"]
+    try:
+        verify_artifact_manifest(exported_checkpoint, manifest)
+    except DatasetIntegrityError as error:
+        raise RoundtripError(str(error)) from error
+
+
+def validate_roundtrip_contract(
+    config: ExperimentConfig,
+    evidence: Mapping[str, Any],
+) -> None:
+    """Validate immutable compatibility evidence without substituting another checkpoint."""
 
     if evidence.get("schema_version") != "1.0":
         raise RoundtripError("roundtrip evidence schema_version must be 1.0")
@@ -81,6 +95,8 @@ def validate_roundtrip_evidence(
         raise RoundtripError("forward KL divergence is missing")
     if float(divergence) < 0 or float(divergence) > config.conversion["max_kl_divergence"]:
         raise RoundtripError("forward KL divergence exceeds the 0.03 gate")
+    if checks.get("logit_comparison") != "adapted-maxtext-vs-merged-hf":
+        raise RoundtripError("roundtrip KL does not compare equivalent adapted states")
     lineage = evidence.get("lineage")
     if not isinstance(lineage, dict):
         raise RoundtripError("roundtrip evidence has no terminal lineage")
@@ -96,10 +112,6 @@ def validate_roundtrip_evidence(
     manifest = evidence.get("exported_checkpoint_manifest")
     if not isinstance(manifest, dict):
         raise RoundtripError("exported checkpoint artifact manifest is missing")
-    try:
-        verify_artifact_manifest(exported_checkpoint, manifest)
-    except DatasetIntegrityError as error:
-        raise RoundtripError(str(error)) from error
 
 
 def _parser() -> argparse.ArgumentParser:

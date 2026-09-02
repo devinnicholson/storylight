@@ -34,11 +34,11 @@ def _inputs(module, **updates: object):
         "prepared_train_sha256": "d" * 64,
         "input_manifest_sha256": "e" * 64,
         "base_checkpoint_manifest_sha256": "f" * 64,
+        "base_checkpoint_receipt_sha256": "2" * 64,
         "tokenizer_manifest_sha256": "1" * 64,
         "service_account": "bookforge-jax-worker@your-gcp-project.iam.gserviceaccount.com",
         "scratch_uri": "gs://bookforge-jax-scratch",
         "release_uri": "gs://bookforge-jax-release",
-        "hf_secret_resource": ("projects/your-gcp-project/secrets/bookforge-hf-read/versions/1"),
         "smoke": True,
     }
     values.update(updates)
@@ -94,18 +94,9 @@ def test_vertex_plan_requires_digest_image_project_account_and_separate_buckets(
                 release_uri="gs://same-bucket/release",
             )
         )
-    with pytest.raises(ValueError, match="numeric"):
-        module.build_plan(
-            _inputs(
-                module,
-                hf_secret_resource=(
-                    "projects/your-gcp-project/secrets/bookforge-hf-read/versions/latest"
-                ),
-            )
-        )
 
 
-def test_vertex_plan_binds_hashes_secret_and_distinct_lifecycles() -> None:
+def test_vertex_plan_binds_staged_hashes_and_forces_offline_model_access() -> None:
     module = _load_job_plan()
     plan = module.build_plan(_inputs(module))
     serialized = json.dumps(plan)
@@ -116,7 +107,16 @@ def test_vertex_plan_binds_hashes_secret_and_distinct_lifecycles() -> None:
     assert "c" * 64 in serialized
     assert "e" * 64 in serialized
     assert "f" * 64 in serialized
-    assert "projects/your-gcp-project/secrets/bookforge-hf-read/versions/1" in serialized
+    assert "2" * 64 in serialized
+    assert "hf-secret" not in serialized.casefold()
+    assert "secretmanager" not in serialized.casefold()
+    environment = plan["custom_job"]["jobSpec"]["workerPoolSpecs"][0]["containerSpec"]["env"]
+    environment_map = {row["name"]: row["value"] for row in environment}
+    assert {
+        "HF_HUB_OFFLINE": "1",
+        "HF_DATASETS_OFFLINE": "1",
+        "TRANSFORMERS_OFFLINE": "1",
+    }.items() <= environment_map.items()
     assert scratch["lifecycle"]["rule"][0]["condition"]["age"] == 7
     assert release == {"lifecycle": {"rule": []}}
 
@@ -132,6 +132,14 @@ def test_worker_publishes_generation_guarded_completion_last() -> None:
     assert "package_training_release(" in worker
     assert 'runtime_lock="/opt/bookforge/runtime.lock.json"' in worker
     assert '"portable_package": package_evidence' in worker
+    assert "secretmanager" not in worker
+    assert "access_secret_version" not in worker
+    assert '("HF_TOKEN", "HUGGING_FACE_HUB_TOKEN")' in worker
+    assert "environment.pop(name, None)" in worker
+    assert 'environment["HF_HUB_OFFLINE"] = "1"' in worker
+    assert "verify_base_orbax(" in worker
+    assert "expected_step=0" in worker
+    assert 'role="base-maxtext"' in worker
     assert "disableRetries" in (JAX_ROOT / "job_plan.py").read_text()
     assert submitter.index("_create_intent(state_directory, plan)") < submitter.index(
         "urllib.request.Request("
@@ -139,7 +147,7 @@ def test_worker_publishes_generation_guarded_completion_last() -> None:
     assert '"retry_allowed": False' in submitter
     assert '"status": "rejected-pre-billable"' in submitter
     assert '"custom_job_created": False' in submitter
-    assert '"fallback_allowed": rejection.fallback_allowed' in submitter
+    assert "rejection.fallback_allowed and rejection.job_absence_verified" in submitter
 
 
 def test_input_staging_manifest_binds_every_checkpoint_and_tokenizer_byte(
@@ -155,8 +163,25 @@ def test_input_staging_manifest_binds_every_checkpoint_and_tokenizer_byte(
     tokenizer = tmp_path / "tokenizer"
     checkpoint.mkdir()
     tokenizer.mkdir()
-    (checkpoint / "weights.bin").write_bytes(b"weights")
+    leaf = checkpoint / "run/checkpoints/0/items"
+    leaf.mkdir(parents=True)
+    (leaf / "weights.bin").write_bytes(b"weights")
     (tokenizer / "tokenizer.model").write_bytes(b"tokens")
+    from training.jax_fidelity.integrity import artifact_manifest, canonical_json_bytes
+    from training.jax_fidelity.orbax_receipt import orbax_leaf_receipt
+
+    files["checkpoint.json"].write_bytes(canonical_json_bytes(artifact_manifest(leaf)))
+    checkpoint_receipt = tmp_path / "checkpoint.receipt.json"
+    checkpoint_receipt.write_bytes(
+        canonical_json_bytes(
+            orbax_leaf_receipt(
+                checkpoint,
+                leaf,
+                expected_step=0,
+                role="base-maxtext",
+            )
+        )
+    )
 
     document, sources = stage.build_input_manifest(
         run_id="bookforge-jax-smoke-20260901",
@@ -165,6 +190,7 @@ def test_input_staging_manifest_binds_every_checkpoint_and_tokenizer_byte(
         prepared_train=files["train.jsonl"],
         checkpoint=checkpoint,
         checkpoint_manifest=files["checkpoint.json"],
+        checkpoint_receipt=checkpoint_receipt,
         tokenizer=tokenizer,
         tokenizer_manifest=files["tokenizer.json"],
     )
@@ -175,11 +201,117 @@ def test_input_staging_manifest_binds_every_checkpoint_and_tokenizer_byte(
         "dataset/manifest.json",
         "prepared/train.jsonl",
         "checkpoint.manifest.json",
+        "checkpoint.receipt.json",
         "tokenizer.manifest.json",
-        "checkpoint/weights.bin",
+        "checkpoint/run/checkpoints/0/items/weights.bin",
         "tokenizer/tokenizer.model",
     }
     assert "inputs.manifest.json" not in sources
+    assert document["base_orbax"] == {
+        "role": "base-maxtext",
+        "expected_step": 0,
+        "relative_path": "run/checkpoints/0/items",
+        "receipt_sha256": stage.sha256_file(checkpoint_receipt),
+        "manifest_sha256": stage.sha256_file(files["checkpoint.json"]),
+        "content_sha256": artifact_manifest(leaf)["content_sha256"],
+    }
+
+
+def test_full_training_staging_rejects_missing_or_wrong_base_orbax_receipt(
+    tmp_path: Path,
+) -> None:
+    stage = _load("bookforge_jax_stage_inputs_orbax_gate", JAX_ROOT / "stage_inputs.py")
+    config = tmp_path / "config.json"
+    dataset = tmp_path / "dataset.json"
+    prepared = tmp_path / "train.jsonl"
+    tokenizer_manifest = tmp_path / "tokenizer.manifest.json"
+    for path in (config, dataset, prepared, tokenizer_manifest):
+        path.write_text("{}\n", encoding="utf-8")
+    checkpoint = tmp_path / "checkpoint"
+    leaf = checkpoint / "run/checkpoints/0/items"
+    leaf.mkdir(parents=True)
+    (leaf / "weights").write_bytes(b"base")
+    tokenizer = tmp_path / "tokenizer"
+    tokenizer.mkdir()
+    (tokenizer / "tokenizer.json").write_text("{}\n", encoding="utf-8")
+    from training.jax_fidelity.integrity import artifact_manifest, canonical_json_bytes
+    from training.jax_fidelity.orbax_receipt import orbax_leaf_receipt
+
+    checkpoint_manifest = tmp_path / "checkpoint.manifest.json"
+    checkpoint_manifest.write_bytes(canonical_json_bytes(artifact_manifest(leaf)))
+    arguments = {
+        "run_id": "bookforge-jax-train-20260901",
+        "config": config,
+        "dataset_manifest": dataset,
+        "prepared_train": prepared,
+        "checkpoint": checkpoint,
+        "checkpoint_manifest": checkpoint_manifest,
+        "tokenizer": tokenizer,
+        "tokenizer_manifest": tokenizer_manifest,
+    }
+    with pytest.raises(ValueError, match="requires a base Orbax receipt"):
+        stage.build_input_manifest(**arguments, checkpoint_receipt=None)
+
+    receipt = tmp_path / "checkpoint.receipt.json"
+    receipt.write_bytes(
+        canonical_json_bytes(
+            orbax_leaf_receipt(
+                checkpoint,
+                leaf,
+                expected_step=0,
+                role="wrong-base",
+            )
+        )
+    )
+    with pytest.raises(ValueError, match="identity changed"):
+        stage.build_input_manifest(**arguments, checkpoint_receipt=receipt)
+
+
+def test_vertex_base_orbax_gate_rejects_manifest_tampering(tmp_path: Path) -> None:
+    worker = _load("bookforge_vertex_orbax_gate", JAX_ROOT / "vertex_entrypoint.py")
+    from training.jax_fidelity.integrity import artifact_manifest, canonical_json_bytes
+    from training.jax_fidelity.orbax_receipt import orbax_leaf_receipt
+
+    checkpoint = tmp_path / "checkpoint"
+    leaf = checkpoint / "run/checkpoints/0/items"
+    leaf.mkdir(parents=True)
+    (leaf / "weights").write_bytes(b"base")
+    manifest = artifact_manifest(leaf)
+    receipt = orbax_leaf_receipt(
+        checkpoint,
+        leaf,
+        expected_step=0,
+        role="base-maxtext",
+    )
+    manifest_path = tmp_path / "checkpoint.manifest.json"
+    receipt_path = tmp_path / "checkpoint.receipt.json"
+    manifest_path.write_bytes(canonical_json_bytes(manifest))
+    receipt_path.write_bytes(canonical_json_bytes(receipt))
+    input_manifest = {
+        "base_orbax": {
+            "role": "base-maxtext",
+            "expected_step": 0,
+            "relative_path": receipt["relative_path"],
+            "receipt_sha256": worker._sha256(receipt_path),
+            "manifest_sha256": worker._sha256(manifest_path),
+            "content_sha256": manifest["content_sha256"],
+        }
+    }
+    selected = worker.verify_base_orbax(
+        tmp_path,
+        input_manifest=input_manifest,
+        expected_manifest_sha256=worker._sha256(manifest_path),
+        expected_receipt_sha256=worker._sha256(receipt_path),
+    )
+    assert selected == leaf.resolve()
+    (leaf / "weights").write_bytes(b"tampered")
+    with pytest.raises(ValueError, match="does not match"):
+        worker.verify_base_orbax(
+            tmp_path,
+            input_manifest=input_manifest,
+            expected_manifest_sha256=worker._sha256(manifest_path),
+            expected_receipt_sha256=worker._sha256(receipt_path),
+        )
 
 
 def test_modal_staging_uploads_manifest_last_without_force(
@@ -188,21 +320,46 @@ def test_modal_staging_uploads_manifest_last_without_force(
     sys.path.insert(0, str(JAX_ROOT))
     stage = _load("bookforge_modal_stage_inputs", JAX_ROOT / "stage_modal_inputs.py")
     run_id = "bookforge-jax-smoke-20260901"
-    source = tmp_path / "config.json"
-    source.write_text("{}\n")
-    manifest = {
-        "schema_version": "1.0",
-        "producer": "bookforge-gcp-jax-input-stager",
-        "run_id": run_id,
-        "status": "complete",
-        "files": [
-            {
-                "path": "config.json",
-                "bytes": source.stat().st_size,
-                "sha256": stage.hashlib.sha256(source.read_bytes()).hexdigest(),
-            }
-        ],
-    }
+    config = tmp_path / "config.json"
+    dataset = tmp_path / "dataset.json"
+    prepared = tmp_path / "train.jsonl"
+    tokenizer_manifest = tmp_path / "tokenizer.manifest.json"
+    for path in (config, dataset, prepared, tokenizer_manifest):
+        path.write_text("{}\n", encoding="utf-8")
+    checkpoint = tmp_path / "checkpoint"
+    leaf = checkpoint / "run/checkpoints/0/items"
+    leaf.mkdir(parents=True)
+    (leaf / "weights").write_bytes(b"base")
+    tokenizer = tmp_path / "tokenizer"
+    tokenizer.mkdir()
+    (tokenizer / "tokenizer.json").write_text("{}\n", encoding="utf-8")
+    from training.jax_fidelity.integrity import artifact_manifest, canonical_json_bytes
+    from training.jax_fidelity.orbax_receipt import orbax_leaf_receipt
+
+    checkpoint_manifest = tmp_path / "checkpoint.manifest.json"
+    checkpoint_manifest.write_bytes(canonical_json_bytes(artifact_manifest(leaf)))
+    checkpoint_receipt = tmp_path / "checkpoint.receipt.json"
+    checkpoint_receipt.write_bytes(
+        canonical_json_bytes(
+            orbax_leaf_receipt(
+                checkpoint,
+                leaf,
+                expected_step=0,
+                role="base-maxtext",
+            )
+        )
+    )
+    manifest, sources = stage.build_input_manifest(
+        run_id=run_id,
+        config=config,
+        dataset_manifest=dataset,
+        prepared_train=prepared,
+        checkpoint=checkpoint,
+        checkpoint_manifest=checkpoint_manifest,
+        checkpoint_receipt=checkpoint_receipt,
+        tokenizer=tokenizer,
+        tokenizer_manifest=tokenizer_manifest,
+    )
     manifest_bytes = stage.canonical_bytes(manifest)
     manifest_sha = stage.hashlib.sha256(manifest_bytes).hexdigest()
     monkeypatch.setenv(stage.APPROVAL_ENVIRONMENT, stage.approval_token(run_id, manifest_sha))
@@ -223,7 +380,7 @@ def test_modal_staging_uploads_manifest_last_without_force(
     receipt = stage.stage_inputs(
         run_id=run_id,
         manifest=manifest,
-        sources={"config.json": source},
+        sources=sources,
         runner=runner,
     )
 
@@ -231,6 +388,16 @@ def test_modal_staging_uploads_manifest_last_without_force(
     assert puts[-1][-1] == f"/{run_id}/inputs.manifest.json"
     assert all("--force" not in command for command in puts)
     assert receipt["manifest_uploaded_last"] is True
+
+    tampered = dict(manifest)
+    tampered["base_orbax"] = {**manifest["base_orbax"], "role": "unverified"}
+    with pytest.raises(ValueError, match="base Orbax binding changed"):
+        stage.stage_inputs(
+            run_id=run_id,
+            manifest=tampered,
+            sources=sources,
+            runner=runner,
+        )
 
 
 def _load(name: str, path: Path):
@@ -250,7 +417,7 @@ def test_cloud_role_and_documentation_exclude_broad_access() -> None:
 
     assert "storage.objects.create" in role
     assert "storage.objects.get" in role
-    assert "secretmanager.versions.access" in role
+    assert "secretmanager" not in role
     assert "owner" not in role
     assert "editor" not in role
     assert "aiplatform.customjobs.create" in launcher
@@ -393,11 +560,32 @@ def _private_bucket(*, lifecycle: bool) -> dict[str, object]:
     return document
 
 
+def test_read_only_cloud_preflight_never_queries_secret_manager() -> None:
+    sys.path.insert(0, str(JAX_ROOT))
+    module = _load("bookforge_jax_cloud_preflight_commands", JAX_ROOT / "cloud_preflight.py")
+    calls: list[list[str]] = []
+
+    def runner(command: list[str], **_kwargs: object):
+        calls.append(command)
+        return module.subprocess.CompletedProcess(command, 0, stdout="[]", stderr="")
+
+    snapshots = module.collect_snapshots(
+        run_id="bookforge-jax-smoke-20260901",
+        scratch_bucket="bookforge-jax-scratch",
+        release_bucket="bookforge-jax-release",
+        quota_id="tpu-v6e",
+        runner=runner,
+    )
+
+    assert "secret" not in snapshots
+    assert "secretmanager.googleapis.com" not in module.REQUIRED_SERVICES
+    assert all("secrets" not in command and "secretmanager" not in command for command in calls)
+
+
 def test_read_only_cloud_preflight_requires_every_admission_fact() -> None:
     sys.path.insert(0, str(JAX_ROOT))
     module = _load("bookforge_jax_cloud_preflight", JAX_ROOT / "cloud_preflight.py")
     run_id = "bookforge-jax-smoke-20260901"
-    secret = "projects/your-gcp-project/secrets/bookforge-hf-read/versions/3"
     snapshots = {
         "configuration": {
             "core": {"account": "operator@example.com", "project": "your-gcp-project"}
@@ -410,7 +598,6 @@ def test_read_only_cloud_preflight_requires_every_admission_fact() -> None:
         "jobs": [],
         "scratch_bucket": _private_bucket(lifecycle=True),
         "release_bucket": _private_bucket(lifecycle=False),
-        "secret": {"name": secret, "state": "ENABLED"},
         "quota": {
             "dimensionsInfos": [
                 {"applicableLocations": ["us-east1"], "details": {"value": 1}}
@@ -428,7 +615,6 @@ def test_read_only_cloud_preflight_requires_every_admission_fact() -> None:
     report = module.evaluate(
         snapshots,
         run_id=run_id,
-        secret_version=secret,
         credits_attestation=credits,
         spec_sha256="a" * 64,
         input_bindings_sha256="b" * 64,
@@ -436,15 +622,94 @@ def test_read_only_cloud_preflight_requires_every_admission_fact() -> None:
 
     assert report["ready"] is True
     snapshots["billing"] = {"billingEnabled": False}
-    with pytest.raises(module.AdmissionRejected, match="billing_enabled"):
-        module.evaluate(
-            snapshots,
-            run_id=run_id,
-            secret_version=secret,
-            credits_attestation=credits,
-            spec_sha256="a" * 64,
-            input_bindings_sha256="b" * 64,
-        )
+    rejected = module.evaluate(
+        snapshots,
+        run_id=run_id,
+        credits_attestation=credits,
+        spec_sha256="a" * 64,
+        input_bindings_sha256="b" * 64,
+    )
+    assert rejected["ready"] is False
+    assert "billing_enabled" in rejected["failed_checks"]
+
+
+def test_failed_read_only_admission_creates_modal_fallback_evidence(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    sys.path.insert(0, str(JAX_ROOT))
+    planner = _load("job_plan", JAX_ROOT / "job_plan.py")
+    submitter = _load("bookforge_jax_rejected_submitter", JAX_ROOT / "submit_vertex_job.py")
+    plan = planner.build_plan(_inputs(planner))
+    plan_path = tmp_path / "plan.json"
+    plan_path.write_text(json.dumps(plan))
+    evidence = {
+        "schema_version": "1.0",
+        "mode": "read-only-preflight",
+        "project": planner.PROJECT_ID,
+        "region": planner.REGION,
+        "run_id": plan["run_id"],
+        "spec_sha256": plan["spec_sha256"],
+        "input_bindings_sha256": plan["input_bindings_sha256"],
+        "checked_at": datetime.now(UTC).isoformat(),
+        "checks": {"billing_enabled": False},
+        "ready": False,
+        "failed_checks": ["billing_enabled"],
+        "remote_mutation": False,
+    }
+    evidence_path = tmp_path / "admission.json"
+    evidence_path.write_text(json.dumps(evidence))
+    state = tmp_path / "state"
+    monkeypatch.setattr(submitter, "_preflight", lambda _plan: None)
+
+    with pytest.raises(submitter.PreflightRejected, match="billing_enabled"):
+        submitter.submit(plan_path, state, evidence_path)
+
+    rejection = json.loads(
+        (state / f"{plan['run_id']}.preflight-rejection.json").read_text()
+    )
+    assert rejection["status"] == "rejected-pre-billable"
+    assert rejection["fallback_allowed"] is True
+    assert rejection["submission_intent_created"] is False
+    assert rejection["custom_job_created"] is False
+    assert rejection["job_absence_verified"] is True
+
+
+def test_stale_or_job_present_admission_never_authorizes_fallback(tmp_path: Path) -> None:
+    sys.path.insert(0, str(JAX_ROOT))
+    planner = _load("job_plan", JAX_ROOT / "job_plan.py")
+    submitter = _load("bookforge_jax_ineligible_fallback", JAX_ROOT / "submit_vertex_job.py")
+    plan = planner.build_plan(_inputs(planner))
+    evidence = {
+        "schema_version": "1.0",
+        "mode": "read-only-preflight",
+        "project": planner.PROJECT_ID,
+        "region": planner.REGION,
+        "run_id": plan["run_id"],
+        "spec_sha256": plan["spec_sha256"],
+        "input_bindings_sha256": plan["input_bindings_sha256"],
+        "checked_at": datetime.now(UTC).isoformat(),
+        "checks": {"run_id_absent": False},
+        "ready": False,
+        "failed_checks": ["run_id_absent"],
+        "remote_mutation": False,
+    }
+    path = tmp_path / "admission.json"
+    path.write_text(json.dumps(evidence))
+
+    with pytest.raises(submitter.PreflightRejected) as job_present:
+        submitter._validated_admission_evidence(path, plan)
+    assert job_present.value.fallback_allowed is False
+    assert job_present.value.job_absence_verified is False
+
+    evidence["checks"] = {"run_id_absent": True}
+    evidence["ready"] = True
+    evidence["failed_checks"] = []
+    evidence["checked_at"] = "2000-01-01T00:00:00+00:00"
+    path.write_text(json.dumps(evidence))
+    with pytest.raises(submitter.PreflightRejected) as stale:
+        submitter._validated_admission_evidence(path, plan)
+    assert stale.value.fallback_allowed is False
+    assert stale.value.job_absence_verified is False
 
 
 def _portable_release(source: Path, run_id: str) -> tuple[dict[str, bytes], str]:

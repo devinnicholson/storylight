@@ -118,9 +118,10 @@ def build_logit_check_command(
     *,
     maxtext_checkpoint: Path | str,
     hf_checkpoint: Path | str,
+    adapter_checkpoint: Path | str | None = None,
 ) -> list[str]:
     production = config.production
-    return [
+    command = [
         "python3",
         "-m",
         "tests.utils.forward_pass_logit_checker",
@@ -130,13 +131,20 @@ def build_logit_check_command(
         f"model_name={production['maxtext_model_name']}",
         f"use_multimodal={_bool(production['use_multimodal'])}",
         f"scan_layers={_bool(production['scan_layers'])}",
-        "per_device_batch_size=1",
-        "dtype=float32",
-        "attention=dot_product",
-        f"--max_kl_div={config.conversion['max_kl_divergence']}",
-        "--run_hf_model=true",
-        f"--hf_model_path={Path(hf_checkpoint)}",
     ]
+    if adapter_checkpoint is not None:
+        command.append(f"lora.lora_restore_path={Path(adapter_checkpoint)}")
+    command.extend(
+        [
+            "per_device_batch_size=1",
+            "dtype=float32",
+            "attention=dot_product",
+            f"--max_kl_div={config.conversion['max_kl_divergence']}",
+            "--run_hf_model=true",
+            f"--hf_model_path={Path(hf_checkpoint)}",
+        ]
+    )
+    return command
 
 
 def shell_join(command: Sequence[str]) -> str:

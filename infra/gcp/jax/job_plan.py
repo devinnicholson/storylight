@@ -20,9 +20,6 @@ REPLICAS = 1
 _DIGEST_IMAGE = re.compile(r"^[a-z0-9][a-z0-9./_:-]*@sha256:[0-9a-f]{64}$")
 _SHA256 = re.compile(r"^[0-9a-f]{64}$")
 _RUN_ID = re.compile(r"^[a-z][a-z0-9-]{7,62}$")
-_SECRET_VERSION = re.compile(
-    rf"^projects/{PROJECT_ID}/secrets/[a-zA-Z0-9_-]+/versions/[1-9][0-9]*$"
-)
 
 
 @dataclass(frozen=True, slots=True)
@@ -34,11 +31,11 @@ class JobInputs:
     prepared_train_sha256: str
     input_manifest_sha256: str
     base_checkpoint_manifest_sha256: str
+    base_checkpoint_receipt_sha256: str
     tokenizer_manifest_sha256: str
     service_account: str
     scratch_uri: str
     release_uri: str
-    hf_secret_resource: str
     smoke: bool
 
     def validate(self) -> None:
@@ -56,6 +53,8 @@ class JobInputs:
             raise ValueError("input_manifest_sha256 must be a lowercase SHA-256")
         if not _SHA256.fullmatch(self.base_checkpoint_manifest_sha256):
             raise ValueError("base checkpoint manifest must be a lowercase SHA-256")
+        if not _SHA256.fullmatch(self.base_checkpoint_receipt_sha256):
+            raise ValueError("base checkpoint receipt must be a lowercase SHA-256")
         if not _SHA256.fullmatch(self.tokenizer_manifest_sha256):
             raise ValueError("tokenizer manifest must be a lowercase SHA-256")
         expected_account_suffix = f"@{PROJECT_ID}.iam.gserviceaccount.com"
@@ -67,10 +66,6 @@ class JobInputs:
         release_bucket = self.release_uri.removeprefix("gs://").split("/", 1)[0]
         if scratch_bucket == release_bucket:
             raise ValueError("scratch and release buckets must be separate")
-        if _SECRET_VERSION.fullmatch(self.hf_secret_resource) is None:
-            raise ValueError(
-                "Hugging Face token must use a numeric Secret Manager version in the project"
-            )
 
 
 def build_custom_job(inputs: JobInputs) -> dict[str, object]:
@@ -96,10 +91,10 @@ def build_custom_job(inputs: JobInputs) -> dict[str, object]:
         inputs.input_manifest_sha256,
         "--base-checkpoint-manifest-sha256",
         inputs.base_checkpoint_manifest_sha256,
+        "--base-checkpoint-receipt-sha256",
+        inputs.base_checkpoint_receipt_sha256,
         "--tokenizer-manifest-sha256",
         inputs.tokenizer_manifest_sha256,
-        "--hf-secret-resource",
-        inputs.hf_secret_resource,
     ]
     if inputs.smoke:
         arguments.append("--smoke")
@@ -120,6 +115,9 @@ def build_custom_job(inputs: JobInputs) -> dict[str, object]:
                         "env": [
                             {"name": "JAX_PLATFORMS", "value": "tpu"},
                             {"name": "JAX_COMPILATION_CACHE_DIR", "value": "/tmp/jax-cache"},
+                            {"name": "HF_HUB_OFFLINE", "value": "1"},
+                            {"name": "HF_DATASETS_OFFLINE", "value": "1"},
+                            {"name": "TRANSFORMERS_OFFLINE", "value": "1"},
                             {"name": "BOOKFORGE_PAID_ATTEMPT", "value": "1"},
                         ],
                     },
@@ -158,6 +156,7 @@ def build_plan(inputs: JobInputs) -> dict[str, object]:
         "prepared_train_sha256": inputs.prepared_train_sha256,
         "input_manifest_sha256": inputs.input_manifest_sha256,
         "base_checkpoint_manifest_sha256": inputs.base_checkpoint_manifest_sha256,
+        "base_checkpoint_receipt_sha256": inputs.base_checkpoint_receipt_sha256,
         "tokenizer_manifest_sha256": inputs.tokenizer_manifest_sha256,
     }
     input_bindings_sha256 = hashlib.sha256(
@@ -207,11 +206,11 @@ def _parser() -> argparse.ArgumentParser:
     parser.add_argument("--prepared-train-sha256", required=True)
     parser.add_argument("--input-manifest-sha256", required=True)
     parser.add_argument("--base-checkpoint-manifest-sha256", required=True)
+    parser.add_argument("--base-checkpoint-receipt-sha256", required=True)
     parser.add_argument("--tokenizer-manifest-sha256", required=True)
     parser.add_argument("--service-account", required=True)
     parser.add_argument("--scratch-uri", required=True)
     parser.add_argument("--release-uri", required=True)
-    parser.add_argument("--hf-secret-resource", required=True)
     parser.add_argument("--smoke", action="store_true")
     parser.add_argument("--output", type=Path)
     return parser
@@ -228,11 +227,11 @@ def main() -> None:
             prepared_train_sha256=args.prepared_train_sha256,
             input_manifest_sha256=args.input_manifest_sha256,
             base_checkpoint_manifest_sha256=args.base_checkpoint_manifest_sha256,
+            base_checkpoint_receipt_sha256=args.base_checkpoint_receipt_sha256,
             tokenizer_manifest_sha256=args.tokenizer_manifest_sha256,
             service_account=args.service_account,
             scratch_uri=args.scratch_uri,
             release_uri=args.release_uri,
-            hf_secret_resource=args.hf_secret_resource,
             smoke=args.smoke,
         )
     )

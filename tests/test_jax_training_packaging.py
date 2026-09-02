@@ -318,7 +318,7 @@ def test_container_and_direct_dependencies_are_immutable() -> None:
     assert "flax==0.12.8" in lock
     assert "optax==0.2.6" in lock
     assert "orbax-checkpoint==0.12.2" in lock
-    assert "google-cloud-secret-manager==2.30.0" in lock
+    assert "google-cloud-secret-manager" not in lock
     assert "google-cloud-storage==3.13.1" in lock
     assert "@538fe7a3f3376d94cf3f04e77741aa6d7e8efa45" in lock
     assert "maxtext[cuda12,tpu-post-train]" in lock

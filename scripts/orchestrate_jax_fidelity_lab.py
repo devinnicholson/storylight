@@ -51,6 +51,7 @@ from training.jax_fidelity.integrity import (
     canonical_sha256,
     verify_artifact_manifest,
 )
+from training.jax_fidelity.orbax_receipt import verify_orbax_leaf_receipt
 from training.jax_fidelity.release import (
     candidate_id_for_checkpoint,
     candidate_id_from_lineage,
@@ -140,10 +141,14 @@ def _parser() -> argparse.ArgumentParser:
     )
     _add_record_paths(training)
     training.add_argument("--config", type=Path, required=True)
-    training.add_argument("--base-snapshot-completion", type=Path, required=True)
+    training.add_argument("--base-checkpoint-root", type=Path, required=True)
+    training.add_argument("--base-checkpoint-receipt", type=Path, required=True)
+    training.add_argument("--base-checkpoint-receipt-sha256", required=True)
     training.add_argument("--base-checkpoint-manifest", type=Path, required=True)
+    training.add_argument("--base-checkpoint-manifest-sha256", required=True)
     training.add_argument("--tokenizer-manifest", type=Path, required=True)
     training.add_argument("--remote-completion", type=Path, required=True)
+    training.add_argument("--remote-completion-sha256", required=True)
     training.add_argument("--training-run", type=Path, required=True)
     training.add_argument("--training-completion", type=Path, required=True)
     training.add_argument("--adapter", type=Path, required=True)
@@ -912,8 +917,8 @@ def _record_training(arguments: argparse.Namespace) -> None:
     config = load_config(arguments.config)
     if config.sha256 != run.config_sha256:
         raise ValueError("training configuration differs from the campaign")
-    snapshot, snapshot_sha = _source_json(
-        arguments.base_snapshot_completion, "base snapshot completion"
+    base_receipt, base_receipt_sha = _source_json(
+        arguments.base_checkpoint_receipt, "base checkpoint receipt"
     )
     base_manifest, base_manifest_sha = _source_json(
         arguments.base_checkpoint_manifest, "base checkpoint manifest"
@@ -921,20 +926,24 @@ def _record_training(arguments: argparse.Namespace) -> None:
     tokenizer_manifest, tokenizer_manifest_sha = _source_json(
         arguments.tokenizer_manifest, "tokenizer manifest"
     )
-    if (
-        snapshot.get("schema_version") != "1.0"
-        or snapshot.get("status") != "succeeded"
-        or snapshot.get("config_sha256") != run.config_sha256
-        or snapshot.get("model_id") != config.production["model_id"]
-        or snapshot.get("model_revision") != config.production["model_revision"]
-        or snapshot.get("resolved_revision") != config.production["model_revision"]
-        or snapshot.get("snapshot_manifest_sha256") != base_manifest_sha
-        or snapshot.get("tokenizer_manifest_sha256") != tokenizer_manifest_sha
-        or snapshot.get("snapshot_content_sha256") != base_manifest.get("content_sha256")
-        or snapshot.get("tokenizer_content_sha256")
-        != tokenizer_manifest.get("content_sha256")
-    ):
-        raise ValueError("training base snapshot is not the pinned Hugging Face revision")
+    if base_receipt_sha != arguments.base_checkpoint_receipt_sha256:
+        raise ValueError("base checkpoint receipt differs from its trusted SHA-256")
+    if base_manifest_sha != arguments.base_checkpoint_manifest_sha256:
+        raise ValueError("base checkpoint manifest differs from its trusted SHA-256")
+    selected_base = verify_orbax_leaf_receipt(
+        arguments.base_checkpoint_root,
+        base_receipt,
+        expected_step=0,
+        role="base-maxtext",
+    )
+    if base_receipt.get("artifact_manifest") != base_manifest:
+        raise ValueError("base checkpoint manifest differs from the step-0 Orbax receipt")
+    verify_artifact_manifest(selected_base, base_manifest)
+    base_content_sha = base_manifest.get("content_sha256")
+    if not isinstance(base_content_sha, str) or re.fullmatch(
+        r"[a-f0-9]{64}", base_content_sha
+    ) is None:
+        raise ValueError("base checkpoint has no valid content SHA-256")
     training_id = stable_run_id(
         stage="lora-train",
         config_sha256=run.config_sha256,
@@ -981,7 +990,7 @@ def _record_training(arguments: argparse.Namespace) -> None:
         training_inputs.get(name) != binding
         for name, binding in expected_checkpoint_inputs.items()
     ):
-        raise ValueError("training run did not use the pinned snapshot manifests")
+        raise ValueError("training run did not use the verified Orbax base and tokenizer")
 
     adapter_manifest, adapter_manifest_sha = _source_json(
         arguments.adapter_manifest, "adapter manifest"
@@ -1027,6 +1036,8 @@ def _record_training(arguments: argparse.Namespace) -> None:
     verify_artifact_manifest(package_root / "adapter", adapter_manifest)
 
     remote, remote_sha = _source_json(arguments.remote_completion, "remote completion")
+    if remote_sha != arguments.remote_completion_sha256:
+        raise ValueError("remote completion differs from its trusted SHA-256")
     portable = remote.get("portable_package")
     source_completion_sha = training_completion.get("source_training_completion_sha256")
     _verify_remote_package_files(package_root, remote.get("files"))
@@ -1039,6 +1050,7 @@ def _record_training(arguments: argparse.Namespace) -> None:
         or remote.get("config_sha256") != run.config_sha256
         or remote.get("dataset_manifest_sha256") != run.dataset_manifest_sha256
         or remote.get("base_checkpoint_manifest_sha256") != base_manifest_sha
+        or remote.get("base_checkpoint_receipt_sha256") != base_receipt_sha
         or remote.get("tokenizer_manifest_sha256") != tokenizer_manifest_sha
         or not isinstance(source_completion_sha, str)
         or re.fullmatch(r"[a-f0-9]{64}", source_completion_sha) is None
@@ -1068,8 +1080,9 @@ def _record_training(arguments: argparse.Namespace) -> None:
             "adapter_manifest": adapter_manifest_sha,
             "package_manifest": package_manifest_sha,
             "runtime_lock": runtime_lock_sha,
-            "base_snapshot_completion": snapshot_sha,
+            "base_checkpoint_receipt": base_receipt_sha,
             "base_checkpoint_manifest": base_manifest_sha,
+            "base_checkpoint_content": base_content_sha,
             "tokenizer_manifest": tokenizer_manifest_sha,
         },
     )
@@ -1125,6 +1138,7 @@ def _record_candidate_evaluation(arguments: argparse.Namespace) -> None:
     validate_development_eligibility(
         evaluation,
         candidate_id=candidate_id,
+        config_sha256=run.config_sha256,
         dataset_manifest_sha256=run.dataset_manifest_sha256,
         training_run_id=run.training_run_id,
     )

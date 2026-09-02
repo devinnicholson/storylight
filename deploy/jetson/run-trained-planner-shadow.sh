@@ -188,7 +188,10 @@ fi
 "$EVIDENCE_HELPER" validate-hidden \
   --report "$hidden_report" \
   --expected-sha256 "$hidden_report_sha256" \
-  --candidate-revision "$model_revision" >/dev/null
+  --candidate-id "$candidate_id" \
+  --candidate-revision "$model_revision" \
+  --candidate-manifest-sha256 "$manifest_sha256" \
+  --dataset-manifest-sha256 "$dataset_manifest_sha256" >/dev/null
 
 if [[ -z "$runtime_output" ]]; then
   timestamp="$(date -u +%Y%m%dT%H%M%SZ)"

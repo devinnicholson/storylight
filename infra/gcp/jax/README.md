@@ -8,10 +8,15 @@ The listed gross ceiling is a planning estimate and admission guard, not a provi
 spend cap. The job timeout and no-retry policy bound resource duration; the final provider billing
 report must still be reconciled before another paid attempt.
 
-`stage_inputs.py` creates the only accepted input population. It binds the configuration,
-dataset manifest, prepared examples, base-checkpoint manifest and bytes, and tokenizer manifest
-and bytes under one run-specific checksum, then uploads `inputs.manifest.json` last with
-generation-match zero. The worker rejects undeclared objects, missing objects, or any hash drift.
+`stage_inputs.py` creates the only accepted full-training input population. Before upload it
+requires a checksum-bound MaxText Orbax receipt with role `base-maxtext` and step `0`, resolves
+that exact `items` leaf, and verifies the leaf against its artifact manifest. It binds the
+receipt, manifest, configuration, dataset manifest, prepared examples, base-checkpoint bytes,
+and tokenizer manifest and bytes under one run-specific checksum, then uploads
+`inputs.manifest.json` last with generation-match zero. The Vertex and Modal workers independently
+repeat the receipt identity, leaf-manifest, and byte checks before passing the resolved leaf to
+MaxText; an unverified checkpoint root is never used for paid full training. The worker rejects
+undeclared objects, missing objects, or any hash drift.
 `stage_modal_inputs.py` builds the identical population for the fixed private Modal input volume.
 It first rejects an existing run prefix, uploads each declared input without `--force`, uploads the
 manifest last, and reads that manifest back before recording success.
@@ -30,11 +35,12 @@ after billing reconciliation, so a completed Vertex attempt can never authorize 
 spend for the same run ID.
 
 The worker service account receives the custom role in `least-privilege-role.yaml` only on the
-two private buckets and the one read-only Hugging Face secret. The launcher receives Vertex job
-creation plus `iam.serviceAccounts.actAs`; neither account receives Owner or Editor. Buckets must
-enable uniform access and public-access prevention. Scratch expires after seven days; releases
-have no automatic deletion.
-The worker receives a numeric Secret Manager version such as `/versions/1`; `latest` is rejected.
+two private buckets. The launcher receives Vertex job creation plus
+`iam.serviceAccounts.actAs`; neither account receives Owner, Editor, or Secret Manager access.
+Buckets must enable uniform access and public-access prevention. Scratch expires after seven days;
+releases have no automatic deletion. The worker receives only checksum-bound checkpoint and
+tokenizer bytes and sets the Hugging Face, Transformers, and Datasets runtimes to offline mode;
+no model token or secret resource is accepted by the job contract.
 
 `vertex_entrypoint.py` uploads artifacts with generation-match zero and writes `completion.json`
 last. The release includes portable training run/completion evidence, the adapter manifest and
@@ -62,11 +68,11 @@ or receipt state. An ambiguous build therefore remains terminal instead of silen
 
 `cloud_preflight.py` performs only `gcloud` describe/list operations. It checks the active account
 and project, billing link, required APIs, absent CustomJob ID, private bucket policies and distinct
-lifecycle behavior, an enabled numeric secret version, and regional TPU quota. Promotional credit
-balances are not exposed by a reliable public quota API, so the script requires a run-bound manual
-attestation instead of pretending billing enabled means credits exist. The resulting evidence binds
-the exact job-spec and input-binding hashes. `submit_vertex_job.py` refuses evidence older than 15
-minutes or evidence for any other plan before it records submission intent.
+lifecycle behavior, and regional TPU quota. Promotional credit balances are not exposed by a
+reliable public quota API, so the script requires a run-bound manual attestation instead of
+pretending billing enabled means credits exist. The resulting evidence binds the exact job-spec
+and input-binding hashes. `submit_vertex_job.py` refuses evidence older than 15 minutes or evidence
+for any other plan before it records submission intent.
 Every recorded submission intent globally blocks another Vertex attempt until
 `reconcile_vertex_attempt.py` validates a terminal/not-found job observation and internally
 consistent final provider-cost evidence. The reconciliation is write-once and never authorizes a

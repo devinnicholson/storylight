@@ -18,9 +18,16 @@ from job_plan import PROJECT_ID, REGION, approval_token
 class PreflightRejected(RuntimeError):
     """The job was rejected before any billable resource was requested."""
 
-    def __init__(self, message: str, *, fallback_allowed: bool = True) -> None:
+    def __init__(
+        self,
+        message: str,
+        *,
+        fallback_allowed: bool = True,
+        job_absence_verified: bool = False,
+    ) -> None:
         super().__init__(message)
         self.fallback_allowed = fallback_allowed
+        self.job_absence_verified = job_absence_verified
 
 
 def _gcloud(*arguments: str) -> str:
@@ -85,14 +92,6 @@ def _validated_plan(path: Path) -> dict[str, object]:
 
 
 def _preflight(plan: dict[str, object]) -> None:
-    active_project = _gcloud("config", "get-value", "project")
-    if active_project != PROJECT_ID:
-        raise PreflightRejected(f"active gcloud project must be {PROJECT_ID}")
-    billing = json.loads(
-        _gcloud("beta", "billing", "projects", "describe", PROJECT_ID, "--format=json")
-    )
-    if not isinstance(billing, dict) or billing.get("billingEnabled") is not True:
-        raise PreflightRejected("project billing is not enabled")
     run_id = str(plan["run_id"])
     jobs = json.loads(
         _gcloud(
@@ -110,17 +109,38 @@ def _preflight(plan: dict[str, object]) -> None:
             "run ID already exists or the job lookup was not empty",
             fallback_allowed=False,
         )
+    active_project = _gcloud("config", "get-value", "project")
+    if active_project != PROJECT_ID:
+        raise PreflightRejected(
+            f"active gcloud project must be {PROJECT_ID}",
+            job_absence_verified=True,
+        )
+    billing = json.loads(
+        _gcloud("beta", "billing", "projects", "describe", PROJECT_ID, "--format=json")
+    )
+    if not isinstance(billing, dict) or billing.get("billingEnabled") is not True:
+        raise PreflightRejected(
+            "project billing is not enabled", job_absence_verified=True
+        )
     credits_verification = os.environ.get("BOOKFORGE_GCP_CREDITS_VERIFIED")
     if credits_verification != f"VERIFIED:{run_id}":
-        raise PreflightRejected("promotional-credit verification is missing for this run")
+        raise PreflightRejected(
+            "promotional-credit verification is missing for this run",
+            job_absence_verified=True,
+        )
     if os.environ.get("BOOKFORGE_GCP_JAX_APPROVAL") != plan["approval_token"]:
-        raise PreflightRejected("exact one-purpose GCP approval token is missing")
+        raise PreflightRejected(
+            "exact one-purpose GCP approval token is missing",
+            job_absence_verified=True,
+        )
 
 
 def _validated_admission_evidence(path: Path, plan: dict[str, object]) -> dict[str, object]:
     evidence = json.loads(path.read_text(encoding="utf-8"))
     if not isinstance(evidence, dict):
-        raise PreflightRejected("cloud admission evidence must be an object")
+        raise PreflightRejected(
+            "cloud admission evidence must be an object", fallback_allowed=False
+        )
     exact = {
         "mode": "read-only-preflight",
         "project": PROJECT_ID,
@@ -128,28 +148,68 @@ def _validated_admission_evidence(path: Path, plan: dict[str, object]) -> dict[s
         "run_id": plan["run_id"],
         "spec_sha256": plan["spec_sha256"],
         "input_bindings_sha256": plan["input_bindings_sha256"],
-        "ready": True,
         "remote_mutation": False,
     }
     if any(evidence.get(key) != value for key, value in exact.items()):
-        raise PreflightRejected("cloud admission evidence is stale or belongs to another plan")
+        raise PreflightRejected(
+            "cloud admission evidence is stale or belongs to another plan",
+            fallback_allowed=False,
+        )
     checks = evidence.get("checks")
     if (
         not isinstance(checks, dict)
         or not checks
-        or not all(value is True for value in checks.values())
+        or any(type(value) is not bool for value in checks.values())
     ):
-        raise PreflightRejected("cloud admission evidence contains a failed check")
+        raise PreflightRejected(
+            "cloud admission evidence has malformed checks", fallback_allowed=False
+        )
+    failed_checks = sorted(name for name, passed in checks.items() if not passed)
+    if (
+        evidence.get("ready") is not (not failed_checks)
+        or evidence.get("failed_checks") != failed_checks
+    ):
+        raise PreflightRejected(
+            "cloud admission evidence has inconsistent check results",
+            fallback_allowed=False,
+        )
     try:
         checked_at = dt.datetime.fromisoformat(str(evidence["checked_at"]))
     except (KeyError, ValueError) as error:
-        raise PreflightRejected("cloud admission evidence has no valid timestamp") from error
+        raise PreflightRejected(
+            "cloud admission evidence has no valid timestamp", fallback_allowed=False
+        ) from error
     if checked_at.tzinfo is None:
-        raise PreflightRejected("cloud admission evidence timestamp has no timezone")
+        raise PreflightRejected(
+            "cloud admission evidence timestamp has no timezone", fallback_allowed=False
+        )
     age = dt.datetime.now(dt.UTC) - checked_at
     if age < dt.timedelta(0) or age > dt.timedelta(minutes=15):
-        raise PreflightRejected("cloud admission evidence is older than 15 minutes")
+        raise PreflightRejected(
+            "cloud admission evidence is older than 15 minutes", fallback_allowed=False
+        )
+    if "run_id_absent" in failed_checks:
+        raise PreflightRejected(
+            "read-only admission did not prove the run ID absent",
+            fallback_allowed=False,
+        )
     return evidence
+
+
+def _require_ready_admission(evidence: dict[str, object]) -> None:
+    if evidence["ready"] is True:
+        return
+    failed_checks = evidence["failed_checks"]
+    if not isinstance(failed_checks, list):
+        raise PreflightRejected(
+            "cloud admission evidence has malformed failed checks",
+            fallback_allowed=False,
+            job_absence_verified=True,
+        )
+    raise PreflightRejected(
+        "read-only cloud admission failed: " + ", ".join(failed_checks),
+        job_absence_verified=True,
+    )
 
 
 def _write_once_json(path: Path, document: dict[str, object]) -> None:
@@ -177,8 +237,11 @@ def _record_preflight_rejection(
             "input_bindings_sha256": plan["input_bindings_sha256"],
             "status": "rejected-pre-billable",
             "submission_intent_created": False,
-            "custom_job_created": False,
-            "fallback_allowed": rejection.fallback_allowed,
+            "custom_job_created": False if rejection.job_absence_verified else None,
+            "job_absence_verified": rejection.job_absence_verified,
+            "fallback_allowed": (
+                rejection.fallback_allowed and rejection.job_absence_verified
+            ),
             "reason": str(rejection),
         },
     )
@@ -263,8 +326,9 @@ def submit(
     plan = _validated_plan(plan_path)
     _assert_no_unreconciled_paid_attempt(state_directory)
     try:
-        _validated_admission_evidence(admission_evidence_path, plan)
+        admission = _validated_admission_evidence(admission_evidence_path, plan)
         _preflight(plan)
+        _require_ready_admission(admission)
     except PreflightRejected as error:
         _record_preflight_rejection(state_directory, plan, error)
         raise

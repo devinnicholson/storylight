@@ -79,7 +79,9 @@ def _json_object(path: Path) -> dict[str, object]:
     return value
 
 
-def _verify_input_population(root: Path, *, run_id: str, expected_manifest_sha256: str) -> None:
+def verify_input_population(
+    root: Path, *, run_id: str, expected_manifest_sha256: str
+) -> dict[str, object]:
     manifest_path = root / "inputs.manifest.json"
     if _sha256(manifest_path) != expected_manifest_sha256:
         raise RuntimeError("staged input manifest hash changed")
@@ -113,6 +115,47 @@ def _verify_input_population(root: Path, *, run_id: str, expected_manifest_sha25
     }
     if actual != expected:
         raise RuntimeError("staged input prefix contains undeclared or missing files")
+    return document
+
+
+def verify_base_orbax(
+    root: Path,
+    *,
+    input_manifest: dict[str, object],
+    expected_manifest_sha256: str,
+    expected_receipt_sha256: str,
+) -> Path:
+    """Resolve the only approved step-0 base leaf beneath a staged population."""
+
+    from training.jax_fidelity.integrity import verify_artifact_manifest
+    from training.jax_fidelity.orbax_receipt import verify_orbax_leaf_receipt
+
+    checkpoint = root / "checkpoint"
+    manifest_path = root / "checkpoint.manifest.json"
+    receipt_path = root / "checkpoint.receipt.json"
+    if _sha256(manifest_path) != expected_manifest_sha256:
+        raise RuntimeError("base Orbax manifest checksum changed")
+    if _sha256(receipt_path) != expected_receipt_sha256:
+        raise RuntimeError("base Orbax receipt checksum changed")
+    manifest = _json_object(manifest_path)
+    receipt = _json_object(receipt_path)
+    leaf = verify_orbax_leaf_receipt(
+        checkpoint,
+        receipt,
+        expected_step=0,
+        role="base-maxtext",
+    )
+    verify_artifact_manifest(leaf, manifest)
+    if input_manifest.get("base_orbax") != {
+        "role": "base-maxtext",
+        "expected_step": 0,
+        "relative_path": receipt.get("relative_path"),
+        "receipt_sha256": expected_receipt_sha256,
+        "manifest_sha256": expected_manifest_sha256,
+        "content_sha256": manifest.get("content_sha256"),
+    }:
+        raise RuntimeError("staged input manifest base Orbax binding changed")
+    return leaf
 
 
 def _upload_release(
@@ -167,14 +210,14 @@ def _parser() -> argparse.ArgumentParser:
     parser.add_argument("--prepared-train-sha256", required=True)
     parser.add_argument("--input-manifest-sha256", required=True)
     parser.add_argument("--base-checkpoint-manifest-sha256", required=True)
+    parser.add_argument("--base-checkpoint-receipt-sha256", required=True)
     parser.add_argument("--tokenizer-manifest-sha256", required=True)
-    parser.add_argument("--hf-secret-resource", required=True)
     parser.add_argument("--smoke", action="store_true")
     return parser
 
 
 def main() -> None:
-    from google.cloud import secretmanager, storage
+    from google.cloud import storage
 
     args = _parser().parse_args()
     root = Path("/tmp/bookforge-jax")
@@ -187,7 +230,7 @@ def main() -> None:
 
     storage_client = storage.Client(project="your-gcp-project")
     _download_prefix(storage_client, args.input_prefix, inputs)
-    _verify_input_population(
+    input_manifest = verify_input_population(
         inputs,
         run_id=args.run_id,
         expected_manifest_sha256=args.input_manifest_sha256,
@@ -195,9 +238,7 @@ def main() -> None:
     config = inputs / "config.json"
     manifest = inputs / "dataset" / "manifest.json"
     prepared = inputs / "prepared" / "train.jsonl"
-    base_checkpoint = inputs / "checkpoint"
     tokenizer_checkpoint = inputs / "tokenizer"
-    checkpoint_manifest_path = inputs / "checkpoint.manifest.json"
     tokenizer_manifest_path = inputs / "tokenizer.manifest.json"
     if _sha256(config) != args.config_sha256:
         raise RuntimeError("staged config hash changed")
@@ -206,17 +247,8 @@ def main() -> None:
     prepared_sha256 = _sha256(prepared)
     if prepared_sha256 != args.prepared_train_sha256:
         raise RuntimeError("staged prepared training data hash changed")
-    if _sha256(checkpoint_manifest_path) != args.base_checkpoint_manifest_sha256:
-        raise RuntimeError("base checkpoint manifest hash changed")
     if _sha256(tokenizer_manifest_path) != args.tokenizer_manifest_sha256:
         raise RuntimeError("tokenizer manifest hash changed")
-
-    secret = secretmanager.SecretManagerServiceClient().access_secret_version(
-        request={"name": args.hf_secret_resource}
-    )
-    token = secret.payload.data.decode("utf-8").strip()
-    if not token:
-        raise RuntimeError("Hugging Face read token is empty")
 
     from training.jax_fidelity.configuration import load_config
     from training.jax_fidelity.integrity import validate_dataset_manifest, verify_artifact_manifest
@@ -230,7 +262,12 @@ def main() -> None:
         expected_manifest_sha256=args.dataset_manifest_sha256,
         required_split_records=experiment.dataset["required_split_records"],
     )
-    verify_artifact_manifest(base_checkpoint, _json_object(checkpoint_manifest_path))
+    base_checkpoint = verify_base_orbax(
+        inputs,
+        input_manifest=input_manifest,
+        expected_manifest_sha256=args.base_checkpoint_manifest_sha256,
+        expected_receipt_sha256=args.base_checkpoint_receipt_sha256,
+    )
     verify_artifact_manifest(tokenizer_checkpoint, _json_object(tokenizer_manifest_path))
     stage = "lora-smoke" if args.smoke else "lora-train"
     training_run_id = stable_run_id(
@@ -239,7 +276,11 @@ def main() -> None:
         dataset_manifest_sha256=validated.manifest_sha256,
     )
     environment = os.environ.copy()
-    environment["HF_TOKEN"] = token
+    for name in ("HF_TOKEN", "HUGGING_FACE_HUB_TOKEN"):
+        environment.pop(name, None)
+    environment["HF_HUB_OFFLINE"] = "1"
+    environment["HF_DATASETS_OFFLINE"] = "1"
+    environment["TRANSFORMERS_OFFLINE"] = "1"
     environment["BOOKFORGE_JAX_EXECUTION_APPROVAL"] = approval_token(
         stage=stage,
         run_id=training_run_id,
@@ -304,6 +345,7 @@ def main() -> None:
         "dataset_manifest_sha256": args.dataset_manifest_sha256,
         "input_manifest_sha256": args.input_manifest_sha256,
         "base_checkpoint_manifest_sha256": args.base_checkpoint_manifest_sha256,
+        "base_checkpoint_receipt_sha256": args.base_checkpoint_receipt_sha256,
         "tokenizer_manifest_sha256": args.tokenizer_manifest_sha256,
         "source_training_completion_sha256": _sha256(training_completion_path),
         "portable_package": package_evidence,

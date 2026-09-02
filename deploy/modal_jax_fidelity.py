@@ -12,6 +12,12 @@ from pathlib import Path
 
 import modal
 
+from deploy.modal_jax_image import (
+    JAX_IMAGE,
+    offline_environment,
+    pinned_image_uri,
+)
+
 REPOSITORY_ROOT = Path(__file__).parents[1]
 CONFIG_PATH = REPOSITORY_ROOT / "experiments/jax-fidelity-lab/config.json"
 PLAN_PATH = REPOSITORY_ROOT / "experiments/jax-fidelity-lab/modal-plan-2026-09.json"
@@ -24,10 +30,13 @@ WORKSPACE_HARD_STOP_USD = 28.0
 LEDGER_PATH = REPOSITORY_ROOT / "experiments/jax-fidelity-lab/modal-ledger-2026-09.json"
 _SHA256 = re.compile(r"^[0-9a-f]{64}$")
 _RUN_ID = re.compile(r"^[a-z][a-z0-9-]{7,62}$")
-_DIGEST_IMAGE = re.compile(r"^.+@sha256:[0-9a-f]{64}$")
 _INPUT_ROOT = Path("/inputs")
 _SCRATCH_ROOT = Path("/scratch")
 _RELEASE_ROOT = Path("/releases")
+
+
+def _pinned_image_uri() -> str:
+    return pinned_image_uri()
 
 
 def _json_object(path: Path) -> dict[str, object]:
@@ -35,27 +44,6 @@ def _json_object(path: Path) -> dict[str, object]:
     if not isinstance(value, dict):
         raise ValueError(f"{path} must contain a JSON object")
     return value
-
-
-def _pinned_image_uri() -> str:
-    config = _json_object(CONFIG_PATH)
-    versions = config.get("versions")
-    if not isinstance(versions, dict):
-        raise ValueError("JAX config has no versions object")
-    image = versions.get("container_image")
-    if not isinstance(image, str) or not _DIGEST_IMAGE.fullmatch(image):
-        raise ValueError("JAX container image must be pinned by sha256 digest")
-    return image
-
-
-def _maxtext_revision() -> str:
-    versions = _json_object(CONFIG_PATH).get("versions")
-    if not isinstance(versions, dict):
-        raise ValueError("JAX config has no versions object")
-    revision = versions.get("maxtext_revision")
-    if not isinstance(revision, str) or re.fullmatch(r"[0-9a-f]{40}", revision) is None:
-        raise ValueError("MaxText revision must be a full Git commit")
-    return revision
 
 
 def _sha256(path: Path) -> str:
@@ -78,6 +66,7 @@ def _approval_token(
     prepared_sha256: str,
     input_manifest_sha256: str,
     checkpoint_manifest_sha256: str,
+    checkpoint_receipt_sha256: str,
     tokenizer_manifest_sha256: str,
     gcp_rejection_sha256: str,
     *,
@@ -87,19 +76,21 @@ def _approval_token(
     return (
         f"APPROVE_MODAL_JAX_RUN:{run_id}:{config_sha256}:{dataset_sha256}:"
         f"{prepared_sha256}:{input_manifest_sha256}:{checkpoint_manifest_sha256}:"
-        f"{tokenizer_manifest_sha256}:{gcp_rejection_sha256}:{mode}"
+        f"{checkpoint_receipt_sha256}:{tokenizer_manifest_sha256}:"
+        f"{gcp_rejection_sha256}:{mode}"
     )
 
 
 def _validate_request(
     request: dict[str, object],
-) -> tuple[str, str, str, str, str, str, str, str, bool]:
+) -> tuple[str, str, str, str, str, str, str, str, str, bool]:
     run_id = request.get("run_id")
     config_sha = request.get("config_sha256")
     dataset_sha = request.get("dataset_manifest_sha256")
     prepared_sha = request.get("prepared_train_sha256")
     input_manifest_sha = request.get("input_manifest_sha256")
     checkpoint_manifest_sha = request.get("base_checkpoint_manifest_sha256")
+    checkpoint_receipt_sha = request.get("base_checkpoint_receipt_sha256")
     tokenizer_manifest_sha = request.get("tokenizer_manifest_sha256")
     rejection_sha = request.get("gcp_rejection_sha256")
     smoke = request.get("smoke")
@@ -113,6 +104,7 @@ def _validate_request(
         ("prepared_train_sha256", prepared_sha),
         ("input_manifest_sha256", input_manifest_sha),
         ("base_checkpoint_manifest_sha256", checkpoint_manifest_sha),
+        ("base_checkpoint_receipt_sha256", checkpoint_receipt_sha),
         ("tokenizer_manifest_sha256", tokenizer_manifest_sha),
         ("gcp_rejection_sha256", rejection_sha),
     ):
@@ -129,6 +121,7 @@ def _validate_request(
         or rejection.get("status") != "rejected-pre-billable"
         or rejection.get("submission_intent_created") is not False
         or rejection.get("custom_job_created") is not False
+        or rejection.get("job_absence_verified") is not True
         or rejection.get("fallback_allowed") is not True
         or not isinstance(rejection.get("spec_sha256"), str)
         or _SHA256.fullmatch(str(rejection["spec_sha256"])) is None
@@ -142,6 +135,7 @@ def _validate_request(
         "prepared_train_sha256": prepared_sha,
         "input_manifest_sha256": input_manifest_sha,
         "base_checkpoint_manifest_sha256": checkpoint_manifest_sha,
+        "base_checkpoint_receipt_sha256": checkpoint_receipt_sha,
         "tokenizer_manifest_sha256": tokenizer_manifest_sha,
     }
     if rejection.get("input_bindings") != expected_bindings or rejection.get(
@@ -158,6 +152,7 @@ def _validate_request(
         prepared_sha,
         input_manifest_sha,
         checkpoint_manifest_sha,
+        checkpoint_receipt_sha,
         tokenizer_manifest_sha,
         rejection_sha,
         smoke=smoke,
@@ -171,34 +166,12 @@ def _validate_request(
         prepared_sha,
         input_manifest_sha,
         checkpoint_manifest_sha,
+        checkpoint_receipt_sha,
         tokenizer_manifest_sha,
         rejection_sha,
         smoke,
     )
 
-
-jax_image = (
-    modal.Image.from_registry(_pinned_image_uri())
-    .apt_install("git", "ca-certificates")
-    .run_commands(
-        "git clone https://github.com/AI-Hypercomputer/maxtext.git /opt/MaxText",
-        f"git -C /opt/MaxText checkout {_maxtext_revision()}",
-        f'test "$(git -C /opt/MaxText rev-parse HEAD)" = "{_maxtext_revision()}"',
-        'test -z "$(git -C /opt/MaxText status --porcelain)"',
-    )
-    .pip_install_from_requirements(REPOSITORY_ROOT / "training/jax_fidelity/requirements.lock")
-    .pip_install("jax[cuda12]==0.11.0")
-    .add_local_dir(REPOSITORY_ROOT / "training", "/opt/bookforge/training", copy=True)
-    .add_local_dir(REPOSITORY_ROOT / "src", "/opt/bookforge/src", copy=True)
-    .add_local_dir(REPOSITORY_ROOT / "infra/gcp/jax", "/opt/bookforge/infra/gcp/jax", copy=True)
-    .run_commands(
-        "PYTHONPATH=/opt/bookforge:/opt/bookforge/src python -m "
-        "training.jax_fidelity.verify_runtime --write-lock /opt/bookforge/runtime.lock.json",
-        "PYTHONPATH=/opt/bookforge:/opt/bookforge/src python -m "
-        "training.jax_fidelity.verify_runtime --lock /opt/bookforge/runtime.lock.json",
-    )
-    .env({"PYTHONPATH": "/opt/bookforge:/opt/bookforge/src", "JAX_PLATFORMS": "cuda"})
-)
 
 input_volume = modal.Volume.from_name("bookforge-jax-fidelity-inputs", create_if_missing=False)
 scratch_volume = modal.Volume.from_name("bookforge-jax-fidelity-scratch", create_if_missing=False)
@@ -207,7 +180,7 @@ app = modal.App(APP_NAME)
 
 
 @app.function(
-    image=jax_image,
+    image=JAX_IMAGE,
     gpu=GPU,
     cpu=8,
     memory=65_536,
@@ -219,7 +192,6 @@ app = modal.App(APP_NAME)
         str(_SCRATCH_ROOT): scratch_volume,
         str(_RELEASE_ROOT): release_volume,
     },
-    secrets=[modal.Secret.from_name("bookforge-hf-read")],
 )
 def run_finite(request: dict[str, object]) -> dict[str, object]:
     """Run once; a reused or partially completed run ID fails closed."""
@@ -231,6 +203,7 @@ def run_finite(request: dict[str, object]) -> dict[str, object]:
         prepared_sha,
         input_manifest_sha,
         checkpoint_manifest_sha,
+        checkpoint_receipt_sha,
         tokenizer_manifest_sha,
         _,
         smoke,
@@ -244,13 +217,11 @@ def run_finite(request: dict[str, object]) -> dict[str, object]:
     config = input_directory / "config.json"
     manifest = input_directory / "dataset" / "manifest.json"
     prepared = input_directory / "prepared" / "train.jsonl"
-    checkpoint = input_directory / "checkpoint"
     tokenizer_checkpoint = input_directory / "tokenizer"
-    checkpoint_manifest_path = input_directory / "checkpoint.manifest.json"
     tokenizer_manifest_path = input_directory / "tokenizer.manifest.json"
-    from infra.gcp.jax.vertex_entrypoint import _verify_input_population
+    from infra.gcp.jax.vertex_entrypoint import verify_base_orbax, verify_input_population
 
-    _verify_input_population(
+    input_manifest = verify_input_population(
         input_directory,
         run_id=run_id,
         expected_manifest_sha256=input_manifest_sha,
@@ -259,8 +230,6 @@ def run_finite(request: dict[str, object]) -> dict[str, object]:
         raise RuntimeError("Modal input contract hash changed")
     if _sha256(prepared) != prepared_sha:
         raise RuntimeError("prepared training data hash changed")
-    if _sha256(checkpoint_manifest_path) != checkpoint_manifest_sha:
-        raise RuntimeError("base checkpoint manifest hash changed")
     if _sha256(tokenizer_manifest_path) != tokenizer_manifest_sha:
         raise RuntimeError("tokenizer manifest hash changed")
 
@@ -279,7 +248,12 @@ def run_finite(request: dict[str, object]) -> dict[str, object]:
         expected_manifest_sha256=dataset_sha,
         required_split_records=experiment.dataset["required_split_records"],
     )
-    verify_artifact_manifest(checkpoint, _json_object(checkpoint_manifest_path))
+    checkpoint = verify_base_orbax(
+        input_directory,
+        input_manifest=input_manifest,
+        expected_manifest_sha256=checkpoint_manifest_sha,
+        expected_receipt_sha256=checkpoint_receipt_sha,
+    )
     verify_artifact_manifest(tokenizer_checkpoint, _json_object(tokenizer_manifest_path))
     stage = "lora-smoke" if smoke else "lora-train"
     training_run_id = stable_run_id(
@@ -287,7 +261,7 @@ def run_finite(request: dict[str, object]) -> dict[str, object]:
         config_sha256=config_sha,
         dataset_manifest_sha256=validated.manifest_sha256,
     )
-    environment = os.environ.copy()
+    environment = offline_environment(os.environ.copy())
     environment["BOOKFORGE_JAX_EXECUTION_APPROVAL"] = approval_token(
         stage=stage,
         run_id=training_run_id,
@@ -362,6 +336,7 @@ def run_finite(request: dict[str, object]) -> dict[str, object]:
         "dataset_manifest_sha256": dataset_sha,
         "input_manifest_sha256": input_manifest_sha,
         "base_checkpoint_manifest_sha256": checkpoint_manifest_sha,
+        "base_checkpoint_receipt_sha256": checkpoint_receipt_sha,
         "tokenizer_manifest_sha256": tokenizer_manifest_sha,
         "source_training_completion_sha256": _sha256(training_completion_path),
         "portable_package": package_evidence,
@@ -397,6 +372,7 @@ def run_cli(
     prepared_train_sha256: str,
     input_manifest_sha256: str,
     base_checkpoint_manifest_sha256: str,
+    base_checkpoint_receipt_sha256: str,
     tokenizer_manifest_sha256: str,
     gcp_rejection_evidence: str,
     approval_token_value: str,
@@ -432,6 +408,7 @@ def run_cli(
         prepared_train_sha256,
         input_manifest_sha256,
         base_checkpoint_manifest_sha256,
+        base_checkpoint_receipt_sha256,
         tokenizer_manifest_sha256,
         rejection_sha256,
         smoke=smoke,
@@ -445,6 +422,7 @@ def run_cli(
         "prepared_train_sha256": prepared_train_sha256,
         "input_manifest_sha256": input_manifest_sha256,
         "base_checkpoint_manifest_sha256": base_checkpoint_manifest_sha256,
+        "base_checkpoint_receipt_sha256": base_checkpoint_receipt_sha256,
         "tokenizer_manifest_sha256": tokenizer_manifest_sha256,
         "gcp_rejection": rejection,
         "gcp_rejection_sha256": rejection_sha256,
@@ -487,12 +465,14 @@ def run_cli(
         )
     if result is None:
         raise RuntimeError("Modal training returned no result")
+    completion_bytes = (json.dumps(result, indent=2, sort_keys=True) + "\n").encode()
     print(
         json.dumps(
             {
                 "authoritative_workspace_total_usd": workspace_total,
                 "full_call_ceiling_usd": ceiling,
                 "full_call_ceiling_provider_enforced": False,
+                "trusted_completion_sha256": hashlib.sha256(completion_bytes).hexdigest(),
                 "result": result,
             },
             indent=2,

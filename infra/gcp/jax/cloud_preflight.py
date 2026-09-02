@@ -6,7 +6,6 @@ from __future__ import annotations
 import argparse
 import datetime as dt
 import json
-import re
 import subprocess
 from collections.abc import Callable
 from pathlib import Path
@@ -16,24 +15,33 @@ from job_plan import MACHINE_TYPE, PROJECT_ID, REGION
 REQUIRED_SERVICES = {
     "aiplatform.googleapis.com",
     "artifactregistry.googleapis.com",
-    "secretmanager.googleapis.com",
     "storage.googleapis.com",
 }
-_SECRET = re.compile(
-    rf"^projects/{PROJECT_ID}/secrets/[A-Za-z0-9_-]+/versions/[1-9][0-9]*$"
-)
 Run = Callable[..., subprocess.CompletedProcess[str]]
-
-
-class AdmissionRejected(RuntimeError):
-    """A read-only prerequisite is missing; no paid request is safe."""
 
 
 def _run_json(runner: Run, *arguments: str) -> object:
     completed = runner(
-        ["gcloud", *arguments], check=True, capture_output=True, text=True, timeout=30
+        ["gcloud", *arguments], check=False, capture_output=True, text=True, timeout=30
     )
-    return json.loads(completed.stdout)
+    if completed.returncode != 0:
+        return {
+            "collection_error": {
+                "command": ["gcloud", *arguments],
+                "returncode": completed.returncode,
+                "stderr": completed.stderr.strip(),
+            }
+        }
+    try:
+        return json.loads(completed.stdout)
+    except json.JSONDecodeError as error:
+        return {
+            "collection_error": {
+                "command": ["gcloud", *arguments],
+                "returncode": completed.returncode,
+                "stderr": f"invalid JSON response: {error.msg}",
+            }
+        }
 
 
 def collect_snapshots(
@@ -41,14 +49,11 @@ def collect_snapshots(
     run_id: str,
     scratch_bucket: str,
     release_bucket: str,
-    secret_version: str,
     quota_id: str,
     runner: Run = subprocess.run,
 ) -> dict[str, object]:
     """Issue only describe/list commands and return their unmodified JSON results."""
 
-    if _SECRET.fullmatch(secret_version) is None:
-        raise ValueError("secret_version must be a numeric version in the Bookforge project")
     commands = {
         "configuration": ("config", "list", "--format=json"),
         "billing": ("beta", "billing", "projects", "describe", PROJECT_ID, "--format=json"),
@@ -81,15 +86,6 @@ def collect_snapshots(
             "describe",
             f"gs://{release_bucket}",
             "--format=json",
-        ),
-        "secret": (
-            "secrets",
-            "versions",
-            "describe",
-            secret_version.rsplit("/", 1)[1],
-            f"--secret={secret_version.split('/secrets/', 1)[1].split('/', 1)[0]}",
-            f"--project={PROJECT_ID}",
-            "--format=json(name,state)",
         ),
         "quota": (
             "beta",
@@ -173,7 +169,6 @@ def evaluate(
     snapshots: dict[str, object],
     *,
     run_id: str,
-    secret_version: str,
     credits_attestation: dict[str, object],
     spec_sha256: str,
     input_bindings_sha256: str,
@@ -203,9 +198,6 @@ def evaluate(
         "release_private_without_expiry": _bucket_is_private(
             snapshots.get("release_bucket"), lifecycle_required=False
         ),
-        "secret_numeric_enabled": isinstance(snapshots.get("secret"), dict)
-        and snapshots["secret"].get("name") == secret_version
-        and snapshots["secret"].get("state") == "ENABLED",
         "regional_tpu_quota": _quota_available(snapshots.get("quota"), minimum=1),
         "credits_manually_verified": _credits_verified(
             credits_attestation, run_id=run_id, billing=snapshots.get("billing")
@@ -227,8 +219,6 @@ def evaluate(
         "failed_checks": failed,
         "remote_mutation": False,
     }
-    if failed:
-        raise AdmissionRejected(json.dumps(report, sort_keys=True))
     return report
 
 
@@ -237,7 +227,6 @@ def main() -> None:
     parser.add_argument("--run-id", required=True)
     parser.add_argument("--scratch-bucket", required=True)
     parser.add_argument("--release-bucket", required=True)
-    parser.add_argument("--secret-version", required=True)
     parser.add_argument("--quota-id", required=True)
     parser.add_argument("--credits-attestation", type=Path, required=True)
     parser.add_argument("--plan", type=Path, required=True)
@@ -250,7 +239,6 @@ def main() -> None:
         run_id=args.run_id,
         scratch_bucket=args.scratch_bucket,
         release_bucket=args.release_bucket,
-        secret_version=args.secret_version,
         quota_id=args.quota_id,
     )
     print(
@@ -258,7 +246,6 @@ def main() -> None:
             evaluate(
                 snapshots,
                 run_id=args.run_id,
-                secret_version=args.secret_version,
                 credits_attestation=credits,
                 spec_sha256=str(plan.get("spec_sha256", "")),
                 input_bindings_sha256=str(plan.get("input_bindings_sha256", "")),

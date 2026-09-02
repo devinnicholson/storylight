@@ -10,6 +10,5 @@ datasets==5.0.1
 huggingface-hub==1.26.0
 safetensors==0.7.0
 transformers==5.12.1
-google-cloud-secret-manager==2.30.0
 google-cloud-storage==3.13.1
 maxtext[cuda12,tpu-post-train] @ git+https://github.com/AI-Hypercomputer/maxtext.git@538fe7a3f3376d94cf3f04e77741aa6d7e8efa45

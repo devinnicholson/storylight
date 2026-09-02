@@ -150,11 +150,18 @@ def validate_hidden_report(
     path: Path,
     *,
     expected_sha256: str,
+    candidate_id: str,
     candidate_revision: str,
+    candidate_manifest_sha256: str,
+    dataset_manifest_sha256: str,
 ) -> dict[str, object]:
     """Validate a checksum-bound aggregate report without accessing hidden records."""
 
     _sha(expected_sha256, label="hidden evaluation report checksum")
+    _sha(candidate_manifest_sha256, label="candidate manifest checksum")
+    _sha(dataset_manifest_sha256, label="dataset manifest checksum")
+    if re.fullmatch(r"[a-z0-9][a-z0-9-]{2,63}", candidate_id) is None:
+        raise ValueError("candidate ID is invalid")
     if not MODEL_REVISION.fullmatch(candidate_revision):
         raise ValueError("candidate revision must be an engine SHA-256 revision")
     if path.is_symlink():
@@ -171,9 +178,31 @@ def validate_hidden_report(
     if actual_sha256 != expected_sha256:
         raise ValueError("hidden evaluation report checksum mismatch")
     document = _load_json(path, label="hidden evaluation report")
-    if set(document) != {"schema_version", "candidate_revision", "privacy", "summary"}:
+    if set(document) != {
+        "schema_version",
+        "split",
+        "candidate_identity",
+        "dataset_manifest_sha256",
+        "custody_receipt_sha256",
+        "privacy",
+        "summary",
+    }:
         raise ValueError("hidden evaluation report has unexpected fields")
-    if document["schema_version"] != "1.0" or document["candidate_revision"] != candidate_revision:
+    identity = document.get("candidate_identity")
+    expected_identity = {
+        "candidate_id": candidate_id,
+        "candidate_manifest_sha256": candidate_manifest_sha256,
+        "engine_sha256": candidate_revision.removeprefix("sha256:"),
+        "model_revision": candidate_revision,
+    }
+    if (
+        document["schema_version"] != "story-fidelity-evaluation-v1"
+        or document.get("split") != "hidden"
+        or document.get("dataset_manifest_sha256") != dataset_manifest_sha256
+        or not isinstance(identity, dict)
+        or identity != expected_identity
+        or SHA256.fullmatch(str(document.get("custody_receipt_sha256"))) is None
+    ):
         raise ValueError("hidden evaluation report identifies another candidate")
     if document["privacy"] != {"passages_recorded": False, "outputs_recorded": False}:
         raise ValueError("hidden evaluation report does not prove aggregate-only retention")
@@ -203,6 +232,9 @@ def validate_hidden_report(
         "report_sha256": actual_sha256,
         "summary_sha256": hashlib.sha256(canonical_summary).hexdigest(),
         "candidate_revision": candidate_revision,
+        "candidate_manifest_sha256": candidate_manifest_sha256,
+        "dataset_manifest_sha256": dataset_manifest_sha256,
+        "custody_receipt_sha256": document["custody_receipt_sha256"],
         "records": 512,
         "pairs": 256,
         "record_ids_sha256": record_ids_sha256,
@@ -542,7 +574,10 @@ def main() -> None:
     hidden = subparsers.add_parser("validate-hidden")
     hidden.add_argument("--report", type=Path, required=True)
     hidden.add_argument("--expected-sha256", required=True)
+    hidden.add_argument("--candidate-id", required=True)
     hidden.add_argument("--candidate-revision", required=True)
+    hidden.add_argument("--candidate-manifest-sha256", required=True)
+    hidden.add_argument("--dataset-manifest-sha256", required=True)
     leg = subparsers.add_parser("make-leg")
     leg.add_argument("--benchmark", type=Path, required=True)
     leg.add_argument("--monitor", type=Path, required=True)
@@ -595,7 +630,10 @@ def main() -> None:
         hidden_binding = validate_hidden_report(
             args.report,
             expected_sha256=args.expected_sha256,
+            candidate_id=args.candidate_id,
             candidate_revision=args.candidate_revision,
+            candidate_manifest_sha256=args.candidate_manifest_sha256,
+            dataset_manifest_sha256=args.dataset_manifest_sha256,
         )
         print(json.dumps(hidden_binding, indent=2, sort_keys=True))
         return
@@ -619,7 +657,10 @@ def main() -> None:
     hidden_binding = validate_hidden_report(
         args.hidden_report,
         expected_sha256=args.hidden_report_sha256,
+        candidate_id=str(candidate_manifest.get("candidate_id")),
         candidate_revision=candidate_revision,
+        candidate_manifest_sha256=args.candidate_manifest_sha256,
+        dataset_manifest_sha256=args.dataset_manifest_sha256,
     )
     accepted_revision = f"sha256:{args.accepted_engine_sha256}"
     expected = (

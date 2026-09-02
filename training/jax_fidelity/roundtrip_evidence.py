@@ -104,6 +104,10 @@ def build_roundtrip_evidence(
         raise RoundtripRecorderError("logit completion has no measured KL divergence")
     if float(divergence) > config.conversion["max_kl_divergence"]:
         raise RoundtripRecorderError("measured KL divergence exceeds the pinned gate")
+    if logit_evidence.get("comparison") != "adapted-maxtext-vs-merged-hf":
+        raise RoundtripRecorderError(
+            "logit evidence does not compare equivalent adapted model states"
+        )
 
     inspection = inspect_hf_roundtrip(
         config,
@@ -125,6 +129,7 @@ def build_roundtrip_evidence(
         )
     }
     checks["forward_kl_divergence"] = float(divergence)
+    checks["logit_comparison"] = "adapted-maxtext-vs-merged-hf"
     document = {
         "schema_version": "1.0",
         "contract": contract_document(config),

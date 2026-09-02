@@ -25,7 +25,7 @@ class PredictionError(RuntimeError):
     """The candidate prediction run violated its immutable input contract."""
 
 
-def _records(path: Path) -> list[FidelityRecord]:
+def load_records(path: Path) -> list[FidelityRecord]:
     rows = [
         FidelityRecord.model_validate_json(line)
         for line in path.read_text(encoding="utf-8").splitlines()
@@ -62,7 +62,7 @@ def _write_once(path: Path, content: bytes, mode: int = 0o400) -> None:
         os.fsync(stream.fileno())
 
 
-def _generate(
+def generate_predictions(
     records: list[FidelityRecord],
     *,
     checkpoint: Path,
@@ -163,7 +163,7 @@ def main() -> None:
     )
     if sha256_file(args.records) != args.records_sha256:
         raise PredictionError("development record SHA-256 changed")
-    records = _records(args.records)
+    records = load_records(args.records)
     checkpoint_manifest = _checkpoint_manifest(
         args.checkpoint,
         args.checkpoint_manifest,
@@ -195,7 +195,7 @@ def main() -> None:
     if not args.execute:
         return
     require_approval(token)
-    predictions = _generate(
+    predictions = generate_predictions(
         records,
         checkpoint=args.checkpoint,
         batch_size=args.batch_size,

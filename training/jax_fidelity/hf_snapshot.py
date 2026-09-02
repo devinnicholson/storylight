@@ -1,4 +1,4 @@
-"""Download the exact gated Gemma revision into one immutable local snapshot."""
+"""Download the exact Gemma revision into one immutable local snapshot."""
 
 from __future__ import annotations
 
@@ -26,7 +26,7 @@ _TOKENIZER_NAMES = {
 
 
 class SnapshotError(RuntimeError):
-    """The gated base-model snapshot did not match the frozen revision."""
+    """The base-model snapshot did not match the frozen revision and access mode."""
 
 
 def _write_once(path: Path, document: dict[str, object]) -> None:
@@ -73,6 +73,11 @@ def main() -> None:
     parser.add_argument("--snapshot-manifest", type=Path, required=True)
     parser.add_argument("--tokenizer-manifest", type=Path, required=True)
     parser.add_argument("--completion", type=Path, required=True)
+    parser.add_argument(
+        "--access-mode",
+        choices=("secret-token", "public-anonymous"),
+        default="secret-token",
+    )
     parser.add_argument("--execute", action="store_true")
     args = parser.parse_args()
     outputs = (
@@ -88,7 +93,9 @@ def main() -> None:
     config = load_config(args.config)
     model_id = config.production["model_id"]
     revision = config.production["model_revision"]
-    binding = hashlib.sha256(f"{model_id}@{revision}".encode()).hexdigest()
+    binding = hashlib.sha256(
+        f"{model_id}@{revision}@{args.access_mode}".encode()
+    ).hexdigest()
     run_id = f"hf-snapshot-{config.sha256[:12]}-{revision[:12]}"
     token = approval_token(
         stage="hf-snapshot",
@@ -101,6 +108,7 @@ def main() -> None:
         "run_id": run_id,
         "model_id": model_id,
         "model_revision": revision,
+        "access_mode": args.access_mode,
         "config_sha256": config.sha256,
         "approval_token": token,
         "network_download": True,
@@ -109,17 +117,23 @@ def main() -> None:
     if not args.execute:
         return
     require_approval(token)
-    hf_token = os.environ.get("HF_TOKEN", "").strip()
-    if not hf_token:
-        raise SnapshotError("HF_TOKEN must be supplied by a secret provider")
+    hf_token: str | bool
+    if args.access_mode == "secret-token":
+        hf_token = os.environ.get("HF_TOKEN", "").strip()
+        if not hf_token:
+            raise SnapshotError("HF_TOKEN must be supplied by a secret provider")
+    else:
+        hf_token = False
     try:
         from huggingface_hub import HfApi, snapshot_download
     except ImportError as error:
-        raise SnapshotError("huggingface_hub is required for the gated snapshot") from error
+        raise SnapshotError("huggingface_hub is required for the snapshot") from error
 
     info = HfApi(token=hf_token).model_info(model_id, revision=revision)
     if info.sha != revision:
         raise SnapshotError("Hugging Face resolved a different model revision")
+    if args.access_mode == "public-anonymous" and (info.private or info.gated):
+        raise SnapshotError("model no longer permits anonymous public access")
     args.snapshot.parent.mkdir(parents=True, exist_ok=True)
     with tempfile.TemporaryDirectory(
         prefix=f".{args.snapshot.name}.partial-",

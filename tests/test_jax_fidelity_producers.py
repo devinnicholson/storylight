@@ -47,6 +47,7 @@ def _completion(
         evidence["direction"] = direction
     if direction == "logit-check":
         evidence["forward_kl_divergence"] = 0.004
+        evidence["comparison"] = "adapted-maxtext-vs-merged-hf"
     if smoke:
         evidence["runtime_lock"] = {"sha256": "f" * 64}
     return _write_json(
@@ -187,6 +188,7 @@ def test_roundtrip_evidence_uses_only_terminal_completion_hashes(
     )
 
     assert evidence["checks"]["forward_kl_divergence"] == pytest.approx(0.004)
+    assert evidence["checks"]["logit_comparison"] == "adapted-maxtext-vs-merged-hf"
     assert evidence["lineage"]["smoke_run_id"] == "lora-smoke-test"
     assert evidence["lineage"]["logit_completion_sha256"] == hashes["logit"]
 
@@ -233,6 +235,52 @@ def test_hf_snapshot_plan_requires_no_token_or_network(tmp_path: Path) -> None:
     assert plan["model_revision"] == load_config(CONFIG).production["model_revision"]
     assert plan["approval_token"].startswith("HF-SNAPSHOT:")
     assert not (tmp_path / "snapshot").exists()
+
+
+def test_hf_snapshot_public_access_mode_is_approval_bound(tmp_path: Path) -> None:
+    common = [
+        sys.executable,
+        "-m",
+        "training.jax_fidelity.hf_snapshot",
+        "--config",
+        str(CONFIG),
+        "--snapshot",
+        str(tmp_path / "snapshot"),
+        "--tokenizer",
+        str(tmp_path / "tokenizer"),
+        "--snapshot-manifest",
+        str(tmp_path / "snapshot.json"),
+        "--tokenizer-manifest",
+        str(tmp_path / "tokenizer.json"),
+        "--completion",
+        str(tmp_path / "completion.json"),
+    ]
+    secret = subprocess.run(
+        common,
+        cwd=ROOT,
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+    public = subprocess.run(
+        [*common, "--access-mode", "public-anonymous"],
+        cwd=ROOT,
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+
+    secret_plan = json.loads(secret.stdout)
+    public_plan = json.loads(public.stdout)
+    assert secret_plan["access_mode"] == "secret-token"
+    assert public_plan["access_mode"] == "public-anonymous"
+    assert public_plan["approval_token"] != secret_plan["approval_token"]
+
+
+def test_modal_training_consumes_staged_checkpoint_without_unused_hf_secret() -> None:
+    source = (ROOT / "deploy/modal_jax_fidelity.py").read_text()
+
+    assert 'modal.Secret.from_name("bookforge-hf-read")' not in source
 
 
 def test_candidate_prediction_plan_validates_all_inputs_without_loading_torch(
