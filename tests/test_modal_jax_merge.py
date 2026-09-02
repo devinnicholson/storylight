@@ -100,6 +100,8 @@ def _training_release(tmp_path: Path) -> tuple[Path, dict[str, object]]:
     (root / "runtime.lock.json").write_text("{}\n", encoding="utf-8")
     package_manifest = artifact_manifest(root)
     _write(root / "package.manifest.json", package_manifest)
+    _write(root / "provider/attempt.json", {"status": "admitted"})
+    _write(root / "provider/gpu-preflight.json", {"devices": 2})
     portable = {
         "adapter_manifest_sha256": sha256_file(root / "adapter.manifest.json"),
         "package_manifest_sha256": sha256_file(root / "package.manifest.json"),

@@ -237,6 +237,8 @@ def _verify_training_release(
         excluded={
             "completion.json",
             "package.manifest.json",
+            "provider/attempt.json",
+            "provider/gpu-preflight.json",
         },
     )
 
