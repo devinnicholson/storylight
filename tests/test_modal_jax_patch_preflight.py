@@ -50,6 +50,8 @@ def test_native_lora_patch_preflight_is_finite_cpu_only_and_real() -> None:
     assert "_tiny_lora_pyconfig" in source
     assert "train_utils.setup_train_loop" in source
     assert "model_name=\"gemma4-26b\"" in source
+    assert 'dtype="bfloat16"' in source
+    assert 'weight_dtype="bfloat16"' in source
     assert "decoder/layers_[0-9]+/self_attention/(query|key|value|out)" in source
     assert "ici_fsdp_parallelism=-1" in source
     assert "ici_data_parallelism=1" in source

@@ -4,6 +4,7 @@ import json
 import sys
 import types
 from pathlib import Path
+from types import SimpleNamespace
 
 import numpy as np
 import pytest
@@ -517,6 +518,17 @@ def test_lora_evidence_rejects_invalid_restored_values(
 
     with pytest.raises(OrbaxReceiptError, match=message):
         _evidence(items, expected_rank=16, expected_pair_count=1)
+
+
+def test_restored_orbax_dtype_accepts_bfloat16_but_not_arbitrary_void() -> None:
+    assert orbax_receipt._is_supported_floating_dtype(np.dtype(np.float32))
+    assert orbax_receipt._is_supported_floating_dtype(
+        SimpleNamespace(kind="V", name="bfloat16")
+    )
+    assert not orbax_receipt._is_supported_floating_dtype(np.dtype(np.int32))
+    assert not orbax_receipt._is_supported_floating_dtype(
+        SimpleNamespace(kind="V", name="opaque")
+    )
 
 
 def test_restored_orbax_paths_preserve_integer_and_string_key_identity() -> None:

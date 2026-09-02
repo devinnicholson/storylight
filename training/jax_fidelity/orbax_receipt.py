@@ -137,6 +137,14 @@ def _flatten_restored_tree(
     return {path: value}
 
 
+def _is_supported_floating_dtype(dtype: object) -> bool:
+    """Recognize NumPy floats and ML-dtypes bfloat16 without importing JAX."""
+
+    kind = getattr(dtype, "kind", None)
+    name = getattr(dtype, "name", None)
+    return kind == "f" or (kind == "V" and name == "bfloat16")
+
+
 def _validate_restored_lora_arrays(
     restored_tree: object,
     expected_write_shapes: Mapping[tuple[str | int, ...], tuple[int, ...]],
@@ -169,16 +177,22 @@ def _validate_restored_lora_arrays(
                 f"path={path!r}, metadata_write={expected_write_shape!r}, "
                 f"restored_global={restored_shape!r}"
             )
-        if dtype is None or getattr(dtype, "kind", None) != "f":
-            raise OrbaxReceiptError(
-                f"restored Orbax LoRA value is not a floating array: path={path!r}"
-            )
         try:
             import numpy as np
 
-            finite = bool(np.isfinite(np.asarray(value)).all())
+            array = np.asarray(value)
         except Exception as error:
             raise OrbaxReceiptError("restored Orbax LoRA array could not be inspected") from error
+        if array.shape != restored_shape or str(array.dtype) != str(dtype):
+            raise OrbaxReceiptError(
+                f"restored Orbax LoRA array metadata changed during inspection: path={path!r}"
+            )
+        if not _is_supported_floating_dtype(array.dtype):
+            raise OrbaxReceiptError(
+                "restored Orbax LoRA value is not a supported floating array: "
+                f"path={path!r}, dtype={array.dtype!s}"
+            )
+        finite = bool(np.isfinite(array).all())
         if not finite:
             raise OrbaxReceiptError(
                 f"restored Orbax LoRA array contains non-finite values: path={path!r}"
