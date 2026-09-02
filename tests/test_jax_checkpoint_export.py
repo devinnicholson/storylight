@@ -228,6 +228,8 @@ def test_conversion_commands_pin_text_only_unscanned_gemma4() -> None:
 
     for command in (to_maxtext, to_hf, logit):
         assert "model_name=gemma4-e2b" in command
+        assert "hardware=gpu" in command
+        assert "skip_jax_distributed_system=true" in command
         assert "scan_layers=false" in command
         assert "use_multimodal=false" in command
     assert "lora.lora_restore_path=/orbax/lora/5/items" in to_hf

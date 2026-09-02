@@ -181,6 +181,9 @@ def test_roundtrip_request_and_modal_function_fail_closed() -> None:
     assert "def hydration_preflight()" in source
     assert '"backend": "modal-cpu-preflight"' in source
     assert "validate_runtime_lock(lock_path)" in source
+    assert "def gpu_configuration_preflight(approval_token_value: str)" in source
+    assert '"skip_jax_distributed_system=true"' in source
+    assert "expected one GPU" in source
     assert "@modal.web_endpoint" not in source
     assert source.index('"hf-to-maxtext"') < source.index('stage="lora-smoke"')
     assert source.index('stage="lora-smoke"') < source.index('"maxtext-to-hf"')

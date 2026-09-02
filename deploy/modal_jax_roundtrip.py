@@ -189,6 +189,66 @@ def hydration_preflight() -> dict[str, object]:
 @app.function(
     image=JAX_IMAGE,
     gpu=GPU,
+    cpu=2,
+    memory=8_192,
+    timeout=300,
+    retries=0,
+    max_containers=1,
+)
+def gpu_configuration_preflight(approval_token_value: str) -> dict[str, object]:
+    """Prove the single-GPU MaxText configuration before checkpoint conversion."""
+
+    from training.jax_fidelity.configuration import load_config
+
+    config_path = Path("/opt/bookforge/experiments/jax-fidelity-lab/config.json")
+    config_sha = _sha256(config_path)
+    expected = f"APPROVE_MODAL_JAX_GPU_PREFLIGHT:{config_sha}"
+    if approval_token_value != expected:
+        raise ValueError("exact Modal JAX GPU preflight approval token is required")
+    experiment = load_config(config_path)
+    script = "\n".join(
+        [
+            "import json, sys",
+            "from maxtext.configs import pyconfig",
+            "config = pyconfig.initialize(sys.argv)",
+            "import jax",
+            "import jax.numpy as jnp",
+            "devices = jax.devices()",
+            "if len(devices) != 1 or devices[0].platform != 'gpu':",
+            "    raise RuntimeError(f'expected one GPU, found {devices!r}')",
+            "value = jax.device_get(jnp.arange(1024, dtype=jnp.bfloat16).sum())",
+            "print(json.dumps({'hardware': config.hardware, 'devices': len(devices), "
+            "'platform': devices[0].platform, 'probe_sum': float(value)}), flush=True)",
+        ]
+    )
+    completed = subprocess.run(
+        [
+            "python3",
+            "-c",
+            script,
+            "/opt/MaxText/src/maxtext/configs/base.yml",
+            f"model_name={experiment.production['maxtext_model_name']}",
+            "hardware=gpu",
+            "skip_jax_distributed_system=true",
+            f"use_multimodal={str(experiment.production['use_multimodal']).lower()}",
+            f"scan_layers={str(experiment.production['scan_layers']).lower()}",
+            "enable_checkpointing=false",
+        ],
+        cwd="/opt/MaxText",
+        env=offline_environment(os.environ),
+        check=True,
+        capture_output=True,
+        text=True,
+        timeout=240,
+    )
+    payload = json.loads(completed.stdout.strip().splitlines()[-1])
+    print(json.dumps(payload, sort_keys=True), flush=True)
+    return {"schema_version": "1.0", "ready": True, **payload}
+
+
+@app.function(
+    image=JAX_IMAGE,
+    gpu=GPU,
     cpu=8,
     memory=65_536,
     timeout=TIMEOUT_SECONDS,

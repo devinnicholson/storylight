@@ -301,6 +301,7 @@ def test_maxtext_command_retains_every_safety_override() -> None:
     assert "src/maxtext/configs/post_train/sft.yml" in command
     assert "dataset_type=hf" in command
     assert "hardware=gpu" in command
+    assert "skip_jax_distributed_system=true" in command
     assert "scan_layers=false" in command
     assert "use_multimodal=false" in command
     assert "sft_train_on_completion_only=True" in command

@@ -15,6 +15,12 @@ def _bool(value: bool) -> str:
     return "true" if value else "false"
 
 
+def _distributed_overrides(hardware: str) -> list[str]:
+    if hardware == "gpu":
+        return ["skip_jax_distributed_system=true"]
+    return []
+
+
 def build_hf_to_maxtext_command(
     config: ExperimentConfig,
     *,
@@ -28,6 +34,8 @@ def build_hf_to_maxtext_command(
         "maxtext.checkpoint_conversion.to_maxtext",
         MAXTEXT_BASE_CONFIG,
         f"model_name={production['maxtext_model_name']}",
+        "hardware=gpu",
+        *_distributed_overrides("gpu"),
         f"base_output_directory={Path(output_directory)}",
         f"use_multimodal={_bool(production['use_multimodal'])}",
         f"scan_layers={_bool(production['scan_layers'])}",
@@ -64,6 +72,7 @@ def build_train_command(
         f"load_parameters_path={Path(maxtext_checkpoint)}",
         f"tokenizer_path={Path(hf_tokenizer_checkpoint)}",
         f"hardware={hardware}",
+        *_distributed_overrides(hardware),
         "dataset_type=hf",
         "hf_path=json",
         f"hf_train_files={Path(prepared_train_jsonl)}",
@@ -102,6 +111,8 @@ def build_maxtext_to_hf_command(
         "maxtext.checkpoint_conversion.to_huggingface",
         MAXTEXT_BASE_CONFIG,
         f"model_name={production['maxtext_model_name']}",
+        "hardware=gpu",
+        *_distributed_overrides("gpu"),
         f"load_parameters_path={Path(base_checkpoint)}",
         f"lora.lora_restore_path={Path(lora_checkpoint)}",
         f"base_output_directory={Path(output_directory)}",
@@ -129,6 +140,8 @@ def build_logit_check_command(
         f"tokenizer_path={Path(hf_checkpoint)}",
         f"load_parameters_path={Path(maxtext_checkpoint)}",
         f"model_name={production['maxtext_model_name']}",
+        "hardware=gpu",
+        *_distributed_overrides("gpu"),
         f"use_multimodal={_bool(production['use_multimodal'])}",
         f"scan_layers={_bool(production['scan_layers'])}",
     ]
