@@ -36,6 +36,14 @@ def maxtext_revision() -> str:
 
 
 MAXTEXT_REVISION = maxtext_revision()
+CUDA_BUILD_REQUIREMENTS = (
+    "setuptools==84.0.0",
+    "pybind11[global]==3.0.2",
+    "jax[cuda12]==0.11.0",
+    "flax==0.12.8",
+    "nvidia-cudnn-frontend==1.28.0",
+    "nvidia-nvtx-cu12==12.9.79",
+)
 JAX_IMAGE = (
     modal.Image.from_registry(pinned_image_uri())
     .apt_install("git", "ca-certificates", "build-essential")
@@ -45,8 +53,16 @@ JAX_IMAGE = (
         f'test "$(git -C /opt/MaxText rev-parse HEAD)" = "{MAXTEXT_REVISION}"',
         'test -z "$(git -C /opt/MaxText status --porcelain)"',
     )
+    # Transformer Engine 2.18's isolated build requirements omit the NVTX
+    # wheel even though its compiler searches nvidia/nvtx/include. Seed the
+    # exact CUDA build environment, then compile that extension against it.
+    .pip_install(*CUDA_BUILD_REQUIREMENTS)
+    .pip_install(
+        "transformer-engine-jax==2.18.0",
+        extra_options="--no-build-isolation",
+        env={"NVTE_BUILD_USE_NVIDIA_WHEELS": "1"},
+    )
     .pip_install_from_requirements(REPOSITORY_ROOT / "training/jax_fidelity/requirements.lock")
-    .pip_install("jax[cuda12]==0.11.0")
     .add_local_dir(REPOSITORY_ROOT / "training", "/opt/bookforge/training", copy=True)
     .add_local_dir(REPOSITORY_ROOT / "src", "/opt/bookforge/src", copy=True)
     .add_local_dir(REPOSITORY_ROOT / "infra/gcp/jax", "/opt/bookforge/infra/gcp/jax", copy=True)

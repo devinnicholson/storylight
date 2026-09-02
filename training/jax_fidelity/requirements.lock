@@ -3,8 +3,10 @@
 # inference-relevant stack before a run can start.
 --extra-index-url https://download.pytorch.org/whl/cpu
 
-jax==0.11.0
+jax[cuda12]==0.11.0
 jaxlib==0.11.0
+jax-cuda12-pjrt==0.11.0; sys_platform == "linux"
+jax-cuda12-plugin==0.11.0; sys_platform == "linux"
 flax==0.12.8
 optax==0.2.8
 orbax-checkpoint==0.12.2
@@ -14,4 +16,6 @@ safetensors==0.8.0
 transformers==5.13.0
 torch==2.10.0+cpu
 google-cloud-storage==3.13.1
+nvidia-nvtx-cu12==12.9.79; sys_platform == "linux"
+transformer-engine-jax==2.18.0; sys_platform == "linux"
 maxtext[cuda12] @ git+https://github.com/AI-Hypercomputer/maxtext.git@538fe7a3f3376d94cf3f04e77741aa6d7e8efa45

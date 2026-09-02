@@ -17,6 +17,15 @@ RUN git clone --filter=blob:none --no-checkout https://github.com/AI-Hypercomput
 
 WORKDIR /opt/bookforge
 COPY training/jax_fidelity/requirements.lock /tmp/bookforge-jax-requirements.lock
+RUN python -m pip install \
+        'setuptools==84.0.0' \
+        'pybind11[global]==3.0.2' \
+        'jax[cuda12]==0.11.0' \
+        'flax==0.12.8' \
+        'nvidia-cudnn-frontend==1.28.0' \
+        'nvidia-nvtx-cu12==12.9.79'
+RUN NVTE_BUILD_USE_NVIDIA_WHEELS=1 python -m pip install \
+        --no-build-isolation 'transformer-engine-jax==2.18.0'
 RUN python -m pip install --requirement /tmp/bookforge-jax-requirements.lock
 
 COPY . /opt/bookforge

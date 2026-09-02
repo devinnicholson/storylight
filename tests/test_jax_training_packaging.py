@@ -314,7 +314,9 @@ def test_container_and_direct_dependencies_are_immutable() -> None:
     lock = (ROOT / "training/jax_fidelity/requirements.lock").read_text()
 
     assert "FROM python:3.12.11-slim-bookworm@sha256:" in dockerfile
-    assert "jax==0.11.0" in lock
+    assert "jax[cuda12]==0.11.0" in lock
+    assert "jax-cuda12-pjrt==0.11.0" in lock
+    assert "jax-cuda12-plugin==0.11.0" in lock
     assert "flax==0.12.8" in lock
     assert "optax==0.2.8" in lock
     assert "safetensors==0.8.0" in lock
@@ -326,9 +328,13 @@ def test_container_and_direct_dependencies_are_immutable() -> None:
     assert "torch==2.10.0+cpu" in lock
     assert "https://download.pytorch.org/whl/cpu" in lock
     assert "maxtext[cuda12]" in lock
+    assert "nvidia-nvtx-cu12==12.9.79" in lock
+    assert "transformer-engine-jax==2.18.0" in lock
     assert "tpu-post-train" not in lock
     assert "git clone --filter=blob:none --no-checkout" in dockerfile
     assert "build-essential" in dockerfile
+    assert "NVTE_BUILD_USE_NVIDIA_WHEELS=1" in dockerfile
+    assert "--no-build-isolation 'transformer-engine-jax==2.18.0'" in dockerfile
     assert (
         "git -C /opt/MaxText checkout --detach "
         "538fe7a3f3376d94cf3f04e77741aa6d7e8efa45" in dockerfile
