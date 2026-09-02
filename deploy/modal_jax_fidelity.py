@@ -611,93 +611,114 @@ def _verify_v2_prepared_evidence(
     prepared_sha256: str,
     tokenizer_manifest_sha256: str,
 ) -> dict[str, object] | None:
-    """Verify the offline preparation receipts required by the v2 experiment."""
+    """Delegate v2 verification to the provider-independent semantic gate."""
 
-    experiment_id = getattr(experiment, "experiment_id", None)
-    if not isinstance(experiment_id, str) or not experiment_id.endswith("-v2"):
+    from training.jax_fidelity.prepared_staging import (
+        verify_v2_prepared_training_input,
+    )
+
+    return verify_v2_prepared_training_input(
+        input_directory,
+        experiment=experiment,
+        input_manifest=input_manifest,
+        config_sha256=config_sha256,
+        prepared_sha256=prepared_sha256,
+        tokenizer_manifest_sha256=tokenizer_manifest_sha256,
+    )
+
+
+def _verify_v3_recovery_evidence(
+    input_directory: Path,
+    *,
+    experiment: object,
+    input_manifest: dict[str, object],
+    config_sha256: str,
+    prepared_sha256: str,
+    tokenizer_manifest_sha256: str,
+) -> dict[str, object] | None:
+    """Dispatch the separate fail-closed v3 recovery verifier."""
+
+    from training.jax_fidelity.recovery_staging import verify_recovery_training_input
+
+    return verify_recovery_training_input(
+        input_directory,
+        experiment=experiment,
+        input_manifest=input_manifest,
+        config_sha256=config_sha256,
+        prepared_sha256=prepared_sha256,
+        tokenizer_manifest_sha256=tokenizer_manifest_sha256,
+    )
+
+
+def _verify_training_completion_acceptance(
+    training_completion: dict[str, object],
+    *,
+    experiment_id: str,
+    smoke: bool,
+    expected_steps: int,
+    expected_rank: int,
+    expected_lora_pair_count: int,
+    approved_maxtext_patch_sha256: str,
+    v3_acceptance: Mapping[str, object] | None = None,
+    output_directory: Path | None = None,
+) -> dict[str, object] | None:
+    """Re-run the v3 learning gate before durable publication."""
+
+    from training.jax_fidelity.learning_evidence import (
+        verify_tensorboard_learning,
+        verify_v3_terminal_acceptance,
+    )
+    from training.jax_fidelity.orbax_receipt import (
+        discover_orbax_items,
+        lora_checkpoint_evidence,
+    )
+
+    evidence = training_completion.get("evidence")
+    if not isinstance(evidence, dict):
+        raise RuntimeError("training completion has no evidence object")
+    learning = evidence.get("learning")
+    adapter = evidence.get("terminal_adapter")
+    if not isinstance(learning, dict) or not isinstance(adapter, dict):
+        if experiment_id.endswith("-v3-canary"):
+            raise RuntimeError("v3 training completion lacks terminal learning evidence")
         return None
-    production = getattr(experiment, "production", None)
-    training = getattr(experiment, "training", None)
-    if not isinstance(production, Mapping) or not isinstance(training, Mapping):
-        raise RuntimeError("v2 experiment configuration is not a mapping")
-
-    preparation_path = input_directory / "prepared/preparation.manifest.json"
-    validation_path = input_directory / "prepared/prepared-validation.json"
-    preparation = _json_object(preparation_path)
-    validation = _json_object(validation_path)
-    preparation_sha256 = _sha256(preparation_path)
-    validation_sha256 = _sha256(validation_path)
-    prompt_sha256 = production.get("prompt_contract_sha256")
-    policy = training.get("preparation_policy")
-    records = preparation.get("prepared_records")
-
-    dataset_manifest = _json_object(input_directory / "dataset/manifest.json")
-    splits = dataset_manifest.get("splits")
-    train_split = splits.get("train") if isinstance(splits, dict) else None
-    source_train_sha256 = train_split.get("sha256") if isinstance(train_split, dict) else None
-    if not isinstance(source_train_sha256, str) or _SHA256.fullmatch(source_train_sha256) is None:
-        raise RuntimeError("v2 dataset manifest has no checksum-bound train split")
-    source_train_path = input_directory / "dataset/train.jsonl"
-    if _sha256(source_train_path) != source_train_sha256:
-        raise RuntimeError("v2 source training bytes changed")
-
-    if (
-        preparation.get("schema_version") != "bookforge-jax-training-preparation-v2"
-        or preparation.get("policy") != policy
-        or type(records) is not int
-        or records < 1
-        or preparation.get("source_train_sha256") != source_train_sha256
-        or preparation.get("prepared_sha256") != prepared_sha256
-        or preparation.get("prompt_contract_sha256") != prompt_sha256
-        or preparation.get("assistant_turns_per_record") != 1
-        or preparation.get("pair_adjacency_preserved") is not True
-    ):
-        raise RuntimeError("v2 preparation manifest does not match the training contract")
-
-    expected_validation = {
-        "schema_version": "bookforge-jax-prepared-validation-v1",
-        "status": "passed",
-        "config_sha256": config_sha256,
-        "prepared_sha256": prepared_sha256,
-        "preparation_manifest_sha256": preparation_sha256,
-        "tokenizer_manifest_sha256": tokenizer_manifest_sha256,
-        "prompt_contract_sha256": prompt_sha256,
-        "records": records,
-        "assistant_turns_per_record": 1,
-        "input_budget_tokens": production.get("input_budget_tokens"),
-        "completion_budget_tokens": production.get("completion_budget_tokens"),
-        "max_target_length": training.get("max_target_length"),
-    }
-    if any(validation.get(name) != value for name, value in expected_validation.items()):
-        raise RuntimeError("v2 prepared-validation evidence does not match staged inputs")
-    for name in (
-        "maximum_prompt_tokens",
-        "maximum_completion_tokens",
-        "maximum_total_tokens",
-    ):
-        if type(validation.get(name)) is not int or int(validation[name]) < 1:
-            raise RuntimeError("v2 prepared-validation token evidence is invalid")
-    if (
-        int(validation["maximum_prompt_tokens"]) > int(production["input_budget_tokens"])
-        or int(validation["maximum_completion_tokens"])
-        > int(production["completion_budget_tokens"])
-        or int(validation["maximum_total_tokens"]) > int(training["max_target_length"])
-    ):
-        raise RuntimeError("v2 prepared-validation evidence exceeds the approved token budgets")
-
-    binding = {
-        "policy": policy,
-        "records": records,
-        "prepared_sha256": prepared_sha256,
-        "preparation_manifest_sha256": preparation_sha256,
-        "prepared_validation_sha256": validation_sha256,
-        "prompt_contract_sha256": prompt_sha256,
-        "source_train_sha256": source_train_sha256,
-        "tokenizer_manifest_sha256": tokenizer_manifest_sha256,
-    }
-    if input_manifest.get("prepared_training") != binding:
-        raise RuntimeError("staged input manifest v2 preparation binding changed")
-    return binding
+    if experiment_id.endswith("-v3-canary") and output_directory is not None:
+        if v3_acceptance is None:
+            raise RuntimeError("v3 publication requires immutable learning thresholds")
+        actual_learning = verify_tensorboard_learning(
+            output_directory,
+            expected_steps=expected_steps,
+            v3_acceptance=v3_acceptance,
+            require_full_v3=not smoke,
+        )
+        terminal_adapter = discover_orbax_items(
+            output_directory,
+            expected_step=expected_steps - 1,
+        )
+        actual_adapter = lora_checkpoint_evidence(
+            terminal_adapter,
+            expected_rank=expected_rank,
+            expected_pair_count=expected_lora_pair_count,
+            expected_step=expected_steps - 1,
+            approved_maxtext_patch_sha256=approved_maxtext_patch_sha256,
+        )
+        if learning != actual_learning or adapter != actual_adapter:
+            raise RuntimeError("v3 terminal evidence differs from durable training bytes")
+        learning = actual_learning
+        adapter = actual_adapter
+    accepted = verify_v3_terminal_acceptance(
+        experiment_id=experiment_id,
+        smoke=smoke,
+        expected_steps=expected_steps,
+        expected_rank=expected_rank,
+        expected_lora_pair_count=expected_lora_pair_count,
+        approved_maxtext_patch_sha256=approved_maxtext_patch_sha256,
+        learning_evidence=learning,
+        adapter_evidence=adapter,
+    )
+    if accepted is not None and evidence.get("learnability_acceptance") != accepted:
+        raise RuntimeError("v3 terminal acceptance receipt changed before publication")
+    return accepted
 
 
 def _finalize_completed_scratch(
@@ -717,6 +738,12 @@ def _finalize_completed_scratch(
     release_directory: Path,
     scratch_commit: Callable[[], object],
     release_commit: Callable[[], object],
+    experiment_id: str = "",
+    expected_steps: int = 0,
+    expected_rank: int = 0,
+    expected_lora_pair_count: int = 0,
+    approved_maxtext_patch_sha256: str = "",
+    v3_acceptance: Mapping[str, object] | None = None,
 ) -> dict[str, object]:
     """Publish one completed durable training scratch tree without retraining."""
 
@@ -749,6 +776,17 @@ def _finalize_completed_scratch(
         or not training_completion.get("evidence")
     ):
         raise RuntimeError("durable scratch has no successful training completion")
+    _verify_training_completion_acceptance(
+        training_completion,
+        experiment_id=experiment_id,
+        smoke=smoke,
+        expected_steps=expected_steps,
+        expected_rank=expected_rank,
+        expected_lora_pair_count=expected_lora_pair_count,
+        approved_maxtext_patch_sha256=approved_maxtext_patch_sha256,
+        v3_acceptance=v3_acceptance,
+        output_directory=output_directory,
+    )
 
     from training.jax_fidelity.remote_release import package_training_release
 
@@ -929,6 +967,14 @@ def run_finite(request: dict[str, object]) -> dict[str, object]:
         prepared_sha256=prepared_sha,
         tokenizer_manifest_sha256=tokenizer_manifest_sha,
     )
+    _verify_v3_recovery_evidence(
+        input_directory,
+        experiment=experiment,
+        input_manifest=input_manifest,
+        config_sha256=config_sha,
+        prepared_sha256=prepared_sha,
+        tokenizer_manifest_sha256=tokenizer_manifest_sha,
+    )
     stage = "lora-smoke" if smoke else "lora-train"
     training_run_id = stable_run_id(
         stage=stage,
@@ -1030,6 +1076,24 @@ def run_finite(request: dict[str, object]) -> dict[str, object]:
         release_directory=release_directory,
         scratch_commit=scratch_volume.commit,
         release_commit=release_volume.commit,
+        experiment_id=experiment.experiment_id,
+        expected_steps=(
+            experiment.training["smoke_steps"]
+            if smoke
+            else experiment.training["steps"]
+        ),
+        expected_rank=experiment.training["rank"],
+        expected_lora_pair_count=experiment.training.get(
+            "expected_lora_pair_count", 1
+        ),
+        approved_maxtext_patch_sha256=experiment.training.get(
+            "approved_maxtext_patch_sha256", ""
+        ),
+        v3_acceptance=(
+            experiment.recovery["learnability_acceptance"]
+            if experiment.experiment_id.endswith("-v3-canary")
+            else None
+        ),
     )
 
 
@@ -1117,6 +1181,14 @@ def finalize_finite(request: dict[str, object]) -> dict[str, object]:
         prepared_sha256=prepared_sha,
         tokenizer_manifest_sha256=tokenizer_manifest_sha,
     )
+    _verify_v3_recovery_evidence(
+        input_directory,
+        experiment=experiment,
+        input_manifest=input_manifest,
+        config_sha256=config_sha,
+        prepared_sha256=prepared_sha,
+        tokenizer_manifest_sha256=tokenizer_manifest_sha,
+    )
     stage = "lora-smoke" if smoke else "lora-train"
     training_run_id = stable_run_id(
         stage=stage,
@@ -1139,6 +1211,24 @@ def finalize_finite(request: dict[str, object]) -> dict[str, object]:
         release_directory=release_directory,
         scratch_commit=scratch_volume.commit,
         release_commit=release_volume.commit,
+        experiment_id=experiment.experiment_id,
+        expected_steps=(
+            experiment.training["smoke_steps"]
+            if smoke
+            else experiment.training["steps"]
+        ),
+        expected_rank=experiment.training["rank"],
+        expected_lora_pair_count=experiment.training.get(
+            "expected_lora_pair_count", 1
+        ),
+        approved_maxtext_patch_sha256=experiment.training.get(
+            "approved_maxtext_patch_sha256", ""
+        ),
+        v3_acceptance=(
+            experiment.recovery["learnability_acceptance"]
+            if experiment.experiment_id.endswith("-v3-canary")
+            else None
+        ),
     )
 
 

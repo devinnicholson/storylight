@@ -33,7 +33,8 @@ def _load(name: str, path: Path):
 
 merge = _load("bookforge_modal_jax_merge", ROOT / "deploy/modal_jax_merge.py")
 fetcher = _load("bookforge_modal_jax_merge_fetch", ROOT / "scripts/fetch_modal_jax_merge.py")
-CONFIG = ROOT / "experiments/jax-fidelity-lab/config.json"
+CONFIG = ROOT / "experiments/jax-fidelity-lab/config-v2.json"
+CONFIG_V3 = ROOT / "experiments/jax-fidelity-lab/config-v3-canary.json"
 
 
 def _write(path: Path, document: dict[str, object]) -> None:
@@ -45,6 +46,7 @@ def _request(**updates: object) -> dict[str, object]:
     identifiers = {
         "merge_run_id": "bookforge-full-merge-20260901",
         "roundtrip_run_id": "bookforge-roundtrip-smoke-20260901",
+        "training_input_run_id": "bookforge-v2-training-input-20260902",
         "training_release_run_id": "bookforge-full-training-20260901",
         "training_run_id": "lora-train-aaaaaaaaaaaaaaaaaaaa",
     }
@@ -116,6 +118,7 @@ def _training_release(tmp_path: Path) -> tuple[Path, dict[str, object]]:
         "status": "succeeded",
         "config_sha256": config.sha256,
         "dataset_manifest_sha256": dataset_sha,
+        "input_manifest_sha256": "7" * 64,
         "source_training_completion_sha256": "9" * 64,
         "portable_package": portable,
         "files": rows,
@@ -128,6 +131,7 @@ def _training_release(tmp_path: Path) -> tuple[Path, dict[str, object]]:
         "training_run_id": run_id,
         "training_run_sha256": portable["training_run_sha256"],
         "training_completion_sha256": portable["training_completion_sha256"],
+        "input_manifest_sha256": "7" * 64,
         "config_sha256": config.sha256,
         "dataset_manifest_sha256": dataset_sha,
         "base_binding": base_binding,
@@ -138,17 +142,20 @@ def _training_release(tmp_path: Path) -> tuple[Path, dict[str, object]]:
 def test_merge_request_requires_every_hash_and_exact_approval() -> None:
     validated = merge._validate_request(_request())
     assert validated[0] == "bookforge-full-merge-20260901"
+    assert validated[2] == "bookforge-v2-training-input-20260902"
     assert set(validated[-1]) == set(merge._BINDING_NAMES)
     with pytest.raises(ValueError, match="approval"):
         merge._validate_request(_request(approval_token="approve"))
     with pytest.raises(ValueError, match="SHA-256"):
         merge._validate_request(_request(training_run_sha256="latest"))
+    with pytest.raises(ValueError, match="training_input_run_id"):
+        merge._validate_request(_request(training_input_run_id="latest"))
 
 
 def test_merge_billing_parser_accepts_current_and_legacy_fields() -> None:
-    assert merge._parse_modal_billing_total(
-        '[{"cost": "1.25"}, {"Cost": 0.5}]'
-    ) == pytest.approx(1.75)
+    assert merge._parse_modal_billing_total('[{"cost": "1.25"}, {"Cost": 0.5}]') == pytest.approx(
+        1.75
+    )
     with pytest.raises(RuntimeError, match="no cost"):
         merge._parse_modal_billing_total('[{"description": "missing"}]')
     with pytest.raises(RuntimeError, match="conflicting"):
@@ -168,6 +175,11 @@ def test_full_training_release_selects_exact_terminal_adapter_leaf(tmp_path: Pat
     with pytest.raises(ValueError, match="verified base"):
         merge._verify_training_release(root, **arguments)
 
+    root, arguments = _training_release(tmp_path / "input-lineage")
+    arguments["input_manifest_sha256"] = "0" * 64
+    with pytest.raises(ValueError, match="identity"):
+        merge._verify_training_release(root, **arguments)
+
 
 def test_merge_worker_is_one_shot_l4_and_completion_is_last() -> None:
     source = (ROOT / "deploy/modal_jax_merge.py").read_text(encoding="utf-8")
@@ -178,6 +190,17 @@ def test_merge_worker_is_one_shot_l4_and_completion_is_last() -> None:
     assert 'GPU = "L4"' in source
     assert 'plan.get("gpu") != GPU' in source
     assert 'roundtrip.get("backend") != "modal-l4x2"' in source
+    assert "training_input = _INPUT_ROOT / training_input_run_id" in source
+    assert 'expected_manifest_sha256=bindings["training_input_manifest_sha256"]' in source
+    assert "training_input_manifest_sha256: str" in source
+    assert 'outer.get("input_manifest_sha256") != input_manifest_sha256' in source
+    assert "v2 training input base differs from roundtrip provenance" in source
+    assert 'roundtrip_root / "merged-hf.manifest.json"' in source
+    assert "verify_artifact_manifest(canonical_base_hf, canonical_base_hf_manifest)" in source
+    assert "_reject_unchanged_merged_hf(canonical_base_hf_manifest, merged_manifest)" in source
+    fetch_source = (ROOT / "scripts/fetch_modal_jax_merge.py").read_text(encoding="utf-8")
+    assert '"training_input_manifest_sha256"' in fetch_source
+    assert '"training_input_run_id"' in fetch_source
     assert plan["function_calls"] == 1
     assert plan["automatic_retries"] == 0
     assert plan["web_endpoint"] is False
@@ -185,12 +208,81 @@ def test_merge_worker_is_one_shot_l4_and_completion_is_last() -> None:
     assert "max_containers=1" in source
     assert "@modal.web_endpoint" not in source
     assert source.count('"training.jax_fidelity.convert",') == 1
+    worker_start = source.index("def merge_finite")
+    assert source.index("lora_checkpoint_evidence(", worker_start) < source.index(
+        "subprocess.run(", worker_start
+    )
+    assert source.index("_require_live_training_evidence(", worker_start) < source.index(
+        "subprocess.run(", worker_start
+    )
     assert source.index("subprocess.run(", source.index("def merge_finite")) < source.index(
         "build_merged_candidate_manifest(", source.index("def merge_finite")
+    )
+    assert source.index("_reject_unchanged_merged_hf(", worker_start) < source.index(
+        "build_merged_candidate_manifest(", worker_start
     )
     assert source.index("files = _release_files(release)") < source.index(
         "_write_once(completion_path, payload)"
     )
+
+
+def test_merge_rejects_unchanged_hf_artifact_or_weight_payload() -> None:
+    base = {
+        "content_sha256": "1" * 64,
+        "files": [
+            {"path": "config.json", "bytes": 2, "sha256": "2" * 64},
+            {"path": "model-00001-of-00001.safetensors", "bytes": 10, "sha256": "3" * 64},
+        ],
+    }
+    identical = {**base, "files": list(base["files"])}
+    with pytest.raises(RuntimeError, match="artifact is byte-identical"):
+        merge._reject_unchanged_merged_hf(base, identical)
+
+    metadata_only_change = {
+        "content_sha256": "4" * 64,
+        "files": [
+            {"path": "config.json", "bytes": 3, "sha256": "5" * 64},
+            {"path": "renamed.safetensors", "bytes": 10, "sha256": "3" * 64},
+        ],
+    }
+    with pytest.raises(RuntimeError, match="model weights are byte-identical"):
+        merge._reject_unchanged_merged_hf(base, metadata_only_change)
+
+    changed = {
+        "content_sha256": "6" * 64,
+        "files": [
+            {"path": "config.json", "bytes": 2, "sha256": "2" * 64},
+            {"path": "model.safetensors", "bytes": 10, "sha256": "7" * 64},
+        ],
+    }
+    merge._reject_unchanged_merged_hf(base, changed)
+
+
+def test_merge_refuses_v3_diagnostic_canary_and_requires_live_evidence() -> None:
+    config = load_config(CONFIG_V3)
+    with pytest.raises(RuntimeError, match="diagnostic-only"):
+        merge._enforce_merge_policy(config)
+
+    learning = {"status": "passed", "optimizer_steps": 100}
+    adapter = {"lora_pair_count": 205, "checkpoint_step": 99}
+    completion = {"evidence": {"learning": learning, "terminal_adapter": adapter}}
+    merge._require_live_training_evidence(
+        completion,
+        learning=learning,
+        terminal_adapter=adapter,
+    )
+    with pytest.raises(RuntimeError, match="learning evidence"):
+        merge._require_live_training_evidence(
+            completion,
+            learning={**learning, "optimizer_steps": 99},
+            terminal_adapter=adapter,
+        )
+    with pytest.raises(RuntimeError, match="terminal adapter evidence"):
+        merge._require_live_training_evidence(
+            completion,
+            learning=learning,
+            terminal_adapter={**adapter, "lora_pair_count": 204},
+        )
 
 
 def test_merge_fetch_completion_rejects_wrong_hash_and_nonprovisional_status(

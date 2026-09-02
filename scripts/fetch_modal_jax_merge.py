@@ -111,6 +111,7 @@ def _verify_payload(root: Path, completion: dict[str, Any], *, config_path: Path
     source_bindings = _json_object(source_bindings_path)
     for name in (
         "input_manifest_sha256",
+        "training_input_manifest_sha256",
         "hf_snapshot_manifest_sha256",
         "roundtrip_completion_sha256",
         "base_orbax_receipt_sha256",
@@ -121,6 +122,11 @@ def _verify_payload(root: Path, completion: dict[str, Any], *, config_path: Path
         "training_completion_sha256",
         "config_sha256",
         "dataset_manifest_sha256",
+        "roundtrip_run_id",
+        "roundtrip_config_sha256",
+        "roundtrip_dataset_manifest_sha256",
+        "training_input_run_id",
+        "training_release_run_id",
         "training_run_id",
     ):
         if source_bindings.get(name) != completion.get(name):

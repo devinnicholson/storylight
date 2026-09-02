@@ -139,6 +139,11 @@ def test_worker_publishes_generation_guarded_completion_last() -> None:
     assert "environment.pop(name, None)" in worker
     assert 'environment["HF_HUB_OFFLINE"] = "1"' in worker
     assert "verify_base_orbax(" in worker
+    v2_gate = worker.index("verify_v2_prepared_training_input(")
+    v3_gate = worker.index("verify_recovery_training_input(")
+    training = worker.index("subprocess.run(command")
+    assert v2_gate < training
+    assert v3_gate < training
     assert "expected_step=0" in worker
     assert 'role="base-maxtext"' in worker
     assert "disableRetries" in (JAX_ROOT / "job_plan.py").read_text()

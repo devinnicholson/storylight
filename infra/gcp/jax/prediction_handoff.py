@@ -103,7 +103,7 @@ def build_prediction_reference_manifest(
     )
     completion_sha = _require_sha("merge_completion_sha256", merge_completion_sha256)
     if manifest_sha256(source_input_manifest) != source_manifest_sha:
-        raise ValueError("roundtrip source input manifest checksum changed")
+        raise ValueError("training source input manifest checksum changed")
     if manifest_sha256(merge_completion) != completion_sha:
         raise ValueError("merge completion checksum changed")
     if (
@@ -112,10 +112,10 @@ def build_prediction_reference_manifest(
         or source_input_manifest.get("status") != "complete"
         or source_input_manifest.get("run_id") != source_run_id
     ):
-        raise ValueError("roundtrip source input identity changed")
-    source_rows = _safe_rows(source_input_manifest, "roundtrip source input manifest")
+        raise ValueError("training source input identity changed")
+    source_rows = _safe_rows(source_input_manifest, "training source input manifest")
     if not set(_PUBLIC_PATHS).issubset(source_rows):
-        raise ValueError("roundtrip source lacks the public prediction population")
+        raise ValueError("training source lacks the public prediction population")
 
     if (
         merge_completion.get("schema_version") != "1.0"
@@ -124,8 +124,9 @@ def build_prediction_reference_manifest(
         or merge_completion.get("release_type")
         != "provisional-merged-hf-development-candidate"
         or merge_completion.get("merge_run_id") != merge_run_id
-        or merge_completion.get("roundtrip_run_id") != source_run_id
-        or merge_completion.get("input_manifest_sha256") != source_manifest_sha
+        or merge_completion.get("training_input_run_id") != source_run_id
+        or merge_completion.get("training_input_manifest_sha256")
+        != source_manifest_sha
         or merge_completion.get("development_evaluated") is not False
         or merge_completion.get("release_authorized") is not False
     ):
@@ -393,12 +394,12 @@ def verify_reference_sources(
 ) -> tuple[dict[str, Any], dict[str, Path]]:
     """Verify referenced bytes and return the rebuilt manifest and logical paths."""
 
-    _reject_symlinks_or_hidden(source_input_root, "roundtrip source input")
+    _reject_symlinks_or_hidden(source_input_root, "training source input")
     _reject_symlinks_or_hidden(merge_release_root, "merged release")
     source_manifest_path = source_input_root / "inputs.manifest.json"
     completion_path = merge_release_root / "completion.json"
     if sha256_file(source_manifest_path) != source_input_manifest_sha256:
-        raise RuntimeError("roundtrip source input manifest checksum changed")
+        raise RuntimeError("training source input manifest checksum changed")
     if sha256_file(completion_path) != merge_completion_sha256:
         raise RuntimeError("merge completion checksum changed")
     source_manifest = _json_object(source_manifest_path)
@@ -407,7 +408,7 @@ def verify_reference_sources(
     merge_run_id = completion.get("merge_run_id")
     if not isinstance(source_run_id, str) or not isinstance(merge_run_id, str):
         raise RuntimeError("handoff source run identity is missing")
-    source_rows = _safe_rows(source_manifest, "roundtrip source input manifest")
+    source_rows = _safe_rows(source_manifest, "training source input manifest")
     release_rows = _safe_rows(completion, "merge completion")
     candidate_path = merge_release_root / "candidate.manifest.json"
     checkpoint_manifest_path = merge_release_root / "merged-hf.manifest.json"

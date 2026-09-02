@@ -10,6 +10,10 @@ import modal
 
 REPOSITORY_ROOT = Path(__file__).parents[1]
 CONFIG_PATH = REPOSITORY_ROOT / "experiments/jax-fidelity-lab/config.json"
+MAXTEXT_NATIVE_LORA_PATCH = (
+    REPOSITORY_ROOT
+    / "training/jax_fidelity/patches/maxtext-native-lora-materialization.patch"
+)
 _DIGEST_IMAGE = re.compile(r"^.+@sha256:[0-9a-f]{64}$")
 
 
@@ -76,6 +80,24 @@ JAX_IMAGE = (
         f'test "$(git -C /opt/MaxText rev-parse HEAD)" = "{MAXTEXT_REVISION}"',
         'test -z "$(git -C /opt/MaxText status --porcelain)"',
     )
+    .add_local_file(
+        MAXTEXT_NATIVE_LORA_PATCH,
+        "/opt/bookforge/patches/maxtext-native-lora-materialization.patch",
+        copy=True,
+    )
+    .run_commands(
+        "git -C /opt/MaxText apply --check "
+        "/opt/bookforge/patches/maxtext-native-lora-materialization.patch",
+        "git -C /opt/MaxText apply "
+        "/opt/bookforge/patches/maxtext-native-lora-materialization.patch",
+        "git -C /opt/MaxText diff --check",
+        "test \"$(git -C /opt/MaxText status --short)\" = "
+        "\"$(printf '%s\\n%s' ' M src/maxtext/trainers/pre_train/train.py' "
+        "' M src/maxtext/utils/train_utils.py')\"",
+        "git -C /opt/MaxText diff --no-ext-diff --binary --abbrev=8 --unified=1 -- "
+        "src/maxtext/trainers/pre_train/train.py src/maxtext/utils/train_utils.py "
+        "| cmp -s - /opt/bookforge/patches/maxtext-native-lora-materialization.patch",
+    )
     # Transformer Engine 2.18's isolated build requirements omit the NVTX
     # wheel even though its compiler searches nvidia/nvtx/include. Seed the
     # exact CUDA build environment, then compile that extension against it.
@@ -119,7 +141,7 @@ JAX_IMAGE = (
         {
             "PYTHONPATH": "/opt/bookforge:/opt/bookforge/src",
             "JAX_PLATFORMS": "cuda",
-            # Gemma 3 4B LoRA compiles to a ~19.6 GiB L4 graph. JAX defaults
+            # Gemma 4 E2B LoRA compiles to a ~19.6 GiB L4 graph. JAX defaults
             # to a 75% (16.5 GiB) pool, so expose a bounded 95% pool while
             # leaving device headroom for the CUDA runtime.
             "XLA_PYTHON_CLIENT_MEM_FRACTION": "0.95",
@@ -127,6 +149,9 @@ JAX_IMAGE = (
             "HF_HUB_OFFLINE": "1",
             "HF_DATASETS_OFFLINE": "1",
             "TRANSFORMERS_OFFLINE": "1",
+            "BOOKFORGE_MAXTEXT_APPROVED_PATCH": (
+                "/opt/bookforge/patches/maxtext-native-lora-materialization.patch"
+            ),
         }
     )
 )

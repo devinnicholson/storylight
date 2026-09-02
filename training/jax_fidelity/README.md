@@ -154,13 +154,17 @@ after its first release commit resumes by verifying every existing byte and
 adding only missing files before publishing completion last.
 
 After the full adapter succeeds, `modal_jax_merge.py` is the only remote merge
-boundary. One exact approval binds the original staged HF snapshot and input
-manifest, the successful roundtrip completion and base-Orbax receipt, the
-portable full-training completion and adapter manifest, and the config,
-dataset, and training run hashes. The finite L4 worker selects the single
-configured terminal LoRA `items` leaf, invokes MaxText-to-HF once, and writes a
-prediction-only `candidate.manifest.json`. It has no retries or web endpoint,
-and `completion.json` is published last.
+boundary. The roundtrip run and its input manifest supply only the immutable
+source-HF and step-0 base provenance. A separate `training_input_run_id` and
+`training_input_manifest_sha256` identify the exact v2 config, dataset,
+tokenizer, prepared population, and cloned base used by training. One exact
+approval binds both input populations, the successful roundtrip completion,
+the portable full-training completion and adapter manifest, and the training
+run hashes. Merge re-verifies that the v2 base matches the roundtrip base and
+that the training release names the v2 input-manifest hash before selecting the
+single configured terminal LoRA `items` leaf. The finite L4 worker invokes
+MaxText-to-HF once and writes a prediction-only `candidate.manifest.json`. It
+has no retries or web endpoint, and `completion.json` is published last.
 
 ```bash
 modal run deploy/modal_jax_merge.py --help
@@ -168,7 +172,7 @@ modal run deploy/modal_jax_merge.py --help
 python scripts/fetch_modal_jax_merge.py \
   --merge-run-id MERGE_RUN_ID \
   --completion-sha256 TRUSTED_COMPLETION_SHA256 \
-  --config experiments/jax-fidelity-lab/config.json \
+  --config experiments/jax-fidelity-lab/config-v2.json \
   --destination artifacts/jax-fidelity/merged-candidate \
   --execute
 ```
@@ -264,6 +268,15 @@ endpoint. Both paths re-check the accepted engine bytes, accepted identity
 manifest, repository dataset manifest, complete 512-record development file,
 privacy-only report schema, and the four headline metrics frozen before
 training. It writes a read-only report and publishes `completion.json` last.
+Headline signatures are keyed by the exact dataset-manifest SHA-256 in
+`baseline_development.py` rather than shared across dataset versions. An
+unregistered manifest fails closed even when its population shape matches a
+registered dataset. The v1 signature remains frozen exactly as measured. The
+accepted Jetson engine's v2 signature was measured before candidate prediction
+on September 2, 2026 and is registered under manifest
+`fd3317ef440a04c9adc41825dda2b58c03a52ae0829bd422750522b4e11d428e`:
+schema-valid `1.0`, semantic recall `0.537109375`, exact pass `0.0`, and privacy
+pass `1.0`.
 
 On Jetson, first capture the accepted engine identity if a durable copy does not
 already exist. This copies the engine locally; it does not upload it or change

@@ -336,6 +336,34 @@ def test_overlay_stager_publishes_manifest_last_and_reads_it_back(tmp_path: Path
     )
     assert commands[-1][2] == "get"
     assert commands[0][-1] == "--json"
+    assert commands[0][-2] == "/"
+
+
+def test_overlay_stager_understands_modal_capitalized_json_listing(
+    tmp_path: Path,
+) -> None:
+    fixture = _fixture(tmp_path)
+    manifest = fixture["overlay_manifest"]
+
+    def runner(command: list[str]) -> subprocess.CompletedProcess[str]:
+        if command[2] == "ls" and command[-2] == "/":
+            stdout = json.dumps([{"Filename": "full-input-v2", "Type": "dir"}])
+        elif command[2] == "ls":
+            stdout = json.dumps(
+                [{"Filename": fixture["target_run_id"], "Type": "dir"}]
+            )
+        else:
+            raise AssertionError("no write should occur for an existing target")
+        return subprocess.CompletedProcess(command, 0, stdout=stdout, stderr="")
+
+    with pytest.raises(RuntimeError, match="already contains state"):
+        stage_overlay(
+            target_run_id=str(fixture["target_run_id"]),
+            manifest=manifest,
+            sources=fixture["stage_sources"],
+            approval_token_value=str(fixture["stage_plan"]["approval_token"]),
+            runner=runner,
+        )
 
 
 def test_clone_plan_binds_source_overlay_and_target_without_mutation(tmp_path: Path) -> None:

@@ -733,6 +733,14 @@ def test_modal_budget_gate_is_present_and_maxtext_checkout_is_exact() -> None:
     assert 'extra_options="--no-build-isolation"' in image_source
     assert "maxtext_revision" in image_source
     assert "git -C /opt/MaxText rev-parse HEAD" in image_source
+    assert "maxtext-native-lora-materialization.patch" in image_source
+    assert "git -C /opt/MaxText apply --check" in image_source
+    assert "git -C /opt/MaxText diff --check" in image_source
+    assert "status --short" in image_source
+    assert " M src/maxtext/trainers/pre_train/train.py" in image_source
+    assert " M src/maxtext/utils/train_utils.py" in image_source
+    assert "diff --no-ext-diff --binary --abbrev=8 --unified=1" in image_source
+    assert "| cmp -s -" in image_source
     assert 'REPOSITORY_ROOT / "deploy", "/opt/bookforge/deploy"' in image_source
     assert '"/opt/bookforge/experiments/jax-fidelity-lab/config.json"' in image_source
     assert "--write-lock /opt/bookforge/runtime.lock.json" in image_source

@@ -253,6 +253,8 @@ def main() -> None:
     from training.jax_fidelity.configuration import load_config
     from training.jax_fidelity.integrity import validate_dataset_manifest, verify_artifact_manifest
     from training.jax_fidelity.manifests import stable_run_id
+    from training.jax_fidelity.prepared_staging import verify_v2_prepared_training_input
+    from training.jax_fidelity.recovery_staging import verify_recovery_training_input
     from training.jax_fidelity.remote_release import package_training_release
     from training.jax_fidelity.runtime import approval_token
 
@@ -269,6 +271,22 @@ def main() -> None:
         expected_receipt_sha256=args.base_checkpoint_receipt_sha256,
     )
     verify_artifact_manifest(tokenizer_checkpoint, _json_object(tokenizer_manifest_path))
+    verify_v2_prepared_training_input(
+        inputs,
+        experiment=experiment,
+        input_manifest=input_manifest,
+        config_sha256=args.config_sha256,
+        prepared_sha256=prepared_sha256,
+        tokenizer_manifest_sha256=args.tokenizer_manifest_sha256,
+    )
+    verify_recovery_training_input(
+        inputs,
+        experiment=experiment,
+        input_manifest=input_manifest,
+        config_sha256=args.config_sha256,
+        prepared_sha256=prepared_sha256,
+        tokenizer_manifest_sha256=args.tokenizer_manifest_sha256,
+    )
     stage = "lora-smoke" if args.smoke else "lora-train"
     training_run_id = stable_run_id(
         stage=stage,

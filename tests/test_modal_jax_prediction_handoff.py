@@ -30,9 +30,12 @@ from scripts.plan_modal_jax_prediction_handoff import build_plan
 from training.jax_fidelity.integrity import artifact_manifest
 from training.jax_fidelity.merged_candidate import build_merged_candidate_manifest
 
-CONFIG = ROOT / "experiments/jax-fidelity-lab/config.json"
-DATASET_MANIFEST = ROOT / "datasets/story-fidelity-v1/manifest.json"
-DEVELOPMENT = ROOT / "datasets/story-fidelity-v1/development.jsonl"
+CONFIG = ROOT / "experiments/jax-fidelity-lab/config-v2.json"
+DATASET_MANIFEST = ROOT / "datasets/story-fidelity-v2/manifest.json"
+DEVELOPMENT = ROOT / "datasets/story-fidelity-v2/development.jsonl"
+LEGACY_CONFIG = ROOT / "experiments/jax-fidelity-lab/config.json"
+LEGACY_DATASET_MANIFEST = ROOT / "datasets/story-fidelity-v1/manifest.json"
+LEGACY_DEVELOPMENT = ROOT / "datasets/story-fidelity-v1/development.jsonl"
 
 
 def _write_json(path: Path, document: object) -> None:
@@ -45,7 +48,7 @@ def _row(path: Path, relative: str) -> dict[str, object]:
 
 
 def _population(tmp_path: Path) -> tuple[Path, Path, dict[str, object]]:
-    source_run_id = "jax-roundtrip-20260902-source"
+    source_run_id = "jax-full-20260902-l4x2-v2"
     merge_run_id = "jax-merge-20260902-candidate"
     prediction_run_id = "jax-prediction-20260902-final"
     inputs = tmp_path / "inputs"
@@ -99,8 +102,9 @@ def _population(tmp_path: Path) -> tuple[Path, Path, dict[str, object]]:
         "backend": "modal-l4",
         "release_type": "provisional-merged-hf-development-candidate",
         "merge_run_id": merge_run_id,
-        "roundtrip_run_id": source_run_id,
-        "input_manifest_sha256": sha256_file(source_manifest_path),
+        "roundtrip_run_id": "jax-roundtrip-20260902-source",
+        "training_input_run_id": source_run_id,
+        "training_input_manifest_sha256": sha256_file(source_manifest_path),
         "config_sha256": sha256_file(CONFIG),
         "dataset_manifest_sha256": sha256_file(DATASET_MANIFEST),
         "candidate_id": candidate["candidate_id"],
@@ -220,14 +224,25 @@ def test_worker_publishes_only_manifest_and_prediction_resolves_references(
 
 
 def test_prediction_keeps_materialized_stager_compatibility(tmp_path: Path) -> None:
-    _, releases, request = _population(tmp_path)
-    release = releases / str(request["merge_run_id"])
+    _population(tmp_path)
+    release = tmp_path / "legacy-release"
+    checkpoint = release / "merged-hf"
+    checkpoint.mkdir(parents=True)
+    (checkpoint / "config.json").write_bytes(b"{}\n")
+    (checkpoint / "model.safetensors").write_bytes(b"legacy merged weights")
+    candidate = build_merged_candidate_manifest(
+        config_path=LEGACY_CONFIG,
+        dataset_manifest_sha256=sha256_file(LEGACY_DATASET_MANIFEST),
+        training_run_id="lora-train-bbbbbbbbbbbbbbbbbbbb",
+        merged_hf_checkpoint=checkpoint,
+    )
+    _write_json(release / "candidate.manifest.json", candidate)
     run_id = "jax-prediction-20260902-legacy"
     manifest, sources = materialized_stager.build_prediction_input_manifest(
         run_id=run_id,
-        config_path=CONFIG,
-        dataset_manifest_path=DATASET_MANIFEST,
-        development_records_path=DEVELOPMENT,
+        config_path=LEGACY_CONFIG,
+        dataset_manifest_path=LEGACY_DATASET_MANIFEST,
+        development_records_path=LEGACY_DEVELOPMENT,
         candidate_directory=release,
     )
     root = tmp_path / "materialized"

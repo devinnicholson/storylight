@@ -67,6 +67,7 @@ def _write_once(path: Path, document: Mapping[str, Any], mode: int = 0o400) -> N
 
 _BINDING_NAMES = (
     "input_manifest_sha256",
+    "training_input_manifest_sha256",
     "hf_snapshot_manifest_sha256",
     "roundtrip_completion_sha256",
     "base_orbax_receipt_sha256",
@@ -84,6 +85,7 @@ def _approval_token(
     *,
     merge_run_id: str,
     roundtrip_run_id: str,
+    training_input_run_id: str,
     training_release_run_id: str,
     training_run_id: str,
     bindings: Mapping[str, str],
@@ -91,17 +93,18 @@ def _approval_token(
     values = ":".join(bindings[name] for name in _BINDING_NAMES)
     return (
         f"APPROVE_MODAL_JAX_FULL_ADAPTER_MERGE:{merge_run_id}:{roundtrip_run_id}:"
-        f"{training_release_run_id}:{training_run_id}:{values}"
+        f"{training_input_run_id}:{training_release_run_id}:{training_run_id}:{values}"
     )
 
 
 def _validate_request(
     request: Mapping[str, object],
-) -> tuple[str, str, str, str, dict[str, str]]:
+) -> tuple[str, str, str, str, str, dict[str, str]]:
     identifiers: list[str] = []
     for name in (
         "merge_run_id",
         "roundtrip_run_id",
+        "training_input_run_id",
         "training_release_run_id",
         "training_run_id",
     ):
@@ -118,8 +121,9 @@ def _validate_request(
     expected = _approval_token(
         merge_run_id=identifiers[0],
         roundtrip_run_id=identifiers[1],
-        training_release_run_id=identifiers[2],
-        training_run_id=identifiers[3],
+        training_input_run_id=identifiers[2],
+        training_release_run_id=identifiers[3],
+        training_run_id=identifiers[4],
         bindings=bindings,
     )
     if request.get("approval_token") != expected:
@@ -167,6 +171,85 @@ def _artifact_binding(manifest: Mapping[str, Any]) -> dict[str, object]:
     }
 
 
+def _model_weight_rows(manifest: Mapping[str, Any], *, label: str) -> list[tuple[int, str]]:
+    files = manifest.get("files")
+    if not isinstance(files, list):
+        raise ValueError(f"{label} artifact manifest has no file rows")
+    weights: list[tuple[int, str]] = []
+    for row in files:
+        if not isinstance(row, dict) or not isinstance(row.get("path"), str):
+            raise ValueError(f"{label} artifact manifest has a malformed file row")
+        relative = Path(row["path"])
+        sha256 = row.get("sha256")
+        size = row.get("bytes")
+        if relative.is_absolute() or ".." in relative.parts:
+            raise ValueError(f"{label} artifact manifest has an unsafe file path")
+        if not isinstance(sha256, str) or _SHA256.fullmatch(sha256) is None:
+            raise ValueError(f"{label} artifact manifest has an invalid file checksum")
+        if type(size) is not int or size < 1:
+            raise ValueError(f"{label} artifact manifest has an invalid file size")
+        if relative.name.endswith((".safetensors", ".bin", ".pt", ".pth")):
+            weights.append((size, sha256))
+    if not weights:
+        raise ValueError(f"{label} artifact manifest contains no model weight files")
+    return sorted(weights)
+
+
+def _reject_unchanged_merged_hf(
+    base_manifest: Mapping[str, Any],
+    merged_manifest: Mapping[str, Any],
+) -> None:
+    """Refuse a conversion whose complete artifact or model payload is unchanged."""
+
+    base_content = base_manifest.get("content_sha256")
+    merged_content = merged_manifest.get("content_sha256")
+    if (
+        not isinstance(base_content, str)
+        or _SHA256.fullmatch(base_content) is None
+        or not isinstance(merged_content, str)
+        or _SHA256.fullmatch(merged_content) is None
+    ):
+        raise ValueError("base or merged HF artifact has an invalid content checksum")
+    if base_content == merged_content:
+        raise RuntimeError("merged HF artifact is byte-identical to the base checkpoint")
+    if _model_weight_rows(base_manifest, label="base HF") == _model_weight_rows(
+        merged_manifest, label="merged HF"
+    ):
+        raise RuntimeError("merged HF model weights are byte-identical to the base checkpoint")
+
+
+def _enforce_merge_policy(config: object) -> None:
+    """Reject the bounded v3 recovery canary, whose config explicitly forbids merge."""
+
+    experiment_id = getattr(config, "experiment_id", None)
+    if experiment_id != "bookforge-gemma4-e2b-lora-r16-v3-canary":
+        return
+    recovery = getattr(config, "recovery", None)
+    execution = recovery.get("execution") if isinstance(recovery, Mapping) else None
+    if (
+        not isinstance(execution, Mapping)
+        or execution.get("diagnostic_only") is not True
+        or execution.get("merge_authorized") is not False
+    ):
+        raise RuntimeError("v3 recovery merge policy differs from its approved config")
+    raise RuntimeError("v3 recovery is diagnostic-only and is not authorized for merge")
+
+
+def _require_live_training_evidence(
+    completion: Mapping[str, Any],
+    *,
+    learning: Mapping[str, Any],
+    terminal_adapter: Mapping[str, Any],
+) -> None:
+    recorded = completion.get("evidence")
+    if not isinstance(recorded, Mapping):
+        raise RuntimeError("training completion has no terminal evidence")
+    if recorded.get("learning") != dict(learning):
+        raise RuntimeError("training learning evidence differs from live recomputation")
+    if recorded.get("terminal_adapter") != dict(terminal_adapter):
+        raise RuntimeError("training terminal adapter evidence differs from live recomputation")
+
+
 def _verify_training_release(
     root: Path,
     *,
@@ -176,6 +259,7 @@ def _verify_training_release(
     training_run_id: str,
     training_run_sha256: str,
     training_completion_sha256: str,
+    input_manifest_sha256: str,
     config_sha256: str,
     dataset_manifest_sha256: str,
     base_binding: Mapping[str, object],
@@ -196,6 +280,7 @@ def _verify_training_release(
         or outer.get("training_run_id") != training_run_id
         or outer.get("config_sha256") != config_sha256
         or outer.get("dataset_manifest_sha256") != dataset_manifest_sha256
+        or outer.get("input_manifest_sha256") != input_manifest_sha256
     ):
         raise ValueError("training release identity or terminal status changed")
     _verify_declared_files(root, outer.get("files"), excluded={"completion.json"})
@@ -348,11 +433,17 @@ def _remaining_seconds(started: float, *, reserve: int = 120) -> int:
 def merge_finite(request: dict[str, object]) -> dict[str, object]:
     """Run MaxText -> HF exactly once and publish completion only after verification."""
 
-    merge_run_id, roundtrip_run_id, training_release_run_id, training_run_id, bindings = (
-        _validate_request(request)
-    )
+    (
+        merge_run_id,
+        roundtrip_run_id,
+        training_input_run_id,
+        training_release_run_id,
+        training_run_id,
+        bindings,
+    ) = _validate_request(request)
     started = time.monotonic()
     source_input = _INPUT_ROOT / roundtrip_run_id
+    training_input = _INPUT_ROOT / training_input_run_id
     roundtrip_root = _RELEASE_ROOT / "roundtrip" / roundtrip_run_id
     training_root = _RELEASE_ROOT / training_release_run_id
     scratch = _SCRATCH_ROOT / merge_run_id
@@ -360,14 +451,16 @@ def merge_finite(request: dict[str, object]) -> dict[str, object]:
     if scratch.exists() or release.exists():
         raise RuntimeError("merge run ID already has partial or terminal state")
 
-    from infra.gcp.jax.vertex_entrypoint import verify_input_population
+    from infra.gcp.jax.vertex_entrypoint import verify_base_orbax, verify_input_population
     from training.jax_fidelity.artifact_contract import create_artifact_contract
     from training.jax_fidelity.configuration import load_config
     from training.jax_fidelity.integrity import (
         artifact_manifest,
         canonical_sha256,
+        validate_dataset_manifest,
         verify_artifact_manifest,
     )
+    from training.jax_fidelity.learning_evidence import verify_tensorboard_learning
     from training.jax_fidelity.manifests import stable_run_id
     from training.jax_fidelity.merged_candidate import (
         build_merged_candidate_manifest,
@@ -375,6 +468,7 @@ def merge_finite(request: dict[str, object]) -> dict[str, object]:
     )
     from training.jax_fidelity.orbax_receipt import (
         discover_orbax_items,
+        lora_checkpoint_evidence,
         orbax_leaf_receipt,
         terminal_checkpoint_step,
         verify_orbax_leaf_receipt,
@@ -382,23 +476,40 @@ def merge_finite(request: dict[str, object]) -> dict[str, object]:
     )
     from training.jax_fidelity.runtime import approval_token
 
-    verify_input_population(
+    source_input_manifest = verify_input_population(
         source_input,
         run_id=roundtrip_run_id,
         expected_manifest_sha256=bindings["input_manifest_sha256"],
     )
-    config_path = source_input / "config.json"
-    dataset_path = source_input / "dataset/manifest.json"
+    training_input_manifest = verify_input_population(
+        training_input,
+        run_id=training_input_run_id,
+        expected_manifest_sha256=bindings["training_input_manifest_sha256"],
+    )
+    source_config_path = source_input / "config.json"
+    source_dataset_path = source_input / "dataset/manifest.json"
     hf_snapshot = source_input / "checkpoint"
     hf_manifest_path = source_input / "checkpoint.manifest.json"
-    if _sha256(config_path) != bindings["config_sha256"]:
-        raise RuntimeError("original staged config checksum changed")
-    if _sha256(dataset_path) != bindings["dataset_manifest_sha256"]:
-        raise RuntimeError("original staged dataset manifest checksum changed")
+    source_config_sha256 = _sha256(source_config_path)
+    source_dataset_sha256 = _sha256(source_dataset_path)
     if _sha256(hf_manifest_path) != bindings["hf_snapshot_manifest_sha256"]:
         raise RuntimeError("original staged HF manifest checksum changed")
-    verify_artifact_manifest(hf_snapshot, _json_object(hf_manifest_path))
+    hf_manifest = _json_object(hf_manifest_path)
+    verify_artifact_manifest(hf_snapshot, hf_manifest)
+
+    config_path = training_input / "config.json"
+    dataset_path = training_input / "dataset/manifest.json"
+    if _sha256(config_path) != bindings["config_sha256"]:
+        raise RuntimeError("v2 training input config checksum changed")
+    if _sha256(dataset_path) != bindings["dataset_manifest_sha256"]:
+        raise RuntimeError("v2 training input dataset manifest checksum changed")
     config = load_config(config_path)
+    _enforce_merge_policy(config)
+    validate_dataset_manifest(
+        dataset_path,
+        expected_manifest_sha256=bindings["dataset_manifest_sha256"],
+        required_split_records=config.dataset["required_split_records"],
+    )
 
     roundtrip_completion_path = roundtrip_root / "completion.json"
     if _sha256(roundtrip_completion_path) != bindings["roundtrip_completion_sha256"]:
@@ -408,8 +519,8 @@ def merge_finite(request: dict[str, object]) -> dict[str, object]:
         roundtrip.get("status") != "succeeded"
         or roundtrip.get("backend") != "modal-l4x2"
         or roundtrip.get("run_id") != roundtrip_run_id
-        or roundtrip.get("config_sha256") != bindings["config_sha256"]
-        or roundtrip.get("dataset_manifest_sha256") != bindings["dataset_manifest_sha256"]
+        or roundtrip.get("config_sha256") != source_config_sha256
+        or roundtrip.get("dataset_manifest_sha256") != source_dataset_sha256
         or roundtrip.get("input_manifest_sha256") != bindings["input_manifest_sha256"]
         or roundtrip.get("hf_snapshot_manifest_sha256") != bindings["hf_snapshot_manifest_sha256"]
         or roundtrip.get("base_orbax_receipt_sha256") != bindings["base_orbax_receipt_sha256"]
@@ -418,11 +529,19 @@ def merge_finite(request: dict[str, object]) -> dict[str, object]:
         raise RuntimeError("roundtrip terminal lineage changed")
     _verify_declared_files(roundtrip_root, roundtrip.get("files"), excluded={"completion.json"})
     if (
-        _sha256(roundtrip_root / "inputs/config.json") != bindings["config_sha256"]
-        or _sha256(roundtrip_root / "inputs/dataset.manifest.json")
-        != bindings["dataset_manifest_sha256"]
+        _sha256(roundtrip_root / "inputs/config.json") != source_config_sha256
+        or _sha256(roundtrip_root / "inputs/dataset.manifest.json") != source_dataset_sha256
     ):
         raise RuntimeError("roundtrip release config or dataset bytes changed")
+
+    canonical_base_hf = roundtrip_root / "merged-hf"
+    canonical_base_hf_manifest_path = roundtrip_root / "merged-hf.manifest.json"
+    if _sha256(canonical_base_hf_manifest_path) != roundtrip.get(
+        "merged_hf_manifest_sha256"
+    ):
+        raise RuntimeError("roundtrip canonical HF manifest checksum changed")
+    canonical_base_hf_manifest = _json_object(canonical_base_hf_manifest_path)
+    verify_artifact_manifest(canonical_base_hf, canonical_base_hf_manifest)
 
     base_receipt_path = roundtrip_root / "evidence/base-orbax.receipt.json"
     base_manifest_path = roundtrip_root / "base-orbax.manifest.json"
@@ -430,15 +549,28 @@ def merge_finite(request: dict[str, object]) -> dict[str, object]:
         raise RuntimeError("base Orbax receipt checksum changed")
     if _sha256(base_manifest_path) != bindings["base_orbax_manifest_sha256"]:
         raise RuntimeError("base Orbax manifest checksum changed")
-    base_leaf = verify_orbax_leaf_receipt(
+    roundtrip_base_leaf = verify_orbax_leaf_receipt(
         roundtrip_root / "base-orbax",
         _json_object(base_receipt_path),
         expected_step=0,
         role="base-maxtext",
     )
     base_manifest = _json_object(base_manifest_path)
-    verify_artifact_manifest(base_leaf, base_manifest)
+    verify_artifact_manifest(roundtrip_base_leaf, base_manifest)
     base_binding = _artifact_binding(base_manifest)
+
+    base_leaf = verify_base_orbax(
+        training_input,
+        input_manifest=training_input_manifest,
+        expected_manifest_sha256=bindings["base_orbax_manifest_sha256"],
+        expected_receipt_sha256=bindings["base_orbax_receipt_sha256"],
+    )
+    training_base_manifest = _json_object(training_input / "checkpoint.manifest.json")
+    if _artifact_binding(training_base_manifest) != base_binding:
+        raise RuntimeError("v2 training input base differs from roundtrip provenance")
+
+    if source_input_manifest.get("run_id") != roundtrip_run_id:
+        raise RuntimeError("roundtrip source input identity changed")
 
     adapter_root, training = _verify_training_release(
         training_root,
@@ -448,6 +580,7 @@ def merge_finite(request: dict[str, object]) -> dict[str, object]:
         training_run_id=training_run_id,
         training_run_sha256=bindings["training_run_sha256"],
         training_completion_sha256=bindings["training_completion_sha256"],
+        input_manifest_sha256=bindings["training_input_manifest_sha256"],
         config_sha256=bindings["config_sha256"],
         dataset_manifest_sha256=bindings["dataset_manifest_sha256"],
         base_binding=base_binding,
@@ -463,6 +596,25 @@ def merge_finite(request: dict[str, object]) -> dict[str, object]:
         expected_step=adapter_checkpoint_step,
         role="full-lora",
     )
+    adapter_lora_evidence = lora_checkpoint_evidence(
+        adapter_leaf,
+        expected_rank=config.training["rank"],
+        expected_pair_count=config.training.get("expected_lora_pair_count"),
+        expected_step=adapter_checkpoint_step,
+        approved_maxtext_patch_sha256=config.training.get(
+            "approved_maxtext_patch_sha256"
+        ),
+    )
+    learning_evidence = verify_tensorboard_learning(
+        adapter_root,
+        expected_steps=config.training["steps"],
+    )
+    _require_live_training_evidence(
+        training["completion"],
+        learning=learning_evidence,
+        terminal_adapter=adapter_lora_evidence,
+    )
+    adapter_receipt["lora_evidence"] = adapter_lora_evidence
     adapter_rows = {row["path"]: row for row in training["adapter_manifest"]["files"]}
     for row in adapter_receipt["artifact_manifest"]["files"]:
         portable = Path(adapter_receipt["relative_path"]).joinpath(row["path"]).as_posix()
@@ -560,6 +712,7 @@ def merge_finite(request: dict[str, object]) -> dict[str, object]:
         or output_evidence.get("output_manifest") != merged_manifest
     ):
         raise RuntimeError("conversion completion does not bind the merged HF bytes")
+    _reject_unchanged_merged_hf(canonical_base_hf_manifest, merged_manifest)
     candidate = build_merged_candidate_manifest(
         config_path=config_path,
         dataset_manifest_sha256=bindings["dataset_manifest_sha256"],
@@ -582,6 +735,9 @@ def merge_finite(request: dict[str, object]) -> dict[str, object]:
     source_bindings: dict[str, object] = {
         **bindings,
         "roundtrip_run_id": roundtrip_run_id,
+        "roundtrip_config_sha256": source_config_sha256,
+        "roundtrip_dataset_manifest_sha256": source_dataset_sha256,
+        "training_input_run_id": training_input_run_id,
         "training_release_run_id": training_release_run_id,
         "training_run_id": training_run_id,
         "adapter_orbax_receipt_sha256": _sha256(adapter_receipt_path),
@@ -589,6 +745,7 @@ def merge_finite(request: dict[str, object]) -> dict[str, object]:
         "conversion_run_id": conversion_run_id,
         "conversion_run_sha256": _sha256(conversion_run_path),
         "conversion_completion_sha256": _sha256(conversion_completion_path),
+        "adapter_lora_evidence": adapter_lora_evidence,
     }
     _write_once(release / "evidence/source-bindings.json", source_bindings)
     validate_merged_candidate_manifest(
@@ -666,9 +823,11 @@ def _parse_modal_billing_total(payload: str) -> float:
 def merge_cli(
     merge_run_id: str,
     roundtrip_run_id: str,
+    training_input_run_id: str,
     training_release_run_id: str,
     training_run_id: str,
     input_manifest_sha256: str,
+    training_input_manifest_sha256: str,
     hf_snapshot_manifest_sha256: str,
     roundtrip_completion_sha256: str,
     base_orbax_receipt_sha256: str,
@@ -702,6 +861,7 @@ def merge_cli(
     request: dict[str, object] = {
         "merge_run_id": merge_run_id,
         "roundtrip_run_id": roundtrip_run_id,
+        "training_input_run_id": training_input_run_id,
         "training_release_run_id": training_release_run_id,
         "training_run_id": training_run_id,
         **bindings,

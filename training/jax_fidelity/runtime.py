@@ -8,10 +8,28 @@ from collections.abc import Sequence
 from pathlib import Path
 
 from .configuration import ExperimentConfig
+from .integrity import sha256_file
 
 
 class ExecutionRefused(RuntimeError):
     """A heavy command lacked an exact, one-purpose approval boundary."""
+
+
+def approved_maxtext_patch_sha256(config: ExperimentConfig) -> str | None:
+    """Verify and return the config-approved MaxText patch digest when required."""
+
+    training = getattr(config, "training", {})
+    expected = training.get("approved_maxtext_patch_sha256")
+    if expected is None:
+        return None
+    approved_patch = os.environ.get("BOOKFORGE_MAXTEXT_APPROVED_PATCH", "")
+    patch_path = Path(approved_patch)
+    if not approved_patch or not patch_path.is_file() or patch_path.is_symlink():
+        raise ExecutionRefused("config-approved MaxText patch is missing or unsafe")
+    actual = sha256_file(patch_path)
+    if actual != expected:
+        raise ExecutionRefused("MaxText patch checksum differs from the approved config")
+    return actual
 
 
 def approval_token(
@@ -51,8 +69,40 @@ def validate_maxtext_checkout(root: Path | str, config: ExperimentConfig) -> Pat
         capture_output=True,
         text=True,
     ).stdout
-    if dirty:
-        raise ExecutionRefused("MaxText checkout has uncommitted changes")
+    if not dirty:
+        training = getattr(config, "training", {})
+        if training.get("approved_maxtext_patch_sha256") is not None:
+            raise ExecutionRefused("the config requires the approved MaxText patch")
+        return checkout
+
+    approved_dirty_state = (
+        " M src/maxtext/trainers/pre_train/train.py\n"
+        " M src/maxtext/utils/train_utils.py\n"
+    )
+    if dirty != approved_dirty_state:
+        raise ExecutionRefused("MaxText checkout has unapproved changes")
+    approved_patch = os.environ.get("BOOKFORGE_MAXTEXT_APPROVED_PATCH", "")
+    patch_path = Path(approved_patch)
+    approved_maxtext_patch_sha256(config)
+    diff = subprocess.run(
+        [
+            "git",
+            "-C",
+            str(checkout),
+            "diff",
+            "--no-ext-diff",
+            "--binary",
+            "--abbrev=8",
+            "--unified=1",
+            "--",
+            "src/maxtext/trainers/pre_train/train.py",
+            "src/maxtext/utils/train_utils.py",
+        ],
+        check=True,
+        capture_output=True,
+    ).stdout
+    if diff != patch_path.read_bytes():
+        raise ExecutionRefused("MaxText checkout differs from the approved patch")
     return checkout
 
 

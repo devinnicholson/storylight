@@ -8,12 +8,22 @@ import os
 from pathlib import Path
 
 from .commands import build_train_command, shell_join
-from .configuration import load_config
+from .configuration import RECOVERY_EXPERIMENT_ID, load_config
 from .integrity import artifact_binding, sha256_file, validate_dataset_manifest
+from .learning_evidence import (
+    verify_tensorboard_learning,
+    verify_v3_terminal_acceptance,
+)
 from .manifests import complete_run, stable_run_id, start_run
+from .orbax_receipt import (
+    discover_orbax_items,
+    lora_checkpoint_evidence,
+    terminal_checkpoint_step,
+)
 from .runtime import (
     ExecutionRefused,
     approval_token,
+    approved_maxtext_patch_sha256,
     require_approval,
     run_checked,
     validate_maxtext_checkout,
@@ -112,6 +122,7 @@ def main() -> None:
         raise
     try:
         checkout = validate_maxtext_checkout(args.maxtext_root, config)
+        maxtext_patch_sha256 = approved_maxtext_patch_sha256(config)
         validate_runtime()
         runtime_lock = Path(
             os.environ.get("BOOKFORGE_JAX_RUNTIME_LOCK", "/opt/bookforge/runtime.lock.json")
@@ -123,6 +134,42 @@ def main() -> None:
         artifacts = sorted(path for path in args.output_directory.rglob("*") if path.is_file())
         if not artifacts:
             raise RuntimeError("MaxText completed without writing checkpoint artifacts")
+        completed_steps = (
+            config.training["smoke_steps"] if args.smoke else config.training["steps"]
+        )
+        is_v3_recovery = config.experiment_id == RECOVERY_EXPERIMENT_ID
+        v3_thresholds = (
+            config.recovery["learnability_acceptance"] if is_v3_recovery else None
+        )
+        learning_evidence = verify_tensorboard_learning(
+            args.output_directory,
+            expected_steps=completed_steps,
+            v3_acceptance=v3_thresholds,
+            require_full_v3=is_v3_recovery and not args.smoke,
+        )
+        terminal_adapter = discover_orbax_items(
+            args.output_directory,
+            expected_step=terminal_checkpoint_step(completed_steps),
+        )
+        adapter_evidence = lora_checkpoint_evidence(
+            terminal_adapter,
+            expected_rank=config.training["rank"],
+            expected_pair_count=config.training.get("expected_lora_pair_count"),
+            expected_step=terminal_checkpoint_step(completed_steps),
+            approved_maxtext_patch_sha256=maxtext_patch_sha256,
+        )
+        acceptance_evidence = verify_v3_terminal_acceptance(
+            experiment_id=config.experiment_id,
+            smoke=args.smoke,
+            expected_steps=completed_steps,
+            expected_rank=config.training["rank"],
+            expected_lora_pair_count=config.training.get(
+                "expected_lora_pair_count", 1
+            ),
+            approved_maxtext_patch_sha256=maxtext_patch_sha256,
+            learning_evidence=learning_evidence,
+            adapter_evidence=adapter_evidence,
+        )
     except Exception as error:
         complete_run(
             args.run_directory,
@@ -132,18 +179,23 @@ def main() -> None:
             evidence={"error_type": type(error).__name__, "error": str(error), "inputs": inputs},
         )
         raise
+    terminal_evidence = {
+        "inputs": inputs,
+        "runtime_lock": {
+            "path": str(runtime_lock.resolve()),
+            "sha256": sha256_file(runtime_lock),
+        },
+        "learning": learning_evidence,
+        "terminal_adapter": adapter_evidence,
+    }
+    if acceptance_evidence is not None:
+        terminal_evidence["learnability_acceptance"] = acceptance_evidence
     complete_run(
         args.run_directory,
         run_id=run_id,
         status="succeeded",
         artifacts=artifacts,
-        evidence={
-            "inputs": inputs,
-            "runtime_lock": {
-                "path": str(runtime_lock.resolve()),
-                "sha256": sha256_file(runtime_lock),
-            },
-        },
+        evidence=terminal_evidence,
     )
 
 

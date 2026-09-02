@@ -1,0 +1,23 @@
+diff --git a/src/maxtext/trainers/pre_train/train.py b/src/maxtext/trainers/pre_train/train.py
+index 274d9acc..d165bfc0 100644
+--- a/src/maxtext/trainers/pre_train/train.py
++++ b/src/maxtext/trainers/pre_train/train.py
+@@ -719,3 +719,3 @@ def train_step(model, config, state_mesh_shardings, params_shardings, state, dat
+     else:
+-      model_params = nnx.state(new_state.model, nnx.Param)
++      model_params = nnx.state(new_state.model, train_param_type)
+       scalar_metrics["learning/param_norm"] = max_utils.l2norm_pytree(model_params)
+diff --git a/src/maxtext/utils/train_utils.py b/src/maxtext/utils/train_utils.py
+index 35f47e59..eb14af61 100644
+--- a/src/maxtext/utils/train_utils.py
++++ b/src/maxtext/utils/train_utils.py
+@@ -269,5 +269,8 @@ def setup_train_loop(config, recorder, devices=None):
+         model = _create_model_partial()
++        lora_enabled = getattr(getattr(config, "lora", None), "enable_lora", False)
++        if lora_enabled:
++          model = lora_utils.apply_lora_to_model(model, mesh, config)
+         wrt = (
+             getattr(nnx, "LoRAParam", nnx.Param)
+-            if getattr(getattr(config, "lora", None), "enable_lora", False)
++            if lora_enabled
+             else nnx.Param

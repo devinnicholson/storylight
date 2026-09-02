@@ -11,9 +11,11 @@ import stat
 import subprocess
 import sys
 import tempfile
+from collections.abc import Mapping
 from contextlib import suppress
 from dataclasses import asdict
 from pathlib import Path
+from types import MappingProxyType
 from urllib.parse import urlsplit
 
 from bookforge.fidelity_benchmark import (
@@ -38,12 +40,43 @@ _REPORT_FIELDS = {
     "privacy",
     "summary",
 }
-_HEADLINE_METRICS = {
-    "schema_valid_rate": 1.0,
-    "semantic_atom_recall": 0.587109375,
-    "exact_example_pass_rate": 0.0,
-    "privacy_pass_rate": 0.74609375,
-}
+_HEADLINE_FIELDS = frozenset(
+    {
+        "schema_valid_rate",
+        "semantic_atom_recall",
+        "exact_example_pass_rate",
+        "privacy_pass_rate",
+    }
+)
+_BASELINE_SIGNATURES_BY_DATASET_MANIFEST_SHA256: Mapping[
+    str, Mapping[str, float]
+] = MappingProxyType(
+    {
+        # story-fidelity-v1: preserve the pre-training accepted-engine measurement.
+        "e717eb38c44fceeeae3a2bc88981767c316ca1339198ce1077b893252afeb1de": (
+            MappingProxyType(
+                {
+                    "schema_valid_rate": 1.0,
+                    "semantic_atom_recall": 0.587109375,
+                    "exact_example_pass_rate": 0.0,
+                    "privacy_pass_rate": 0.74609375,
+                }
+            )
+        ),
+        # story-fidelity-v2: accepted Jetson engine measured before candidate
+        # prediction or evaluation on 2026-09-02.
+        "fd3317ef440a04c9adc41825dda2b58c03a52ae0829bd422750522b4e11d428e": (
+            MappingProxyType(
+                {
+                    "schema_valid_rate": 1.0,
+                    "semantic_atom_recall": 0.537109375,
+                    "exact_example_pass_rate": 0.0,
+                    "privacy_pass_rate": 1.0,
+                }
+            )
+        ),
+    }
+)
 
 
 class BaselineDevelopmentError(ValueError):
@@ -60,6 +93,22 @@ def _sha256(path: Path) -> str:
         for block in iter(lambda: stream.read(8 * 1024 * 1024), b""):
             digest.update(block)
     return digest.hexdigest()
+
+
+def _headline_signature(dataset_manifest_sha256: str) -> Mapping[str, float]:
+    signature = _BASELINE_SIGNATURES_BY_DATASET_MANIFEST_SHA256.get(
+        dataset_manifest_sha256
+    )
+    if signature is None:
+        raise BaselineDevelopmentError(
+            "no frozen baseline signature is registered for this dataset manifest"
+        )
+    if set(signature) != _HEADLINE_FIELDS or any(
+        type(value) is not float or not 0.0 <= value <= 1.0
+        for value in signature.values()
+    ):
+        raise BaselineDevelopmentError("registered baseline headline signature is malformed")
+    return signature
 
 
 def _regular(path: Path, label: str, *, nonempty: bool = True) -> os.stat_result:
@@ -170,7 +219,8 @@ def validate_baseline_report(
         or set(summary.category_pass_rates) != set(population.category_record_counts)
     ):
         raise BaselineDevelopmentError("baseline development report uses another population")
-    if any(getattr(summary, name) != value for name, value in _HEADLINE_METRICS.items()):
+    signature = _headline_signature(dataset_manifest_sha256)
+    if any(getattr(summary, name) != value for name, value in signature.items()):
         raise BaselineDevelopmentError("baseline headline metrics differ from the frozen baseline")
     return summary
 

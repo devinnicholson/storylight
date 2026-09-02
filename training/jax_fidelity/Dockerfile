@@ -6,6 +6,7 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
     PIP_DISABLE_PIP_VERSION_CHECK=1 \
     PIP_NO_CACHE_DIR=1 \
     XLA_PYTHON_CLIENT_MEM_FRACTION=0.95 \
+    BOOKFORGE_MAXTEXT_APPROVED_PATCH=/opt/bookforge/patches/maxtext-native-lora-materialization.patch \
     LD_LIBRARY_PATH=/usr/local/lib/python3.12/site-packages/nvidia/cublas/lib:/usr/local/lib/python3.12/site-packages/nvidia/cuda_nvrtc/lib:/usr/local/lib/python3.12/site-packages/nvidia/cuda_runtime/lib:/usr/local/lib/python3.12/site-packages/nvidia/cudnn/lib:/usr/local/lib/python3.12/site-packages/nvidia/cufft/lib:/usr/local/lib/python3.12/site-packages/nvidia/curand/lib:/usr/local/lib/python3.12/site-packages/nvidia/cusolver/lib:/usr/local/lib/python3.12/site-packages/nvidia/cusparse/lib:/usr/local/lib/python3.12/site-packages/nvidia/nccl/lib:/usr/local/lib/python3.12/site-packages/nvidia/nvjitlink/lib:/usr/local/nvidia/lib:/usr/local/nvidia/lib64
 
 RUN apt-get update \
@@ -16,6 +17,17 @@ RUN git clone --filter=blob:none --no-checkout https://github.com/AI-Hypercomput
     && git -C /opt/MaxText checkout --detach 538fe7a3f3376d94cf3f04e77741aa6d7e8efa45 \
     && test "$(git -C /opt/MaxText rev-parse HEAD)" = "538fe7a3f3376d94cf3f04e77741aa6d7e8efa45" \
     && test -z "$(git -C /opt/MaxText status --porcelain)"
+
+COPY training/jax_fidelity/patches/maxtext-native-lora-materialization.patch /opt/bookforge/patches/maxtext-native-lora-materialization.patch
+RUN git -C /opt/MaxText apply --check "$BOOKFORGE_MAXTEXT_APPROVED_PATCH" \
+    && git -C /opt/MaxText apply "$BOOKFORGE_MAXTEXT_APPROVED_PATCH" \
+    && git -C /opt/MaxText diff --check \
+    && test "$(git -C /opt/MaxText status --short)" = "$(printf '%s\n%s' \
+        ' M src/maxtext/trainers/pre_train/train.py' \
+        ' M src/maxtext/utils/train_utils.py')" \
+    && git -C /opt/MaxText diff --no-ext-diff --binary --abbrev=8 --unified=1 -- \
+        src/maxtext/trainers/pre_train/train.py src/maxtext/utils/train_utils.py \
+        | cmp -s - "$BOOKFORGE_MAXTEXT_APPROVED_PATCH"
 
 WORKDIR /opt/bookforge
 COPY training/jax_fidelity/requirements.lock /tmp/bookforge-jax-requirements.lock

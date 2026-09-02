@@ -29,6 +29,8 @@ DATASET = ROOT / "datasets/story-fidelity-v1/manifest.json"
 DEVELOPMENT = ROOT / "datasets/story-fidelity-v1/development.jsonl"
 DATASET_SHA256 = sha256_file(DATASET)
 DEVELOPMENT_SHA256 = sha256_file(DEVELOPMENT)
+DATASET_V2 = ROOT / "datasets/story-fidelity-v2/manifest.json"
+DATASET_V2_SHA256 = sha256_file(DATASET_V2)
 
 
 def _accepted_identity(tmp_path: Path) -> tuple[Path, str, Path, str, CandidateIdentity]:
@@ -203,6 +205,68 @@ def test_recovery_rejects_a_redefined_historical_baseline(tmp_path: Path) -> Non
             ),
             dataset_manifest_path=DATASET,
             dataset_manifest_sha256=DATASET_SHA256,
+        )
+
+
+def test_baseline_signatures_preserve_v1_and_register_v2_exactly(
+    tmp_path: Path,
+) -> None:
+    assert dict(
+        baseline._BASELINE_SIGNATURES_BY_DATASET_MANIFEST_SHA256[DATASET_SHA256]
+    ) == {
+        "schema_valid_rate": 1.0,
+        "semantic_atom_recall": 0.587109375,
+        "exact_example_pass_rate": 0.0,
+        "privacy_pass_rate": 0.74609375,
+    }
+    assert dict(
+        baseline._BASELINE_SIGNATURES_BY_DATASET_MANIFEST_SHA256[DATASET_V2_SHA256]
+    ) == {
+        "schema_valid_rate": 1.0,
+        "semantic_atom_recall": 0.537109375,
+        "exact_example_pass_rate": 0.0,
+        "privacy_pass_rate": 1.0,
+    }
+    assert set(baseline._BASELINE_SIGNATURES_BY_DATASET_MANIFEST_SHA256) == {
+        DATASET_SHA256,
+        DATASET_V2_SHA256,
+    }
+    with pytest.raises(
+        baseline.BaselineDevelopmentError,
+        match="no frozen baseline signature is registered",
+    ):
+        baseline._headline_signature("d" * 64)
+
+    _, _, _, _, identity = _accepted_identity(tmp_path)
+    report = tmp_path / "v2-baseline.json"
+    _baseline_report(report, identity)
+    document = json.loads(report.read_text(encoding="utf-8"))
+    population = population_contract_from_manifest(
+        DATASET_V2,
+        expected_manifest_sha256=DATASET_V2_SHA256,
+        split=DatasetSplit.DEVELOPMENT,
+    )
+    document["dataset_manifest_sha256"] = DATASET_V2_SHA256
+    summary = document["summary"]
+    summary["records"] = population.records
+    summary["record_ids_sha256"] = population.record_ids_sha256
+    summary["category_record_counts"] = dict(population.category_record_counts)
+    summary["category_pass_rates"] = {
+        category: 0.0 for category in population.category_record_counts
+    }
+    summary["counterfactual_pairs"] = population.pairs
+    report.write_bytes(canonical_json_bytes(document))
+
+    with pytest.raises(
+        baseline.BaselineDevelopmentError,
+        match="baseline headline metrics differ",
+    ):
+        baseline.validate_baseline_report(
+            report,
+            expected_sha256=sha256_file(report),
+            identity=identity,
+            dataset_manifest_path=DATASET_V2,
+            dataset_manifest_sha256=DATASET_V2_SHA256,
         )
 
 

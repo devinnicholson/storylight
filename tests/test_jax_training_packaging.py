@@ -384,6 +384,19 @@ def test_v2_train_command_makes_exposure_and_optimizer_explicit() -> None:
     assert "checkpoint_period=160" in command
 
 
+def test_pinned_native_maxtext_patch_materializes_lora_before_optimizer() -> None:
+    patch = (
+        ROOT
+        / "training/jax_fidelity/patches/maxtext-native-lora-materialization.patch"
+    ).read_text()
+
+    assert "model = lora_utils.apply_lora_to_model(model, mesh, config)" in patch
+    assert patch.index("apply_lora_to_model") < patch.index("wrt = (")
+    assert "src/maxtext/utils/train_utils.py" in patch
+    assert "nnx.state(new_state.model, train_param_type)" in patch
+    assert "src/maxtext/trainers/pre_train/train.py" in patch
+
+
 def test_container_and_direct_dependencies_are_immutable() -> None:
     dockerfile = (ROOT / "training/jax_fidelity/Dockerfile").read_text()
     lock = (ROOT / "training/jax_fidelity/requirements.lock").read_text()
@@ -417,6 +430,19 @@ def test_container_and_direct_dependencies_are_immutable() -> None:
     assert "nvidia/cudart/lib/lib*.so.*[0-9]" in dockerfile
     assert "LD_LIBRARY_PATH=" in dockerfile
     assert "XLA_PYTHON_CLIENT_MEM_FRACTION=0.95" in dockerfile
+    assert (
+        "BOOKFORGE_MAXTEXT_APPROVED_PATCH=/opt/bookforge/patches/"
+        "maxtext-native-lora-materialization.patch"
+    ) in dockerfile
+    assert "git -C /opt/MaxText apply --check" in dockerfile
+    assert "git -C /opt/MaxText apply \"$BOOKFORGE_MAXTEXT_APPROVED_PATCH\"" in dockerfile
+    assert (
+        "git -C /opt/MaxText diff --no-ext-diff --binary --abbrev=8 --unified=1"
+        in dockerfile
+    )
+    assert "src/maxtext/trainers/pre_train/train.py" in dockerfile
+    assert "$(printf '%s\\n%s'" in dockerfile
+    assert 'cmp -s - "$BOOKFORGE_MAXTEXT_APPROVED_PATCH"' in dockerfile
     assert "-Wl,-rpath,/usr/local/lib/python3.12/site-packages/nvidia/nccl/lib" in dockerfile
     assert "--no-build-isolation 'transformer-engine-jax==2.18.0'" in dockerfile
     assert (
@@ -510,6 +536,30 @@ def test_executed_training_writes_nonempty_terminal_completion(
 
     monkeypatch.setattr(train_module, "run_checked", fake_run)
     monkeypatch.setattr(
+        train_module,
+        "verify_tensorboard_learning",
+        lambda *_args, **_kwargs: {
+            "schema_version": "bookforge-jax-learning-evidence-v1",
+            "status": "passed",
+            "optimizer_steps": 5,
+        },
+    )
+    monkeypatch.setattr(
+        train_module,
+        "discover_orbax_items",
+        lambda *_args, **_kwargs: output,
+    )
+    monkeypatch.setattr(
+        train_module,
+        "lora_checkpoint_evidence",
+        lambda *_args, **_kwargs: {
+            "schema_version": "1.0",
+            "format": "maxtext-orbax-lora-tree",
+            "lora_pair_count": 1,
+            "rank": 8,
+        },
+    )
+    monkeypatch.setattr(
         sys,
         "argv",
         [
@@ -545,3 +595,5 @@ def test_executed_training_writes_nonempty_terminal_completion(
     assert completion["status"] == "succeeded"
     assert completion["artifacts"]
     assert completion["evidence"]["inputs"]["base_checkpoint"]["content_sha256"]
+    assert completion["evidence"]["learning"]["status"] == "passed"
+    assert completion["evidence"]["terminal_adapter"]["lora_pair_count"] == 1
