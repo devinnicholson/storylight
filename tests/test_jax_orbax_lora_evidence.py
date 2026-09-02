@@ -85,18 +85,55 @@ def _paired_lora_tree(
     *,
     a_shape: list[int] | None = None,
     b_shape: list[int] | None = None,
+    a_leaf: str = "lora_a.kernel",
+    b_leaf: str = "lora_b.kernel",
 ) -> dict[tuple[str | int, ...], list[int] | None]:
     a_shape = a_shape or [2560, 16]
     b_shape = b_shape or [16, 8, 256]
     paths: dict[tuple[str | int, ...], list[int] | None] = {
         ("step",): None,
-        (*prefix, "lora_a.kernel"): a_shape,
-        (*prefix, "lora_b.kernel"): b_shape,
+        (*prefix, a_leaf): a_shape,
+        (*prefix, b_leaf): b_shape,
     }
     for moment in ("mu", "nu"):
         optimizer_prefix = ("opt_state", 0, moment, "params", *prefix[2:])
-        paths[(*optimizer_prefix, "lora_a.kernel")] = a_shape
-        paths[(*optimizer_prefix, "lora_b.kernel")] = b_shape
+        paths[(*optimizer_prefix, a_leaf)] = a_shape
+        paths[(*optimizer_prefix, b_leaf)] = b_shape
+    return paths
+
+
+def _gemma4_production_lora_tree(
+    *, pair_limit: int = 205
+) -> dict[tuple[str | int, ...], list[int] | None]:
+    modules: list[tuple[str, ...]] = []
+    for layer in range(35):
+        layer_modules = [
+            ("mlp", "wi_0"),
+            ("mlp", "wi_1"),
+            ("mlp", "wo"),
+            ("self_attention", "out"),
+            ("self_attention", "query"),
+        ]
+        if layer < 15:
+            layer_modules.extend(
+                (("self_attention", "key"), ("self_attention", "value"))
+            )
+        modules.extend((f"layers_{layer}", *module) for module in layer_modules)
+    if not 0 < pair_limit <= len(modules):
+        raise ValueError("pair limit must select part of the Gemma4 LoRA topology")
+
+    paths: dict[tuple[str | int, ...], list[int] | None] = {("step",): None}
+    for module in modules[:pair_limit]:
+        prefix = ("params", "params", "decoder", *module)
+        paths.update(
+            _paired_lora_tree(
+                prefix,
+                a_shape=[1, 16],
+                b_shape=[16, 1],
+                a_leaf="kernel_lora_a",
+                b_leaf="kernel_lora_b",
+            )
+        )
     return paths
 
 
@@ -151,6 +188,41 @@ def test_lora_storage_evidence_reconciles_restored_sequence_index(tmp_path: Path
     assert evidence["restored_lora_array_count"] == 6
 
 
+def test_lora_evidence_accepts_production_leaf_names_and_list_optimizer_state(
+    tmp_path: Path,
+) -> None:
+    prefix = ("params", "params", "decoder", "layers_0", "self_attention", "query")
+    items = _items(
+        tmp_path,
+        _paired_lora_tree(
+            prefix,
+            a_shape=[768, 16],
+            b_shape=[16, 2048],
+            a_leaf="kernel_lora_a",
+            b_leaf="kernel_lora_b",
+        ),
+    )
+    restored = _RESTORED[items]
+    assert isinstance(restored, dict)
+    optimizer = restored["opt_state"]
+    assert isinstance(optimizer, dict)
+    restored["opt_state"] = [optimizer[0]]
+
+    evidence = _evidence(items, expected_rank=16, expected_pair_count=1)
+
+    assert evidence["pairs"] == [
+        {
+            "module_path": (
+                "params/params/decoder/layers_0/self_attention/query/kernel"
+            ),
+            "a_shape": [768, 16],
+            "b_shape": [16, 2048],
+        }
+    ]
+    assert evidence["optimizer_lora_tensor_count"] == 4
+    assert evidence["restored_lora_array_count"] == 6
+
+
 def test_lora_storage_evidence_validates_chunked_write_shapes(tmp_path: Path) -> None:
     prefix = ("params", "params", "decoder", "layers_0", "self_attention", "key")
     items = _items(tmp_path, _paired_lora_tree(prefix))
@@ -162,24 +234,85 @@ def test_lora_storage_evidence_validates_chunked_write_shapes(tmp_path: Path) ->
     assert isinstance(model, dict)
 
     class ChunkedArray:
-        shape = (5120, 16)
         dtype = np.dtype(np.float32)
+
+        def __init__(self, shape: tuple[int, ...]) -> None:
+            self.shape = shape
 
         def __array__(self, dtype: object = None, copy: object = None) -> np.ndarray:
             del copy
             return np.zeros(self.shape, dtype=dtype or self.dtype)
 
-    model["decoder"]["layers_0"]["self_attention"]["key"]["lora_a.kernel"] = (
-        ChunkedArray()
-    )
+    model_leaf = model["decoder"]["layers_0"]["self_attention"]["key"]
+    model_leaf["lora_a.kernel"] = ChunkedArray((5120, 16))
+    model_leaf["lora_b.kernel"] = ChunkedArray((16, 16, 512))
+    for moment in ("mu", "nu"):
+        optimizer_leaf = restored["opt_state"][0][moment]["params"]["decoder"][  # type: ignore[index]
+            "layers_0"
+        ]["self_attention"]["key"]
+        optimizer_leaf["lora_a.kernel"] = ChunkedArray((5120, 16))
+        optimizer_leaf["lora_b.kernel"] = ChunkedArray((16, 16, 512))
 
-    evidence = lora_checkpoint_storage_evidence(
-        items,
-        expected_pair_count=1,
-        restored_tree=restored,
-    )
+    evidence = _evidence(items, expected_rank=16, expected_pair_count=1)
 
     assert evidence["payload_arrays_restored"] is True
+    assert evidence["rank"] == 16
+    assert evidence["restored_lora_array_count"] == 6
+
+
+def test_lora_evidence_censuses_full_gemma4_production_topology(
+    tmp_path: Path,
+) -> None:
+    items = _items(tmp_path / "complete", _gemma4_production_lora_tree())
+
+    evidence = _evidence(items, expected_rank=16, expected_pair_count=205)
+
+    assert evidence["lora_pair_count"] == 205
+    assert evidence["lora_tensor_count"] == 410
+    assert evidence["optimizer_lora_tensor_count"] == 820
+    assert evidence["restored_lora_array_count"] == 1230
+
+    incomplete = _items(
+        tmp_path / "incomplete", _gemma4_production_lora_tree(pair_limit=204)
+    )
+    with pytest.raises(OrbaxReceiptError, match="approved model topology"):
+        _evidence(incomplete, expected_rank=16, expected_pair_count=205)
+
+
+def test_lora_evidence_rejects_mismatched_restored_optimizer_shape(
+    tmp_path: Path,
+) -> None:
+    prefix = ("params", "params", "decoder", "layers_0", "self_attention", "key")
+    items = _items(tmp_path, _paired_lora_tree(prefix))
+    restored = _RESTORED[items]
+    assert isinstance(restored, dict)
+    restored["opt_state"][0]["mu"]["params"]["decoder"]["layers_0"][  # type: ignore[index]
+        "self_attention"
+    ]["key"]["lora_a.kernel"] = np.zeros((5120, 16), dtype=np.float32)
+
+    with pytest.raises(OrbaxReceiptError, match="optimizer moment shape"):
+        _evidence(items, expected_rank=16, expected_pair_count=1)
+
+
+def test_lora_evidence_rejects_restored_global_rank_multiple(tmp_path: Path) -> None:
+    prefix = ("params", "params", "decoder", "layers_0", "self_attention", "key")
+    items = _items(tmp_path, _paired_lora_tree(prefix))
+    restored = _RESTORED[items]
+    assert isinstance(restored, dict)
+    model = restored["params"]["params"]["decoder"]["layers_0"][  # type: ignore[index]
+        "self_attention"
+    ]["key"]
+    model["lora_a.kernel"] = np.zeros((2560, 32), dtype=np.float32)
+    model["lora_b.kernel"] = np.zeros((32, 8, 256), dtype=np.float32)
+    for moment in ("mu", "nu"):
+        optimizer = restored["opt_state"][0][moment]["params"]["decoder"][  # type: ignore[index]
+            "layers_0"
+        ]["self_attention"]["key"]
+        optimizer["lora_a.kernel"] = np.zeros((2560, 32), dtype=np.float32)
+        optimizer["lora_b.kernel"] = np.zeros((32, 8, 256), dtype=np.float32)
+
+    with pytest.raises(OrbaxReceiptError, match="approved rank"):
+        _evidence(items, expected_rank=16, expected_pair_count=1)
 
 
 def test_lora_evidence_binds_exact_topology_step_and_patch(tmp_path: Path) -> None:

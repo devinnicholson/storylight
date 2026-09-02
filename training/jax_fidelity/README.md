@@ -138,7 +138,10 @@ It performs only project, billing, and exact-name `CreateCustomJob` Admin
 Activity reads, then writes the evidence once. The Modal worker accepts this
 producer only when billing is explicitly disabled, the dated run ID and 400-day
 audit absence are fresh and exact, no image build or job intent exists, and all
-input and intended-resource hashes match the Modal request.
+input and intended-resource hashes match the Modal request. The image plan,
+rejection, intended resource, approval token, and running Modal image must all
+name the same packaged Bookforge source-manifest hash; legacy generic preflight
+rejections do not authorize this fallback.
 
 ```bash
 modal run deploy/modal_jax_fidelity.py --help

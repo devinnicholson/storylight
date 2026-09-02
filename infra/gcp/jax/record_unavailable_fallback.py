@@ -26,6 +26,10 @@ from job_plan import (
     TIMEOUT_SECONDS,
     TPU_CHIPS,
 )
+from packaged_source_manifest import (
+    packaged_bookforge_source_manifest_from_rows,
+    source_manifest_sha256,
+)
 
 PRODUCER = "bookforge-gcp-jax-unavailability-recorder"
 RUN_ID_ABSENCE_BASIS = "billing-disabled-plus-empty-create-audit-log-400d"
@@ -126,6 +130,7 @@ def _validated_image_plan(
     if not isinstance(plan, dict):
         raise ValueError("image build plan must contain a JSON object")
     source_sha = plan.get("source_sha256")
+    bookforge_source_sha = plan.get("bookforge_source_manifest_sha256")
     tagged_uri = plan.get("tagged_image_uri")
     match = _TAGGED_IMAGE.fullmatch(str(tagged_uri))
     if (
@@ -137,6 +142,8 @@ def _validated_image_plan(
         or plan.get("remote_mutation") is not False
         or not isinstance(source_sha, str)
         or _SHA256.fullmatch(source_sha) is None
+        or not isinstance(bookforge_source_sha, str)
+        or _SHA256.fullmatch(bookforge_source_sha) is None
         or match is None
         or match.group(1) != source_sha[:20]
     ):
@@ -157,6 +164,14 @@ def _validated_image_plan(
         or _DIGEST_IMAGE.fullmatch(builder_image) is None
     ):
         raise ValueError("image build plan has no bounded provider command")
+    try:
+        derived_bookforge_source_sha = source_manifest_sha256(
+            packaged_bookforge_source_manifest_from_rows(source_files)
+        )
+    except ValueError as error:
+        raise ValueError("image build plan has invalid packaged source rows") from error
+    if bookforge_source_sha != derived_bookforge_source_sha:
+        raise ValueError("image build plan packaged source binding is invalid")
     command_sha = hashlib.sha256(
         json.dumps(provider_command, separators=(",", ":")).encode()
     ).hexdigest()
@@ -213,6 +228,9 @@ def _resource_intent(
         "smoke": smoke,
         "container": {
             "image_source_sha256": image_plan["source_sha256"],
+            "bookforge_source_manifest_sha256": image_plan[
+                "bookforge_source_manifest_sha256"
+            ],
             "image_build_plan_sha256": image_plan_sha256,
             "intended_tagged_uri": image_plan["tagged_image_uri"],
             "runnable_digest_uri": None,
@@ -336,6 +354,9 @@ def collect_rejection(
         },
         "container_image": {
             "image_source_sha256": image_plan["source_sha256"],
+            "bookforge_source_manifest_sha256": image_plan[
+                "bookforge_source_manifest_sha256"
+            ],
             "image_build_plan_sha256": image_plan_sha,
             "intended_tagged_uri": image_plan["tagged_image_uri"],
             "runnable_digest_uri": None,

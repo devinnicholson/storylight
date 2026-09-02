@@ -6,6 +6,7 @@ import importlib.util
 import json
 import shutil
 import sys
+from datetime import UTC, datetime
 from pathlib import Path
 
 import pytest
@@ -41,23 +42,17 @@ modal_reconciliation = _load("modal_reconciliation", Path("infra/gcp/jax/modal_r
 
 
 def _request(**updates: object) -> dict[str, object]:
-    run_id = "bookforge-modal-smoke-20260901"
+    run_id = f"bookforge-modal-smoke-{datetime.now(UTC).strftime('%Y%m%d')}"
     config_sha = "a" * 64
     dataset_sha = "b" * 64
-    rejection = {
-        "schema_version": "1.0",
-        "producer": "bookforge-gcp-jax-submitter",
-        "run_id": run_id,
-        "spec_sha256": "9" * 64,
-        "status": "rejected-pre-billable",
-        "submission_intent_created": False,
-        "custom_job_created": False,
-        "job_absence_verified": True,
-        "run_id_absence_basis": "vertex-list",
-        "fallback_allowed": True,
-        "reason": "quota unavailable",
-    }
-    rejection["input_bindings"] = {
+    source_manifest_sha = "8" * 64
+    image_source_sha = "7" * 64
+    image_plan_sha = "6" * 64
+    tagged_uri = (
+        "us-east1-docker.pkg.dev/your-gcp-project/bookforge-jax/trainer:"
+        + image_source_sha[:20]
+    )
+    bindings = {
         "config_sha256": config_sha,
         "dataset_manifest_sha256": dataset_sha,
         "prepared_train_sha256": "c" * 64,
@@ -66,13 +61,89 @@ def _request(**updates: object) -> dict[str, object]:
         "base_checkpoint_receipt_sha256": "0" * 64,
         "tokenizer_manifest_sha256": "f" * 64,
     }
-    rejection["input_bindings_sha256"] = hashlib.sha256(
-        json.dumps(rejection["input_bindings"], sort_keys=True, separators=(",", ":")).encode()
-    ).hexdigest()
+    resource_container = {
+        "image_source_sha256": image_source_sha,
+        "bookforge_source_manifest_sha256": source_manifest_sha,
+        "image_build_plan_sha256": image_plan_sha,
+        "intended_tagged_uri": tagged_uri,
+        "runnable_digest_uri": None,
+        "digest_resolved": False,
+        "build_attempted": False,
+    }
+    resource = {
+        "backend": "vertex-custom-job",
+        "project": "your-gcp-project",
+        "region": "us-east1",
+        "display_name": run_id,
+        "create_method": "google.cloud.aiplatform.v1.JobService.CreateCustomJob",
+        "create_url": (
+            "https://us-east1-aiplatform.googleapis.com/v1/projects/"
+            "your-gcp-project/locations/us-east1/customJobs"
+        ),
+        "machine_type": "ct6e-standard-1t",
+        "tpu_chips": 1,
+        "replicas": 1,
+        "timeout_seconds": 2700,
+        "automatic_retries": 0,
+        "endpoint_created": False,
+        "service_account": (
+            "bookforge-jax-worker@your-gcp-project.iam.gserviceaccount.com"
+        ),
+        "input_prefix": f"gs://bookforge-jax-scratch/inputs/{run_id}",
+        "release_prefix": f"gs://bookforge-jax-release/releases/{run_id}",
+        "input_bindings": bindings,
+        "smoke": True,
+        "container": resource_container,
+    }
+    rejection = {
+        "schema_version": "1.0",
+        "producer": "bookforge-gcp-jax-unavailability-recorder",
+        "status": "rejected-pre-billable",
+        "rejection_kind": "gcp-unavailable-before-image-build",
+        "project": "your-gcp-project",
+        "region": "us-east1",
+        "run_id": run_id,
+        "checked_at": datetime.now(UTC).isoformat(),
+        "submission_intent_created": False,
+        "custom_job_created": False,
+        "job_absence_verified": True,
+        "run_id_absence_basis": "billing-disabled-plus-empty-create-audit-log-400d",
+        "fallback_allowed": True,
+        "reason": "billing disabled before image build",
+        "billing_verification": {
+            "active_project": "your-gcp-project",
+            "active_account": "operator@example.com",
+            "billing_enabled": False,
+            "billing_account_name": "",
+        },
+        "audit_absence": {
+            "log": "cloudaudit.googleapis.com/activity",
+            "service_name": "aiplatform.googleapis.com",
+            "method_name": "google.cloud.aiplatform.v1.JobService.CreateCustomJob",
+            "display_name": run_id,
+            "filter": modal_jax_fidelity._gcp_audit_filter(run_id),
+            "freshness": "400d",
+            "maximum_run_id_age_days": 7,
+            "matching_entries": [],
+        },
+        "container_image": {
+            **resource_container,
+            "build_intent_created": False,
+            "build_receipt_created": False,
+            "build_admission": "blocked-billing-disabled",
+        },
+        "intended_vertex_resource": resource,
+        "intended_vertex_resource_sha256": modal_jax_fidelity._canonical_sha256(
+            resource
+        ),
+        "input_bindings": bindings,
+        "input_bindings_sha256": modal_jax_fidelity._canonical_sha256(bindings),
+        "queries_read_only": True,
+        "remote_mutation": False,
+    }
     rejection_sha = hashlib.sha256(
         (json.dumps(rejection, indent=2, sort_keys=True) + "\n").encode()
     ).hexdigest()
-    source_manifest_sha = "8" * 64
     request: dict[str, object] = {
         "run_id": run_id,
         "config_sha256": config_sha,
@@ -770,7 +841,8 @@ def test_finalize_discards_only_completionless_derivative_staging(
 
 
 def test_modal_request_requires_hashes_exact_approval_and_prebillable_rejection() -> None:
-    validated = modal_jax_fidelity._validate_request(_request())
+    original = _request()
+    validated = modal_jax_fidelity._validate_request(original)
     assert validated[-1] is True
     assert modal_jax_fidelity._finalize_approval_token(
         "bookforge-modal-smoke-20260901", "d" * 64, "8" * 64, "7" * 64
@@ -782,7 +854,7 @@ def test_modal_request_requires_hashes_exact_approval_and_prebillable_rejection(
         modal_jax_fidelity._validate_request(_request(gcp_rejection={}))
     with pytest.raises(ValueError, match="approval"):
         modal_jax_fidelity._validate_request(_request(approval_token="approve"))
-    with pytest.raises(ValueError, match="approval"):
+    with pytest.raises(ValueError, match="pre-billable"):
         modal_jax_fidelity._validate_request(
             _request(bookforge_source_manifest_sha256="9" * 64)
         )
@@ -811,6 +883,65 @@ def test_modal_request_requires_hashes_exact_approval_and_prebillable_rejection(
     ).hexdigest()
     with pytest.raises(ValueError, match="staged inputs"):
         modal_jax_fidelity._validate_request(request)
+
+    source_mismatch = _request()
+    mismatch_rejection = json.loads(json.dumps(source_mismatch["gcp_rejection"]))
+    mismatch_rejection["container_image"]["bookforge_source_manifest_sha256"] = (
+        "9" * 64
+    )
+    mismatch_rejection["intended_vertex_resource"]["container"][
+        "bookforge_source_manifest_sha256"
+    ] = "9" * 64
+    mismatch_rejection["intended_vertex_resource_sha256"] = (
+        modal_jax_fidelity._canonical_sha256(
+            mismatch_rejection["intended_vertex_resource"]
+        )
+    )
+    mismatch_sha = hashlib.sha256(
+        (json.dumps(mismatch_rejection, indent=2, sort_keys=True) + "\n").encode()
+    ).hexdigest()
+    source_mismatch["gcp_rejection"] = mismatch_rejection
+    source_mismatch["gcp_rejection_sha256"] = mismatch_sha
+    source_mismatch["approval_token"] = modal_jax_fidelity._approval_token(
+        str(source_mismatch["run_id"]),
+        str(source_mismatch["config_sha256"]),
+        str(source_mismatch["dataset_manifest_sha256"]),
+        str(source_mismatch["prepared_train_sha256"]),
+        str(source_mismatch["input_manifest_sha256"]),
+        str(source_mismatch["base_checkpoint_manifest_sha256"]),
+        str(source_mismatch["base_checkpoint_receipt_sha256"]),
+        str(source_mismatch["tokenizer_manifest_sha256"]),
+        str(source_mismatch["bookforge_source_manifest_sha256"]),
+        mismatch_sha,
+        smoke=True,
+    )
+    with pytest.raises(ValueError, match="pre-billable"):
+        modal_jax_fidelity._validate_request(source_mismatch)
+
+    legacy = _request()
+    legacy_rejection = dict(legacy["gcp_rejection"])
+    legacy_rejection["producer"] = "bookforge-gcp-jax-submitter"
+    legacy_rejection["spec_sha256"] = "9" * 64
+    legacy_sha = hashlib.sha256(
+        (json.dumps(legacy_rejection, indent=2, sort_keys=True) + "\n").encode()
+    ).hexdigest()
+    legacy["gcp_rejection"] = legacy_rejection
+    legacy["gcp_rejection_sha256"] = legacy_sha
+    legacy["approval_token"] = modal_jax_fidelity._approval_token(
+        str(legacy["run_id"]),
+        str(legacy["config_sha256"]),
+        str(legacy["dataset_manifest_sha256"]),
+        str(legacy["prepared_train_sha256"]),
+        str(legacy["input_manifest_sha256"]),
+        str(legacy["base_checkpoint_manifest_sha256"]),
+        str(legacy["base_checkpoint_receipt_sha256"]),
+        str(legacy["tokenizer_manifest_sha256"]),
+        str(legacy["bookforge_source_manifest_sha256"]),
+        legacy_sha,
+        smoke=True,
+    )
+    with pytest.raises(ValueError, match="pre-billable"):
+        modal_jax_fidelity._validate_request(legacy)
 
 
 def test_modal_budget_gate_is_present_and_maxtext_checkout_is_exact() -> None:

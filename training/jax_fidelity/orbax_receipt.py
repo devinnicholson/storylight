@@ -140,13 +140,14 @@ def _flatten_restored_tree(
 def _validate_restored_lora_arrays(
     restored_tree: object,
     expected_write_shapes: Mapping[tuple[str | int, ...], tuple[int, ...]],
-) -> None:
+) -> dict[tuple[str | int, ...], tuple[int, ...]]:
     """Prove the metadata-backed LoRA leaves are real finite floating arrays."""
 
     restored = _flatten_restored_tree(restored_tree)
     restored_lora = {path: value for path, value in restored.items() if _lora_side(path)}
     if set(restored_lora) != set(expected_write_shapes):
         raise OrbaxReceiptError("restored Orbax LoRA array paths differ from metadata")
+    restored_shapes: dict[tuple[str | int, ...], tuple[int, ...]] = {}
     for path, expected_write_shape in expected_write_shapes.items():
         value = restored_lora[path]
         shape = getattr(value, "shape", None)
@@ -182,6 +183,8 @@ def _validate_restored_lora_arrays(
             raise OrbaxReceiptError(
                 f"restored Orbax LoRA array contains non-finite values: path={path!r}"
             )
+        restored_shapes[path] = restored_shape
+    return restored_shapes
 
 
 def _lora_checkpoint_evidence(
@@ -340,7 +343,41 @@ def _lora_checkpoint_evidence(
 
     if restored_tree is None:
         restored_tree = _restore_orbax_tree(root)
-    _validate_restored_lora_arrays(restored_tree, expected_write_shapes)
+    restored_shapes = _validate_restored_lora_arrays(restored_tree, expected_write_shapes)
+    restored_model_shapes: dict[
+        tuple[tuple[str | int, ...], str], tuple[int, ...]
+    ] = {}
+    restored_optimizer_shapes: dict[
+        tuple[str, tuple[str | int, ...], str], tuple[int, ...]
+    ] = {}
+    for path, shape in restored_shapes.items():
+        identity = _lora_side(path)
+        if identity is None:
+            raise OrbaxReceiptError("restored Orbax LoRA path could not be identified")
+        if _is_model_parameter_path(path):
+            restored_model_shapes[identity] = shape
+        else:
+            moment_identity = _optimizer_moment_identity(path)
+            if moment_identity is None:
+                raise OrbaxReceiptError("restored Orbax optimizer path could not be identified")
+            restored_optimizer_shapes[moment_identity] = shape
+
+    for moment_identity, shape in restored_optimizer_shapes.items():
+        _moment, module, side = moment_identity
+        if shape != restored_model_shapes[(module, side)]:
+            raise OrbaxReceiptError(
+                "restored Orbax LoRA optimizer moment shape differs from its tensor"
+            )
+    if expected_rank is not None:
+        for module in pairs:
+            a_shape = restored_model_shapes[(module, "a")]
+            b_shape = restored_model_shapes[(module, "b")]
+            if a_shape[-1] != expected_rank or b_shape[0] != expected_rank:
+                raise OrbaxReceiptError(
+                    "restored Orbax LoRA tensor shape does not match the approved rank: "
+                    f"module={module!r}, a_shape={a_shape!r}, b_shape={b_shape!r}, "
+                    f"rank={expected_rank}"
+                )
 
     evidence: dict[str, Any] = {
         "schema_version": "1.0",

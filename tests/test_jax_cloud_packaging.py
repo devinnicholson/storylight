@@ -684,6 +684,10 @@ def test_cloud_role_and_documentation_exclude_broad_access() -> None:
 
 def test_image_build_plan_binds_tracked_context_and_requires_pinned_builder() -> None:
     module = _load("bookforge_jax_image_plan", JAX_ROOT / "build_image_plan.py")
+    source_manifest = _load(
+        "bookforge_packaged_source_manifest",
+        JAX_ROOT / "packaged_source_manifest.py",
+    )
     builder = "gcr.io/cloud-builders/docker@sha256:" + "9" * 64
 
     plan = module.build_plan(ROOT, builder_image=builder)
@@ -691,6 +695,13 @@ def test_image_build_plan_binds_tracked_context_and_requires_pinned_builder() ->
     assert plan["mode"] == "plan-only"
     assert plan["builder_image"] == builder
     assert plan["tagged_image_uri"].endswith(":" + plan["source_sha256"][:20])
+    assert plan["bookforge_source_manifest_sha256"] == source_manifest.source_manifest_sha256(
+        source_manifest.packaged_bookforge_source_manifest(ROOT)
+    )
+    assert any(
+        row["path"] == "infra/gcp/jax/packaged_source_manifest.py"
+        for row in plan["source_files"]
+    )
     assert plan["digest_resolution_command"][-1] == "--format=value(image_summary.digest)"
     assert (
         "--config={MATERIALIZED_CONTEXT}/infra/gcp/jax/image-cloudbuild.yaml"

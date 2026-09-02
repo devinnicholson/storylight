@@ -135,6 +135,7 @@ def _validate_gcp_unavailability_rejection(
     *,
     run_id: str,
     expected_bindings: dict[str, object],
+    expected_source_manifest_sha256: str,
     smoke: bool,
 ) -> bool:
     """Validate the no-image, billing-disabled fallback evidence contract."""
@@ -163,6 +164,7 @@ def _validate_gcp_unavailability_rejection(
     assert isinstance(container, dict)
     assert isinstance(resource, dict)
     source_sha = container.get("image_source_sha256")
+    bookforge_source_sha = container.get("bookforge_source_manifest_sha256")
     image_plan_sha = container.get("image_build_plan_sha256")
     tagged_uri = container.get("intended_tagged_uri")
     if (
@@ -197,6 +199,7 @@ def _validate_gcp_unavailability_rejection(
         or audit.get("matching_entries") != []
         or not isinstance(source_sha, str)
         or _SHA256.fullmatch(source_sha) is None
+        or bookforge_source_sha != expected_source_manifest_sha256
         or not isinstance(image_plan_sha, str)
         or _SHA256.fullmatch(image_plan_sha) is None
         or not isinstance(tagged_uri, str)
@@ -248,6 +251,7 @@ def _validate_gcp_unavailability_rejection(
         or resource_container
         != {
             "image_source_sha256": source_sha,
+            "bookforge_source_manifest_sha256": expected_source_manifest_sha256,
             "image_build_plan_sha256": image_plan_sha,
             "intended_tagged_uri": tagged_uri,
             "runnable_digest_uri": None,
@@ -1415,29 +1419,13 @@ def _validate_request(
         "base_checkpoint_receipt_sha256": checkpoint_receipt_sha,
         "tokenizer_manifest_sha256": tokenizer_manifest_sha,
     }
-    if rejection.get("producer") == "bookforge-gcp-jax-submitter":
-        rejection_valid = (
-            rejection.get("schema_version") == "1.0"
-            and rejection.get("run_id") == run_id
-            and rejection.get("status") == "rejected-pre-billable"
-            and rejection.get("submission_intent_created") is False
-            and rejection.get("custom_job_created") is False
-            and rejection.get("job_absence_verified") is True
-            and rejection.get("run_id_absence_basis")
-            in {"vertex-list", "billing-disabled-plus-empty-create-audit-log"}
-            and rejection.get("fallback_allowed") is True
-            and isinstance(rejection.get("spec_sha256"), str)
-            and _SHA256.fullmatch(str(rejection["spec_sha256"])) is not None
-            and isinstance(rejection.get("reason"), str)
-            and bool(str(rejection["reason"]).strip())
-        )
-    else:
-        rejection_valid = _validate_gcp_unavailability_rejection(
-            rejection,
-            run_id=run_id,
-            expected_bindings=expected_bindings,
-            smoke=smoke,
-        )
+    rejection_valid = _validate_gcp_unavailability_rejection(
+        rejection,
+        run_id=run_id,
+        expected_bindings=expected_bindings,
+        expected_source_manifest_sha256=bookforge_source_manifest_sha,
+        smoke=smoke,
+    )
     if not rejection_valid:
         raise ValueError("GCP rejection evidence is not pre-billable or run-bound")
     if rejection.get("input_bindings") != expected_bindings or rejection.get(

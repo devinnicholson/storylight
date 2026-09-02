@@ -30,10 +30,9 @@ Before submission, the integration owner must separately verify the active proje
 never been submitted, the container URI is digest-pinned, and the exact printed token was
 approved. A submission intent must be recorded before the single create request; an ambiguous
 request is terminal and cannot fall back to Modal under the same run ID.
-An ordinary preflight refusal is written once as `*.preflight-rejection.json`; Modal fallback
-accepts that checksum-bound evidence only when no submission intent and no CustomJob were created.
-The refusal includes the original Vertex spec hash and the exact staged-input binding hash, so a
-refusal for one plan cannot authorize a different Modal input population.
+An ordinary preflight refusal is written once as `*.preflight-rejection.json` for auditability,
+but it does not authorize Modal fallback. Only the dedicated, fresh pre-build unavailability
+evidence described below is accepted by the Modal trainer.
 A refusal caused by an already-existing CustomJob is explicitly marked fallback-ineligible, even
 after billing reconciliation, so a completed Vertex attempt can never authorize a second Modal
 spend for the same run ID.
@@ -46,8 +45,10 @@ than seven days old, and an empty exact-name `CreateCustomJob` Admin Activity qu
 400-day retention window. It also refuses any local build intent or receipt for the planned image
 source. The write-once rejection binds all seven staged-input hashes, the unbuilt image source and
 build-plan hashes, and the intended Vertex machine, account, storage prefixes, timeout, and retry
-policy. Its tagged image target is explicitly non-runnable: `runnable_digest_uri` remains null and
-no `spec_sha256` is claimed because no complete Vertex submission specification exists.
+policy. The image plan derives the exact packaged Bookforge source manifest from the same bound
+source rows, and that manifest hash is repeated in the rejection and intended resource. Its tagged
+image target is explicitly non-runnable: `runnable_digest_uri` remains null and no `spec_sha256`
+is claimed because no complete Vertex submission specification exists.
 Modal accepts this distinct producer only while the evidence is fresh and every billing, audit,
 image, input, and intended-resource binding is internally exact. This path records why GCP could
 not be used; it does not submit an image build, create a CustomJob, or assert that billing-disabled
@@ -70,14 +71,17 @@ artifact manifest; process exit zero alone is insufficient.
 
 ## Image and admission chain
 
-`build_image_plan.py` hashes every tracked regular file in the Docker build context and derives a
-content-addressed tag. It refuses an unpinned Docker builder and the training Dockerfile refuses an
-unpinned base image. `image-cloudbuild.yaml` is a build recipe, not a deployment: after the single
-approved build, resolve the Artifact Registry digest and pass only
+`build_image_plan.py` hashes every tracked regular file plus every current packaged Bookforge
+source file in the Docker build context and derives a content-addressed tag. It also derives the
+same packaged-source manifest used by the Modal image, so GCP fallback evidence cannot be reused
+for different Modal code. It refuses an unpinned Docker builder and the training Dockerfile refuses
+an unpinned base image. `image-cloudbuild.yaml` is a build recipe, not a deployment: after the
+single approved build, resolve the Artifact Registry digest and pass only
 `.../trainer:<source-prefix>@sha256:<digest>` to `job_plan.py`. A mutable tag is never accepted by
 the Vertex plan. Before upload, `--materialize-context` copies only the plan's checksum-bound files;
 the emitted build command's `{MATERIALIZED_CONTEXT}` placeholder must be replaced with that new
-directory. This prevents ignored or untracked local output from entering Docker's `COPY .`. The
+directory. This excludes unrelated untracked output while retaining any explicitly packaged,
+checksum-bound Bookforge source. The
 Artifact Registry repository and a verified, digest-pinned Cloud Build Docker
 builder are external prerequisites; this directory does not create either one.
 `submit_image_build.py` is the only repository execution path for that paid command. It re-verifies

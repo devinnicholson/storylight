@@ -36,8 +36,24 @@ modal_worker = _load(
 
 
 def _image_plan(path: Path) -> dict[str, object]:
-    files = [{"path": "training/jax_fidelity/Dockerfile", "bytes": 1, "sha256": "a" * 64}]
+    files = [
+        {"path": relative, "bytes": 1, "sha256": f"{index:x}" * 64}
+        for index, relative in enumerate(
+            (
+                "deploy/worker.py",
+                "experiments/jax-fidelity-lab/config.json",
+                "infra/gcp/jax/worker.py",
+                "src/bookforge/worker.py",
+                "training/jax_fidelity/Dockerfile",
+                "training/jax_fidelity/patches/maxtext-native-lora-materialization.patch",
+            ),
+            1,
+        )
+    ]
     source_sha = fallback._canonical_sha256(files)
+    bookforge_source_sha = fallback.source_manifest_sha256(
+        fallback.packaged_bookforge_source_manifest_from_rows(files)
+    )
     builder = "gcr.io/cloud-builders/docker@sha256:" + "b" * 64
     command = [
         "gcloud",
@@ -56,6 +72,7 @@ def _image_plan(path: Path) -> dict[str, object]:
         "region": fallback.REGION,
         "source_sha256": source_sha,
         "source_files": files,
+        "bookforge_source_manifest_sha256": bookforge_source_sha,
         "builder_image": builder,
         "tagged_image_uri": f"{fallback.IMAGE_REPOSITORY}:{source_sha[:20]}",
         "automatic_retries": 0,
@@ -152,6 +169,9 @@ def test_records_exact_read_only_absence_without_inventing_an_image(
         "image_source_sha256": evidence["intended_vertex_resource"]["container"][
             "image_source_sha256"
         ],
+        "bookforge_source_manifest_sha256": evidence["intended_vertex_resource"][
+            "container"
+        ]["bookforge_source_manifest_sha256"],
         "image_build_plan_sha256": evidence["intended_vertex_resource"]["container"][
             "image_build_plan_sha256"
         ],
@@ -269,9 +289,9 @@ def _modal_request(evidence: dict[str, object]) -> dict[str, object]:
         "run_id": run_id,
         **bindings,
         "smoke": False,
-        "bookforge_source_manifest_sha256": (
-            modal_worker.BOOKFORGE_SOURCE_MANIFEST_SHA256
-        ),
+        "bookforge_source_manifest_sha256": evidence["container_image"][
+            "bookforge_source_manifest_sha256"
+        ],
         "gcp_rejection": evidence,
         "gcp_rejection_sha256": rejection_sha,
         "approval_token": modal_worker._approval_token(
@@ -283,7 +303,7 @@ def _modal_request(evidence: dict[str, object]) -> dict[str, object]:
             str(bindings["base_checkpoint_manifest_sha256"]),
             str(bindings["base_checkpoint_receipt_sha256"]),
             str(bindings["tokenizer_manifest_sha256"]),
-            modal_worker.BOOKFORGE_SOURCE_MANIFEST_SHA256,
+            str(evidence["container_image"]["bookforge_source_manifest_sha256"]),
             rejection_sha,
             smoke=False,
         ),
@@ -311,3 +331,23 @@ def test_modal_accepts_only_fresh_exact_unavailability_evidence(tmp_path: Path) 
     stale["checked_at"] = (datetime.now(UTC) - timedelta(hours=1)).isoformat()
     with pytest.raises(ValueError, match="pre-billable"):
         modal_worker._validate_request(_modal_request(stale))
+
+    source_mismatch = _modal_request(evidence)
+    source_mismatch["bookforge_source_manifest_sha256"] = "9" * 64
+    bindings = evidence["input_bindings"]
+    assert isinstance(bindings, dict)
+    source_mismatch["approval_token"] = modal_worker._approval_token(
+        str(evidence["run_id"]),
+        str(bindings["config_sha256"]),
+        str(bindings["dataset_manifest_sha256"]),
+        str(bindings["prepared_train_sha256"]),
+        str(bindings["input_manifest_sha256"]),
+        str(bindings["base_checkpoint_manifest_sha256"]),
+        str(bindings["base_checkpoint_receipt_sha256"]),
+        str(bindings["tokenizer_manifest_sha256"]),
+        "9" * 64,
+        str(source_mismatch["gcp_rejection_sha256"]),
+        smoke=False,
+    )
+    with pytest.raises(ValueError, match="pre-billable"):
+        modal_worker._validate_request(source_mismatch)

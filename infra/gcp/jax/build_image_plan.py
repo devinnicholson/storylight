@@ -12,6 +12,21 @@ import shutil
 import subprocess
 from pathlib import Path
 
+try:
+    from infra.gcp.jax.packaged_source_manifest import (
+        packaged_bookforge_local_rows,
+        packaged_bookforge_source_manifest,
+        packaged_bookforge_source_manifest_from_rows,
+        source_manifest_sha256,
+    )
+except ModuleNotFoundError:  # Direct execution from infra/gcp/jax.
+    from packaged_source_manifest import (
+        packaged_bookforge_local_rows,
+        packaged_bookforge_source_manifest,
+        packaged_bookforge_source_manifest_from_rows,
+        source_manifest_sha256,
+    )
+
 PROJECT_ID = "your-gcp-project"
 REGION = "us-east1"
 REPOSITORY = "bookforge-jax"
@@ -41,7 +56,7 @@ def approval_token(
 
 
 def build_plan(root: Path, *, builder_image: str) -> dict[str, object]:
-    """Bind every tracked source byte used by the Docker context without building it."""
+    """Bind every tracked and packaged source byte without building the image."""
 
     root = root.resolve()
     dockerfile = root / "training/jax_fidelity/Dockerfile"
@@ -60,12 +75,23 @@ def build_plan(root: Path, *, builder_image: str) -> dict[str, object]:
     ).stdout.splitlines()
     if not tracked:
         raise ValueError("repository has no tracked build inputs")
-    rows: list[dict[str, object]] = []
+    rows_by_path: dict[str, dict[str, object]] = {}
     for relative in sorted(tracked):
         path = root / relative
         if not path.is_file() or path.is_symlink() or ".git" in path.parts:
             continue
-        rows.append({"path": relative, "bytes": path.stat().st_size, "sha256": _sha256(path)})
+        rows_by_path[relative] = {
+            "path": relative,
+            "bytes": path.stat().st_size,
+            "sha256": _sha256(path),
+        }
+    for row in packaged_bookforge_local_rows(root):
+        rows_by_path[str(row["path"])] = row
+    rows = [rows_by_path[path] for path in sorted(rows_by_path)]
+    bookforge_manifest = packaged_bookforge_source_manifest_from_rows(rows)
+    if bookforge_manifest != packaged_bookforge_source_manifest(root):
+        raise ValueError("image context does not contain the exact packaged Bookforge source")
+    bookforge_manifest_sha256 = source_manifest_sha256(bookforge_manifest)
     source_sha256 = hashlib.sha256(
         json.dumps(rows, sort_keys=True, separators=(",", ":")).encode()
     ).hexdigest()
@@ -90,6 +116,7 @@ def build_plan(root: Path, *, builder_image: str) -> dict[str, object]:
         "region": REGION,
         "source_sha256": source_sha256,
         "source_files": rows,
+        "bookforge_source_manifest_sha256": bookforge_manifest_sha256,
         "dockerfile": "training/jax_fidelity/Dockerfile",
         "builder_image": builder_image,
         "tagged_image_uri": tagged_uri,

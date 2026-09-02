@@ -2,15 +2,31 @@
 
 from __future__ import annotations
 
-import hashlib
 import json
 import os
 import re
 import tempfile
-from collections.abc import Iterable
 from pathlib import Path
 
 import modal
+
+from infra.gcp.jax.packaged_source_manifest import (
+    BOOKFORGE_CONTAINER_ROOT,
+    LOCAL_SOURCE_IGNORE,
+    PACKAGED_BOOKFORGE_DIRECTORIES,
+    PACKAGED_BOOKFORGE_FILES,
+    packaged_bookforge_source_manifest,
+    source_manifest_bytes,
+    source_manifest_sha256,
+)
+
+__all__ = (
+    "BOOKFORGE_CONTAINER_ROOT",
+    "LOCAL_SOURCE_IGNORE",
+    "PACKAGED_BOOKFORGE_DIRECTORIES",
+    "PACKAGED_BOOKFORGE_FILES",
+    "packaged_bookforge_source_manifest",
+)
 
 REPOSITORY_ROOT = Path(__file__).parents[1]
 CONFIG_PATH = REPOSITORY_ROOT / "experiments/jax-fidelity-lab/config.json"
@@ -44,111 +60,12 @@ def maxtext_revision() -> str:
 
 
 MAXTEXT_REVISION = maxtext_revision()
-LOCAL_SOURCE_IGNORE = (
-    "**/__pycache__",
-    "**/__pycache__/**",
-    "**/*.pyc",
-    "**/*.pyo",
-)
-BOOKFORGE_CONTAINER_ROOT = Path("/opt/bookforge")
 BOOKFORGE_SOURCE_MANIFEST_CONTAINER_PATH = (
     BOOKFORGE_CONTAINER_ROOT / "source.manifest.json"
 )
-PACKAGED_BOOKFORGE_DIRECTORIES = (
-    ("training", "training"),
-    ("src", "src"),
-    ("infra/gcp/jax", "infra/gcp/jax"),
-    ("deploy", "deploy"),
-)
-PACKAGED_BOOKFORGE_FILES = (
-    (
-        "training/jax_fidelity/patches/maxtext-native-lora-materialization.patch",
-        "patches/maxtext-native-lora-materialization.patch",
-    ),
-    (
-        "experiments/jax-fidelity-lab/config.json",
-        "experiments/jax-fidelity-lab/config.json",
-    ),
-)
-
-
-def _sha256_file(path: Path) -> str:
-    digest = hashlib.sha256()
-    with path.open("rb") as stream:
-        for block in iter(lambda: stream.read(1024 * 1024), b""):
-            digest.update(block)
-    return digest.hexdigest()
-
-
-def _ignored_local_source(relative: Path) -> bool:
-    return "__pycache__" in relative.parts or relative.suffix in {".pyc", ".pyo"}
-
-
-def _regular_files(root: Path) -> Iterable[Path]:
-    for path in sorted(root.rglob("*")):
-        relative = path.relative_to(root)
-        if _ignored_local_source(relative):
-            continue
-        if path.is_symlink():
-            raise ValueError(f"packaged Bookforge source may not be a symlink: {path}")
-        if path.is_file():
-            yield path
-
-
-def packaged_bookforge_source_manifest(
-    repository_root: Path = REPOSITORY_ROOT,
-) -> dict[str, object]:
-    """Describe every regular repository file copied into the JAX image."""
-
-    rows: list[dict[str, object]] = []
-    for local_relative, container_relative in PACKAGED_BOOKFORGE_DIRECTORIES:
-        local_root = repository_root / local_relative
-        if not local_root.is_dir() or local_root.is_symlink():
-            raise ValueError(f"packaged Bookforge directory is missing or unsafe: {local_root}")
-        for path in _regular_files(local_root):
-            relative = path.relative_to(local_root)
-            rows.append(
-                {
-                    "path": (Path(container_relative) / relative).as_posix(),
-                    "bytes": path.stat().st_size,
-                    "sha256": _sha256_file(path),
-                }
-            )
-    for local_relative, container_relative in PACKAGED_BOOKFORGE_FILES:
-        path = repository_root / local_relative
-        if not path.is_file() or path.is_symlink():
-            raise ValueError(f"packaged Bookforge file is missing or unsafe: {path}")
-        rows.append(
-            {
-                "path": container_relative,
-                "bytes": path.stat().st_size,
-                "sha256": _sha256_file(path),
-            }
-        )
-    rows.sort(key=lambda row: str(row["path"]))
-    paths = [str(row["path"]) for row in rows]
-    if len(paths) != len(set(paths)):
-        raise ValueError("packaged Bookforge source paths are not unique")
-    files_sha256 = hashlib.sha256(
-        json.dumps(rows, sort_keys=True, separators=(",", ":")).encode()
-    ).hexdigest()
-    return {
-        "schema_version": "bookforge-jax-packaged-source-v1",
-        "producer": "bookforge-modal-jax-image",
-        "container_root": str(BOOKFORGE_CONTAINER_ROOT),
-        "ignore_patterns": list(LOCAL_SOURCE_IGNORE),
-        "file_count": len(rows),
-        "files_sha256": files_sha256,
-        "files": rows,
-    }
-
-
 def _materialize_source_manifest(document: dict[str, object]) -> tuple[Path, str]:
-    payload = (
-        json.dumps(document, sort_keys=True, separators=(",", ":"), ensure_ascii=False)
-        + "\n"
-    ).encode()
-    digest = hashlib.sha256(payload).hexdigest()
+    payload = source_manifest_bytes(document)
+    digest = source_manifest_sha256(document)
     directory = Path(tempfile.mkdtemp(prefix="bookforge-jax-source-manifest-"))
     path = directory / "source.manifest.json"
     descriptor = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o400)
@@ -157,7 +74,7 @@ def _materialize_source_manifest(document: dict[str, object]) -> tuple[Path, str
     return path, digest
 
 
-BOOKFORGE_SOURCE_MANIFEST = packaged_bookforge_source_manifest()
+BOOKFORGE_SOURCE_MANIFEST = packaged_bookforge_source_manifest(REPOSITORY_ROOT)
 BOOKFORGE_SOURCE_MANIFEST_PATH, BOOKFORGE_SOURCE_MANIFEST_SHA256 = (
     _materialize_source_manifest(BOOKFORGE_SOURCE_MANIFEST)
 )
