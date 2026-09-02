@@ -35,6 +35,9 @@ def _load(name: str, path: Path):
 roundtrip = _load("bookforge_modal_jax_roundtrip", ROOT / "deploy/modal_jax_roundtrip.py")
 staging = _load("bookforge_roundtrip_staging", JAX_INFRA / "stage_roundtrip_inputs.py")
 fetcher = _load("bookforge_roundtrip_fetcher", ROOT / "scripts/fetch_modal_jax_roundtrip.py")
+cloner = _load(
+    "bookforge_roundtrip_cloner", ROOT / "scripts/clone_modal_jax_roundtrip_inputs.py"
+)
 
 
 def _request(**updates: object) -> dict[str, object]:
@@ -184,6 +187,50 @@ def test_roundtrip_request_and_modal_function_fail_closed() -> None:
     assert source.index("_release_files(release)") < source.index(
         "_write_once(completion_path, payload)"
     )
+
+
+def test_roundtrip_clone_rebinds_only_config_and_rejects_hidden(tmp_path: Path) -> None:
+    config = tmp_path / "config.json"
+    config.write_bytes(b'{"current":true}\n')
+    source = {
+        "schema_version": "1.0",
+        "status": "complete",
+        "purpose": "hf-maxtext-roundtrip-smoke",
+        "run_id": "jax-roundtrip-source-20260902",
+        "files": [
+            {"path": "checkpoint/model.safetensors", "bytes": 5, "sha256": "a" * 64},
+            {"path": "config.json", "bytes": 3, "sha256": "b" * 64},
+            {"path": "dataset/train.jsonl", "bytes": 7, "sha256": "c" * 64},
+        ],
+    }
+    encoded = canonical = json.dumps(source, separators=(",", ":"), sort_keys=True).encode() + b"\n"
+    cloned, paths = cloner.cloned_manifest(
+        encoded,
+        source_manifest_sha256=cloner._sha256_bytes(canonical),
+        source_run_id="jax-roundtrip-source-20260902",
+        target_run_id="jax-roundtrip-target-20260902",
+        config=config,
+    )
+
+    rows = {row["path"]: row for row in cloned["files"]}
+    assert cloned["run_id"] == "jax-roundtrip-target-20260902"
+    assert rows["config.json"] == {
+        "path": "config.json",
+        "bytes": config.stat().st_size,
+        "sha256": sha256_file(config),
+    }
+    assert paths == ["checkpoint/model.safetensors", "dataset/train.jsonl"]
+
+    source["files"][0]["path"] = "dataset/hidden.jsonl"
+    hidden = json.dumps(source, separators=(",", ":"), sort_keys=True).encode() + b"\n"
+    with pytest.raises(ValueError, match="hidden data"):
+        cloner.cloned_manifest(
+            hidden,
+            source_manifest_sha256=cloner._sha256_bytes(hidden),
+            source_run_id="jax-roundtrip-source-20260902",
+            target_run_id="jax-roundtrip-target-20260902",
+            config=config,
+        )
 
 
 def test_roundtrip_fetch_requires_trusted_completion_and_every_declared_byte(
