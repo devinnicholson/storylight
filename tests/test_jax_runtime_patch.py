@@ -216,7 +216,7 @@ def test_maxtext_import_provenance_accepts_only_patched_checkout(
     modules = {
         "maxtext.utils.train_utils": (
             checkout / "src/maxtext/utils/train_utils.py",
-            "model = lora_utils.apply_lora_to_model(model, mesh, config)\n",
+            "model = lora_utils.apply_lora_to_model(model, None, config)\n",
         ),
         "maxtext.trainers.pre_train.train": (
             checkout / "src/maxtext/trainers/pre_train/train.py",
@@ -244,7 +244,7 @@ def test_maxtext_import_provenance_rejects_installed_wheel(
     sources = {
         "maxtext.utils.train_utils": (
             "src/maxtext/utils/train_utils.py",
-            "model = lora_utils.apply_lora_to_model(model, mesh, config)\n",
+            "model = lora_utils.apply_lora_to_model(model, None, config)\n",
         ),
         "maxtext.trainers.pre_train.train": (
             "src/maxtext/trainers/pre_train/train.py",

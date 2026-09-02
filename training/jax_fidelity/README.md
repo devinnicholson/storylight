@@ -145,7 +145,7 @@ modal run deploy/modal_jax_fidelity.py --help
 # Reuse the original arguments and add both options printed by the approved plan:
 #   --finalize-only
 #   --finalize-approval-token-value \
-#   APPROVE_MODAL_JAX_FINALIZE:{run_id}:{input_manifest_sha256}:{gcp_rejection_sha256}
+#   APPROVE_MODAL_JAX_FINALIZE:{run_id}:{input_manifest_sha256}:{bookforge_source_manifest_sha256}:{gcp_rejection_sha256}
 ```
 
 Completion-less derivative staging is safe to rebuild from the retained

@@ -8,17 +8,26 @@ import math
 import os
 import re
 import shutil
+import signal
 import subprocess
+import sys
+import threading
 import time
-from collections.abc import Callable, Mapping
+from collections.abc import Callable, Mapping, Sequence
+from contextlib import suppress
 from datetime import UTC, datetime
 from pathlib import Path, PurePosixPath
+from typing import NoReturn
 
 import modal
 
 from deploy.modal_jax_image import (
+    BOOKFORGE_CONTAINER_ROOT,
+    BOOKFORGE_SOURCE_MANIFEST_CONTAINER_PATH,
+    BOOKFORGE_SOURCE_MANIFEST_SHA256,
     JAX_IMAGE,
     offline_environment,
+    packaged_bookforge_source_manifest,
     pinned_image_uri,
 )
 
@@ -52,6 +61,23 @@ _GCP_IMAGE_TAG = re.compile(
 _INPUT_ROOT = Path("/inputs")
 _SCRATCH_ROOT = Path("/scratch")
 _RELEASE_ROOT = Path("/releases")
+_FAILURE_LOG_LIMIT_BYTES = 256 * 1024
+_FAILURE_LOG_TAIL_BYTES = 16 * 1024
+_RUNTIME_PROVENANCE_SCHEMA = "bookforge-modal-jax-runtime-provenance-v1"
+_RUNTIME_PROVENANCE_PATH = "runtime-provenance.json"
+_SOURCE_MANIFEST_SNAPSHOT_PATH = "bookforge-source.manifest.json"
+_PATCHED_MAXTEXT_SOURCES = (
+    (
+        "maxtext.trainers.pre_train.train",
+        "src/maxtext/trainers/pre_train/train.py",
+        "maxtext/trainers/pre_train/train.py",
+    ),
+    (
+        "maxtext.utils.train_utils",
+        "src/maxtext/utils/train_utils.py",
+        "maxtext/utils/train_utils.py",
+    ),
+)
 
 
 def _pinned_image_uri() -> str:
@@ -241,6 +267,863 @@ def _write_once_json(path: Path, document: dict[str, object]) -> None:
         os.fsync(stream.fileno())
 
 
+def _write_once_bytes(path: Path, payload: bytes) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    descriptor = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o400)
+    try:
+        with os.fdopen(descriptor, "wb") as stream:
+            stream.write(payload)
+            stream.flush()
+            os.fsync(stream.fileno())
+    except BaseException:
+        path.unlink(missing_ok=True)
+        raise
+
+
+def _relative_file_binding(path: Path, *, trusted_root: Path) -> dict[str, object]:
+    if not path.is_file() or path.is_symlink():
+        raise RuntimeError(f"failure evidence is not a regular file: {path}")
+    try:
+        relative = path.relative_to(trusted_root).as_posix()
+    except ValueError as error:
+        raise RuntimeError("failure evidence escaped its scratch root") from error
+    return {
+        "path": relative,
+        "bytes": path.stat().st_size,
+        "sha256": _sha256(path),
+    }
+
+
+def _copy_provenance_source_once(
+    source: Path,
+    destination: Path,
+    *,
+    expected_sha256: str,
+    trusted_root: Path,
+) -> dict[str, object]:
+    if not source.is_file() or source.is_symlink():
+        raise RuntimeError(f"provenance source is not a regular file: {source}")
+    if _sha256(source) != expected_sha256:
+        raise RuntimeError(f"provenance source changed before capture: {source}")
+    destination.parent.mkdir(parents=True, exist_ok=True)
+    descriptor = os.open(destination, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o400)
+    digest = hashlib.sha256()
+    size = 0
+    try:
+        with source.open("rb") as reader, os.fdopen(descriptor, "wb") as writer:
+            for block in iter(lambda: reader.read(1024 * 1024), b""):
+                digest.update(block)
+                size += len(block)
+                writer.write(block)
+            writer.flush()
+            os.fsync(writer.fileno())
+    except BaseException:
+        destination.unlink(missing_ok=True)
+        raise
+    if digest.hexdigest() != expected_sha256 or _sha256(destination) != expected_sha256:
+        destination.unlink(missing_ok=True)
+        raise RuntimeError(f"provenance copy changed: {source}")
+    row = _relative_file_binding(destination, trusted_root=trusted_root)
+    row["source_path"] = str(source.resolve())
+    if row["bytes"] != size:
+        raise RuntimeError(f"provenance copy size changed: {source}")
+    return row
+
+
+def _verify_bookforge_source_manifest(
+    environment: Mapping[str, str],
+    *,
+    container_root: Path = BOOKFORGE_CONTAINER_ROOT,
+) -> dict[str, object]:
+    manifest_path = Path(
+        environment.get(
+            "BOOKFORGE_SOURCE_MANIFEST",
+            str(BOOKFORGE_SOURCE_MANIFEST_CONTAINER_PATH),
+        )
+    )
+    expected_sha256 = environment.get("BOOKFORGE_SOURCE_MANIFEST_SHA256", "")
+    if _SHA256.fullmatch(expected_sha256) is None:
+        raise RuntimeError("Bookforge source manifest has no pinned checksum")
+    if not manifest_path.is_file() or manifest_path.is_symlink():
+        raise RuntimeError("Bookforge source manifest is missing or unsafe")
+    observed_sha256 = _sha256(manifest_path)
+    if observed_sha256 != expected_sha256:
+        raise RuntimeError("Bookforge source manifest checksum changed")
+    manifest = _json_object(manifest_path)
+    observed = packaged_bookforge_source_manifest(container_root)
+    if manifest != observed:
+        raise RuntimeError("packaged Bookforge source inventory changed")
+    return {
+        "path": str(manifest_path.resolve()),
+        "bytes": manifest_path.stat().st_size,
+        "sha256": observed_sha256,
+        "expected_sha256": expected_sha256,
+        "file_count": manifest["file_count"],
+        "files_sha256": manifest["files_sha256"],
+    }
+
+
+def _collect_training_runtime_provenance(
+    experiment: object,
+    *,
+    maxtext_root: Path,
+    environment: Mapping[str, str],
+    bookforge_root: Path = BOOKFORGE_CONTAINER_ROOT,
+) -> dict[str, object]:
+    bookforge_source_manifest = _verify_bookforge_source_manifest(
+        environment, container_root=bookforge_root
+    )
+    versions = getattr(experiment, "versions", None)
+    training = getattr(experiment, "training", None)
+    if not isinstance(versions, dict) or not isinstance(training, dict):
+        raise RuntimeError("training configuration has no provenance contract")
+    expected_revision = versions.get("maxtext_revision")
+    if (
+        not isinstance(expected_revision, str)
+        or re.fullmatch(r"[0-9a-f]{40}", expected_revision) is None
+    ):
+        raise RuntimeError("training configuration has no pinned MaxText revision")
+    completed = subprocess.run(
+        ["git", "-C", str(maxtext_root), "rev-parse", "HEAD"],
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+    observed_revision = completed.stdout.strip()
+    if observed_revision != expected_revision:
+        raise RuntimeError("MaxText revision changed before training")
+
+    runtime_lock_path = Path(
+        environment.get("BOOKFORGE_JAX_RUNTIME_LOCK", "/opt/bookforge/runtime.lock.json")
+    )
+    patch_path_value = environment.get("BOOKFORGE_MAXTEXT_APPROVED_PATCH", "")
+    patch_path = Path(patch_path_value)
+    expected_patch_sha256 = training.get("approved_maxtext_patch_sha256")
+    if (
+        not isinstance(expected_patch_sha256, str)
+        or _SHA256.fullmatch(expected_patch_sha256) is None
+    ):
+        raise RuntimeError("training configuration has no approved MaxText patch")
+    for label, path in (
+        ("runtime lock", runtime_lock_path),
+        ("approved MaxText patch", patch_path),
+    ):
+        if not path.is_file() or path.is_symlink():
+            raise RuntimeError(f"{label} is missing or unsafe")
+    patch_sha256 = _sha256(patch_path)
+    if patch_sha256 != expected_patch_sha256:
+        raise RuntimeError("approved MaxText patch changed before training")
+
+    sources: list[dict[str, object]] = []
+    for module_name, relative_path, snapshot_path in _PATCHED_MAXTEXT_SOURCES:
+        path = maxtext_root / relative_path
+        if not path.is_file() or path.is_symlink():
+            raise RuntimeError(f"patched MaxText source is missing or unsafe: {module_name}")
+        sources.append(
+            {
+                "module": module_name,
+                "path": str(path.resolve()),
+                "snapshot_path": snapshot_path,
+                "bytes": path.stat().st_size,
+                "sha256": _sha256(path),
+            }
+        )
+    return {
+        "bookforge_source_manifest": bookforge_source_manifest,
+        "runtime_lock": {
+            "path": str(runtime_lock_path.resolve()),
+            "bytes": runtime_lock_path.stat().st_size,
+            "sha256": _sha256(runtime_lock_path),
+        },
+        "approved_maxtext_patch": {
+            "path": str(patch_path.resolve()),
+            "bytes": patch_path.stat().st_size,
+            "sha256": patch_sha256,
+            "expected_sha256": expected_patch_sha256,
+        },
+        "maxtext": {
+            "root": str(maxtext_root.resolve()),
+            "expected_revision": expected_revision,
+            "observed_revision": observed_revision,
+            "patched_sources": sources,
+        },
+    }
+
+
+def _validate_source_manifest_snapshot(
+    path: Path, *, expected_sha256: str
+) -> dict[str, object]:
+    if not path.is_file() or path.is_symlink():
+        raise RuntimeError("durable Bookforge source manifest is missing or unsafe")
+    if _sha256(path) != expected_sha256:
+        raise RuntimeError("durable Bookforge source manifest checksum changed")
+    manifest = _json_object(path)
+    files = manifest.get("files")
+    if (
+        manifest.get("schema_version") != "bookforge-jax-packaged-source-v1"
+        or manifest.get("producer") != "bookforge-modal-jax-image"
+        or manifest.get("container_root") != str(BOOKFORGE_CONTAINER_ROOT)
+        or not isinstance(files, list)
+        or manifest.get("file_count") != len(files)
+        or manifest.get("files_sha256") != _canonical_sha256(files)
+    ):
+        raise RuntimeError("durable Bookforge source manifest is malformed")
+    observed_paths: set[str] = set()
+    for row in files:
+        if (
+            not isinstance(row, dict)
+            or not isinstance(row.get("path"), str)
+            or type(row.get("bytes")) is not int
+            or int(row["bytes"]) < 0
+            or not isinstance(row.get("sha256"), str)
+            or _SHA256.fullmatch(str(row["sha256"])) is None
+        ):
+            raise RuntimeError("durable Bookforge source manifest has a malformed file")
+        pure = PurePosixPath(str(row["path"]))
+        relative = pure.as_posix()
+        if (
+            pure.is_absolute()
+            or relative in {"", "."}
+            or ".." in pure.parts
+            or relative in observed_paths
+        ):
+            raise RuntimeError("durable Bookforge source manifest has an unsafe file path")
+        observed_paths.add(relative)
+    return manifest
+
+
+def _persist_runtime_provenance(
+    runtime_provenance: Mapping[str, object],
+    *,
+    run_id: str,
+    training_run_id: str,
+    expected_source_manifest_sha256: str,
+    scratch_directory: Path,
+) -> dict[str, object]:
+    """Snapshot the exact training runtime before the paid child starts."""
+
+    source_manifest = runtime_provenance.get("bookforge_source_manifest")
+    runtime_lock = runtime_provenance.get("runtime_lock")
+    approved_patch = runtime_provenance.get("approved_maxtext_patch")
+    maxtext = runtime_provenance.get("maxtext")
+    if (
+        not isinstance(source_manifest, dict)
+        or not isinstance(runtime_lock, dict)
+        or not isinstance(approved_patch, dict)
+        or not isinstance(maxtext, dict)
+    ):
+        raise RuntimeError("training runtime provenance is incomplete")
+    if (
+        source_manifest.get("sha256") != expected_source_manifest_sha256
+        or source_manifest.get("expected_sha256") != expected_source_manifest_sha256
+    ):
+        raise RuntimeError("Bookforge source manifest differs from the approved request")
+    source_snapshot = _copy_provenance_source_once(
+        Path(str(source_manifest.get("path", ""))),
+        scratch_directory / _SOURCE_MANIFEST_SNAPSHOT_PATH,
+        expected_sha256=expected_source_manifest_sha256,
+        trusted_root=scratch_directory,
+    )
+    source_snapshot.update(
+        {
+            "expected_sha256": expected_source_manifest_sha256,
+            "file_count": source_manifest.get("file_count"),
+            "files_sha256": source_manifest.get("files_sha256"),
+        }
+    )
+    document = {
+        "schema_version": _RUNTIME_PROVENANCE_SCHEMA,
+        "producer": "bookforge-modal-jax-full-trainer",
+        "run_id": run_id,
+        "training_run_id": training_run_id,
+        "bookforge_source_manifest": source_snapshot,
+        "runtime_lock": runtime_lock,
+        "approved_maxtext_patch": approved_patch,
+        "maxtext": maxtext,
+    }
+    provenance_path = scratch_directory / _RUNTIME_PROVENANCE_PATH
+    _write_once_json(provenance_path, document)
+    _validate_runtime_provenance(
+        scratch_directory,
+        run_id=run_id,
+        training_run_id=training_run_id,
+        expected_source_manifest_sha256=expected_source_manifest_sha256,
+    )
+    return document
+
+
+def _validate_runtime_provenance(
+    scratch_directory: Path,
+    *,
+    run_id: str,
+    training_run_id: str,
+    expected_source_manifest_sha256: str,
+) -> dict[str, object]:
+    provenance_path = scratch_directory / _RUNTIME_PROVENANCE_PATH
+    if not provenance_path.is_file() or provenance_path.is_symlink():
+        raise RuntimeError("durable runtime provenance is missing or unsafe")
+    document = _json_object(provenance_path)
+    if (
+        document.get("schema_version") != _RUNTIME_PROVENANCE_SCHEMA
+        or document.get("producer") != "bookforge-modal-jax-full-trainer"
+        or document.get("run_id") != run_id
+        or document.get("training_run_id") != training_run_id
+    ):
+        raise RuntimeError("durable runtime provenance identity changed")
+    source_manifest = document.get("bookforge_source_manifest")
+    if not isinstance(source_manifest, dict):
+        raise RuntimeError("durable runtime provenance has no source manifest")
+    source_path = source_manifest.get("path")
+    if source_path != _SOURCE_MANIFEST_SNAPSHOT_PATH:
+        raise RuntimeError("durable Bookforge source manifest path changed")
+    source_snapshot_path = scratch_directory / _SOURCE_MANIFEST_SNAPSHOT_PATH
+    manifest = _validate_source_manifest_snapshot(
+        source_snapshot_path, expected_sha256=expected_source_manifest_sha256
+    )
+    source_binding = _relative_file_binding(
+        source_snapshot_path, trusted_root=scratch_directory
+    )
+    for name, expected in (
+        ("path", source_binding["path"]),
+        ("bytes", source_binding["bytes"]),
+        ("sha256", expected_source_manifest_sha256),
+        ("expected_sha256", expected_source_manifest_sha256),
+        ("file_count", manifest["file_count"]),
+        ("files_sha256", manifest["files_sha256"]),
+    ):
+        if source_manifest.get(name) != expected:
+            raise RuntimeError("durable Bookforge source manifest binding changed")
+
+    runtime_lock = document.get("runtime_lock")
+    approved_patch = document.get("approved_maxtext_patch")
+    maxtext = document.get("maxtext")
+    if (
+        not isinstance(runtime_lock, dict)
+        or not isinstance(approved_patch, dict)
+        or not isinstance(maxtext, dict)
+    ):
+        raise RuntimeError("durable runtime provenance is incomplete")
+    for label, binding in (
+        ("runtime lock", runtime_lock),
+        ("approved MaxText patch", approved_patch),
+    ):
+        if (
+            not isinstance(binding.get("path"), str)
+            or not str(binding["path"]).startswith("/")
+            or type(binding.get("bytes")) is not int
+            or int(binding["bytes"]) < 0
+            or not isinstance(binding.get("sha256"), str)
+            or _SHA256.fullmatch(str(binding["sha256"])) is None
+        ):
+            raise RuntimeError(f"durable {label} provenance is malformed")
+    if approved_patch.get("expected_sha256") != approved_patch.get("sha256"):
+        raise RuntimeError("durable approved MaxText patch checksum changed")
+    expected_revision = maxtext.get("expected_revision")
+    if (
+        not isinstance(maxtext.get("root"), str)
+        or not str(maxtext["root"]).startswith("/")
+        or not isinstance(expected_revision, str)
+        or re.fullmatch(r"[0-9a-f]{40}", expected_revision) is None
+        or maxtext.get("observed_revision") != expected_revision
+    ):
+        raise RuntimeError("durable MaxText revision provenance is malformed")
+    sources = maxtext.get("patched_sources")
+    if not isinstance(sources, list) or len(sources) != len(_PATCHED_MAXTEXT_SOURCES):
+        raise RuntimeError("durable patched MaxText source provenance is incomplete")
+    for source, (module, _relative_path, snapshot_path) in zip(
+        sources, _PATCHED_MAXTEXT_SOURCES, strict=True
+    ):
+        if (
+            not isinstance(source, dict)
+            or source.get("module") != module
+            or source.get("snapshot_path") != snapshot_path
+            or not isinstance(source.get("path"), str)
+            or not str(source["path"]).startswith("/")
+            or type(source.get("bytes")) is not int
+            or int(source["bytes"]) < 0
+            or not isinstance(source.get("sha256"), str)
+            or _SHA256.fullmatch(str(source["sha256"])) is None
+        ):
+            raise RuntimeError("durable patched MaxText source provenance is malformed")
+    return document
+
+
+def _run_training_process(
+    command: Sequence[str],
+    *,
+    environment: Mapping[str, str],
+    timeout_seconds: float,
+    log_path: Path,
+    scratch_directory: Path,
+) -> tuple[
+    dict[str, object],
+    BaseException | None,
+]:
+    """Run one child while retaining only a bounded combined output tail."""
+
+    started = time.monotonic()
+    process_evidence: dict[str, object] = {
+        "status": "starting",
+        "returncode": None,
+        "timed_out": False,
+        "timeout_seconds": timeout_seconds,
+    }
+    try:
+        process = subprocess.Popen(
+            list(command),
+            env=dict(environment),
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
+            start_new_session=True,
+        )
+    except BaseException as error:
+        process_evidence.update(
+            {
+                "status": "spawn-failed",
+                "duration_seconds": round(time.monotonic() - started, 6),
+                "log": {"present": False},
+            }
+        )
+        return process_evidence, error
+    if process.stdout is None:
+        error = RuntimeError("training subprocess output pipe was not created")
+        with suppress(ProcessLookupError):
+            os.killpg(process.pid, signal.SIGKILL)
+        process.wait()
+        process_evidence.update(
+            {
+                "status": "capture-failed",
+                "returncode": process.returncode,
+                "duration_seconds": round(time.monotonic() - started, 6),
+                "log": {"present": False},
+            }
+        )
+        return process_evidence, error
+    retained = bytearray()
+    stream_bytes = 0
+    reader_errors: list[BaseException] = []
+
+    def drain() -> None:
+        nonlocal stream_bytes
+        try:
+            for block in iter(lambda: process.stdout.read(64 * 1024), b""):
+                try:
+                    binary_stdout = getattr(sys.stdout, "buffer", None)
+                    if binary_stdout is not None:
+                        binary_stdout.write(block)
+                        binary_stdout.flush()
+                    else:
+                        sys.stdout.write(block.decode("utf-8", errors="replace"))
+                        sys.stdout.flush()
+                except (BrokenPipeError, OSError, ValueError):
+                    # Continue draining so an unavailable observer cannot block
+                    # paid training or destroy its durable diagnostic tail.
+                    pass
+                stream_bytes += len(block)
+                if len(block) >= _FAILURE_LOG_LIMIT_BYTES:
+                    retained[:] = block[-_FAILURE_LOG_LIMIT_BYTES:]
+                    continue
+                overflow = len(retained) + len(block) - _FAILURE_LOG_LIMIT_BYTES
+                if overflow > 0:
+                    del retained[:overflow]
+                retained.extend(block)
+        except BaseException as error:
+            reader_errors.append(error)
+
+    reader = threading.Thread(target=drain, name="bookforge-training-log", daemon=True)
+    reader.start()
+    timed_out = False
+    timeout_error: subprocess.TimeoutExpired | None = None
+    wait_error: BaseException | None = None
+    capture_errors: list[BaseException] = []
+    try:
+        returncode = process.wait(timeout=timeout_seconds)
+    except subprocess.TimeoutExpired as error:
+        timed_out = True
+        timeout_error = error
+        with suppress(ProcessLookupError):
+            os.killpg(process.pid, signal.SIGKILL)
+        try:
+            returncode = process.wait(timeout=10)
+        except BaseException as kill_error:
+            capture_errors.append(kill_error)
+            returncode = process.returncode
+    except BaseException as error:
+        wait_error = error
+        with suppress(ProcessLookupError):
+            os.killpg(process.pid, signal.SIGKILL)
+        try:
+            returncode = process.wait(timeout=10)
+        except BaseException as kill_error:
+            capture_errors.append(kill_error)
+            returncode = process.returncode
+    reader.join(timeout=10)
+    if reader.is_alive():
+        capture_errors.append(
+            RuntimeError("training subprocess output reader did not terminate")
+        )
+        with suppress(OSError, ValueError):
+            process.stdout.close()
+        reader.join(timeout=1)
+    capture_errors.extend(reader_errors)
+    payload = bytes(retained)
+    log: dict[str, object] = {
+        "present": False,
+        "path": log_path.relative_to(scratch_directory).as_posix(),
+        "streams": "stdout+stderr",
+        "stream_bytes": stream_bytes,
+        "truncated": stream_bytes > len(payload),
+        "limit_bytes": _FAILURE_LOG_LIMIT_BYTES,
+        "tail": payload[-_FAILURE_LOG_TAIL_BYTES:].decode("utf-8", errors="replace"),
+    }
+    try:
+        _write_once_bytes(log_path, payload)
+        log.update(_relative_file_binding(log_path, trusted_root=scratch_directory))
+        log["present"] = True
+    except BaseException as error:
+        capture_errors.append(error)
+    process_evidence.update(
+        {
+            "status": "completed",
+            "returncode": returncode,
+            "timed_out": timed_out,
+            "duration_seconds": round(time.monotonic() - started, 6),
+            "log": log,
+        }
+    )
+    if capture_errors:
+        process_evidence["capture_errors"] = [
+            {"type": type(error).__name__, "message": str(error)}
+            for error in capture_errors
+        ]
+    process_error: BaseException | None
+    if timeout_error is not None:
+        process_error = timeout_error
+    elif wait_error is not None:
+        process_error = wait_error
+    elif returncode != 0:
+        process_error = subprocess.CalledProcessError(returncode, list(command))
+    elif capture_errors:
+        process_error = RuntimeError("training subprocess evidence capture failed")
+        for capture_error in capture_errors:
+            process_error.add_note(
+                f"{type(capture_error).__name__}: {capture_error}"
+            )
+    else:
+        process_error = None
+    return process_evidence, process_error
+
+
+def _optional_inner_completion_binding(path: Path, *, scratch_directory: Path) -> dict[str, object]:
+    if not path.exists() and not path.is_symlink():
+        return {
+            "present": False,
+            "path": path.relative_to(scratch_directory).as_posix(),
+        }
+    row = _relative_file_binding(path, trusted_root=scratch_directory)
+    row["present"] = True
+    try:
+        document = _json_object(path)
+    except (OSError, ValueError, json.JSONDecodeError) as error:
+        row["parse_error"] = f"{type(error).__name__}: {error}"
+    else:
+        row["status"] = document.get("status")
+        row["run_id"] = document.get("run_id")
+    return row
+
+
+def _error_binding(error: BaseException) -> dict[str, str]:
+    return {"type": type(error).__name__, "message": str(error)}
+
+
+def _optional_failure_file_binding(
+    path: Path,
+    *,
+    scratch_directory: Path,
+    capture_errors: list[dict[str, str]],
+) -> dict[str, object]:
+    try:
+        relative = path.relative_to(scratch_directory).as_posix()
+    except ValueError:
+        capture_error = RuntimeError("failure evidence escaped its scratch root")
+        bound_error = _error_binding(capture_error)
+        capture_errors.append(bound_error)
+        present = False
+        with suppress(OSError):
+            present = path.exists() or path.is_symlink()
+        return {
+            "present": present,
+            "path": str(path),
+            "capture_error": bound_error,
+        }
+    try:
+        present = path.exists() or path.is_symlink()
+    except OSError as error:
+        bound_error = _error_binding(error)
+        capture_errors.append(bound_error)
+        return {
+            "present": False,
+            "path": relative,
+            "capture_error": bound_error,
+        }
+    if not present:
+        return {"present": False, "path": relative}
+    try:
+        row = _relative_file_binding(path, trusted_root=scratch_directory)
+    except BaseException as error:
+        bound_error = _error_binding(error)
+        capture_errors.append(bound_error)
+        return {
+            "present": True,
+            "path": relative,
+            "capture_error": bound_error,
+        }
+    row["present"] = True
+    return row
+
+
+def _bookforge_manifest_failure_snapshot(
+    runtime_provenance: Mapping[str, object] | None,
+    *,
+    environment: Mapping[str, str] | None,
+    evidence_directory: Path,
+    scratch_directory: Path,
+    capture_errors: list[dict[str, str]],
+) -> dict[str, object]:
+    manifest = (
+        runtime_provenance.get("bookforge_source_manifest")
+        if runtime_provenance is not None
+        else None
+    )
+    if isinstance(manifest, dict):
+        source = Path(str(manifest.get("path", "")))
+        expected_sha256 = str(manifest.get("expected_sha256", ""))
+        inventory_verified = True
+    elif environment is not None:
+        source = Path(
+            environment.get(
+                "BOOKFORGE_SOURCE_MANIFEST",
+                str(BOOKFORGE_SOURCE_MANIFEST_CONTAINER_PATH),
+            )
+        )
+        expected_sha256 = environment.get("BOOKFORGE_SOURCE_MANIFEST_SHA256", "")
+        inventory_verified = False
+    else:
+        return {"present": False, "verified": False}
+    try:
+        if not source.is_file() or source.is_symlink():
+            raise RuntimeError("Bookforge source manifest is missing or unsafe")
+        observed_sha256 = _sha256(source)
+        row = _copy_provenance_source_once(
+            source,
+            evidence_directory / "bookforge-source.manifest.json",
+            expected_sha256=observed_sha256,
+            trusted_root=scratch_directory,
+        )
+        row.update(
+            {
+                "present": True,
+                "expected_sha256": expected_sha256,
+                "checksum_matches_expected": observed_sha256 == expected_sha256,
+                "verified": inventory_verified and observed_sha256 == expected_sha256,
+            }
+        )
+        if isinstance(manifest, dict):
+            for name in ("file_count", "files_sha256"):
+                if name in manifest:
+                    row[name] = manifest[name]
+        return row
+    except BaseException as error:
+        bound_error = _error_binding(error)
+        capture_errors.append(bound_error)
+        present = False
+        with suppress(OSError):
+            present = source.exists() or source.is_symlink()
+        return {
+            "present": present,
+            "source_path": str(source),
+            "expected_sha256": expected_sha256,
+            "verified": False,
+            "capture_error": bound_error,
+        }
+
+
+def _persist_failure_envelope(
+    error: BaseException,
+    *,
+    run_id: str,
+    training_run_id: str,
+    scratch_directory: Path,
+    attempt_path: Path,
+    gpu_preflight_path: Path,
+    training_completion_path: Path,
+    process_evidence: dict[str, object] | None,
+    runtime_provenance: dict[str, object] | None,
+    scratch_commit: Callable[[], object],
+    environment: Mapping[str, str] | None = None,
+    failure_stage: str = "training",
+) -> None:
+    """Write and commit a terminal failure envelope."""
+
+    evidence_directory = scratch_directory / "failure-evidence"
+    capture_errors: list[dict[str, str]] = []
+    runtime_lock = runtime_provenance.get("runtime_lock") if runtime_provenance else None
+    approved_patch = (
+        runtime_provenance.get("approved_maxtext_patch") if runtime_provenance else None
+    )
+    maxtext = runtime_provenance.get("maxtext") if runtime_provenance else None
+
+    def snapshot(
+        provenance: object,
+        destination: Path,
+    ) -> dict[str, object]:
+        if not isinstance(provenance, dict):
+            return {"present": False, "verified": False}
+        try:
+            row = _copy_provenance_source_once(
+                Path(str(provenance["path"])),
+                destination,
+                expected_sha256=str(provenance["sha256"]),
+                trusted_root=scratch_directory,
+            )
+        except BaseException as capture_error:
+            bound_error = _error_binding(capture_error)
+            capture_errors.append(bound_error)
+            return {
+                "present": False,
+                "verified": False,
+                "capture_error": bound_error,
+            }
+        row.update({"present": True, "verified": True})
+        return row
+
+    runtime_lock_snapshot = snapshot(
+        runtime_lock, evidence_directory / "runtime.lock.json"
+    )
+    patch_snapshot = snapshot(
+        approved_patch, evidence_directory / "approved-maxtext.patch"
+    )
+    if isinstance(approved_patch, dict) and "expected_sha256" in approved_patch:
+        patch_snapshot["expected_sha256"] = approved_patch["expected_sha256"]
+    source_snapshots: list[dict[str, object]] = []
+    sources = maxtext.get("patched_sources", []) if isinstance(maxtext, dict) else []
+    if not isinstance(sources, list):
+        sources = []
+        capture_errors.append(
+            _error_binding(RuntimeError("MaxText source provenance is malformed"))
+        )
+    for source in sources:
+        if not isinstance(source, dict):
+            capture_errors.append(
+                _error_binding(RuntimeError("patched MaxText source provenance is malformed"))
+            )
+            continue
+        source_snapshot = snapshot(
+            source, evidence_directory / str(source.get("snapshot_path", "unknown"))
+        )
+        source_snapshot["module"] = source.get("module")
+        source_snapshots.append(source_snapshot)
+
+    try:
+        training_completion = _optional_inner_completion_binding(
+            training_completion_path, scratch_directory=scratch_directory
+        )
+    except BaseException as capture_error:
+        bound_error = _error_binding(capture_error)
+        capture_errors.append(bound_error)
+        training_completion = {
+            "present": False,
+            "capture_error": bound_error,
+        }
+
+    failure = {
+        "schema_version": "1.0",
+        "producer": "bookforge-modal-jax-failure-envelope",
+        "status": "failed",
+        "recorded_at": datetime.now(UTC).isoformat(timespec="seconds").replace("+00:00", "Z"),
+        "run_id": run_id,
+        "training_run_id": training_run_id,
+        "backend": BACKEND,
+        "failure_stage": failure_stage,
+        "error": _error_binding(error),
+        "process": process_evidence or {"status": "not-started"},
+        "attempt": _optional_failure_file_binding(
+            attempt_path,
+            scratch_directory=scratch_directory,
+            capture_errors=capture_errors,
+        ),
+        "gpu_preflight": _optional_failure_file_binding(
+            gpu_preflight_path,
+            scratch_directory=scratch_directory,
+            capture_errors=capture_errors,
+        ),
+        "training_completion": training_completion,
+        "bookforge_source_manifest": _bookforge_manifest_failure_snapshot(
+            runtime_provenance,
+            environment=environment,
+            evidence_directory=evidence_directory,
+            scratch_directory=scratch_directory,
+            capture_errors=capture_errors,
+        ),
+        "runtime_lock": runtime_lock_snapshot,
+        "approved_maxtext_patch": patch_snapshot,
+        "maxtext": {
+            "root": maxtext.get("root") if isinstance(maxtext, dict) else None,
+            "expected_revision": (
+                maxtext.get("expected_revision") if isinstance(maxtext, dict) else None
+            ),
+            "observed_revision": (
+                maxtext.get("observed_revision") if isinstance(maxtext, dict) else None
+            ),
+            "patched_sources": source_snapshots,
+        },
+    }
+    if capture_errors:
+        failure["capture_errors"] = capture_errors
+    _write_once_json(scratch_directory / "failure.json", failure)
+    scratch_commit()
+
+
+def _persist_failure_and_raise(
+    error: BaseException,
+    *,
+    run_id: str,
+    training_run_id: str,
+    scratch_directory: Path,
+    attempt_path: Path,
+    gpu_preflight_path: Path,
+    training_completion_path: Path,
+    process_evidence: dict[str, object] | None,
+    runtime_provenance: dict[str, object] | None,
+    scratch_commit: Callable[[], object],
+    environment: Mapping[str, str] | None = None,
+    failure_stage: str = "training",
+) -> NoReturn:
+    """Persist best-effort evidence without replacing the original failure."""
+
+    try:
+        _persist_failure_envelope(
+            error,
+            run_id=run_id,
+            training_run_id=training_run_id,
+            scratch_directory=scratch_directory,
+            attempt_path=attempt_path,
+            gpu_preflight_path=gpu_preflight_path,
+            training_completion_path=training_completion_path,
+            process_evidence=process_evidence,
+            runtime_provenance=runtime_provenance,
+            scratch_commit=scratch_commit,
+            environment=environment,
+            failure_stage=failure_stage,
+        )
+    except BaseException as capture_error:
+        error.add_note(
+            "Failure-envelope persistence also failed: "
+            f"{type(capture_error).__name__}: {capture_error}"
+        )
+    raise error
+
+
 def _bounded_training_timeout(elapsed_seconds: float) -> int:
     """Reserve a fixed tail of the Modal deadline for durable publication."""
 
@@ -253,11 +1136,14 @@ def _bounded_training_timeout(elapsed_seconds: float) -> int:
 
 
 def _finalize_approval_token(
-    run_id: str, input_manifest_sha256: str, gcp_rejection_sha256: str
+    run_id: str,
+    input_manifest_sha256: str,
+    bookforge_source_manifest_sha256: str,
+    gcp_rejection_sha256: str,
 ) -> str:
     return (
         f"APPROVE_MODAL_JAX_FINALIZE:{run_id}:{input_manifest_sha256}:"
-        f"{gcp_rejection_sha256}"
+        f"{bookforge_source_manifest_sha256}:{gcp_rejection_sha256}"
     )
 
 
@@ -272,6 +1158,7 @@ def _attempt_document(
     checkpoint_manifest_sha256: str,
     checkpoint_receipt_sha256: str,
     tokenizer_manifest_sha256: str,
+    bookforge_source_manifest_sha256: str,
     gcp_rejection_sha256: str,
     smoke: bool,
 ) -> dict[str, object]:
@@ -289,6 +1176,7 @@ def _attempt_document(
         "base_checkpoint_manifest_sha256": checkpoint_manifest_sha256,
         "base_checkpoint_receipt_sha256": checkpoint_receipt_sha256,
         "tokenizer_manifest_sha256": tokenizer_manifest_sha256,
+        "bookforge_source_manifest_sha256": bookforge_source_manifest_sha256,
         "gcp_rejection_sha256": gcp_rejection_sha256,
         "smoke": smoke,
         "automatic_retries": 0,
@@ -465,6 +1353,7 @@ def _approval_token(
     checkpoint_manifest_sha256: str,
     checkpoint_receipt_sha256: str,
     tokenizer_manifest_sha256: str,
+    bookforge_source_manifest_sha256: str,
     gcp_rejection_sha256: str,
     *,
     smoke: bool,
@@ -474,13 +1363,13 @@ def _approval_token(
         f"APPROVE_MODAL_JAX_RUN:{run_id}:{config_sha256}:{dataset_sha256}:"
         f"{prepared_sha256}:{input_manifest_sha256}:{checkpoint_manifest_sha256}:"
         f"{checkpoint_receipt_sha256}:{tokenizer_manifest_sha256}:"
-        f"{gcp_rejection_sha256}:{mode}"
+        f"{bookforge_source_manifest_sha256}:{gcp_rejection_sha256}:{mode}"
     )
 
 
 def _validate_request(
     request: dict[str, object],
-) -> tuple[str, str, str, str, str, str, str, str, str, bool]:
+) -> tuple[str, str, str, str, str, str, str, str, str, str, bool]:
     run_id = request.get("run_id")
     config_sha = request.get("config_sha256")
     dataset_sha = request.get("dataset_manifest_sha256")
@@ -489,6 +1378,9 @@ def _validate_request(
     checkpoint_manifest_sha = request.get("base_checkpoint_manifest_sha256")
     checkpoint_receipt_sha = request.get("base_checkpoint_receipt_sha256")
     tokenizer_manifest_sha = request.get("tokenizer_manifest_sha256")
+    bookforge_source_manifest_sha = request.get(
+        "bookforge_source_manifest_sha256"
+    )
     rejection_sha = request.get("gcp_rejection_sha256")
     smoke = request.get("smoke")
     approval = request.get("approval_token")
@@ -503,6 +1395,7 @@ def _validate_request(
         ("base_checkpoint_manifest_sha256", checkpoint_manifest_sha),
         ("base_checkpoint_receipt_sha256", checkpoint_receipt_sha),
         ("tokenizer_manifest_sha256", tokenizer_manifest_sha),
+        ("bookforge_source_manifest_sha256", bookforge_source_manifest_sha),
         ("gcp_rejection_sha256", rejection_sha),
     ):
         if not isinstance(value, str) or not _SHA256.fullmatch(value):
@@ -561,6 +1454,7 @@ def _validate_request(
         checkpoint_manifest_sha,
         checkpoint_receipt_sha,
         tokenizer_manifest_sha,
+        bookforge_source_manifest_sha,
         rejection_sha,
         smoke=smoke,
     )
@@ -575,6 +1469,7 @@ def _validate_request(
         checkpoint_manifest_sha,
         checkpoint_receipt_sha,
         tokenizer_manifest_sha,
+        bookforge_source_manifest_sha,
         rejection_sha,
         smoke,
     )
@@ -732,6 +1627,7 @@ def _finalize_completed_scratch(
     checkpoint_manifest_sha256: str,
     checkpoint_receipt_sha256: str,
     tokenizer_manifest_sha256: str,
+    bookforge_source_manifest_sha256: str,
     gcp_rejection_sha256: str,
     smoke: bool,
     scratch_directory: Path,
@@ -757,6 +1653,7 @@ def _finalize_completed_scratch(
         checkpoint_manifest_sha256=checkpoint_manifest_sha256,
         checkpoint_receipt_sha256=checkpoint_receipt_sha256,
         tokenizer_manifest_sha256=tokenizer_manifest_sha256,
+        bookforge_source_manifest_sha256=bookforge_source_manifest_sha256,
         gcp_rejection_sha256=gcp_rejection_sha256,
         smoke=smoke,
     )
@@ -765,6 +1662,15 @@ def _finalize_completed_scratch(
     if _json_object(attempt_path) != expected_attempt:
         raise RuntimeError("durable training attempt evidence changed")
     gpu_preflight = _validate_gpu_preflight(gpu_preflight_path)
+    runtime_provenance_path = scratch_directory / _RUNTIME_PROVENANCE_PATH
+    source_manifest_path = scratch_directory / _SOURCE_MANIFEST_SNAPSHOT_PATH
+    _validate_runtime_provenance(
+        scratch_directory,
+        run_id=run_id,
+        training_run_id=training_run_id,
+        expected_source_manifest_sha256=bookforge_source_manifest_sha256,
+    )
+    runtime_provenance_sha256 = _sha256(runtime_provenance_path)
     output_directory = scratch_directory / "output"
     run_directory = scratch_directory / "runs"
     training_completion_path = run_directory / training_run_id / "completion.json"
@@ -816,16 +1722,32 @@ def _finalize_completed_scratch(
             "base_checkpoint_manifest_sha256": checkpoint_manifest_sha256,
             "base_checkpoint_receipt_sha256": checkpoint_receipt_sha256,
             "tokenizer_manifest_sha256": tokenizer_manifest_sha256,
+            "bookforge_source_manifest_sha256": bookforge_source_manifest_sha256,
             "gcp_rejection_sha256": gcp_rejection_sha256,
             "source_training_completion_sha256": _sha256(training_completion_path),
             "attempt_sha256": _sha256(attempt_path),
             "gpu_preflight_sha256": _sha256(gpu_preflight_path),
+            "runtime_provenance_sha256": runtime_provenance_sha256,
         }
         if any(payload.get(name) != value for name, value in expected_identity.items()):
             raise RuntimeError("durable finalization staging identity changed")
         if payload.get("gpu_preflight") != gpu_preflight:
             raise RuntimeError("durable finalization GPU evidence changed")
-        _safe_release_rows(staging, payload)
+        rows = _safe_release_rows(staging, payload)
+        expected_provider_hashes = {
+            f"provider/{filename}": expected_sha256
+            for filename, expected_sha256 in (
+                ("attempt.json", expected_identity["attempt_sha256"]),
+                ("gpu-preflight.json", expected_identity["gpu_preflight_sha256"]),
+                (_RUNTIME_PROVENANCE_PATH, runtime_provenance_sha256),
+                (_SOURCE_MANIFEST_SNAPSHOT_PATH, bookforge_source_manifest_sha256),
+            )
+        }
+        if any(
+            rows.get(path, {}).get("sha256") != expected_sha256
+            for path, expected_sha256 in expected_provider_hashes.items()
+        ):
+            raise RuntimeError("durable finalization provider evidence changed")
     else:
         package_evidence = package_training_release(
             output_directory=output_directory,
@@ -838,10 +1760,24 @@ def _finalize_completed_scratch(
         provider_evidence.mkdir(mode=0o700)
         release_attempt = provider_evidence / "attempt.json"
         release_gpu_preflight = provider_evidence / "gpu-preflight.json"
+        release_runtime_provenance = provider_evidence / _RUNTIME_PROVENANCE_PATH
+        release_source_manifest = provider_evidence / _SOURCE_MANIFEST_SNAPSHOT_PATH
         shutil.copyfile(attempt_path, release_attempt, follow_symlinks=False)
         shutil.copyfile(gpu_preflight_path, release_gpu_preflight, follow_symlinks=False)
+        shutil.copyfile(
+            runtime_provenance_path,
+            release_runtime_provenance,
+            follow_symlinks=False,
+        )
+        shutil.copyfile(
+            source_manifest_path,
+            release_source_manifest,
+            follow_symlinks=False,
+        )
         release_attempt.chmod(0o400)
         release_gpu_preflight.chmod(0o400)
+        release_runtime_provenance.chmod(0o400)
+        release_source_manifest.chmod(0o400)
         files: list[dict[str, object]] = []
         for source in sorted(item for item in staging.rglob("*") if item.is_file()):
             if source.is_symlink():
@@ -866,11 +1802,13 @@ def _finalize_completed_scratch(
             "base_checkpoint_manifest_sha256": checkpoint_manifest_sha256,
             "base_checkpoint_receipt_sha256": checkpoint_receipt_sha256,
             "tokenizer_manifest_sha256": tokenizer_manifest_sha256,
+            "bookforge_source_manifest_sha256": bookforge_source_manifest_sha256,
             "gcp_rejection_sha256": gcp_rejection_sha256,
             "source_training_completion_sha256": _sha256(training_completion_path),
             "portable_package": package_evidence,
             "attempt_sha256": _sha256(release_attempt),
             "gpu_preflight_sha256": _sha256(release_gpu_preflight),
+            "runtime_provenance_sha256": _sha256(release_runtime_provenance),
             "gpu_preflight": gpu_preflight,
             "files": files,
         }
@@ -907,6 +1845,7 @@ def run_finite(request: dict[str, object]) -> dict[str, object]:
         checkpoint_manifest_sha,
         checkpoint_receipt_sha,
         tokenizer_manifest_sha,
+        bookforge_source_manifest_sha,
         rejection_sha,
         smoke,
     ) = _validate_request(request)
@@ -991,67 +1930,113 @@ def run_finite(request: dict[str, object]) -> dict[str, object]:
         checkpoint_manifest_sha256=checkpoint_manifest_sha,
         checkpoint_receipt_sha256=checkpoint_receipt_sha,
         tokenizer_manifest_sha256=tokenizer_manifest_sha,
+        bookforge_source_manifest_sha256=bookforge_source_manifest_sha,
         gcp_rejection_sha256=rejection_sha,
         smoke=smoke,
     )
     attempt_path = scratch_directory / "attempt.json"
     _write_once_json(attempt_path, attempt)
     scratch_volume.commit()
-    environment = offline_environment(os.environ.copy())
-    gpu_preflight = run_two_gpu_fsdp_preflight(
-        config_path=config,
-        maxtext_root=Path("/opt/MaxText"),
-        environment=environment,
-    )
     gpu_preflight_path = scratch_directory / "gpu-preflight.json"
-    _write_once_json(gpu_preflight_path, gpu_preflight)
-    scratch_volume.commit()
-    environment["BOOKFORGE_JAX_EXECUTION_APPROVAL"] = approval_token(
-        stage=stage,
-        run_id=training_run_id,
-        config_sha256=config_sha,
-        input_sha256=prepared_sha,
-    )
-    command = [
-        "python3",
-        "-m",
-        "training.jax_fidelity.train",
-        "--config",
-        str(config),
-        "--dataset-manifest",
-        str(manifest),
-        "--dataset-manifest-sha256",
-        dataset_sha,
-        "--prepared-train-jsonl",
-        str(prepared),
-        "--prepared-train-sha256",
-        prepared_sha,
-        "--base-checkpoint",
-        str(checkpoint),
-        "--hf-tokenizer-checkpoint",
-        str(tokenizer_checkpoint),
-        "--output-directory",
-        str(output_directory),
-        "--run-directory",
-        str(run_directory),
-        "--maxtext-root",
-        "/opt/MaxText",
-        "--execute",
-    ]
-    if smoke:
-        command.append("--smoke")
-    training_timeout = _bounded_training_timeout(time.monotonic() - started)
-    subprocess.run(command, check=True, env=environment, timeout=training_timeout)
-
     training_completion_path = run_directory / training_run_id / "completion.json"
-    training_completion = _json_object(training_completion_path)
-    if (
-        training_completion.get("status") != "succeeded"
-        or training_completion.get("run_id") != training_run_id
-        or not training_completion.get("artifacts")
-        or not training_completion.get("evidence")
-    ):
-        raise RuntimeError("training has no nonempty successful terminal evidence")
+    environment: dict[str, str] | None = None
+    runtime_provenance: dict[str, object] | None = None
+    process_evidence: dict[str, object] | None = None
+    failure_stage = "environment"
+    try:
+        environment = offline_environment(os.environ.copy())
+        failure_stage = "runtime-provenance"
+        runtime_provenance = _collect_training_runtime_provenance(
+            experiment,
+            maxtext_root=Path("/opt/MaxText"),
+            environment=environment,
+        )
+        _persist_runtime_provenance(
+            runtime_provenance,
+            run_id=run_id,
+            training_run_id=training_run_id,
+            expected_source_manifest_sha256=bookforge_source_manifest_sha,
+            scratch_directory=scratch_directory,
+        )
+        scratch_volume.commit()
+        failure_stage = "gpu-preflight"
+        gpu_preflight = run_two_gpu_fsdp_preflight(
+            config_path=config,
+            maxtext_root=Path("/opt/MaxText"),
+            environment=environment,
+        )
+        _write_once_json(gpu_preflight_path, gpu_preflight)
+        scratch_volume.commit()
+        environment["BOOKFORGE_JAX_EXECUTION_APPROVAL"] = approval_token(
+            stage=stage,
+            run_id=training_run_id,
+            config_sha256=config_sha,
+            input_sha256=prepared_sha,
+        )
+        command = [
+            "python3",
+            "-m",
+            "training.jax_fidelity.train",
+            "--config",
+            str(config),
+            "--dataset-manifest",
+            str(manifest),
+            "--dataset-manifest-sha256",
+            dataset_sha,
+            "--prepared-train-jsonl",
+            str(prepared),
+            "--prepared-train-sha256",
+            prepared_sha,
+            "--base-checkpoint",
+            str(checkpoint),
+            "--hf-tokenizer-checkpoint",
+            str(tokenizer_checkpoint),
+            "--output-directory",
+            str(output_directory),
+            "--run-directory",
+            str(run_directory),
+            "--maxtext-root",
+            "/opt/MaxText",
+            "--execute",
+        ]
+        if smoke:
+            command.append("--smoke")
+        failure_stage = "training-timeout"
+        training_timeout = _bounded_training_timeout(time.monotonic() - started)
+        failure_stage = "training-process"
+        process_evidence, process_error = _run_training_process(
+            command,
+            environment=environment,
+            timeout_seconds=training_timeout,
+            log_path=scratch_directory / "failure-evidence" / "training-subprocess.log",
+            scratch_directory=scratch_directory,
+        )
+        if process_error is not None:
+            raise process_error
+        failure_stage = "terminal-validation"
+        training_completion = _json_object(training_completion_path)
+        if (
+            training_completion.get("status") != "succeeded"
+            or training_completion.get("run_id") != training_run_id
+            or not training_completion.get("artifacts")
+            or not training_completion.get("evidence")
+        ):
+            raise RuntimeError("training has no nonempty successful terminal evidence")
+    except BaseException as error:
+        _persist_failure_and_raise(
+            error,
+            run_id=run_id,
+            training_run_id=training_run_id,
+            scratch_directory=scratch_directory,
+            attempt_path=attempt_path,
+            gpu_preflight_path=gpu_preflight_path,
+            training_completion_path=training_completion_path,
+            process_evidence=process_evidence,
+            runtime_provenance=runtime_provenance,
+            scratch_commit=scratch_volume.commit,
+            environment=environment,
+            failure_stage=failure_stage,
+        )
     # This is the durability boundary for paid compute. From this point onward a
     # CPU-only finalizer can publish the exact successful checkpoint without retraining.
     scratch_volume.commit()
@@ -1070,6 +2055,7 @@ def run_finite(request: dict[str, object]) -> dict[str, object]:
         checkpoint_manifest_sha256=checkpoint_manifest_sha,
         checkpoint_receipt_sha256=checkpoint_receipt_sha,
         tokenizer_manifest_sha256=tokenizer_manifest_sha,
+        bookforge_source_manifest_sha256=bookforge_source_manifest_sha,
         gcp_rejection_sha256=rejection_sha,
         smoke=smoke,
         scratch_directory=scratch_directory,
@@ -1122,11 +2108,15 @@ def finalize_finite(request: dict[str, object]) -> dict[str, object]:
         checkpoint_manifest_sha,
         checkpoint_receipt_sha,
         tokenizer_manifest_sha,
+        bookforge_source_manifest_sha,
         rejection_sha,
         smoke,
     ) = _validate_request(request)
     expected_recovery_approval = _finalize_approval_token(
-        run_id, input_manifest_sha, rejection_sha
+        run_id,
+        input_manifest_sha,
+        bookforge_source_manifest_sha,
+        rejection_sha,
     )
     if request.get("finalize_approval_token") != expected_recovery_approval:
         raise ValueError("exact Modal JAX finalize-only approval token is required")
@@ -1205,6 +2195,7 @@ def finalize_finite(request: dict[str, object]) -> dict[str, object]:
         checkpoint_manifest_sha256=checkpoint_manifest_sha,
         checkpoint_receipt_sha256=checkpoint_receipt_sha,
         tokenizer_manifest_sha256=tokenizer_manifest_sha,
+        bookforge_source_manifest_sha256=bookforge_source_manifest_sha,
         gcp_rejection_sha256=rejection_sha,
         smoke=smoke,
         scratch_directory=scratch_directory,
@@ -1278,6 +2269,7 @@ def run_cli(
     tokenizer_manifest_sha256: str,
     gcp_rejection_evidence: str,
     approval_token_value: str,
+    bookforge_source_manifest_sha256: str = BOOKFORGE_SOURCE_MANIFEST_SHA256,
     smoke: bool = False,
     finalize_only: bool = False,
     finalize_approval_token_value: str = "",
@@ -1327,6 +2319,7 @@ def run_cli(
         base_checkpoint_manifest_sha256,
         base_checkpoint_receipt_sha256,
         tokenizer_manifest_sha256,
+        bookforge_source_manifest_sha256,
         rejection_sha256,
         smoke=smoke,
     )
@@ -1341,6 +2334,7 @@ def run_cli(
         "base_checkpoint_manifest_sha256": base_checkpoint_manifest_sha256,
         "base_checkpoint_receipt_sha256": base_checkpoint_receipt_sha256,
         "tokenizer_manifest_sha256": tokenizer_manifest_sha256,
+        "bookforge_source_manifest_sha256": bookforge_source_manifest_sha256,
         "gcp_rejection": rejection,
         "gcp_rejection_sha256": rejection_sha256,
         "smoke": smoke,
@@ -1349,7 +2343,10 @@ def run_cli(
     _validate_request(request)
     if finalize_only:
         expected_finalize = _finalize_approval_token(
-            run_id, input_manifest_sha256, rejection_sha256
+            run_id,
+            input_manifest_sha256,
+            bookforge_source_manifest_sha256,
+            rejection_sha256,
         )
         if finalize_approval_token_value != expected_finalize:
             raise RuntimeError("exact finalize-only approval token is required")

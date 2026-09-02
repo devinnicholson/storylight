@@ -269,6 +269,9 @@ def _modal_request(evidence: dict[str, object]) -> dict[str, object]:
         "run_id": run_id,
         **bindings,
         "smoke": False,
+        "bookforge_source_manifest_sha256": (
+            modal_worker.BOOKFORGE_SOURCE_MANIFEST_SHA256
+        ),
         "gcp_rejection": evidence,
         "gcp_rejection_sha256": rejection_sha,
         "approval_token": modal_worker._approval_token(
@@ -280,6 +283,7 @@ def _modal_request(evidence: dict[str, object]) -> dict[str, object]:
             str(bindings["base_checkpoint_manifest_sha256"]),
             str(bindings["base_checkpoint_receipt_sha256"]),
             str(bindings["tokenizer_manifest_sha256"]),
+            modal_worker.BOOKFORGE_SOURCE_MANIFEST_SHA256,
             rejection_sha,
             smoke=False,
         ),

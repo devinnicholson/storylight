@@ -71,6 +71,7 @@ def _request(**updates: object) -> dict[str, object]:
     rejection_sha = hashlib.sha256(
         (json.dumps(rejection, indent=2, sort_keys=True) + "\n").encode()
     ).hexdigest()
+    source_manifest_sha = "8" * 64
     request: dict[str, object] = {
         "run_id": run_id,
         "config_sha256": config_sha,
@@ -80,12 +81,14 @@ def _request(**updates: object) -> dict[str, object]:
         "base_checkpoint_manifest_sha256": "e" * 64,
         "base_checkpoint_receipt_sha256": "0" * 64,
         "tokenizer_manifest_sha256": "f" * 64,
+        "bookforge_source_manifest_sha256": source_manifest_sha,
         "smoke": True,
         "gcp_rejection": rejection,
         "gcp_rejection_sha256": rejection_sha,
         "approval_token": (
             f"APPROVE_MODAL_JAX_RUN:{run_id}:{config_sha}:{dataset_sha}:{'c' * 64}:"
-            f"{'d' * 64}:{'e' * 64}:{'0' * 64}:{'f' * 64}:{rejection_sha}:smoke"
+            f"{'d' * 64}:{'e' * 64}:{'0' * 64}:{'f' * 64}:"
+            f"{source_manifest_sha}:{rejection_sha}:smoke"
         ),
     }
     request.update(updates)
@@ -95,6 +98,72 @@ def _request(**updates: object) -> dict[str, object]:
 def _write_json(path: Path, document: dict[str, object]) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(json.dumps(document, sort_keys=True) + "\n")
+
+
+def _persist_runtime_provenance_fixture(
+    scratch: Path, *, run_id: str, training_run_id: str
+) -> str:
+    manifest = {
+        "schema_version": "bookforge-jax-packaged-source-v1",
+        "producer": "bookforge-modal-jax-image",
+        "container_root": "/opt/bookforge",
+        "ignore_patterns": [],
+        "file_count": 0,
+        "files_sha256": hashlib.sha256(b"[]").hexdigest(),
+        "files": [],
+    }
+    source = scratch.parent / "fixture-source.manifest.json"
+    source.write_bytes(
+        (
+            json.dumps(manifest, sort_keys=True, separators=(",", ":")) + "\n"
+        ).encode()
+    )
+    source_sha256 = hashlib.sha256(source.read_bytes()).hexdigest()
+    sources = [
+        {
+            "module": module,
+            "path": f"/opt/MaxText/{relative}",
+            "snapshot_path": snapshot,
+            "bytes": 1,
+            "sha256": hashlib.sha256(module.encode()).hexdigest(),
+        }
+        for module, relative, snapshot in modal_jax_fidelity._PATCHED_MAXTEXT_SOURCES
+    ]
+    provenance = {
+        "bookforge_source_manifest": {
+            "path": str(source),
+            "bytes": source.stat().st_size,
+            "sha256": source_sha256,
+            "expected_sha256": source_sha256,
+            "file_count": 0,
+            "files_sha256": manifest["files_sha256"],
+        },
+        "runtime_lock": {
+            "path": "/opt/bookforge/runtime.lock.json",
+            "bytes": 1,
+            "sha256": "3" * 64,
+        },
+        "approved_maxtext_patch": {
+            "path": "/opt/bookforge/approved.patch",
+            "bytes": 1,
+            "sha256": "4" * 64,
+            "expected_sha256": "4" * 64,
+        },
+        "maxtext": {
+            "root": "/opt/MaxText",
+            "expected_revision": "5" * 40,
+            "observed_revision": "5" * 40,
+            "patched_sources": sources,
+        },
+    }
+    modal_jax_fidelity._persist_runtime_provenance(
+        provenance,
+        run_id=run_id,
+        training_run_id=training_run_id,
+        expected_source_manifest_sha256=source_sha256,
+        scratch_directory=scratch,
+    )
+    return source_sha256
 
 
 def _v2_prepared_inputs(
@@ -183,12 +252,17 @@ def test_modal_fallback_is_finite_pinned_and_has_no_endpoint() -> None:
     assert "max_containers=MAX_CONTAINERS" in source
     assert "input_volume.reload()" in source
     assert "scratch_volume.commit()" in source
-    assert source.index("scratch_volume.commit()") < source.index("subprocess.run(command")
-    training_call = source.index("subprocess.run(command")
+    run_finite = source.index("def run_finite(")
+    training_call = source.index("_run_training_process(", run_finite)
+    assert source.index("scratch_volume.commit()", run_finite) < training_call
+    provenance = source.index("_persist_runtime_provenance(", run_finite)
+    assert provenance < source.index("scratch_volume.commit()", provenance) < training_call
+    gpu_preflight = source.index("run_two_gpu_fsdp_preflight(", run_finite)
+    assert provenance < gpu_preflight < training_call
     durable_success = source.index("# This is the durability boundary", training_call)
     inline_finalize = source.index("return _finalize_completed_scratch(", durable_success)
     assert training_call < durable_success < inline_finalize
-    assert "timeout=training_timeout" in source
+    assert "timeout_seconds=training_timeout" in source
     assert source.rindex("scratch_volume.commit()") < source.rindex(
         "release_commit=release_volume.commit"
     )
@@ -199,6 +273,10 @@ def test_modal_fallback_is_finite_pinned_and_has_no_endpoint() -> None:
     assert plan["finalize_recovery_function_calls_max"] == 1
     assert plan["finalize_recovery_automatic_retries"] == 0
     assert plan["finalize_recovery_web_endpoint"] is False
+    assert "{bookforge_source_manifest_sha256}" in plan["approval_token_format"]
+    assert "{bookforge_source_manifest_sha256}" in plan[
+        "finalize_recovery_approval_token_format"
+    ]
     assert "def finalize_finite(" in source
     assert "exact Modal JAX finalize-only approval token" in source
     finalize_definition = source.index("def finalize_finite(")
@@ -235,7 +313,7 @@ def test_modal_v2_verifies_preparation_and_validation_before_gpu_training(
     run = source.index("def run_finite(")
     verification = source.index("_verify_v2_prepared_evidence(", run)
     gpu_preflight = source.index("run_two_gpu_fsdp_preflight(", run)
-    training = source.index("subprocess.run(command", run)
+    training = source.index("_run_training_process(", run)
     assert verification < gpu_preflight < training
 
 
@@ -494,6 +572,9 @@ def test_finalize_completed_scratch_never_trains_and_is_idempotent(
     output = scratch / "output"
     output.mkdir(parents=True)
     (output / "adapter.bin").write_bytes(b"adapter")
+    values["bookforge_source_manifest_sha256"] = _persist_runtime_provenance_fixture(
+        scratch, run_id=run_id, training_run_id=training_run_id
+    )
     attempt = modal_jax_fidelity._attempt_document(
         run_id=run_id,
         training_run_id=training_run_id,
@@ -566,6 +647,14 @@ def test_finalize_completed_scratch_never_trains_and_is_idempotent(
     assert commits == 2
     assert scratch_commits == 1
     first_completion = (release / "completion.json").read_bytes()
+    assert (release / "provider/runtime-provenance.json").is_file()
+    assert (release / "provider/bookforge-source.manifest.json").is_file()
+    assert result["bookforge_source_manifest_sha256"] == values[
+        "bookforge_source_manifest_sha256"
+    ]
+    assert result["runtime_provenance_sha256"] == hashlib.sha256(
+        (release / "provider/runtime-provenance.json").read_bytes()
+    ).hexdigest()
 
     result_again = modal_jax_fidelity._finalize_completed_scratch(
         run_id=run_id,
@@ -600,6 +689,9 @@ def test_finalize_discards_only_completionless_derivative_staging(
     }
     scratch = tmp_path / "scratch"
     scratch.mkdir()
+    values["bookforge_source_manifest_sha256"] = _persist_runtime_provenance_fixture(
+        scratch, run_id=run_id, training_run_id=training_run_id
+    )
     (scratch / "attempt.json").write_text(
         json.dumps(
             modal_jax_fidelity._attempt_document(
@@ -679,11 +771,20 @@ def test_finalize_discards_only_completionless_derivative_staging(
 def test_modal_request_requires_hashes_exact_approval_and_prebillable_rejection() -> None:
     validated = modal_jax_fidelity._validate_request(_request())
     assert validated[-1] is True
+    assert modal_jax_fidelity._finalize_approval_token(
+        "bookforge-modal-smoke-20260901", "d" * 64, "8" * 64, "7" * 64
+    ) != modal_jax_fidelity._finalize_approval_token(
+        "bookforge-modal-smoke-20260901", "d" * 64, "9" * 64, "7" * 64
+    )
 
     with pytest.raises(ValueError, match="pre-billable"):
         modal_jax_fidelity._validate_request(_request(gcp_rejection={}))
     with pytest.raises(ValueError, match="approval"):
         modal_jax_fidelity._validate_request(_request(approval_token="approve"))
+    with pytest.raises(ValueError, match="approval"):
+        modal_jax_fidelity._validate_request(
+            _request(bookforge_source_manifest_sha256="9" * 64)
+        )
     blocked = _request()
     blocked_rejection = dict(blocked["gcp_rejection"])
     blocked_rejection["fallback_allowed"] = False
@@ -742,7 +843,8 @@ def test_modal_budget_gate_is_present_and_maxtext_checkout_is_exact() -> None:
     assert " M src/maxtext/utils/train_utils.py" in image_source
     assert "diff --no-ext-diff --binary --abbrev=8 --unified=0" in image_source
     assert "| cmp -s -" in image_source
-    assert 'REPOSITORY_ROOT / "deploy", "/opt/bookforge/deploy"' in image_source
+    assert 'REPOSITORY_ROOT / "deploy",' in image_source
+    assert '"/opt/bookforge/deploy",' in image_source
     assert '"/opt/bookforge/experiments/jax-fidelity-lab/config.json"' in image_source
     assert "--write-lock /opt/bookforge/runtime.lock.json" in image_source
     assert "--lock /opt/bookforge/runtime.lock.json" in image_source
@@ -955,6 +1057,18 @@ def test_modal_reconciliation_retains_remote_state_and_rejects_duplicate_attempt
     assert entry["declared_ceiling_provider_enforced"] is False
     assert entry["remote_state_retained"] is True
     assert entry["automatic_remote_deletion"] is False
+    assert entry["billing"] == {
+        "status": "provisional-provider-app-cost",
+        "workspace_observation": {
+            "status": "provisional",
+            "observed_at": entry["recorded_at"],
+            "before_usd": 1.0,
+            "after_usd": 1.25,
+            "delta_usd": pytest.approx(0.25),
+            "report_error": None,
+        },
+        "settlements": [],
+    }
     with pytest.raises(ValueError, match="already reconciled"):
         modal_reconciliation.append_reconciliation(
             ledger,
@@ -966,6 +1080,562 @@ def test_modal_reconciliation_retains_remote_state_and_rejects_duplicate_attempt
             status="succeeded",
             result={"status": "succeeded"},
         )
+
+
+def test_modal_provider_app_settlement_selects_exact_current_row_and_retains_workspace_observation(
+    monkeypatch, tmp_path: Path
+) -> None:
+    ledger = tmp_path / "ledger.json"
+    entry = modal_reconciliation.append_reconciliation(
+        ledger,
+        attempt_id="jax:fixture",
+        stage="jax-training",
+        workspace_before_usd=3.0,
+        workspace_after_usd=3.125,
+        declared_ceiling_usd=3.5,
+        status="remote-error",
+        result=None,
+    )
+    original_observation = dict(entry["billing"]["workspace_observation"])
+
+    with pytest.raises(ValueError, match="unresolved or provisional"):
+        modal_reconciliation.assert_attempt_available(
+            ledger, attempt_id="jax:next"
+        )
+    with pytest.raises(ValueError, match="unresolved or provisional"):
+        modal_reconciliation.reserve_attempt(
+            ledger, attempt_id="jax:next", stage="jax-training"
+        )
+
+    report = json.dumps(
+        [
+            {
+                "object_id": "im-other",
+                "description": "other-app",
+                "environment_name": "main",
+                "interval_start": "2026-09-02T00:00:00",
+                "cost": "9.00",
+            },
+            {
+                "object_id": "ap-bookforgefixtureABCDEF",
+                "description": "bookforge-jax-recovery",
+                "environment_name": "main",
+                "interval_start": "2026-09-02T00:00:00",
+                "cost": "0.3750",
+            },
+        ],
+        separators=(",", ":"),
+    )
+    monkeypatch.setattr(modal_reconciliation, "_utc_now", lambda: "2026-09-03T01:01:02Z")
+    settled = modal_reconciliation.settle_attempt(
+        ledger,
+        attempt_id="jax:fixture",
+        provider_app_id="ap-bookforgefixtureABCDEF",
+        provider_app_description="bookforge-jax-recovery",
+        billing_report=report,
+    )
+
+    assert settled["reported_delta_usd"] == pytest.approx(0.125)
+    assert settled["billing"]["workspace_observation"] == original_observation
+    assert settled["billing"]["workspace_observation"]["status"] == "provisional"
+    assert settled["billing"]["status"] == "settled-provider-app-cost"
+    settlement = settled["billing"]["settlements"][0]
+    selected_row = json.loads(report)[1]
+    assert settlement["provider_app_id"] == "ap-bookforgefixtureABCDEF"
+    assert settlement["provider_app_description"] == "bookforge-jax-recovery"
+    assert settlement["provider_app_cost_usd"] == "0.3750"
+    assert settlement["observed_at"] == "2026-09-03T01:01:02Z"
+    assert settlement["billing_report_query_argv"] == [
+        "modal",
+        "billing",
+        "report",
+        "--for",
+        "this month",
+        "--json",
+    ]
+    assert settlement["billing_report_scope"] == "this month"
+    assert settlement["billing_report_sha256"] == hashlib.sha256(report.encode()).hexdigest()
+    report_artifact = settlement["billing_report_artifact"]
+    report_path = ledger.parent / report_artifact["path"]
+    assert report_path.read_bytes() == report.encode()
+    assert report_path.stat().st_mode & 0o777 == 0o400
+    assert report_artifact == {
+        "path": report_artifact["path"],
+        "bytes": len(report.encode()),
+        "sha256": hashlib.sha256(report.encode()).hexdigest(),
+    }
+    assert settlement["selected_row"] == selected_row
+    assert settlement["selected_row_sha256"] == hashlib.sha256(
+        json.dumps(selected_row, sort_keys=True, separators=(",", ":")).encode()
+    ).hexdigest()
+    assert settlement["declared_ceiling_exceeded"] is False
+    modal_reconciliation.assert_attempt_available(ledger, attempt_id="jax:next")
+
+
+def test_modal_provider_app_settlement_is_single_use_and_app_id_is_unique(
+    tmp_path: Path,
+) -> None:
+    ledger = tmp_path / "ledger.json"
+    modal_reconciliation.append_reconciliation(
+        ledger,
+        attempt_id="jax:first",
+        stage="jax-training",
+        workspace_before_usd=1.0,
+        workspace_after_usd=None,
+        declared_ceiling_usd=0.25,
+        status="succeeded",
+        result={"status": "succeeded"},
+        postrun_report_error="workspace total unavailable",
+    )
+    settled = modal_reconciliation.settle_reconciliation(
+        ledger,
+        attempt_id="jax:first",
+        provider_app_id="ap-one0000000000000000000",
+        provider_app_description="first-app",
+        billing_report=(
+            '[{"Object ID":"ap-one0000000000000000000",'
+            '"Description":"first-app","Cost":"0.500"}]'
+        ),
+    )
+    assert settled["workspace_after_usd"] is None
+    assert settled["postrun_report_error"] == "workspace total unavailable"
+    assert settled["billing"]["settlements"][0]["declared_ceiling_exceeded"] is True
+
+    with pytest.raises(ValueError, match="already settled"):
+        modal_reconciliation.settle_attempt(
+            ledger,
+            attempt_id="jax:first",
+            provider_app_id="ap-two0000000000000000000",
+            provider_app_description="second-app",
+            billing_report=(
+                '[{"Object ID":"ap-two0000000000000000000",'
+                '"Description":"second-app","Cost":"0.5"}]'
+            ),
+        )
+
+    modal_reconciliation.reserve_attempt(
+        ledger, attempt_id="jax:second", stage="jax-training"
+    )
+    modal_reconciliation.append_reconciliation(
+        ledger,
+        attempt_id="jax:second",
+        stage="jax-training",
+        workspace_before_usd=1.0,
+        workspace_after_usd=1.1,
+        declared_ceiling_usd=1.0,
+        status="succeeded",
+        result={"status": "succeeded"},
+    )
+    with pytest.raises(ValueError, match="provider app is already settled"):
+        modal_reconciliation.settle_attempt(
+            ledger,
+            attempt_id="jax:second",
+            provider_app_id="ap-one0000000000000000000",
+            provider_app_description="first-app",
+            billing_report=(
+                '[{"object_id":"ap-one0000000000000000000",'
+                '"description":"first-app","cost":"0.1"}]'
+            ),
+        )
+
+
+def test_modal_cli_settlement_captures_the_fixed_provider_report(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    ledger = tmp_path / "ledger.json"
+    modal_reconciliation.append_reconciliation(
+        ledger,
+        attempt_id="jax:cli",
+        stage="jax-training",
+        workspace_before_usd=1.0,
+        workspace_after_usd=1.1,
+        declared_ceiling_usd=1.0,
+        status="succeeded",
+        result=None,
+    )
+    report = (
+        b'[{"object_id":"ap-bookforgefixtureABCDEF",'
+        b'"description":"bookforge-jax-recovery","cost":"0.1250"}]'
+    )
+    observed: list[tuple[object, object]] = []
+
+    class Completed:
+        stdout = report
+
+    def fake_run(argv, **kwargs):
+        observed.append((argv, kwargs))
+        return Completed()
+
+    monkeypatch.setattr(modal_reconciliation.subprocess, "run", fake_run)
+    settled = modal_reconciliation.settle_attempt_from_modal_cli(
+        ledger,
+        attempt_id="jax:cli",
+        provider_app_id="ap-bookforgefixtureABCDEF",
+        provider_app_description="bookforge-jax-recovery",
+        environment={"PATH": "/trusted"},
+    )
+
+    assert observed == [
+        (
+            modal_reconciliation._BILLING_REPORT_ARGV,
+            {
+                "check": True,
+                "capture_output": True,
+                "env": {"PATH": "/trusted"},
+                "timeout": modal_reconciliation._BILLING_REPORT_TIMEOUT_SECONDS,
+            },
+        )
+    ]
+    settlement = settled["billing"]["settlements"][0]
+    assert settlement["provider_app_cost_usd"] == "0.1250"
+    assert settlement["billing_report_sha256"] == hashlib.sha256(report).hexdigest()
+
+
+def test_modal_settlement_can_bind_raw_report_to_pre_artifact_evidence(
+    tmp_path: Path,
+) -> None:
+    ledger = tmp_path / "ledger.json"
+    report = (
+        b'[{"object_id":"ap-bookforgefixtureABCDEF",'
+        b'"description":"bookforge-jax-recovery","cost":"0.1250"}]'
+    )
+    modal_reconciliation.append_reconciliation(
+        ledger,
+        attempt_id="jax:legacy-settlement",
+        stage="jax-training",
+        workspace_before_usd=1.0,
+        workspace_after_usd=1.1,
+        declared_ceiling_usd=1.0,
+        status="succeeded",
+        result=None,
+    )
+    settled = modal_reconciliation.settle_attempt(
+        ledger,
+        attempt_id="jax:legacy-settlement",
+        provider_app_id="ap-bookforgefixtureABCDEF",
+        provider_app_description="bookforge-jax-recovery",
+        billing_report=report,
+    )
+    artifact = settled["billing"]["settlements"][0].pop(
+        "billing_report_artifact"
+    )
+    previous_report_sha256 = settled["billing"]["settlements"][0][
+        "billing_report_sha256"
+    ]
+    (ledger.parent / artifact["path"]).unlink()
+    ledger.write_text(
+        json.dumps({"schema_version": "1.0", "entries": [settled]}),
+        encoding="utf-8",
+    )
+
+    refreshed_report = (
+        report[:-1]
+        + b',{"object_id":"ap-unrelated0000000000000",'
+        + b'"description":"unrelated","cost":"0.01"}]'
+    )
+    rebound = modal_reconciliation.settle_attempt(
+        ledger,
+        attempt_id="jax:legacy-settlement",
+        provider_app_id="ap-bookforgefixtureABCDEF",
+        provider_app_description="bookforge-jax-recovery",
+        billing_report=refreshed_report,
+    )
+
+    rebound_settlement = rebound["billing"]["settlements"][0]
+    binding = rebound_settlement["billing_report_artifact"]
+    assert (ledger.parent / binding["path"]).read_bytes() == refreshed_report
+    assert rebound_settlement["billing_report_sha256"] == hashlib.sha256(
+        refreshed_report
+    ).hexdigest()
+    assert (
+        rebound_settlement["migrated_from_unretained_billing_report_sha256"]
+        == previous_report_sha256
+    )
+    modal_reconciliation.assert_attempt_available(ledger, attempt_id="jax:next")
+
+def test_modal_provider_app_settlement_migrates_legacy_finalized_entry(
+    tmp_path: Path,
+) -> None:
+    ledger = tmp_path / "ledger.json"
+    legacy = {
+        "schema_version": "1.0",
+        "entries": [
+            {
+                "attempt_id": "jax:legacy",
+                "stage": "jax-training",
+                "recorded_at": "2026-09-01T00:00:00Z",
+                "status": "succeeded",
+                "workspace_before_usd": 4.0,
+                "workspace_after_usd": 4.2,
+                "reported_delta_usd": 0.2,
+                "declared_ceiling_usd": 3.5,
+                "postrun_report_error": None,
+            }
+        ],
+    }
+    ledger.write_text(json.dumps(legacy), encoding="utf-8")
+
+    with pytest.raises(ValueError, match="unresolved or provisional"):
+        modal_reconciliation.assert_attempt_available(ledger, attempt_id="jax:new")
+    settled = modal_reconciliation.settle_attempt(
+        ledger,
+        attempt_id="jax:legacy",
+        provider_app_id="ap-legacy0000000000000000",
+        provider_app_description="legacy-app",
+        billing_report=(
+            '[{"Object ID":"ap-legacy0000000000000000","Description":"legacy-app",'
+            '"Environment":"main","Interval Start":"2026-09-01T00:00:00",'
+            '"Cost":"0.2100"}]'
+        ),
+    )
+
+    assert settled["workspace_before_usd"] == 4.0
+    assert settled["workspace_after_usd"] == 4.2
+    assert settled["reported_delta_usd"] == 0.2
+    assert settled["billing"]["workspace_observation"]["delta_usd"] == 0.2
+    assert settled["billing"]["settlements"][0]["provider_app_cost_usd"] == "0.2100"
+    modal_reconciliation.assert_attempt_available(ledger, attempt_id="jax:new")
+
+
+@pytest.mark.parametrize(
+    "row",
+    [
+        {
+            "object_id": "ap-target0000000000000000",
+            "Object ID": "ap-conflict00000000000000",
+            "description": "target-app",
+            "cost": "0.1",
+        },
+        {
+            "object_id": "ap-target0000000000000000",
+            "description": "target-app",
+            "Description": "conflict-app",
+            "cost": "0.1",
+        },
+        {
+            "object_id": "ap-target0000000000000000",
+            "description": "target-app",
+            "cost": "0.1",
+            "Cost": "0.2",
+        },
+    ],
+)
+def test_modal_provider_app_settlement_rejects_conflicting_aliases(
+    row: dict[str, object], tmp_path: Path
+) -> None:
+    ledger = tmp_path / "ledger.json"
+    modal_reconciliation.append_reconciliation(
+        ledger,
+        attempt_id="jax:target",
+        stage="jax-training",
+        workspace_before_usd=1.0,
+        workspace_after_usd=1.1,
+        declared_ceiling_usd=1.0,
+        status="succeeded",
+        result=None,
+    )
+
+    with pytest.raises(ValueError, match="conflicting"):
+        modal_reconciliation.settle_attempt(
+            ledger,
+            attempt_id="jax:target",
+            provider_app_id="ap-target0000000000000000",
+            provider_app_description="target-app",
+            billing_report=json.dumps([row]),
+        )
+
+
+def test_modal_provider_app_settlement_rejects_mismatch_and_duplicate_rows(
+    tmp_path: Path,
+) -> None:
+    ledger = tmp_path / "ledger.json"
+    modal_reconciliation.append_reconciliation(
+        ledger,
+        attempt_id="jax:target",
+        stage="jax-training",
+        workspace_before_usd=1.0,
+        workspace_after_usd=1.1,
+        declared_ceiling_usd=1.0,
+        status="succeeded",
+        result=None,
+    )
+    mismatched = [{"Object ID": "ap-target0000000000000000", "Description": "wrong", "Cost": "0.1"}]
+    with pytest.raises(ValueError, match="exactly one row"):
+        modal_reconciliation.settle_attempt(
+            ledger,
+            attempt_id="jax:target",
+            provider_app_id="ap-target0000000000000000",
+            provider_app_description="target-app",
+            billing_report=json.dumps(mismatched),
+        )
+    duplicate = [
+        {"Object ID": "ap-target0000000000000000", "Description": "target-app", "Cost": "0.1"},
+        {"Object ID": "ap-target0000000000000000", "Description": "target-app", "Cost": "0.1"},
+    ]
+    with pytest.raises(ValueError, match="exactly one row"):
+        modal_reconciliation.settle_attempt(
+            ledger,
+            attempt_id="jax:target",
+            provider_app_id="ap-target0000000000000000",
+            provider_app_description="target-app",
+            billing_report=json.dumps(duplicate),
+        )
+
+
+def test_modal_provider_app_settlement_accepts_equal_aliases_but_rejects_duplicate_json_keys(
+    tmp_path: Path,
+) -> None:
+    ledger = tmp_path / "ledger.json"
+    modal_reconciliation.append_reconciliation(
+        ledger,
+        attempt_id="jax:target",
+        stage="jax-training",
+        workspace_before_usd=1.0,
+        workspace_after_usd=1.1,
+        declared_ceiling_usd=1.0,
+        status="succeeded",
+        result=None,
+    )
+    duplicate_key_report = (
+        '[{"Object ID":"ap-target0000000000000000","Object ID":"ap-target0000000000000000",'
+        '"Description":"target-app","Cost":"0.1"}]'
+    )
+    with pytest.raises(ValueError, match="duplicate key"):
+        modal_reconciliation.settle_attempt(
+            ledger,
+            attempt_id="jax:target",
+            provider_app_id="ap-target0000000000000000",
+            provider_app_description="target-app",
+            billing_report=duplicate_key_report,
+        )
+
+    settled = modal_reconciliation.settle_attempt(
+        ledger,
+        attempt_id="jax:target",
+        provider_app_id="ap-target0000000000000000",
+        provider_app_description="target-app",
+        billing_report=(
+            '[{"object_id":"ap-target0000000000000000","Object ID":"ap-target0000000000000000",'
+            '"description":"target-app","Description":"target-app",'
+            '"cost":"0.10","Cost":0.1}]'
+        ),
+    )
+    assert settled["billing"]["settlements"][0]["provider_app_cost_usd"] == "0.10"
+
+
+@pytest.mark.parametrize(
+    "mutation",
+    [
+        lambda settlement: settlement.update(provider_app_cost_usd="819"),
+        lambda settlement: settlement.update(selected_row_sha256="0" * 64),
+        lambda settlement: settlement.update(declared_ceiling_exceeded=True),
+        lambda settlement: settlement.update(billing_report_scope="today"),
+    ],
+)
+def test_modal_provider_app_settlement_tampering_never_false_greens(
+    mutation, tmp_path: Path
+) -> None:
+    ledger = tmp_path / "ledger.json"
+    modal_reconciliation.append_reconciliation(
+        ledger,
+        attempt_id="jax:target",
+        stage="jax-training",
+        workspace_before_usd=1.0,
+        workspace_after_usd=1.1,
+        declared_ceiling_usd=1.0,
+        status="succeeded",
+        result=None,
+    )
+    modal_reconciliation.settle_attempt(
+        ledger,
+        attempt_id="jax:target",
+        provider_app_id="ap-target0000000000000000",
+        provider_app_description="target-app",
+        billing_report=(
+            '[{"Object ID":"ap-target0000000000000000",'
+            '"Description":"target-app","Cost":"0.1"}]'
+        ),
+    )
+    document = json.loads(ledger.read_text())
+    mutation(document["entries"][0]["billing"]["settlements"][0])
+    ledger.write_text(json.dumps(document), encoding="utf-8")
+
+    with pytest.raises(ValueError, match="unresolved or provisional"):
+        modal_reconciliation.assert_attempt_available(ledger, attempt_id="jax:next")
+
+
+@pytest.mark.parametrize("tamper", ["contents", "mode", "missing"])
+def test_modal_provider_app_raw_report_tampering_never_false_greens(
+    tamper: str, tmp_path: Path
+) -> None:
+    ledger = tmp_path / "ledger.json"
+    modal_reconciliation.append_reconciliation(
+        ledger,
+        attempt_id="jax:target",
+        stage="jax-training",
+        workspace_before_usd=1.0,
+        workspace_after_usd=1.1,
+        declared_ceiling_usd=1.0,
+        status="succeeded",
+        result=None,
+    )
+    settled = modal_reconciliation.settle_attempt(
+        ledger,
+        attempt_id="jax:target",
+        provider_app_id="ap-target0000000000000000",
+        provider_app_description="target-app",
+        billing_report=(
+            b'[{"object_id":"ap-target0000000000000000",'
+            b'"description":"target-app","cost":"0.1"}]'
+        ),
+    )
+    artifact = settled["billing"]["settlements"][0]["billing_report_artifact"]
+    report_path = ledger.parent / artifact["path"]
+    if tamper == "contents":
+        report_path.chmod(0o600)
+        report_path.write_bytes(
+            b'[{"object_id":"ap-target0000000000000000",'
+            b'"description":"target-app","cost":"0.2"}]'
+        )
+        report_path.chmod(0o400)
+    elif tamper == "mode":
+        report_path.chmod(0o600)
+    else:
+        report_path.unlink()
+
+    with pytest.raises(ValueError, match="unresolved or provisional"):
+        modal_reconciliation.assert_attempt_available(ledger, attempt_id="jax:next")
+
+
+def test_modal_legacy_grandfathering_requires_exact_entry_hash(monkeypatch, tmp_path: Path) -> None:
+    ledger = tmp_path / "ledger.json"
+    entry = {
+        "attempt_id": "jax:reviewed-legacy",
+        "stage": "jax-training",
+        "recorded_at": "2026-09-01T00:00:00Z",
+        "status": "succeeded",
+        "workspace_before_usd": 1.0,
+        "workspace_after_usd": 1.1,
+        "reported_delta_usd": 0.1,
+        "declared_ceiling_usd": 1.0,
+        "postrun_report_error": None,
+    }
+    ledger.write_text(json.dumps({"schema_version": "1.0", "entries": [entry]}))
+    with pytest.raises(ValueError, match="unresolved or provisional"):
+        modal_reconciliation.assert_attempt_available(ledger, attempt_id="jax:new")
+
+    reviewed_hash = modal_reconciliation._canonical_sha256(entry)
+    monkeypatch.setattr(
+        modal_reconciliation,
+        "_GRANDFATHERED_LEGACY_ENTRY_SHA256S",
+        frozenset({reviewed_hash}),
+    )
+    modal_reconciliation.assert_attempt_available(ledger, attempt_id="jax:new")
+
+    entry["reported_delta_usd"] = 819
+    ledger.write_text(json.dumps({"schema_version": "1.0", "entries": [entry]}))
+    with pytest.raises(ValueError, match="unresolved or provisional"):
+        modal_reconciliation.assert_attempt_available(ledger, attempt_id="jax:new")
 
 
 def test_modal_attempt_is_atomically_reserved_before_paid_call(tmp_path: Path) -> None:

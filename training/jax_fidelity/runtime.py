@@ -19,7 +19,7 @@ class ExecutionRefused(RuntimeError):
 _PATCHED_MAXTEXT_MODULES = {
     "maxtext.utils.train_utils": (
         "src/maxtext/utils/train_utils.py",
-        "model = lora_utils.apply_lora_to_model(model, mesh, config)",
+        "model = lora_utils.apply_lora_to_model(model, None, config)",
     ),
     "maxtext.trainers.pre_train.train": (
         "src/maxtext/trainers/pre_train/train.py",

@@ -29,12 +29,17 @@ SCHEMA_VERSION = "bookforge-fidelity-custody-backup-v1"
 KEYCHAIN_SERVICE = "com.bookforge.story-fidelity-v1.custody-backup"
 DATASET_MANIFEST_SHA256 = "e717eb38c44fceeeae3a2bc88981767c316ca1339198ce1077b893252afeb1de"
 CONFIG_SHA256 = "db6b3788aa555f89624f30d05a827f1911c0d62e5376e3aced40333dff833fd0"
+HISTORICAL_DATASET_ID = "story-fidelity-v1"
+HISTORICAL_CUSTODY_VERSION = "story-fidelity-custody-v1"
+HISTORICAL_HIDDEN_DERIVATION = "hmac-sha256-domain-v2-independent-fields"
+HISTORICAL_KEY_PREFIX = "bookforge-hidden-v1."
 PRIVATE_SHA256 = {
     "hidden.jsonl": "ef32a7ca378d8239352936b08665c3b45fe12dab47b8d5a1bf2356859f8db61c",
     "hidden.key": "0597ce504ae95b47d44e5454d7fce644bff92cc1976130222eb32bf6cd6cf4cd",
     "custody.json": "c0ecfb48ce0135b23a1eaf9a37ee6db57f4a1e854d394a46983a67bc4563a9f4",
 }
 _SHA256 = re.compile(r"[a-f0-9]{64}\Z")
+_KEY_MATERIAL = re.compile(r"[A-Za-z0-9_-]{64}\Z")
 _HOST = re.compile(r"[A-Za-z0-9](?:[A-Za-z0-9.-]{0,251}[A-Za-z0-9])?\Z")
 _USER = re.compile(r"[a-z_][a-z0-9_-]{0,31}\Z")
 _FORBIDDEN_RECEIPT_KEYS = {"password", "passphrase", "secret", "key_material"}
@@ -182,27 +187,75 @@ def _source_artifacts(config: BackupConfiguration) -> tuple[SourceArtifact, ...]
     )
 
 
-def _verification_environment(repository: Path) -> dict[str, str]:
-    """Provide only the local import path and non-secret process basics."""
-
-    return {
-        "HOME": str(Path.home()),
-        "LANG": os.environ.get("LANG", "C.UTF-8"),
-        "PATH": os.environ.get("PATH", os.defpath),
-        "PYTHONPATH": str(repository / "src"),
-    }
-
-
-def _verification_interpreter(repository: Path) -> str:
-    candidate = repository / ".venv/bin/python"
+def _json_object(path: Path, *, label: str) -> dict[str, Any]:
     try:
-        resolved = candidate.resolve(strict=True)
-        metadata = resolved.stat()
-    except OSError as error:
-        raise BackupError("the repository Python environment is missing") from error
-    if not stat.S_ISREG(metadata.st_mode) or not os.access(candidate, os.X_OK):
-        raise BackupError("the repository Python environment is not executable")
-    return str(candidate)
+        value = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, UnicodeDecodeError, json.JSONDecodeError) as error:
+        raise BackupError(f"{label} is unreadable") from error
+    if not isinstance(value, dict):
+        raise BackupError(f"{label} must be a JSON object")
+    return value
+
+
+def _validate_historical_custody(config: BackupConfiguration) -> None:
+    """Verify the immutable v1 custody set without importing the current v2 generator."""
+
+    key_path = config.custody_root / "hidden.key"
+    try:
+        key_value = key_path.read_text(encoding="ascii").strip()
+    except (OSError, UnicodeDecodeError) as error:
+        raise BackupError("historical hidden key is unreadable") from error
+    if not key_value.startswith(HISTORICAL_KEY_PREFIX):
+        raise BackupError("historical hidden key has the wrong version prefix")
+    encoded = key_value.removeprefix(HISTORICAL_KEY_PREFIX)
+    if _KEY_MATERIAL.fullmatch(encoded) is None:
+        raise BackupError("historical hidden key has invalid material encoding")
+    try:
+        material = base64.b64decode(encoded, altchars=b"-_", validate=True)
+    except ValueError as error:
+        raise BackupError("historical hidden key is not valid base64url") from error
+    if len(material) != 48:
+        raise BackupError("historical hidden key is not 384 bits")
+
+    receipt = _json_object(config.custody_root / "custody.json", label="custody receipt")
+    manifest = _json_object(
+        config.repository / "datasets/story-fidelity-v1/manifest.json",
+        label="historical dataset manifest",
+    )
+    expected_receipt_fields = {
+        "schema_version",
+        "dataset_id",
+        "key_fingerprint_sha256",
+        "hidden_sha256",
+        "dataset_manifest_sha256",
+        "generator_source_sha256",
+        "generator_config_sha256",
+        "generator_runtime",
+        "hidden_derivation",
+    }
+    if set(receipt) != expected_receipt_fields:
+        raise BackupError("historical custody receipt fields do not match the contract")
+    expected = {
+        "schema_version": HISTORICAL_CUSTODY_VERSION,
+        "dataset_id": HISTORICAL_DATASET_ID,
+        "key_fingerprint_sha256": hashlib.sha256(material).hexdigest(),
+        "hidden_sha256": PRIVATE_SHA256["hidden.jsonl"],
+        "dataset_manifest_sha256": DATASET_MANIFEST_SHA256,
+        "generator_source_sha256": manifest.get("generator_source_sha256"),
+        "generator_config_sha256": manifest.get("generator_config_sha256"),
+        "generator_runtime": manifest.get("generator_runtime"),
+        "hidden_derivation": HISTORICAL_HIDDEN_DERIVATION,
+    }
+    if receipt != expected:
+        raise BackupError("historical custody receipt does not bind the exact key and manifest")
+    if manifest.get("dataset_id") != HISTORICAL_DATASET_ID:
+        raise BackupError("historical manifest has the wrong dataset identity")
+    splits = manifest.get("splits")
+    if not isinstance(splits, dict):
+        raise BackupError("historical manifest has invalid split metadata")
+    hidden = splits.get("hidden")
+    if not isinstance(hidden, dict) or hidden.get("sha256") != PRIVATE_SHA256["hidden.jsonl"]:
+        raise BackupError("historical manifest does not bind the exact hidden split")
 
 
 def _validate_configuration(config: BackupConfiguration) -> tuple[SourceArtifact, ...]:
@@ -243,25 +296,7 @@ def _validate_configuration(config: BackupConfiguration) -> tuple[SourceArtifact
     artifacts = _source_artifacts(config)
     for artifact in artifacts:
         _validate_artifact(artifact)
-    verifier = config.repository / "scripts/build_fidelity_dataset.py"
-    _lstat_regular(verifier, label="custody verifier", private=False)
-    _run(
-        [
-            _verification_interpreter(config.repository),
-            str(verifier),
-            "--verify-only",
-            "--output-dir",
-            str(config.repository / "datasets/story-fidelity-v1"),
-            "--private-hidden-output",
-            str(config.custody_root / "hidden.jsonl"),
-            "--hidden-key-file",
-            str(config.custody_root / "hidden.key"),
-            "--custody-receipt",
-            str(config.custody_root / "custody.json"),
-        ],
-        label="private custody verification",
-        environment=_verification_environment(config.repository),
-    )
+    _validate_historical_custody(config)
     return artifacts
 
 

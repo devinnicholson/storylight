@@ -5,6 +5,7 @@ from __future__ import annotations
 import ast
 import json
 import os
+from collections.abc import Mapping
 from pathlib import Path
 from typing import Any
 
@@ -72,6 +73,85 @@ def _is_model_parameter_path(path: tuple[str | int, ...]) -> bool:
     return len(path) > 2 and path[:2] == ("params", "params")
 
 
+def _optimizer_moment_identity(
+    path: tuple[str | int, ...],
+) -> tuple[str, tuple[str | int, ...], str] | None:
+    """Map an Adam mu/nu LoRA path to its canonical model module and side."""
+
+    if (
+        len(path) < 6
+        or path[:2] != ("opt_state", "0")
+        or path[2] not in ("mu", "nu")
+        or path[3] != "params"
+    ):
+        return None
+    identity = _lora_side(("params", "params", *path[4:]))
+    if identity is None:
+        return None
+    module, side = identity
+    return str(path[2]), module, side
+
+
+def _restore_orbax_tree(items: Path) -> object:
+    """Deserialize one MaxText ``items`` leaf with Orbax's PyTree handler."""
+
+    try:
+        import orbax.checkpoint as ocp
+
+        return ocp.PyTreeCheckpointer().restore(str(items))
+    except Exception as error:
+        raise OrbaxReceiptError(
+            "Orbax terminal checkpoint payload could not be restored"
+        ) from error
+
+
+def _flatten_restored_tree(
+    value: object, path: tuple[str | int, ...] = ()
+) -> dict[tuple[str | int, ...], object]:
+    if isinstance(value, Mapping):
+        result: dict[tuple[str | int, ...], object] = {}
+        for key, child in value.items():
+            if type(key) not in (str, int) or key == "":
+                raise OrbaxReceiptError("restored Orbax tree has an invalid key path")
+            result.update(_flatten_restored_tree(child, (*path, key)))
+        return result
+    if isinstance(value, (list, tuple)):
+        result = {}
+        for index, child in enumerate(value):
+            if child is not None:
+                result.update(_flatten_restored_tree(child, (*path, index)))
+        return result
+    return {path: value}
+
+
+def _validate_restored_lora_arrays(
+    restored_tree: object,
+    expected_shapes: Mapping[tuple[str | int, ...], tuple[int, ...]],
+) -> None:
+    """Prove the metadata-backed LoRA leaves are real finite floating arrays."""
+
+    restored = _flatten_restored_tree(restored_tree)
+    restored_lora = {path: value for path, value in restored.items() if _lora_side(path)}
+    if set(restored_lora) != set(expected_shapes):
+        raise OrbaxReceiptError("restored Orbax LoRA array paths differ from metadata")
+    for path, expected_shape in expected_shapes.items():
+        value = restored_lora[path]
+        shape = getattr(value, "shape", None)
+        dtype = getattr(value, "dtype", None)
+        if shape is None or tuple(shape) != expected_shape:
+            raise OrbaxReceiptError("restored Orbax LoRA array shape differs from metadata")
+        if dtype is None or getattr(dtype, "kind", None) != "f":
+            raise OrbaxReceiptError("restored Orbax LoRA value is not a floating array")
+        try:
+            import numpy as np
+
+            finite = bool(np.isfinite(np.asarray(value)).all())
+        except Exception as error:
+            raise OrbaxReceiptError("restored Orbax LoRA array could not be inspected") from error
+        if not finite:
+            raise OrbaxReceiptError("restored Orbax LoRA array contains non-finite values")
+
+
 def lora_checkpoint_evidence(
     items: Path | str,
     *,
@@ -79,6 +159,7 @@ def lora_checkpoint_evidence(
     expected_pair_count: int | None = None,
     expected_step: int | None = None,
     approved_maxtext_patch_sha256: str | None = None,
+    restored_tree: object | None = None,
 ) -> dict[str, Any]:
     """Validate paired LoRA tensors from an Orbax ``items/_METADATA`` file.
 
@@ -141,13 +222,30 @@ def lora_checkpoint_evidence(
         raise OrbaxReceiptError("Orbax adapter checkpoint has unrecognized LoRA tensor paths")
 
     pairs: dict[tuple[str | int, ...], dict[str, tuple[int, ...]]] = {}
-    optimizer_lora_tensor_count = 0
+    expected_restored_shapes: dict[tuple[str | int, ...], tuple[int, ...]] = {}
+    optimizer_moments: dict[
+        tuple[str, tuple[str | int, ...], str], tuple[int, ...]
+    ] = {}
     for path, value_metadata in leaves.items():
         identity = _lora_side(path)
         if identity is None:
             continue
         if not _is_model_parameter_path(path):
-            optimizer_lora_tensor_count += 1
+            moment_identity = _optimizer_moment_identity(path)
+            if moment_identity is None:
+                raise OrbaxReceiptError("Orbax checkpoint has an unexpected LoRA optimizer path")
+            if moment_identity in optimizer_moments:
+                raise OrbaxReceiptError("Orbax checkpoint has a duplicate LoRA optimizer moment")
+            raw_shape = value_metadata.get("write_shape")
+            if (
+                value_metadata.get("value_type") != "jax.Array"
+                or value_metadata.get("skip_deserialize") is not False
+                or not isinstance(raw_shape, list)
+                or any(type(dimension) is not int or dimension < 1 for dimension in raw_shape)
+            ):
+                raise OrbaxReceiptError("Orbax LoRA optimizer moment is not a restorable array")
+            optimizer_moments[moment_identity] = tuple(raw_shape)
+            expected_restored_shapes[path] = tuple(raw_shape)
             continue
         module, side = identity
         if (
@@ -166,6 +264,7 @@ def lora_checkpoint_evidence(
         if side in module_sides:
             raise OrbaxReceiptError("Orbax adapter checkpoint has duplicate LoRA tensor sides")
         module_sides[side] = tuple(raw_shape)
+        expected_restored_shapes[path] = tuple(raw_shape)
 
     if not pairs:
         raise OrbaxReceiptError("Orbax adapter checkpoint contains no LoRA tensors")
@@ -190,6 +289,23 @@ def lora_checkpoint_evidence(
         raise OrbaxReceiptError(
             "Orbax LoRA pair count does not match the approved model topology"
         )
+    expected_optimizer_moments = {
+        (moment, module, side)
+        for module, sides in pairs.items()
+        for side in sides
+        for moment in ("mu", "nu")
+    }
+    if set(optimizer_moments) != expected_optimizer_moments:
+        raise OrbaxReceiptError(
+            "Orbax checkpoint does not have exact mu and nu moments for every LoRA tensor"
+        )
+    for (_moment, module, side), shape in optimizer_moments.items():
+        if shape != pairs[module][side]:
+            raise OrbaxReceiptError("Orbax LoRA optimizer moment shape differs from its tensor")
+
+    if restored_tree is None:
+        restored_tree = _restore_orbax_tree(root)
+    _validate_restored_lora_arrays(restored_tree, expected_restored_shapes)
 
     evidence: dict[str, Any] = {
         "schema_version": "1.0",
@@ -198,8 +314,10 @@ def lora_checkpoint_evidence(
         "tree_leaf_count": len(leaves),
         "lora_tensor_count": len(evidence_pairs) * 2,
         "lora_pair_count": len(evidence_pairs),
-        "optimizer_lora_tensor_count": optimizer_lora_tensor_count,
+        "optimizer_lora_tensor_count": len(optimizer_moments),
         "rank": expected_rank,
+        "payload_arrays_restored": True,
+        "restored_lora_array_count": len(expected_restored_shapes),
         "pairs": evidence_pairs,
     }
     if expected_pair_count is not None:

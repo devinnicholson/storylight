@@ -23,26 +23,30 @@ index 274d9acc..8fd8aa43 100644
 +      scalar_metrics["learning/update_norm"] = update_norm
 +      scalar_metrics["learning/changed_trainable_leaves"] = changed_trainable_leaves
 diff --git a/src/maxtext/utils/train_utils.py b/src/maxtext/utils/train_utils.py
-index 35f47e59..a63733e7 100644
+index 35f47e59..86bdc3aa 100644
 --- a/src/maxtext/utils/train_utils.py
 +++ b/src/maxtext/utils/train_utils.py
-@@ -17,0 +18 @@
+@@ -17,0 +18,2 @@
 +import os
-@@ -269,0 +271,3 @@ def setup_train_loop(config, recorder, devices=None):
++import jax.numpy as jnp
+@@ -268,0 +271,7 @@ def setup_train_loop(config, recorder, devices=None):
 +        lora_enabled = getattr(getattr(config, "lora", None), "enable_lora", False)
++        if lora_enabled and getattr(config, "gradient_accumulation_steps", 1) != 1:
++          raise ValueError(
++              "Bookforge native LoRA evidence requires gradient_accumulation_steps=1."
++          )
 +        if lora_enabled:
-+          model = lora_utils.apply_lora_to_model(model, mesh, config)
-@@ -272 +276 @@ def setup_train_loop(config, recorder, devices=None):
++          model = lora_utils.apply_lora_to_model(model, None, config)
+@@ -272 +281 @@ def setup_train_loop(config, recorder, devices=None):
 -            if getattr(getattr(config, "lora", None), "enable_lora", False)
 +            if lora_enabled
-@@ -339,0 +344,26 @@ def setup_train_loop(config, recorder, devices=None):
+@@ -339,0 +349,97 @@ def setup_train_loop(config, recorder, devices=None):
 +      if getattr(getattr(config, "lora", None), "enable_lora", False):
 +        lora_state = nnx.state(state.model, nnx.LoRAParam)
 +        lora_entries = list(lora_state.flat_state())
 +        lora_tensor_count = len(lora_entries)
-+        trainable_elements = sum(var.value.size for _, var in lora_entries)
 +        expected_pairs = os.environ.get("BOOKFORGE_EXPECTED_LORA_PAIR_COUNT")
-+        if lora_tensor_count == 0 or trainable_elements == 0:
++        if lora_tensor_count == 0:
 +          raise ValueError(
 +              "LoRA is enabled but the native train state has no trainable adapter tensors."
 +          )
@@ -51,14 +55,86 @@ index 35f47e59..a63733e7 100644
 +              f"Native LoRA tensor count {lora_tensor_count} does not match "
 +              f"the expected {int(expected_pairs) * 2}."
 +          )
++
++        def _canonical_entries(entries, label):
++          canonical = {}
++          typed = {}
++          for path, var in entries:
++            parts = tuple(str(component) for component in path)
++            signature = tuple(
++                (type(component).__module__, type(component).__qualname__, repr(component))
++                for component in path
++            )
++            if parts in typed and typed[parts] != signature:
++              raise ValueError(f"{label} contains a typed path collision at {parts}.")
++            if parts in canonical:
++              raise ValueError(f"{label} contains a duplicate path at {parts}.")
++            typed[parts] = signature
++            canonical[parts] = var.get_value()
++          return canonical, typed
++
++        lora_values, lora_typed_paths = _canonical_entries(lora_entries, "Native LoRA state")
++        trainable_elements = 0
++        for path, value in lora_values.items():
++          if (
++              not isinstance(value, jax.Array)
++              or not jnp.issubdtype(value.dtype, jnp.floating)
++              or not bool(jax.device_get(jnp.all(jnp.isfinite(value))))
++              or not isinstance(value.sharding, jax.sharding.NamedSharding)
++          ):
++            raise ValueError(f"Native LoRA tensor {path} is not a finite sharded floating JAX array.")
++          trainable_elements += value.size
++        if trainable_elements == 0:
++          raise ValueError("Native LoRA state has no trainable elements.")
++
 +        optimizer_entries = list(nnx.state(state.optimizer).flat_state())
-+        optimizer_array_count = sum(hasattr(var.value, "shape") for _, var in optimizer_entries)
-+        if optimizer_array_count < lora_tensor_count * 2:
++        optimizer_values, optimizer_typed_paths = _canonical_entries(
++            optimizer_entries, "Native optimizer state"
++        )
++        optimizer_moments = {}
++        for parts, value in optimizer_values.items():
++          if not (
++              parts
++              and parts[0] == "opt_state"
++              and any(part in ("mu", "nu") for part in parts)
++          ):
++            continue
++          if (
++              len(parts) < 4
++              or parts[:2] != ("opt_state", "0")
++              or parts[2] not in ("mu", "nu")
++              or parts[3:] not in lora_values
++              or optimizer_typed_paths[parts][3:] != lora_typed_paths[parts[3:]]
++          ):
++            raise ValueError(f"Native LoRA optimizer has an unexpected Adam moment path: {parts}.")
++          key = (parts[2], parts[3:])
++          if key in optimizer_moments:
++            raise ValueError(f"Native LoRA optimizer has a duplicate Adam moment: {key}.")
++          adapter = lora_values[parts[3:]]
++          if (
++              not isinstance(value, jax.Array)
++              or not jnp.issubdtype(value.dtype, jnp.floating)
++              or not bool(jax.device_get(jnp.all(jnp.isfinite(value))))
++              or value.shape != adapter.shape
++              or not isinstance(value.sharding, jax.sharding.NamedSharding)
++              or value.sharding.mesh != adapter.sharding.mesh
++              or value.sharding.spec != adapter.sharding.spec
++              or value.sharding.memory_kind != adapter.sharding.memory_kind
++          ):
++            raise ValueError(
++                f"Native LoRA optimizer moment {key} is incompatible with its adapter tensor."
++            )
++          optimizer_moments[key] = value
++        expected_moments = {
++            (moment, path) for path in lora_values for moment in ("mu", "nu")
++        }
++        if set(optimizer_moments) != expected_moments:
 +          raise ValueError(
 +              "Native LoRA optimizer state does not contain moment slots for every adapter tensor."
 +          )
++        optimizer_lora_tensor_count = len(optimizer_moments)
 +        max_logging.log(
 +            "Bookforge native LoRA census: "
 +            f"tensors={lora_tensor_count} trainable_elements={trainable_elements} "
-+            f"optimizer_arrays={optimizer_array_count}"
++            f"optimizer_lora_tensors={optimizer_lora_tensor_count}"
 +        )

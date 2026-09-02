@@ -13,6 +13,7 @@ dist/
 build/
 *.egg-info/
 .gcloud/
+experiments/jax-fidelity-lab/*.json.artifacts/
 terraform.tfstate
 terraform.tfstate.*
 .terraform/

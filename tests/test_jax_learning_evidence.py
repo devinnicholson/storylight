@@ -166,6 +166,9 @@ def test_v3_smoke_requires_optimizer_tokens_and_adapter_checkpoint_proof() -> No
         "rank": 16,
         "lora_pair_count": pair_count,
         "lora_tensor_count": pair_count * 2,
+        "optimizer_lora_tensor_count": pair_count * 4,
+        "payload_arrays_restored": True,
+        "restored_lora_array_count": pair_count * 6,
         "metadata_sha256": "a" * 64,
         "expected_lora_pair_count": pair_count,
         "checkpoint_step": 0,
@@ -186,8 +189,36 @@ def test_v3_smoke_requires_optimizer_tokens_and_adapter_checkpoint_proof() -> No
     )
     assert accepted is not None
     assert accepted["mode"] == "smoke"
+    assert accepted["expected_optimizer_lora_tensor_count"] == pair_count * 4
 
     adapter["lora_pair_count"] = 1
+    with pytest.raises(LearningEvidenceError, match="checkpoint proof"):
+        verify_v3_terminal_acceptance(
+            experiment_id="bookforge-gemma4-e2b-lora-r16-v3-canary",
+            smoke=True,
+            expected_steps=1,
+            expected_rank=16,
+            expected_lora_pair_count=pair_count,
+            approved_maxtext_patch_sha256="b" * 64,
+            learning_evidence=learning,
+            adapter_evidence=adapter,
+        )
+
+    adapter["lora_pair_count"] = pair_count
+    adapter["optimizer_lora_tensor_count"] = pair_count * 4 - 1
+    with pytest.raises(LearningEvidenceError, match="checkpoint proof"):
+        verify_v3_terminal_acceptance(
+            experiment_id="bookforge-gemma4-e2b-lora-r16-v3-canary",
+            smoke=True,
+            expected_steps=1,
+            expected_rank=16,
+            expected_lora_pair_count=pair_count,
+            approved_maxtext_patch_sha256="b" * 64,
+            learning_evidence=learning,
+            adapter_evidence=adapter,
+        )
+
+    adapter["optimizer_lora_tensor_count"] = pair_count * 4 + 1
     with pytest.raises(LearningEvidenceError, match="checkpoint proof"):
         verify_v3_terminal_acceptance(
             experiment_id="bookforge-gemma4-e2b-lora-r16-v3-canary",
@@ -216,6 +247,9 @@ def test_modal_publication_rechecks_the_terminal_v3_acceptance_receipt() -> None
         "rank": 16,
         "lora_pair_count": pair_count,
         "lora_tensor_count": pair_count * 2,
+        "optimizer_lora_tensor_count": pair_count * 4,
+        "payload_arrays_restored": True,
+        "restored_lora_array_count": pair_count * 6,
         "metadata_sha256": "a" * 64,
         "expected_lora_pair_count": pair_count,
         "checkpoint_step": 99,

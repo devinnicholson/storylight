@@ -91,6 +91,9 @@ def build_train_command(
         "lora.enable_lora=True",
         f"lora.lora_rank={training['rank']}",
         f"lora.lora_alpha={training['alpha']}",
+        "opt_type=adamw",
+        "skip_step_on_spikes=false",
+        "trainable_parameters_mask=[]",
         "enable_checkpointing=True",
     ]
     for name in (

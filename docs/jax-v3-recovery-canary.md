@@ -88,9 +88,14 @@ launch time. A one-step smoke is accepted only when the event stream covers the
 single optimizer step and proves raw and clipped gradients above `1e-12`, a
 nonzero FP32 adapter update, at least one changed trainable leaf, a positive
 learning rate, and supervised completion tokens. Before compilation, the native
-state must also contain exactly 410 trainable LoRA tensors and optimizer moment
-slots for every tensor. Its terminal Orbax checkpoint must contain the exact 205
+state must also contain exactly 410 trainable LoRA tensors and exactly 820
+optimizer moment arrays. Its terminal Orbax checkpoint must contain the exact 205
 paired rank-16 LoRA modules at step zero and bind the approved MaxText patch.
+The patched native state factory materializes Qwix with `mesh=None` because
+MaxText calls that factory from `nnx.eval_shape` and a jitted initializer. The
+downstream abstract-state builder applies the real mesh and explicitly
+replicates metadata-free LoRA leaves; entering `jax.set_mesh` inside either
+trace is invalid in JAX 0.11.
 
 The 100-step canary adds three requirements:
 

@@ -301,6 +301,11 @@ def verify_v3_terminal_acceptance(
         or adapter_evidence.get("rank") != expected_rank
         or adapter_evidence.get("lora_pair_count") != expected_lora_pair_count
         or adapter_evidence.get("lora_tensor_count") != expected_lora_pair_count * 2
+        or adapter_evidence.get("optimizer_lora_tensor_count")
+        != expected_lora_pair_count * 4
+        or adapter_evidence.get("payload_arrays_restored") is not True
+        or adapter_evidence.get("restored_lora_array_count")
+        != expected_lora_pair_count * 6
         or adapter_evidence.get("expected_lora_pair_count") != expected_lora_pair_count
         or adapter_evidence.get("checkpoint_step") != expected_steps - 1
         or adapter_evidence.get("checkpoint_step_binding") != "directory-name-plus-root-step-leaf"
@@ -317,6 +322,7 @@ def verify_v3_terminal_acceptance(
         "mode": expected_mode,
         "optimizer_steps": expected_steps,
         "expected_lora_pair_count": expected_lora_pair_count,
+        "expected_optimizer_lora_tensor_count": expected_lora_pair_count * 4,
         "approved_maxtext_patch_sha256": approved_maxtext_patch_sha256,
         "adapter_metadata_sha256": adapter_evidence["metadata_sha256"],
         "learning_evidence": acceptance,

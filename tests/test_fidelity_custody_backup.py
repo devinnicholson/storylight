@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import base64
+import hashlib
 import importlib.util
 import json
 import stat
@@ -38,6 +40,73 @@ def test_backup_contract_pins_the_exact_private_and_public_inputs() -> None:
     assert (
         backup.CONFIG_SHA256 == "db6b3788aa555f89624f30d05a827f1911c0d62e5376e3aced40333dff833fd0"
     )
+
+
+def test_historical_verifier_binds_v1_key_receipt_and_manifest(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    repository = tmp_path / "repo"
+    custody_root = tmp_path / "custody"
+    manifest_path = repository / "datasets/story-fidelity-v1/manifest.json"
+    manifest_path.parent.mkdir(parents=True)
+    custody_root.mkdir(mode=0o700)
+
+    material = hashlib.sha384(b"historical-custody").digest()
+    encoded = base64.urlsafe_b64encode(material).decode("ascii")
+    key_path = custody_root / "hidden.key"
+    key_path.write_text(backup.HISTORICAL_KEY_PREFIX + encoded + "\n")
+    key_path.chmod(0o600)
+    hidden_path = custody_root / "hidden.jsonl"
+    hidden_path.write_bytes(b'{"private":true}\n')
+    hidden_path.chmod(0o600)
+    hidden_sha256 = hashlib.sha256(hidden_path.read_bytes()).hexdigest()
+    manifest = {
+        "dataset_id": backup.HISTORICAL_DATASET_ID,
+        "generator_source_sha256": "1" * 64,
+        "generator_config_sha256": "2" * 64,
+        "generator_runtime": {"python_version": "3.14.6"},
+        "splits": {"hidden": {"sha256": hidden_sha256}},
+    }
+    manifest_path.write_text(json.dumps(manifest))
+    manifest_sha256 = hashlib.sha256(manifest_path.read_bytes()).hexdigest()
+    receipt = {
+        "schema_version": backup.HISTORICAL_CUSTODY_VERSION,
+        "dataset_id": backup.HISTORICAL_DATASET_ID,
+        "key_fingerprint_sha256": hashlib.sha256(material).hexdigest(),
+        "hidden_sha256": hidden_sha256,
+        "dataset_manifest_sha256": manifest_sha256,
+        "generator_source_sha256": manifest["generator_source_sha256"],
+        "generator_config_sha256": manifest["generator_config_sha256"],
+        "generator_runtime": manifest["generator_runtime"],
+        "hidden_derivation": backup.HISTORICAL_HIDDEN_DERIVATION,
+    }
+    receipt_path = custody_root / "custody.json"
+    receipt_path.write_text(json.dumps(receipt))
+    receipt_path.chmod(0o600)
+    monkeypatch.setattr(
+        backup,
+        "PRIVATE_SHA256",
+        {"hidden.jsonl": hidden_sha256, "hidden.key": "0" * 64, "custody.json": "0" * 64},
+    )
+    monkeypatch.setattr(backup, "DATASET_MANIFEST_SHA256", manifest_sha256)
+    config = backup.BackupConfiguration(
+        repository=repository,
+        custody_root=custody_root,
+        backup_root=tmp_path / "backups",
+        ssh_key=tmp_path / "ssh-key",
+        jetson_host="jetson.local",
+        jetson_user="operator",
+        host_key_alias="jetson.local",
+        remote_directory="/home/operator/.local/share/bookforge/custody-backups",
+        check_only=True,
+        recovery_key_ceremony=False,
+    )
+
+    backup._validate_historical_custody(config)
+    receipt["key_fingerprint_sha256"] = "0" * 64
+    receipt_path.write_text(json.dumps(receipt))
+    with pytest.raises(backup.BackupError, match="does not bind"):
+        backup._validate_historical_custody(config)
 
 
 def test_private_source_validation_rejects_links_modes_and_changed_bytes(
@@ -127,32 +196,6 @@ def test_recovery_key_reaches_only_the_native_dialog_stdin(
     assert recovery_key in captured["input_bytes"]
     assert captured["suppress_output"] is True
     assert recovery_key not in " ".join(captured["command"]).encode()
-
-
-def test_private_verifier_gets_repository_imports_without_cloud_secrets(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    monkeypatch.setenv("HF_TOKEN", "must-not-cross-the-process-boundary")
-    monkeypatch.setenv("GOOGLE_APPLICATION_CREDENTIALS", "/private/credential.json")
-
-    environment = backup._verification_environment(ROOT)
-
-    assert environment["PYTHONPATH"] == str(ROOT / "src")
-    assert "HF_TOKEN" not in environment
-    assert "GOOGLE_APPLICATION_CREDENTIALS" not in environment
-    assert set(environment) == {"HOME", "LANG", "PATH", "PYTHONPATH"}
-
-
-def test_private_verifier_requires_the_repository_environment(tmp_path: Path) -> None:
-    with pytest.raises(backup.BackupError, match="environment is missing"):
-        backup._verification_interpreter(tmp_path)
-
-    interpreter = tmp_path / ".venv/bin/python"
-    interpreter.parent.mkdir(parents=True)
-    interpreter.write_text("#!/bin/sh\nexit 0\n", encoding="utf-8")
-    interpreter.chmod(0o700)
-
-    assert backup._verification_interpreter(tmp_path) == str(interpreter)
 
 
 def test_help_is_non_mutating_and_documents_check_only() -> None:

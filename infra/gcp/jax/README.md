@@ -113,3 +113,7 @@ candidate installer's `--verify-only` path, yielding an installable bundle plus 
 The Modal ledger atomically reserves the attempt before the remote call; duplicate or unresolved
 attempts are rejected before another GPU can start, rather than being discovered during post-run
 reconciliation.
+Exact raw Modal billing reports are retained locally in a ledger-adjacent ignored directory and
+revalidated before another paid call. They are deliberately not committed because a workspace
+report can include unrelated application names and costs; a fresh checkout therefore fails closed
+until an authorized operator restores that private evidence.

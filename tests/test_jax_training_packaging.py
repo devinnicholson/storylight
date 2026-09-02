@@ -381,6 +381,9 @@ def test_v2_train_command_makes_exposure_and_optimizer_explicit() -> None:
     assert "warmup_steps_fraction=0.05" in command
     assert "learning_rate_final_fraction=0.1" in command
     assert "adam_weight_decay=0.0" in command
+    assert "opt_type=adamw" in command
+    assert "skip_step_on_spikes=false" in command
+    assert "trainable_parameters_mask=[]" in command
     assert "checkpoint_period=160" in command
 
 
@@ -390,15 +393,42 @@ def test_pinned_native_maxtext_patch_materializes_lora_before_optimizer() -> Non
         / "training/jax_fidelity/patches/maxtext-native-lora-materialization.patch"
     ).read_text()
 
-    assert "model = lora_utils.apply_lora_to_model(model, mesh, config)" in patch
+    assert "model = lora_utils.apply_lora_to_model(model, None, config)" in patch
+    assert "model = lora_utils.apply_lora_to_model(model, mesh, config)" not in patch
     assert "if lora_enabled:" in patch
     assert "src/maxtext/utils/train_utils.py" in patch
     assert "nnx.state(new_state.model, train_param_type)" in patch
     assert "src/maxtext/trainers/pre_train/train.py" in patch
     assert "Bookforge native LoRA census" in patch
     assert "BOOKFORGE_EXPECTED_LORA_PAIR_COUNT" in patch
+    assert "index 35f47e59..86bdc3aa 100644" in patch
     assert 'scalar_metrics["learning/update_norm"]' in patch
     assert 'scalar_metrics["learning/changed_trainable_leaves"]' in patch
+    assert "typed path collision" in patch
+    assert "isinstance(value, jax.Array)" in patch
+    assert "jnp.issubdtype(value.dtype, jnp.floating)" in patch
+    assert "jnp.all(jnp.isfinite(value))" in patch
+    assert "value.shape != adapter.shape" in patch
+    assert "value.sharding.mesh != adapter.sharding.mesh" in patch
+    assert "value.sharding.spec != adapter.sharding.spec" in patch
+    assert "value.sharding.memory_kind != adapter.sharding.memory_kind" in patch
+    assert 'any(part in ("mu", "nu") for part in parts)' in patch
+    assert "optimizer_typed_paths[parts][3:] != lora_typed_paths[parts[3:]]" in patch
+
+    lines = patch.splitlines()
+    for index, line in enumerate(lines):
+        if not line.startswith("@@ "):
+            continue
+        header = line.split("@@", 2)[1].strip().split()
+        old_count = int(header[0].split(",", 1)[1]) if "," in header[0] else 1
+        new_count = int(header[1].split(",", 1)[1]) if "," in header[1] else 1
+        body = []
+        for candidate in lines[index + 1 :]:
+            if candidate.startswith(("@@ ", "diff --git ")):
+                break
+            body.append(candidate)
+        assert sum(not row.startswith("+") for row in body) == old_count
+        assert sum(not row.startswith("-") for row in body) == new_count
 
 
 def test_container_and_direct_dependencies_are_immutable() -> None:
