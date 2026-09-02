@@ -22,7 +22,7 @@ REPOSITORY_ROOT = Path(__file__).parents[1]
 PLAN_PATH = REPOSITORY_ROOT / "experiments/jax-fidelity-lab/modal-roundtrip-plan-2026-09.json"
 LEDGER_PATH = REPOSITORY_ROOT / "experiments/jax-fidelity-lab/modal-ledger-2026-09.json"
 APP_NAME = "bookforge-jax-roundtrip-smoke"
-GPU = "L4"
+GPU = "L40S"
 TIMEOUT_SECONDS = 2_700
 WORKSPACE_HARD_STOP_USD = 28.0
 BUDGET_MONTH = "2026-09"
@@ -727,7 +727,7 @@ def run_roundtrip_finite(request: dict[str, object]) -> dict[str, object]:
     payload: dict[str, object] = {
         "schema_version": "1.0",
         "status": "succeeded",
-        "backend": "modal-l4",
+        "backend": "modal-l40s",
         "run_id": run_id,
         "base_cache_run_id": base_cache[0] if base_cache is not None else None,
         "config_sha256": config_sha,

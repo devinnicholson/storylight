@@ -46,7 +46,7 @@ def _completion(path: Path, *, run_id: str, expected_sha256: str) -> dict[str, A
     if (
         document.get("schema_version") != "1.0"
         or document.get("status") != "succeeded"
-        or document.get("backend") != "modal-l4"
+        or document.get("backend") != "modal-l40s"
         or document.get("run_id") != run_id
     ):
         raise ValueError("Modal roundtrip completion identity changed")
