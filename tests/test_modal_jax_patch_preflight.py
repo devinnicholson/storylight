@@ -152,10 +152,13 @@ def test_cpu_preflight_billing_total_accepts_one_unambiguous_cost_alias(
 
 def test_shared_image_excludes_mutable_python_cache_artifacts() -> None:
     source = IMAGE_DEFINITION.read_text(encoding="utf-8")
+    manifest_source = (
+        ROOT / "infra/gcp/jax/packaged_source_manifest.py"
+    ).read_text(encoding="utf-8")
 
-    assert '"**/__pycache__/**"' in source
-    assert '"**/*.pyc"' in source
-    assert '"**/*.pyo"' in source
+    assert '"**/__pycache__/**"' in manifest_source
+    assert '"**/*.pyc"' in manifest_source
+    assert '"**/*.pyo"' in manifest_source
     assert source.count("ignore=LOCAL_SOURCE_IGNORE") == 4
 
 
