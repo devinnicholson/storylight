@@ -76,6 +76,7 @@ JAX_IMAGE = (
     .add_local_dir(REPOSITORY_ROOT / "training", "/opt/bookforge/training", copy=True)
     .add_local_dir(REPOSITORY_ROOT / "src", "/opt/bookforge/src", copy=True)
     .add_local_dir(REPOSITORY_ROOT / "infra/gcp/jax", "/opt/bookforge/infra/gcp/jax", copy=True)
+    .add_local_dir(REPOSITORY_ROOT / "deploy", "/opt/bookforge/deploy", copy=True)
     .run_commands(
         "PYTHONPATH=/opt/bookforge:/opt/bookforge/src python -m "
         "training.jax_fidelity.verify_runtime --write-lock /opt/bookforge/runtime.lock.json",

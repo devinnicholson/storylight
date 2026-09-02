@@ -178,6 +178,9 @@ def test_roundtrip_request_and_modal_function_fail_closed() -> None:
     assert plan["timeout_seconds"] == 2700
     assert "retries=0" in source
     assert "max_containers=1" in source
+    assert "def hydration_preflight()" in source
+    assert '"backend": "modal-cpu-preflight"' in source
+    assert "validate_runtime_lock(lock_path)" in source
     assert "@modal.web_endpoint" not in source
     assert source.index('"hf-to-maxtext"') < source.index('stage="lora-smoke"')
     assert source.index('stage="lora-smoke"') < source.index('"maxtext-to-hf"')

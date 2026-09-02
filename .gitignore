@@ -8,6 +8,7 @@ node_modules/
 .ruff_cache/
 __pycache__/
 *.py[cod]
+*.json.lock
 dist/
 build/
 *.egg-info/

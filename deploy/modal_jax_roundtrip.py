@@ -165,6 +165,29 @@ def _release_files(root: Path) -> list[dict[str, object]]:
 
 @app.function(
     image=JAX_IMAGE,
+    cpu=1,
+    memory=2_048,
+    timeout=60,
+    retries=0,
+)
+def hydration_preflight() -> dict[str, object]:
+    """Verify worker hydration and the immutable runtime without allocating a GPU."""
+
+    from training.jax_fidelity.verify_runtime import validate_runtime, validate_runtime_lock
+
+    lock_path = Path("/opt/bookforge/runtime.lock.json")
+    validate_runtime()
+    validate_runtime_lock(lock_path)
+    return {
+        "schema_version": "1.0",
+        "ready": True,
+        "backend": "modal-cpu-preflight",
+        "runtime_lock_sha256": _sha256(lock_path),
+    }
+
+
+@app.function(
+    image=JAX_IMAGE,
     gpu=GPU,
     cpu=8,
     memory=65_536,
