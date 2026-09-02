@@ -205,6 +205,130 @@ def _release_files(root: Path) -> list[dict[str, object]]:
     return files
 
 
+def _publish_roundtrip_release(
+    *,
+    run_id: str,
+    base_cache_run_id: str | None,
+    config_sha256: str,
+    dataset_manifest_sha256: str,
+    input_manifest_sha256: str,
+    hf_snapshot_manifest_sha256: str,
+    tokenizer_manifest_sha256: str,
+    hf_to_maxtext_run_id: str,
+    smoke_training_run_id: str,
+    maxtext_to_hf_run_id: str,
+    logit_run_id: str,
+    config_path: Path,
+    dataset_manifest: Path,
+    base_leaf: Path,
+    base_receipt: dict[str, Any],
+    base_receipt_path: Path,
+    smoke_leaf: Path,
+    smoke_receipt: dict[str, Any],
+    smoke_receipt_path: Path,
+    smoke_checkpoint_step: int,
+    merged_hf: Path,
+    roundtrip_path: Path,
+    hf_to_maxtext_completion: Path,
+    smoke_completion: Path,
+    maxtext_to_hf_completion: Path,
+    logit_completion: Path,
+    release: Path,
+    started: float,
+) -> dict[str, object]:
+    from training.jax_fidelity.integrity import artifact_manifest
+    from training.jax_fidelity.orbax_receipt import verify_orbax_leaf_receipt
+
+    release.mkdir(parents=True, exist_ok=False)
+    base_release_root = release / "base-orbax"
+    base_release_leaf = base_release_root / base_receipt["relative_path"]
+    base_release_leaf.parent.mkdir(parents=True)
+    _copy_tree(base_leaf, base_release_leaf)
+    verify_orbax_leaf_receipt(
+        base_release_root,
+        base_receipt,
+        expected_step=0,
+        role="base-maxtext",
+    )
+    smoke_release_root = release / "smoke-adapter"
+    smoke_release_leaf = smoke_release_root / smoke_receipt["relative_path"]
+    smoke_release_leaf.parent.mkdir(parents=True)
+    _copy_tree(smoke_leaf, smoke_release_leaf)
+    verify_orbax_leaf_receipt(
+        smoke_release_root,
+        smoke_receipt,
+        expected_step=smoke_checkpoint_step,
+        role="smoke-lora",
+    )
+    _copy_tree(merged_hf, release / "merged-hf")
+    (release / "inputs").mkdir()
+    shutil.copyfile(config_path, release / "inputs/config.json", follow_symlinks=False)
+    shutil.copyfile(
+        dataset_manifest,
+        release / "inputs/dataset.manifest.json",
+        follow_symlinks=False,
+    )
+    (release / "evidence").mkdir()
+    evidence_files = {
+        "base-orbax.receipt.json": base_receipt_path,
+        "smoke-orbax.receipt.json": smoke_receipt_path,
+        "roundtrip.json": roundtrip_path,
+        "hf-to-maxtext.completion.json": hf_to_maxtext_completion,
+        "smoke.completion.json": smoke_completion,
+        "maxtext-to-hf.completion.json": maxtext_to_hf_completion,
+        "logit-check.completion.json": logit_completion,
+    }
+    for name, source in evidence_files.items():
+        shutil.copyfile(source, release / "evidence" / name, follow_symlinks=False)
+    shutil.copyfile(
+        "/opt/bookforge/runtime.lock.json",
+        release / "runtime.lock.json",
+        follow_symlinks=False,
+    )
+    base_manifest = artifact_manifest(base_release_leaf)
+    smoke_manifest = artifact_manifest(smoke_release_leaf)
+    merged_manifest = artifact_manifest(release / "merged-hf")
+    _write_once(release / "base-orbax.manifest.json", base_manifest)
+    _write_once(release / "smoke-adapter.manifest.json", smoke_manifest)
+    _write_once(release / "merged-hf.manifest.json", merged_manifest)
+    files = _release_files(release)
+    payload: dict[str, object] = {
+        "schema_version": "1.0",
+        "status": "succeeded",
+        "backend": BACKEND,
+        "run_id": run_id,
+        "base_cache_run_id": base_cache_run_id,
+        "config_sha256": config_sha256,
+        "dataset_manifest_sha256": dataset_manifest_sha256,
+        "input_manifest_sha256": input_manifest_sha256,
+        "hf_snapshot_manifest_sha256": hf_snapshot_manifest_sha256,
+        "tokenizer_manifest_sha256": tokenizer_manifest_sha256,
+        "hf_to_maxtext_run_id": hf_to_maxtext_run_id,
+        "smoke_training_run_id": smoke_training_run_id,
+        "maxtext_to_hf_run_id": maxtext_to_hf_run_id,
+        "logit_run_id": logit_run_id,
+        "base_orbax_receipt_sha256": _sha256(
+            release / "evidence/base-orbax.receipt.json"
+        ),
+        "smoke_orbax_receipt_sha256": _sha256(
+            release / "evidence/smoke-orbax.receipt.json"
+        ),
+        "roundtrip_evidence_sha256": _sha256(release / "evidence/roundtrip.json"),
+        "base_orbax_manifest_sha256": _sha256(release / "base-orbax.manifest.json"),
+        "smoke_adapter_manifest_sha256": _sha256(
+            release / "smoke-adapter.manifest.json"
+        ),
+        "merged_hf_manifest_sha256": _sha256(release / "merged-hf.manifest.json"),
+        "elapsed_seconds": time.monotonic() - started,
+        "files": files,
+    }
+    completion_path = release / "completion.json"
+    _write_once(completion_path, payload)
+    scratch_volume.commit()
+    release_volume.commit()
+    return {**payload, "completion_sha256": _sha256(completion_path)}
+
+
 @app.function(
     image=JAX_IMAGE,
     cpu=1,
@@ -343,7 +467,6 @@ def run_roundtrip_finite(request: dict[str, object]) -> dict[str, object]:
     from infra.gcp.jax.vertex_entrypoint import verify_input_population
     from training.jax_fidelity.configuration import load_config
     from training.jax_fidelity.integrity import (
-        artifact_manifest,
         validate_dataset_manifest,
         verify_artifact_manifest,
     )
@@ -682,88 +805,273 @@ def run_roundtrip_finite(request: dict[str, object]) -> dict[str, object]:
     roundtrip_path = evidence / "roundtrip.json"
     _write_once(roundtrip_path, roundtrip_document)
 
-    release.mkdir(parents=True, exist_ok=False)
-    base_release_root = release / "base-orbax"
-    base_release_leaf = base_release_root / base_receipt["relative_path"]
-    base_release_leaf.parent.mkdir(parents=True)
-    _copy_tree(base_leaf, base_release_leaf)
-    verify_orbax_leaf_receipt(
-        base_release_root,
+    return _publish_roundtrip_release(
+        run_id=run_id,
+        base_cache_run_id=base_cache[0] if base_cache is not None else None,
+        config_sha256=config_sha,
+        dataset_manifest_sha256=dataset_sha,
+        input_manifest_sha256=input_manifest_sha,
+        hf_snapshot_manifest_sha256=hf_manifest_sha,
+        tokenizer_manifest_sha256=tokenizer_manifest_sha,
+        hf_to_maxtext_run_id=hf_to_maxtext_id,
+        smoke_training_run_id=smoke_id,
+        maxtext_to_hf_run_id=maxtext_to_hf_id,
+        logit_run_id=logit_id,
+        config_path=config_path,
+        dataset_manifest=dataset_manifest,
+        base_leaf=base_leaf,
+        base_receipt=base_receipt,
+        base_receipt_path=base_receipt_path,
+        smoke_leaf=smoke_leaf,
+        smoke_receipt=smoke_receipt,
+        smoke_receipt_path=smoke_receipt_path,
+        smoke_checkpoint_step=smoke_checkpoint_step,
+        merged_hf=merged_hf,
+        roundtrip_path=roundtrip_path,
+        hf_to_maxtext_completion=hf_to_maxtext_completion,
+        smoke_completion=smoke_completion,
+        maxtext_to_hf_completion=maxtext_to_hf_completion,
+        logit_completion=logit_completion,
+        release=release,
+        started=started,
+    )
+
+
+@app.function(
+    image=JAX_IMAGE,
+    cpu=8,
+    memory=65_536,
+    timeout=1_800,
+    retries=0,
+    max_containers=1,
+    volumes={
+        str(_INPUT_ROOT): input_volume,
+        "/scratch": scratch_volume,
+        "/releases": release_volume,
+    },
+)
+def finalize_roundtrip_finite(request: dict[str, object]) -> dict[str, object]:
+    """Verify a completed partial run and publish it without repeating GPU work."""
+
+    (
+        run_id,
+        config_sha,
+        dataset_sha,
+        prepared_sha,
+        input_manifest_sha,
+        hf_manifest_sha,
+        tokenizer_manifest_sha,
+    ) = _validate_request(request)
+    base_cache = _validate_base_cache_request(request, target_run_id=run_id)
+    started = time.monotonic()
+    input_directory = _INPUT_ROOT / run_id
+    scratch = _SCRATCH_ROOT / run_id
+    release = _RELEASE_ROOT / run_id
+    if not scratch.is_dir() or scratch.is_symlink():
+        raise RuntimeError("roundtrip recovery requires an existing safe scratch directory")
+    if release.exists() or release.is_symlink():
+        raise RuntimeError("roundtrip recovery refuses existing release state")
+
+    from infra.gcp.jax.vertex_entrypoint import verify_input_population
+    from training.jax_fidelity.configuration import load_config
+    from training.jax_fidelity.integrity import (
+        validate_dataset_manifest,
+        verify_artifact_manifest,
+        verify_conversion_manifest,
+    )
+    from training.jax_fidelity.manifests import stable_run_id
+    from training.jax_fidelity.orbax_receipt import (
+        discover_orbax_items,
+        terminal_checkpoint_step,
+        verify_orbax_leaf_receipt,
+    )
+    from training.jax_fidelity.roundtrip_evidence import build_roundtrip_evidence
+    from training.jax_fidelity.roundtrip_smoke import validate_roundtrip_evidence
+
+    verify_input_population(
+        input_directory,
+        run_id=run_id,
+        expected_manifest_sha256=input_manifest_sha,
+    )
+    config_path = input_directory / "config.json"
+    dataset_manifest = input_directory / "dataset/manifest.json"
+    prepared_train = input_directory / "prepared/train.jsonl"
+    hf_snapshot = input_directory / "checkpoint"
+    tokenizer = input_directory / "tokenizer"
+    hf_manifest_path = input_directory / "checkpoint.manifest.json"
+    tokenizer_manifest_path = input_directory / "tokenizer.manifest.json"
+    if _sha256(config_path) != config_sha or _sha256(dataset_manifest) != dataset_sha:
+        raise RuntimeError("roundtrip recovery config or dataset hash changed")
+    if _sha256(prepared_train) != prepared_sha:
+        raise RuntimeError("roundtrip recovery prepared training hash changed")
+    if _sha256(hf_manifest_path) != hf_manifest_sha:
+        raise RuntimeError("roundtrip recovery HF snapshot manifest hash changed")
+    if _sha256(tokenizer_manifest_path) != tokenizer_manifest_sha:
+        raise RuntimeError("roundtrip recovery tokenizer manifest hash changed")
+    verify_artifact_manifest(hf_snapshot, _json_object(hf_manifest_path))
+    verify_artifact_manifest(tokenizer, _json_object(tokenizer_manifest_path))
+    experiment = load_config(config_path)
+    validated_dataset = validate_dataset_manifest(
+        dataset_manifest,
+        expected_manifest_sha256=dataset_sha,
+        required_split_records=experiment.dataset["required_split_records"],
+    )
+    if experiment.training["smoke_steps"] != 5:
+        raise RuntimeError("roundtrip recovery requires exactly five completed smoke steps")
+
+    runs = scratch / "runs"
+    evidence = scratch / "evidence"
+    hf_to_maxtext_input = evidence / "hf-to-maxtext.inputs.json"
+    hf_to_maxtext_input_sha = _sha256(hf_to_maxtext_input)
+    verify_conversion_manifest(
+        hf_to_maxtext_input,
+        expected_manifest_sha256=hf_to_maxtext_input_sha,
+        artifact_roots={"hf_checkpoint": hf_snapshot},
+    )
+    hf_to_maxtext_id = stable_run_id(
+        stage="hf-to-maxtext",
+        config_sha256=config_sha,
+        dataset_manifest_sha256=hf_to_maxtext_input_sha,
+    )
+    if base_cache is None:
+        base_output = scratch / "base-maxtext"
+        base_receipt_path = evidence / "base-orbax.receipt.json"
+        hf_to_maxtext_completion = _completion_path(runs, hf_to_maxtext_id)
+    else:
+        cache_run_id, expected_receipt_sha, expected_completion_sha = base_cache
+        cache_root = _SCRATCH_ROOT / cache_run_id
+        base_output = cache_root / "base-maxtext"
+        base_receipt_path = cache_root / "evidence/base-orbax.receipt.json"
+        hf_to_maxtext_completion = (
+            cache_root / "runs" / hf_to_maxtext_id / "completion.json"
+        )
+        if _sha256(base_receipt_path) != expected_receipt_sha:
+            raise RuntimeError("roundtrip recovery cached base receipt hash changed")
+        if _sha256(hf_to_maxtext_completion) != expected_completion_sha:
+            raise RuntimeError("roundtrip recovery cached conversion completion hash changed")
+    hf_to_maxtext_document = _json_object(hf_to_maxtext_completion)
+    if (
+        hf_to_maxtext_document.get("run_id") != hf_to_maxtext_id
+        or hf_to_maxtext_document.get("status") != "succeeded"
+        or hf_to_maxtext_document.get("evidence", {}).get("input_manifest_sha256")
+        != hf_to_maxtext_input_sha
+    ):
+        raise RuntimeError("roundtrip recovery base conversion identity changed")
+    base_receipt = _json_object(base_receipt_path)
+    base_leaf = verify_orbax_leaf_receipt(
+        base_output,
         base_receipt,
         expected_step=0,
         role="base-maxtext",
     )
-    smoke_release_root = release / "smoke-adapter"
-    smoke_release_leaf = smoke_release_root / smoke_receipt["relative_path"]
-    smoke_release_leaf.parent.mkdir(parents=True)
-    _copy_tree(smoke_leaf, smoke_release_leaf)
+
+    smoke_id = stable_run_id(
+        stage="lora-smoke",
+        config_sha256=config_sha,
+        dataset_manifest_sha256=validated_dataset.manifest_sha256,
+    )
+    smoke_completion = _completion_path(runs, smoke_id)
+    smoke_checkpoint_step = terminal_checkpoint_step(experiment.training["smoke_steps"])
+    smoke_output = scratch / "smoke-output"
+    smoke_leaf = discover_orbax_items(
+        smoke_output,
+        expected_step=smoke_checkpoint_step,
+    )
+    smoke_receipt_path = evidence / "smoke-orbax.receipt.json"
+    smoke_receipt = _json_object(smoke_receipt_path)
     verify_orbax_leaf_receipt(
-        smoke_release_root,
+        smoke_output,
         smoke_receipt,
         expected_step=smoke_checkpoint_step,
         role="smoke-lora",
     )
-    _copy_tree(merged_hf, release / "merged-hf")
-    (release / "inputs").mkdir()
-    shutil.copyfile(config_path, release / "inputs/config.json", follow_symlinks=False)
-    shutil.copyfile(
-        dataset_manifest,
-        release / "inputs/dataset.manifest.json",
-        follow_symlinks=False,
+
+    merged_hf = scratch / "merged-hf"
+    maxtext_to_hf_input = evidence / "maxtext-to-hf.inputs.json"
+    maxtext_to_hf_input_sha = _sha256(maxtext_to_hf_input)
+    verify_conversion_manifest(
+        maxtext_to_hf_input,
+        expected_manifest_sha256=maxtext_to_hf_input_sha,
+        artifact_roots={
+            "base_checkpoint": base_leaf,
+            "adapter_checkpoint": smoke_leaf,
+            "hf_checkpoint": hf_snapshot,
+        },
     )
-    (release / "evidence").mkdir()
-    evidence_files = {
-        "base-orbax.receipt.json": base_receipt_path,
-        "smoke-orbax.receipt.json": smoke_receipt_path,
-        "roundtrip.json": roundtrip_path,
-        "hf-to-maxtext.completion.json": hf_to_maxtext_completion,
-        "smoke.completion.json": smoke_completion,
-        "maxtext-to-hf.completion.json": maxtext_to_hf_completion,
-        "logit-check.completion.json": logit_completion,
-    }
-    for name, source in evidence_files.items():
-        shutil.copyfile(source, release / "evidence" / name, follow_symlinks=False)
-    shutil.copyfile(
-        "/opt/bookforge/runtime.lock.json",
-        release / "runtime.lock.json",
-        follow_symlinks=False,
+    maxtext_to_hf_id = stable_run_id(
+        stage="maxtext-to-hf",
+        config_sha256=config_sha,
+        dataset_manifest_sha256=maxtext_to_hf_input_sha,
     )
-    base_manifest = artifact_manifest(base_release_leaf)
-    smoke_manifest = artifact_manifest(smoke_release_leaf)
-    merged_manifest = artifact_manifest(release / "merged-hf")
-    _write_once(release / "base-orbax.manifest.json", base_manifest)
-    _write_once(release / "smoke-adapter.manifest.json", smoke_manifest)
-    _write_once(release / "merged-hf.manifest.json", merged_manifest)
-    files = _release_files(release)
-    payload: dict[str, object] = {
-        "schema_version": "1.0",
-        "status": "succeeded",
-        "backend": BACKEND,
-        "run_id": run_id,
-        "base_cache_run_id": base_cache[0] if base_cache is not None else None,
-        "config_sha256": config_sha,
-        "dataset_manifest_sha256": dataset_sha,
-        "input_manifest_sha256": input_manifest_sha,
-        "hf_snapshot_manifest_sha256": hf_manifest_sha,
-        "tokenizer_manifest_sha256": tokenizer_manifest_sha,
-        "hf_to_maxtext_run_id": hf_to_maxtext_id,
-        "smoke_training_run_id": smoke_id,
-        "maxtext_to_hf_run_id": maxtext_to_hf_id,
-        "logit_run_id": logit_id,
-        "base_orbax_receipt_sha256": _sha256(release / "evidence/base-orbax.receipt.json"),
-        "smoke_orbax_receipt_sha256": _sha256(release / "evidence/smoke-orbax.receipt.json"),
-        "roundtrip_evidence_sha256": _sha256(release / "evidence/roundtrip.json"),
-        "base_orbax_manifest_sha256": _sha256(release / "base-orbax.manifest.json"),
-        "smoke_adapter_manifest_sha256": _sha256(release / "smoke-adapter.manifest.json"),
-        "merged_hf_manifest_sha256": _sha256(release / "merged-hf.manifest.json"),
-        "elapsed_seconds": time.monotonic() - started,
-        "files": files,
-    }
-    completion_path = release / "completion.json"
-    _write_once(completion_path, payload)
-    scratch_volume.commit()
-    release_volume.commit()
-    return {**payload, "completion_sha256": _sha256(completion_path)}
+    maxtext_to_hf_completion = _completion_path(runs, maxtext_to_hf_id)
+
+    logit_input = evidence / "logit-check.inputs.json"
+    logit_input_sha = _sha256(logit_input)
+    verify_conversion_manifest(
+        logit_input,
+        expected_manifest_sha256=logit_input_sha,
+        artifact_roots={
+            "maxtext_checkpoint": base_leaf,
+            "adapter_checkpoint": smoke_leaf,
+            "hf_checkpoint": merged_hf,
+        },
+    )
+    logit_id = stable_run_id(
+        stage="logit-check",
+        config_sha256=config_sha,
+        dataset_manifest_sha256=logit_input_sha,
+    )
+    logit_completion = _completion_path(runs, logit_id)
+    roundtrip_document = build_roundtrip_evidence(
+        config_path=config_path,
+        base_checkpoint=hf_snapshot,
+        exported_checkpoint=merged_hf,
+        hf_to_maxtext_completion=hf_to_maxtext_completion,
+        hf_to_maxtext_completion_sha256=_sha256(hf_to_maxtext_completion),
+        smoke_completion=smoke_completion,
+        smoke_completion_sha256=_sha256(smoke_completion),
+        maxtext_to_hf_completion=maxtext_to_hf_completion,
+        maxtext_to_hf_completion_sha256=_sha256(maxtext_to_hf_completion),
+        logit_completion=logit_completion,
+        logit_completion_sha256=_sha256(logit_completion),
+    )
+    validate_roundtrip_evidence(
+        experiment,
+        roundtrip_document,
+        exported_checkpoint=merged_hf,
+    )
+    roundtrip_path = evidence / "roundtrip.json"
+    _write_once(roundtrip_path, roundtrip_document)
+    return _publish_roundtrip_release(
+        run_id=run_id,
+        base_cache_run_id=base_cache[0] if base_cache is not None else None,
+        config_sha256=config_sha,
+        dataset_manifest_sha256=dataset_sha,
+        input_manifest_sha256=input_manifest_sha,
+        hf_snapshot_manifest_sha256=hf_manifest_sha,
+        tokenizer_manifest_sha256=tokenizer_manifest_sha,
+        hf_to_maxtext_run_id=hf_to_maxtext_id,
+        smoke_training_run_id=smoke_id,
+        maxtext_to_hf_run_id=maxtext_to_hf_id,
+        logit_run_id=logit_id,
+        config_path=config_path,
+        dataset_manifest=dataset_manifest,
+        base_leaf=base_leaf,
+        base_receipt=base_receipt,
+        base_receipt_path=base_receipt_path,
+        smoke_leaf=smoke_leaf,
+        smoke_receipt=smoke_receipt,
+        smoke_receipt_path=smoke_receipt_path,
+        smoke_checkpoint_step=smoke_checkpoint_step,
+        merged_hf=merged_hf,
+        roundtrip_path=roundtrip_path,
+        hf_to_maxtext_completion=hf_to_maxtext_completion,
+        smoke_completion=smoke_completion,
+        maxtext_to_hf_completion=maxtext_to_hf_completion,
+        logit_completion=logit_completion,
+        release=release,
+        started=started,
+    )
 
 
 def _authoritative_workspace_total() -> float:
@@ -814,6 +1122,7 @@ def run_cli(
     base_cache_receipt_sha256: str = "",
     base_cache_completion_sha256: str = "",
     base_cache_approval_token_value: str = "",
+    finalize_existing: bool = False,
 ) -> None:
     plan = _json_object(PLAN_PATH)
     if (
@@ -852,26 +1161,29 @@ def run_cli(
 
     from infra.gcp.jax.modal_reconciliation import append_reconciliation, reserve_attempt
 
-    attempt_id = f"jax-roundtrip:{run_id}:{input_manifest_sha256[:20]}"
-    reserve_attempt(LEDGER_PATH, attempt_id=attempt_id, stage="jax-roundtrip-smoke")
+    stage = "jax-roundtrip-recovery" if finalize_existing else "jax-roundtrip-smoke"
+    attempt_id = f"{stage}:{run_id}:{input_manifest_sha256[:20]}"
+    reserve_attempt(LEDGER_PATH, attempt_id=attempt_id, stage=stage)
     result: dict[str, object] | None = None
     status = "remote-error"
     postrun_total: float | None = None
     postrun_error: str | None = None
     try:
-        result = run_roundtrip_finite.remote(
-            {
-                "run_id": run_id,
-                "config_sha256": config_sha256,
-                "dataset_manifest_sha256": dataset_manifest_sha256,
-                "prepared_train_sha256": prepared_train_sha256,
-                "input_manifest_sha256": input_manifest_sha256,
-                "hf_snapshot_manifest_sha256": hf_snapshot_manifest_sha256,
-                "tokenizer_manifest_sha256": tokenizer_manifest_sha256,
-                "approval_token": approval_token_value,
-                **cache_request,
-            }
-        )
+        request = {
+            "run_id": run_id,
+            "config_sha256": config_sha256,
+            "dataset_manifest_sha256": dataset_manifest_sha256,
+            "prepared_train_sha256": prepared_train_sha256,
+            "input_manifest_sha256": input_manifest_sha256,
+            "hf_snapshot_manifest_sha256": hf_snapshot_manifest_sha256,
+            "tokenizer_manifest_sha256": tokenizer_manifest_sha256,
+            "approval_token": approval_token_value,
+            **cache_request,
+        }
+        if finalize_existing:
+            result = finalize_roundtrip_finite.remote(request)
+        else:
+            result = run_roundtrip_finite.remote(request)
         status = "succeeded"
     finally:
         try:
@@ -881,7 +1193,7 @@ def run_cli(
         append_reconciliation(
             LEDGER_PATH,
             attempt_id=attempt_id,
-            stage="jax-roundtrip-smoke",
+            stage=stage,
             workspace_before_usd=workspace_total,
             workspace_after_usd=postrun_total,
             declared_ceiling_usd=float(ceiling),

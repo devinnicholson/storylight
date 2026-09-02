@@ -5,6 +5,7 @@ import json
 import subprocess
 import sys
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 
@@ -102,6 +103,44 @@ def test_parse_maxtext_kl_uses_the_largest_observed_value() -> None:
     assert parse_max_kl_divergence(output) == pytest.approx(0.012)
     with pytest.raises(CheckpointEvidenceError, match="maximum KL"):
         parse_max_kl_divergence("conversion passed")
+
+
+def test_safetensor_shapes_uses_supported_keys_api_for_non_iterable_handle(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    checkpoint = tmp_path / "checkpoint"
+    checkpoint.mkdir()
+    (checkpoint / "model.safetensors").write_bytes(b"fixture")
+
+    class Slice:
+        def get_shape(self) -> list[int]:
+            return [2, 3]
+
+    class Handle:
+        def __enter__(self) -> Handle:
+            return self
+
+        def __exit__(self, *_args: object) -> None:
+            return None
+
+        def keys(self) -> list[str]:
+            return ["model.weight"]
+
+        def get_slice(self, name: str) -> Slice:
+            assert name == "model.weight"
+            return Slice()
+
+    def safe_open(path: Path, *, framework: str, device: str) -> Handle:
+        assert path == checkpoint / "model.safetensors"
+        assert framework == "pt"
+        assert device == "cpu"
+        return Handle()
+
+    monkeypatch.setitem(sys.modules, "safetensors", SimpleNamespace(safe_open=safe_open))
+
+    assert checkpoint_evidence._safetensor_shapes(checkpoint) == {
+        "model.weight": (2, 3)
+    }
 
 
 def test_checkpoint_inspection_binds_architecture_tokenizer_and_ple(

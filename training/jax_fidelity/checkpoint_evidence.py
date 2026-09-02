@@ -93,7 +93,7 @@ def _safetensor_shapes(root: Path) -> dict[str, tuple[int, ...]]:
         raise CheckpointEvidenceError("checkpoint contains no SafeTensors weights")
     for path in files:
         with safe_open(path, framework="pt", device="cpu") as handle:
-            for name in handle:
+            for name in handle.keys():  # noqa: SIM118 - safe_open is not iterable.
                 if name in result:
                     raise CheckpointEvidenceError(f"duplicate SafeTensors key: {name}")
                 result[name] = tuple(handle.get_slice(name).get_shape())

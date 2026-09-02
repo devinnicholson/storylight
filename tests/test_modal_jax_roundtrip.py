@@ -226,6 +226,11 @@ def test_roundtrip_request_and_modal_function_fail_closed() -> None:
     assert "cached HF-to-MaxText run manifest hash changed" in source
     assert 'expected_source_checkpoint = f"--hf_model_path=' in source
     assert "verify_orbax_leaf_receipt(" in source
+    assert "def finalize_roundtrip_finite(request: dict[str, object])" in source
+    assert "roundtrip recovery refuses existing release state" in source
+    assert source.count("verify_conversion_manifest(") >= 3
+    assert "finalize_roundtrip_finite.remote(request)" in source
+    assert source.count("_publish_roundtrip_release(") == 3
     assert "@modal.web_endpoint" not in source
     assert source.index('"hf-to-maxtext"') < source.index('stage="lora-smoke"')
     assert source.index('stage="lora-smoke"') < source.index('"maxtext-to-hf"')
