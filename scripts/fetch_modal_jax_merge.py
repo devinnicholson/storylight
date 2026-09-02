@@ -5,7 +5,7 @@ from __future__ import annotations
 
 import argparse
 import json
-import shutil
+import os
 import subprocess
 import tempfile
 from pathlib import Path
@@ -164,11 +164,17 @@ def fetch_merge(
             merge_run_id=merge_run_id,
             expected_sha256=completion_sha256,
         )
-        payload = temporary / "payload"
-        _modal_get(remote, payload)
+        download_root = temporary / "download"
+        download_root.mkdir()
+        _modal_get(remote, download_root)
+        payload = download_root / merge_run_id
+        if not payload.is_dir() or payload.is_symlink():
+            raise ValueError("Modal merge directory download had an unexpected shape")
         _verify_payload(payload, completion, config_path=config_path)
-        shutil.copy2(completion_path, payload / "completion.json")
-        shutil.copytree(payload, destination)
+        (payload / "completion.json").write_bytes(completion_path.read_bytes())
+        # The verified model can be many gigabytes. Rename it into custody on
+        # the same filesystem instead of allocating a complete second copy.
+        os.replace(payload, destination)
     return {
         "schema_version": "1.0",
         "status": "fetched-and-verified",

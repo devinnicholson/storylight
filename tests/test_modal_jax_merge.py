@@ -239,3 +239,37 @@ def test_merge_release_file_verifier_detects_tampering(tmp_path: Path) -> None:
     artifact.write_bytes(b"tampered")
     with pytest.raises(ValueError, match="failed verification"):
         fetcher._verify_files(tmp_path, rows)
+
+
+def test_merge_fetch_requires_modal_directory_download_shape(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    merge_run_id = "bookforge-full-merge-20260901"
+    completion = {
+        "schema_version": "1.0",
+        "status": "succeeded",
+        "backend": "modal-l4",
+        "release_type": "provisional-merged-hf-development-candidate",
+        "merge_run_id": merge_run_id,
+        "development_evaluated": False,
+        "release_authorized": False,
+    }
+    reference = tmp_path / "reference-completion.json"
+    _write(reference, completion)
+
+    def fake_get(remote: str, destination: Path) -> None:
+        if remote.endswith("completion.json"):
+            _write(destination, completion)
+            return
+        # Modal directory downloads must create destination/<remote basename>.
+        # A flat payload is rejected before any model files are trusted.
+        (destination / "unexpected").mkdir()
+
+    monkeypatch.setattr(fetcher, "_modal_get", fake_get)
+    with pytest.raises(ValueError, match="unexpected shape"):
+        fetcher.fetch_merge(
+            merge_run_id=merge_run_id,
+            completion_sha256=sha256_file(reference),
+            config_path=CONFIG,
+            destination=tmp_path / "merged",
+        )

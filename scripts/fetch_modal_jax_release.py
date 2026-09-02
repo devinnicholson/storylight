@@ -7,6 +7,7 @@ import argparse
 import hashlib
 import importlib.util
 import json
+import os
 import shutil
 import subprocess
 import tempfile
@@ -111,8 +112,12 @@ def fetch_release(
         manifest_path = temporary / "completion.json"
         _modal_get(f"{run_id}/completion.json", manifest_path)
         manifest = _completion(manifest_path, run_id, expected_completion_sha256)
-        payload = temporary / "payload"
-        _modal_get(run_id, payload)
+        download_root = temporary / "download"
+        download_root.mkdir()
+        _modal_get(run_id, download_root)
+        payload = download_root / run_id
+        if not payload.is_dir() or payload.is_symlink():
+            raise ValueError("Modal release directory download had an unexpected shape")
         remote_completion = payload / "completion.json"
         if remote_completion.is_file() and _sha256(remote_completion) != expected_completion_sha256:
             raise ValueError("release directory completion differs from the trusted completion")
@@ -147,7 +152,10 @@ def fetch_release(
             raise ValueError("release contains undeclared or missing files")
         _verify_portable_package(payload)
         shutil.copy2(manifest_path, payload / "completion.json")
-        shutil.copytree(payload, destination)
+        # Keep the temporary directory on the destination filesystem and move
+        # the verified tree into place atomically. Large checkpoints should not
+        # require a transient second copy or twice their on-disk capacity.
+        os.replace(payload, destination)
     return manifest
 
 

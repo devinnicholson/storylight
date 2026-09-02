@@ -614,7 +614,7 @@ def test_modal_release_fetch_verifies_every_file_before_copy(monkeypatch, tmp_pa
         if remote_path.endswith("completion.json"):
             destination.write_text(json.dumps(outer))
             return
-        shutil.copytree(package, destination)
+        shutil.copytree(package, destination / run_id)
 
     monkeypatch.setattr(fetch_modal_jax_release, "_modal_get", fake_get)
     destination = tmp_path / "release"
@@ -643,8 +643,9 @@ def test_modal_release_fetch_rejects_checksum_mismatch(monkeypatch, tmp_path: Pa
                 )
             )
             return
-        destination.mkdir(parents=True)
-        (destination / "model.bin").write_bytes(b"bad")
+        payload = destination / run_id
+        payload.mkdir(parents=True)
+        (payload / "model.bin").write_bytes(b"bad")
 
     monkeypatch.setattr(fetch_modal_jax_release, "_modal_get", fake_get)
     with pytest.raises(ValueError, match="failed verification"):
