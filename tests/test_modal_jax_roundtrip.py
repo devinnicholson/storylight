@@ -170,6 +170,7 @@ def test_roundtrip_request_and_modal_function_fail_closed() -> None:
         (ROOT / "experiments/jax-fidelity-lab/modal-roundtrip-plan-2026-09.json").read_text()
     )
     assert plan["function_calls"] == 1
+    assert plan["gpu"] == "L4"
     assert plan["automatic_retries"] == 0
     assert plan["timeout_seconds"] == 2700
     assert "retries=0" in source
