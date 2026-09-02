@@ -321,6 +321,7 @@ def test_container_and_direct_dependencies_are_immutable() -> None:
     assert "optax==0.2.8" in lock
     assert "safetensors==0.8.0" in lock
     assert "transformers==5.13.0" in lock
+    assert "pydantic-settings==2.15.0" in lock
     assert "orbax-checkpoint==0.12.2" in lock
     assert "google-cloud-secret-manager" not in lock
     assert "google-cloud-storage==3.13.1" in lock
