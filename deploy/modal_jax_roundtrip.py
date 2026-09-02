@@ -452,11 +452,39 @@ def run_roundtrip_finite(request: dict[str, object]) -> dict[str, object]:
         if (
             completion.get("run_id") != hf_to_maxtext_id
             or completion.get("status") != "succeeded"
-            or completion.get("config_sha256") != config_sha
             or completion.get("evidence", {}).get("input_manifest_sha256")
             != hf_to_maxtext_input_sha
         ):
             raise RuntimeError("cached HF-to-MaxText completion identity changed")
+        source_input_contract = cache_root / "evidence/hf-to-maxtext.inputs.json"
+        if _sha256(source_input_contract) != hf_to_maxtext_input_sha:
+            raise RuntimeError("cached HF-to-MaxText input contract changed")
+        run_manifest_path = hf_to_maxtext_completion.with_name("run.json")
+        run_manifest_sha = completion.get("run_manifest_sha256")
+        if (
+            not isinstance(run_manifest_sha, str)
+            or _SHA256.fullmatch(run_manifest_sha) is None
+            or _sha256(run_manifest_path) != run_manifest_sha
+        ):
+            raise RuntimeError("cached HF-to-MaxText run manifest hash changed")
+        run_manifest = _json_object(run_manifest_path)
+        expected_source_checkpoint = f"--hf_model_path={_INPUT_ROOT / cache_run_id / 'checkpoint'}"
+        expected_source_output = f"base_output_directory={base_output}"
+        command = run_manifest.get("command")
+        if (
+            run_manifest.get("run_id") != hf_to_maxtext_id
+            or run_manifest.get("stage") != "hf-to-maxtext"
+            or run_manifest.get("status") != "planned"
+            or run_manifest.get("config_sha256") != config_sha
+            or run_manifest.get("dataset_manifest_sha256") != hf_to_maxtext_input_sha
+            or run_manifest.get("metadata", {}).get("conversion_input_manifest_sha256")
+            != hf_to_maxtext_input_sha
+            or run_manifest.get("metadata", {}).get("direction") != "hf-to-maxtext"
+            or not isinstance(command, list)
+            or expected_source_checkpoint not in command
+            or expected_source_output not in command
+        ):
+            raise RuntimeError("cached HF-to-MaxText run manifest identity changed")
         base_receipt = _json_object(base_receipt_path)
         base_leaf = verify_orbax_leaf_receipt(
             base_output,

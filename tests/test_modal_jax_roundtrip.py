@@ -206,6 +206,9 @@ def test_roundtrip_request_and_modal_function_fail_closed() -> None:
     assert "from transformer_engine.jax.sharding import global_shard_guard" in source
     assert "expected one GPU" in source
     assert "cached base Orbax receipt hash changed" in source
+    assert "cached HF-to-MaxText input contract changed" in source
+    assert "cached HF-to-MaxText run manifest hash changed" in source
+    assert 'expected_source_checkpoint = f"--hf_model_path=' in source
     assert "verify_orbax_leaf_receipt(" in source
     assert "@modal.web_endpoint" not in source
     assert source.index('"hf-to-maxtext"') < source.index('stage="lora-smoke"')
