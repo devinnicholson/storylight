@@ -209,7 +209,8 @@ def test_roundtrip_request_and_modal_function_fail_closed() -> None:
     assert "from transformer_engine.jax.sharding import global_shard_guard" in source
     assert "unexpected JAX memory fraction" in source
     assert "expected two GPUs" in source
-    assert "expected FSDP=2" in source
+    assert "MaxText FSDP auto-sharding is disabled" in source
+    assert "expected a two-way FSDP mesh" in source
     assert "cached base Orbax receipt hash changed" in source
     assert "cached HF-to-MaxText input contract changed" in source
     assert "cached HF-to-MaxText run manifest hash changed" in source

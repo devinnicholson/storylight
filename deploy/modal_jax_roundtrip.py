@@ -262,12 +262,17 @@ def gpu_configuration_preflight(approval_token_value: str) -> dict[str, object]:
             "devices = jax.devices()",
             "if len(devices) != 2 or any(device.platform != 'gpu' for device in devices):",
             "    raise RuntimeError(f'expected two GPUs, found {devices!r}')",
-            "if config.ici_fsdp_parallelism != 2:",
-            "    raise RuntimeError(f'expected FSDP=2, found {config.ici_fsdp_parallelism!r}')",
+            "if config.ici_fsdp_parallelism != -1:",
+            "    raise RuntimeError('MaxText FSDP auto-sharding is disabled')",
+            "from maxtext.utils import maxtext_utils",
+            "mesh = maxtext_utils.create_device_mesh(config, devices)",
+            "mesh_shape = dict(zip(config.mesh_axes, mesh.shape, strict=True))",
+            "if mesh_shape.get('fsdp') != 2:",
+            "    raise RuntimeError(f'expected a two-way FSDP mesh, found {mesh_shape!r}')",
             "value = jax.device_get(jnp.arange(1024, dtype=jnp.bfloat16).sum())",
             "print(json.dumps({'hardware': config.hardware, 'devices': len(devices), "
             "'platform': devices[0].platform, 'memory_fraction': memory_fraction, "
-            "'ici_fsdp_parallelism': config.ici_fsdp_parallelism, "
+            "'ici_fsdp_parallelism': config.ici_fsdp_parallelism, 'mesh_shape': mesh_shape, "
             "'probe_sum': float(value)}), flush=True)",
         ]
     )
