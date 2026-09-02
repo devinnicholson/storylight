@@ -341,10 +341,25 @@ def _safe_release_rows(
     return rows
 
 
-def _copy_release_file_once(source: Path, destination: Path, row: dict[str, object]) -> None:
-    destination.parent.mkdir(parents=True, exist_ok=True)
-    if any(parent.is_symlink() for parent in destination.parents if parent != destination.anchor):
-        raise RuntimeError("release destination contains a symbolic-link parent")
+def _copy_release_file_once(
+    source: Path,
+    destination: Path,
+    row: dict[str, object],
+    *,
+    trusted_root: Path,
+) -> None:
+    try:
+        relative_parent = destination.parent.relative_to(trusted_root)
+    except ValueError as error:
+        raise RuntimeError("release destination escaped its trusted root") from error
+    current = trusted_root
+    for part in relative_parent.parts:
+        current /= part
+        if current.is_symlink():
+            raise RuntimeError("release destination contains a symbolic-link parent")
+        current.mkdir(mode=0o700, exist_ok=True)
+        if not current.is_dir():
+            raise RuntimeError("release destination parent is not a directory")
     descriptor = os.open(destination, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o400)
     digest = hashlib.sha256()
     try:
@@ -387,6 +402,8 @@ def _publish_staged_release(
     if destination.is_symlink():
         raise RuntimeError("release destination may not be a symbolic link")
     destination.mkdir(parents=True, exist_ok=True, mode=0o700)
+    if any(path.is_symlink() for path in destination.rglob("*")):
+        raise RuntimeError("release destination contains a symbolic link")
     existing = {
         path.relative_to(destination).as_posix(): path
         for path in destination.rglob("*")
@@ -420,7 +437,10 @@ def _publish_staged_release(
             continue
         pure = PurePosixPath(relative)
         _copy_release_file_once(
-            staging.joinpath(*pure.parts), destination.joinpath(*pure.parts), row
+            staging.joinpath(*pure.parts),
+            destination.joinpath(*pure.parts),
+            row,
+            trusted_root=destination,
         )
     commit()
     _copy_release_file_once(
@@ -431,6 +451,7 @@ def _publish_staged_release(
             "bytes": completion_source.stat().st_size,
             "sha256": _sha256(completion_source),
         },
+        trusted_root=destination,
     )
     commit()
 

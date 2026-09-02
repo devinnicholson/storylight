@@ -238,8 +238,48 @@ def test_failed_release_copy_removes_uncommitted_partial_destination(tmp_path: P
             tmp_path / "missing.bin",
             destination,
             {"path": "model.bin", "bytes": 1, "sha256": "0" * 64},
+            trusted_root=tmp_path / "release",
         )
     assert not destination.exists()
+
+
+def test_release_copy_allows_managed_mount_symlink_but_rejects_internal_symlink(
+    tmp_path: Path,
+) -> None:
+    mount_target = tmp_path / "volume"
+    mount_target.mkdir()
+    mount = tmp_path / "release-mount"
+    mount.symlink_to(mount_target, target_is_directory=True)
+    staging = tmp_path / "staging"
+    staging.mkdir()
+    artifact = staging / "adapter.bin"
+    artifact.write_bytes(b"adapter")
+    row = {
+        "path": "adapter.bin",
+        "bytes": artifact.stat().st_size,
+        "sha256": hashlib.sha256(artifact.read_bytes()).hexdigest(),
+    }
+    release = mount / "run"
+    release.mkdir()
+
+    modal_jax_fidelity._copy_release_file_once(
+        artifact,
+        release / "nested/adapter.bin",
+        row,
+        trusted_root=release,
+    )
+    assert (release / "nested/adapter.bin").read_bytes() == b"adapter"
+
+    outside = tmp_path / "outside"
+    outside.mkdir()
+    (release / "unsafe").symlink_to(outside, target_is_directory=True)
+    with pytest.raises(RuntimeError, match="symbolic-link parent"):
+        modal_jax_fidelity._copy_release_file_once(
+            artifact,
+            release / "unsafe/adapter.bin",
+            row,
+            trusted_root=release,
+        )
 
 
 def test_finalize_completed_scratch_never_trains_and_is_idempotent(
