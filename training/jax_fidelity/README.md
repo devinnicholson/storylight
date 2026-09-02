@@ -13,9 +13,9 @@ cloud resources, or execute a MaxText command.
 - The formatter calls Bookforge's deployed `_slot_messages` function directly.
 - Targets are exactly four non-empty lines in `SETTING`, `ACTOR`, `ACTION`,
   `MAGIC` order.
-- SFT uses ordinary rank-8 LoRA with MaxText's completion-only prompt masking. Every
-  assistant turn is supervised, including the fixed demonstration; this is not a
-  custom final-answer-only mask. QLoRA is disabled.
+- SFT uses ordinary LoRA with MaxText's completion-only prompt masking. Contrast
+  examples live inside the masked system prompt, leaving exactly one supervised
+  assistant turn: the record's canonical target. QLoRA is disabled.
 - Gemma 4 E2B is text-only with `scan_layers=False` and
   `use_multimodal=False` through conversion, training, and validation.
 - Conversion must preserve EOS IDs `[1, 106, 50]` and produce forward KL

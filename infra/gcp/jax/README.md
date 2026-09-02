@@ -17,6 +17,10 @@ and tokenizer manifest and bytes under one run-specific checksum, then uploads
 repeat the receipt identity, leaf-manifest, and byte checks before passing the resolved leaf to
 MaxText; an unverified checkpoint root is never used for paid full training. The worker rejects
 undeclared objects, missing objects, or any hash drift.
+For a `-v2` experiment, staging additionally requires `--preparation-manifest` and
+`--prepared-validation`. Both files are uploaded under `prepared/`, and the input manifest binds
+their hashes, the preparation policy, record count, prompt contract, source split, prepared data,
+and tokenizer. The staging verifier repeats those checks immediately before any provider upload.
 `stage_modal_inputs.py` builds the identical population for the fixed private Modal input volume.
 It first rejects an existing run prefix, uploads each declared input without `--force`, uploads the
 manifest last, and reads that manifest back before recording success.

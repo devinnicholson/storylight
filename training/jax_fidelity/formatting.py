@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import hashlib
+import json
 import re
 from collections.abc import Mapping, Sequence
 from typing import Any
@@ -10,6 +12,19 @@ from bookforge.tensorrt_slot_client import _slot_messages
 
 SLOT_LABELS = ("SETTING", "ACTOR", "ACTION", "MAGIC")
 _TARGET_LINE = re.compile(r"^(SETTING|ACTOR|ACTION|MAGIC): ([^\r\n]+)$")
+_PROMPT_CONTRACT_SENTINEL = "__BOOKFORGE_STORY_TEXT__"
+
+
+def prompt_contract_sha256() -> str:
+    """Hash the exact deployed message structure without binding a real passage."""
+
+    payload = json.dumps(
+        _slot_messages(_PROMPT_CONTRACT_SENTINEL),
+        ensure_ascii=False,
+        sort_keys=True,
+        separators=(",", ":"),
+    ).encode()
+    return hashlib.sha256(payload).hexdigest()
 
 
 def validate_slot_target(target: str) -> str:
@@ -152,11 +167,7 @@ def completion_only_example(
     completion_budget_tokens: int = 64,
     masked_label_id: int = 0,
 ) -> dict[str, list[int]]:
-    """Build pinned MaxText's assistant-turn mask, including the fixed demo.
-
-    MaxText v0.2.4 marks every assistant segment as supervised. This is
-    completion-only prompt masking, not a custom final-answer-only mask.
-    """
+    """Build pinned MaxText's completion-only mask for the sole assistant turn."""
 
     segments = maxtext_sft_segments(tokenizer, production_messages(story, target=target))
     tokenized = [

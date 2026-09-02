@@ -225,7 +225,10 @@ def build_gate_artifact(
         raise ValueError("candidate manifest was built from another dataset manifest")
     if candidate_manifest.get("source_config_sha256") != config_sha256:
         raise ValueError("candidate manifest was trained with another configuration")
-    if dataset_document.get("dataset_id") != "story-fidelity-v1":
+    if dataset_document.get("dataset_id") not in {
+        "story-fidelity-v1",
+        "story-fidelity-v2",
+    }:
         raise ValueError("dataset manifest has an unexpected dataset identity")
 
     approved = {

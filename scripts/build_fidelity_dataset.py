@@ -428,7 +428,7 @@ def verify(arguments: argparse.Namespace) -> None:
 
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--output-dir", type=Path, default=Path("datasets/story-fidelity-v1"))
+    parser.add_argument("--output-dir", type=Path, default=Path("datasets/story-fidelity-v2"))
     parser.add_argument("--private-hidden-output", type=Path)
     parser.add_argument("--hidden-key-file", type=Path)
     parser.add_argument("--custody-receipt", type=Path)

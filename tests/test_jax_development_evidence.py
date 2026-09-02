@@ -243,3 +243,4 @@ def test_evaluation_approval_binds_records_predictions_and_completion(
 
     assert plan["run_id"].endswith(lineage_sha[:12])
     assert plan["approval_token"].endswith(lineage_sha)
+    assert plan["command"].startswith(f"{sys.executable} ")

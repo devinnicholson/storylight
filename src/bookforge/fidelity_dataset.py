@@ -24,12 +24,12 @@ from bookforge.fidelity_schema import (
     passage_sha256,
 )
 
-DATASET_ID = "story-fidelity-v1"
-DATASET_SEED = 20260901
+DATASET_ID = "story-fidelity-v2"
+DATASET_SEED = 20260902
 HIDDEN_DERIVATION = "hmac-sha256-domain-v2-independent-fields"
-HIDDEN_KEY_PREFIX = "bookforge-hidden-v1."
+HIDDEN_KEY_PREFIX = "bookforge-hidden-v2."
 HIDDEN_KEY_BYTES = 48
-GENERATOR_CONFIG_VERSION = "story-fidelity-generator-config-v2"
+GENERATOR_CONFIG_VERSION = "story-fidelity-generator-config-v3"
 RECORDS_PER_FAMILY = 32
 PAIRS_PER_FAMILY = RECORDS_PER_FAMILY // 2
 SPLIT_COUNTS = {
@@ -422,11 +422,15 @@ def _scenario(
         count = 2 if choose_a else 5
         count_word = "two" if choose_a else "five"
         passage = (
-            f"In the {setting}, exactly {count_word} {selected_objects(selected_object)} circle "
-            f"the {selected_actor}. Together they open into {result}."
+            f"In the {setting}, the {selected_actor} watches exactly {count_word} "
+            f"{selected_objects(selected_object)} circle. Their circling opens into {result}."
         )
         target = target.model_copy(
-            update={"action": f"watches {count_word} {selected_objects(selected_object)}"}
+            update={
+                "action": (
+                    f"watches {count_word} {selected_objects(selected_object)} circle"
+                )
+            }
         )
         concepts.append(count_word)
         special = _expectation(
@@ -488,7 +492,12 @@ def _scenario(
             f"A {scale} {selected_actor} enters the {setting} carrying the {selected_object}. "
             f"Despite its scale, it summons {result}."
         )
-        target = target.model_copy(update={"actor": f"{scale} {selected_actor}"})
+        target = target.model_copy(
+            update={
+                "actor": f"{scale} {selected_actor}",
+                "action": f"carries the {selected_object}",
+            }
+        )
         concepts.append(scale)
         forbidden = (f"{opposite} {selected_actor}",)
         special = _expectation(
@@ -508,7 +517,12 @@ def _scenario(
             f"{result.capitalize()} "
             f"{motion} through the air instead of moving the other way."
         )
-        target = target.model_copy(update={"magic": f"{result} {motion}"})
+        target = target.model_copy(
+            update={
+                "action": f"taps the {selected_object}",
+                "magic": f"{result} {motion}",
+            }
+        )
         concepts.append(motion)
         forbidden = (f"{result} {opposite}",)
         special = _expectation(
@@ -660,7 +674,8 @@ def _scenario(
         absent = "dragon" if choose_a else "castle"
         passage = (
             f"The {setting} contains only the {selected_actor}, the {selected_object}, and empty "
-            f"walls—there is no {absent}. The object releases {result}."
+            f"walls—there is no {absent}. The {selected_actor} holds the {selected_object}, "
+            f"which releases {result}."
         )
         target = target.model_copy(update={"action": f"holds the {selected_object}"})
         forbidden = (absent,)
@@ -960,8 +975,6 @@ def generate_split(
                     counterfactual_dimension=category,
                     template_family=(
                         f"{split.value}-contrast-{category}-v2"
-                        if split == DatasetSplit.HIDDEN
-                        else f"{split.value}-contrast-{category}-v1"
                     ),
                     categories=(category,),
                     passage=scenario.passage,

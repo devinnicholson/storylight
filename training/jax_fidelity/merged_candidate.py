@@ -12,7 +12,7 @@ from typing import Any
 
 from .configuration import load_config
 from .integrity import artifact_manifest, canonical_json_bytes, sha256_file
-from .release import candidate_id_for_checkpoint
+from .release import candidate_id_for_checkpoint, candidate_id_from_lineage
 
 _SHA256 = re.compile(r"[0-9a-f]{64}\Z")
 _RUN_ID = re.compile(r"[a-z][a-z0-9-]{7,95}\Z")
@@ -103,6 +103,74 @@ def validate_merged_candidate_manifest(
     expected_candidate_id: str | None = None,
 ) -> dict[str, Any]:
     manifest = Path(manifest_path)
+    document = validate_merged_candidate_declaration(
+        manifest,
+        config_path=config_path,
+        expected_manifest_sha256=expected_manifest_sha256,
+        expected_config_sha256=expected_config_sha256,
+        expected_dataset_manifest_sha256=expected_dataset_manifest_sha256,
+        expected_candidate_id=expected_candidate_id,
+    )
+    checkpoint_manifest = artifact_manifest(merged_hf_checkpoint)
+    checkpoint_manifest_sha = hashlib.sha256(canonical_json_bytes(checkpoint_manifest)).hexdigest()
+    if (
+        document.get("checkpoint_manifest") != checkpoint_manifest
+        or document.get("checkpoint_manifest_sha256") != checkpoint_manifest_sha
+        or document.get("checkpoint_content_sha256") != checkpoint_manifest["content_sha256"]
+    ):
+        raise MergedCandidateError("merged candidate checkpoint bytes changed")
+    return document
+
+
+def _validate_checkpoint_declaration(document: dict[str, Any]) -> list[dict[str, Any]]:
+    checkpoint = document.get("checkpoint_manifest")
+    if not isinstance(checkpoint, dict) or set(checkpoint) != {
+        "schema_version",
+        "files",
+        "content_sha256",
+    }:
+        raise MergedCandidateError("merged candidate checkpoint declaration changed")
+    files = checkpoint.get("files")
+    if checkpoint.get("schema_version") != "1.0" or not isinstance(files, list) or not files:
+        raise MergedCandidateError("merged candidate checkpoint declaration is malformed")
+    observed: set[str] = set()
+    for row in files:
+        if (
+            not isinstance(row, dict)
+            or set(row) != {"path", "bytes", "sha256"}
+            or not isinstance(row.get("path"), str)
+            or type(row.get("bytes")) is not int
+            or row["bytes"] < 0
+            or not isinstance(row.get("sha256"), str)
+            or _SHA256.fullmatch(row["sha256"]) is None
+        ):
+            raise MergedCandidateError("merged candidate checkpoint file table is malformed")
+        relative = Path(row["path"])
+        if relative.is_absolute() or ".." in relative.parts or row["path"] in observed:
+            raise MergedCandidateError("merged candidate checkpoint file path is unsafe")
+        observed.add(row["path"])
+    if (
+        checkpoint.get("content_sha256") != hashlib.sha256(canonical_json_bytes(files)).hexdigest()
+        or document.get("checkpoint_content_sha256") != checkpoint.get("content_sha256")
+        or document.get("checkpoint_manifest_sha256")
+        != hashlib.sha256(canonical_json_bytes(checkpoint)).hexdigest()
+    ):
+        raise MergedCandidateError("merged candidate checkpoint hashes changed")
+    return files
+
+
+def validate_merged_candidate_declaration(
+    manifest_path: Path | str,
+    *,
+    config_path: Path | str,
+    expected_manifest_sha256: str,
+    expected_config_sha256: str | None = None,
+    expected_dataset_manifest_sha256: str | None = None,
+    expected_candidate_id: str | None = None,
+) -> dict[str, Any]:
+    """Validate a checksum-only candidate declaration without fetching model bytes."""
+
+    manifest = Path(manifest_path)
     if (
         _SHA256.fullmatch(expected_manifest_sha256) is None
         or sha256_file(manifest) != expected_manifest_sha256
@@ -154,19 +222,13 @@ def validate_merged_candidate_manifest(
         raise MergedCandidateError("merged candidate dataset hash changed")
     if expected_candidate_id is not None and candidate_id != expected_candidate_id:
         raise MergedCandidateError("merged candidate ID changed")
-    checkpoint_manifest = artifact_manifest(merged_hf_checkpoint)
-    checkpoint_manifest_sha = hashlib.sha256(canonical_json_bytes(checkpoint_manifest)).hexdigest()
-    if (
-        document.get("checkpoint_manifest") != checkpoint_manifest
-        or document.get("checkpoint_manifest_sha256") != checkpoint_manifest_sha
-        or document.get("checkpoint_content_sha256") != checkpoint_manifest["content_sha256"]
-    ):
-        raise MergedCandidateError("merged candidate checkpoint bytes changed")
-    expected_id = candidate_id_for_checkpoint(
-        config_path=config_path,
+    files = _validate_checkpoint_declaration(document)
+    expected_id = candidate_id_from_lineage(
+        config_sha256=config.sha256,
         dataset_manifest_sha256=dataset_sha,
         training_run_id=training_run_id,
-        merged_hf_checkpoint=merged_hf_checkpoint,
+        base_model=document["base_model"],
+        files=files,
     )
     if expected_id != candidate_id:
         raise MergedCandidateError("merged candidate ID is not derived from its exact bytes")

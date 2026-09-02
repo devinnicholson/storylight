@@ -13,11 +13,14 @@ import pytest
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
+from training.jax_fidelity.configuration import load_config
 from training.jax_fidelity.integrity import sha256_file
 from training.jax_fidelity.manifests import complete_run, start_run
 from training.jax_fidelity.remote_release import package_training_release
 
 PLAN = ROOT / "experiments/jax-fidelity-lab/modal-plan-2026-09.json"
+CONFIG = ROOT / "experiments/jax-fidelity-lab/config.json"
+CONFIG_V2 = ROOT / "experiments/jax-fidelity-lab/config-v2.json"
 
 
 def _load(name: str, path: Path):
@@ -89,6 +92,77 @@ def _request(**updates: object) -> dict[str, object]:
     return request
 
 
+def _write_json(path: Path, document: dict[str, object]) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(document, sort_keys=True) + "\n")
+
+
+def _v2_prepared_inputs(
+    root: Path,
+) -> tuple[object, dict[str, object], dict[str, str]]:
+    experiment = load_config(CONFIG_V2)
+    prepared = root / "prepared/train.jsonl"
+    source_train = root / "dataset/train.jsonl"
+    prepared.parent.mkdir(parents=True)
+    source_train.parent.mkdir(parents=True)
+    prepared.write_bytes(b'{"messages":[]}\n')
+    source_train.write_bytes(b'{"record_id":"source"}\n')
+    hashes = {
+        "config": experiment.sha256,
+        "prepared": sha256_file(prepared),
+        "source_train": sha256_file(source_train),
+        "tokenizer_manifest": "a" * 64,
+    }
+    _write_json(
+        root / "dataset/manifest.json",
+        {"splits": {"train": {"sha256": hashes["source_train"]}}},
+    )
+    preparation = {
+        "schema_version": "bookforge-jax-training-preparation-v2",
+        "policy": experiment.training["preparation_policy"],
+        "prepared_records": 320,
+        "source_train_sha256": hashes["source_train"],
+        "prepared_sha256": hashes["prepared"],
+        "prompt_contract_sha256": experiment.production["prompt_contract_sha256"],
+        "assistant_turns_per_record": 1,
+        "pair_adjacency_preserved": True,
+    }
+    preparation_path = root / "prepared/preparation.manifest.json"
+    _write_json(preparation_path, preparation)
+    hashes["preparation_manifest"] = sha256_file(preparation_path)
+    validation = {
+        "schema_version": "bookforge-jax-prepared-validation-v1",
+        "status": "passed",
+        "config_sha256": hashes["config"],
+        "prepared_sha256": hashes["prepared"],
+        "preparation_manifest_sha256": hashes["preparation_manifest"],
+        "tokenizer_manifest_sha256": hashes["tokenizer_manifest"],
+        "prompt_contract_sha256": experiment.production["prompt_contract_sha256"],
+        "records": 320,
+        "assistant_turns_per_record": 1,
+        "maximum_prompt_tokens": 200,
+        "maximum_completion_tokens": 40,
+        "maximum_total_tokens": 240,
+        "input_budget_tokens": experiment.production["input_budget_tokens"],
+        "completion_budget_tokens": experiment.production["completion_budget_tokens"],
+        "max_target_length": experiment.training["max_target_length"],
+    }
+    validation_path = root / "prepared/prepared-validation.json"
+    _write_json(validation_path, validation)
+    hashes["prepared_validation"] = sha256_file(validation_path)
+    binding = {
+        "policy": experiment.training["preparation_policy"],
+        "records": 320,
+        "prepared_sha256": hashes["prepared"],
+        "preparation_manifest_sha256": hashes["preparation_manifest"],
+        "prepared_validation_sha256": hashes["prepared_validation"],
+        "prompt_contract_sha256": experiment.production["prompt_contract_sha256"],
+        "source_train_sha256": hashes["source_train"],
+        "tokenizer_manifest_sha256": hashes["tokenizer_manifest"],
+    }
+    return experiment, {"prepared_training": binding}, hashes
+
+
 def test_modal_fallback_is_finite_pinned_and_has_no_endpoint() -> None:
     plan = json.loads(PLAN.read_text())
     source = Path("deploy/modal_jax_fidelity.py").read_text()
@@ -140,6 +214,125 @@ def test_modal_training_timeout_preserves_publication_reserve() -> None:
     assert modal_jax_fidelity._bounded_training_timeout(240.25) == 2759
     with pytest.raises(RuntimeError, match="no safe training window"):
         modal_jax_fidelity._bounded_training_timeout(3000)
+
+
+def test_modal_v2_verifies_preparation_and_validation_before_gpu_training(
+    tmp_path: Path,
+) -> None:
+    experiment, input_manifest, hashes = _v2_prepared_inputs(tmp_path)
+
+    evidence = modal_jax_fidelity._verify_v2_prepared_evidence(
+        tmp_path,
+        experiment=experiment,
+        input_manifest=input_manifest,
+        config_sha256=hashes["config"],
+        prepared_sha256=hashes["prepared"],
+        tokenizer_manifest_sha256=hashes["tokenizer_manifest"],
+    )
+
+    assert evidence == input_manifest["prepared_training"]
+    source = Path("deploy/modal_jax_fidelity.py").read_text()
+    run = source.index("def run_finite(")
+    verification = source.index("_verify_v2_prepared_evidence(", run)
+    gpu_preflight = source.index("run_two_gpu_fsdp_preflight(", run)
+    training = source.index("subprocess.run(command", run)
+    assert verification < gpu_preflight < training
+
+
+def test_modal_v1_remains_compatible_without_prepared_receipts(tmp_path: Path) -> None:
+    experiment = load_config(CONFIG)
+
+    assert (
+        modal_jax_fidelity._verify_v2_prepared_evidence(
+            tmp_path,
+            experiment=experiment,
+            input_manifest={},
+            config_sha256=experiment.sha256,
+            prepared_sha256="a" * 64,
+            tokenizer_manifest_sha256="b" * 64,
+        )
+        is None
+    )
+
+
+@pytest.mark.parametrize(
+    ("field", "error"),
+    [
+        ("config_sha256", "prepared-validation"),
+        ("prepared_sha256", "prepared-validation"),
+        ("preparation_manifest_sha256", "prepared-validation"),
+        ("tokenizer_manifest_sha256", "prepared-validation"),
+        ("prompt_contract_sha256", "prepared-validation"),
+    ],
+)
+def test_modal_v2_rejects_drifted_prepared_validation_bindings(
+    tmp_path: Path, field: str, error: str
+) -> None:
+    experiment, input_manifest, hashes = _v2_prepared_inputs(tmp_path)
+    path = tmp_path / "prepared/prepared-validation.json"
+    validation = json.loads(path.read_text())
+    validation[field] = "f" * 64
+    _write_json(path, validation)
+    input_manifest["prepared_training"] = dict(input_manifest["prepared_training"])
+    input_manifest["prepared_training"]["prepared_validation_sha256"] = sha256_file(path)
+
+    with pytest.raises(RuntimeError, match=error):
+        modal_jax_fidelity._verify_v2_prepared_evidence(
+            tmp_path,
+            experiment=experiment,
+            input_manifest=input_manifest,
+            config_sha256=hashes["config"],
+            prepared_sha256=hashes["prepared"],
+            tokenizer_manifest_sha256=hashes["tokenizer_manifest"],
+        )
+
+
+def test_modal_v2_rejects_drifted_preparation_or_population_binding(
+    tmp_path: Path,
+) -> None:
+    experiment, input_manifest, hashes = _v2_prepared_inputs(tmp_path)
+    preparation_path = tmp_path / "prepared/preparation.manifest.json"
+    preparation = json.loads(preparation_path.read_text())
+    preparation["prompt_contract_sha256"] = "f" * 64
+    _write_json(preparation_path, preparation)
+
+    with pytest.raises(RuntimeError, match="preparation manifest"):
+        modal_jax_fidelity._verify_v2_prepared_evidence(
+            tmp_path,
+            experiment=experiment,
+            input_manifest=input_manifest,
+            config_sha256=hashes["config"],
+            prepared_sha256=hashes["prepared"],
+            tokenizer_manifest_sha256=hashes["tokenizer_manifest"],
+        )
+
+    experiment, input_manifest, hashes = _v2_prepared_inputs(tmp_path / "binding")
+    input_manifest["prepared_training"] = dict(input_manifest["prepared_training"])
+    input_manifest["prepared_training"]["prepared_validation_sha256"] = "f" * 64
+    with pytest.raises(RuntimeError, match="preparation binding"):
+        modal_jax_fidelity._verify_v2_prepared_evidence(
+            tmp_path / "binding",
+            experiment=experiment,
+            input_manifest=input_manifest,
+            config_sha256=hashes["config"],
+            prepared_sha256=hashes["prepared"],
+            tokenizer_manifest_sha256=hashes["tokenizer_manifest"],
+        )
+
+
+def test_modal_v2_rejects_changed_source_training_bytes(tmp_path: Path) -> None:
+    experiment, input_manifest, hashes = _v2_prepared_inputs(tmp_path)
+    (tmp_path / "dataset/train.jsonl").write_bytes(b"changed\n")
+
+    with pytest.raises(RuntimeError, match="source training bytes"):
+        modal_jax_fidelity._verify_v2_prepared_evidence(
+            tmp_path,
+            experiment=experiment,
+            input_manifest=input_manifest,
+            config_sha256=hashes["config"],
+            prepared_sha256=hashes["prepared"],
+            tokenizer_manifest_sha256=hashes["tokenizer_manifest"],
+        )
 
 
 def test_release_publication_resumes_without_overwrite_and_commits_completion_last(

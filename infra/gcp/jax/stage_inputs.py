@@ -15,6 +15,7 @@ from urllib.parse import urlsplit
 PROJECT_ID = "your-gcp-project"
 APPROVAL_ENVIRONMENT = "BOOKFORGE_GCP_JAX_STAGE_APPROVAL"
 _RUN_ID = re.compile(r"[a-z][a-z0-9-]{7,62}\Z")
+_SHA256 = re.compile(r"[0-9a-f]{64}\Z")
 
 
 def sha256_file(path: Path) -> str:
@@ -78,6 +79,134 @@ def public_dataset_sources(manifest_path: Path) -> dict[str, Path]:
     return sources
 
 
+def _json_object(path: Path, label: str) -> dict[str, object]:
+    if not path.is_file() or path.is_symlink():
+        raise ValueError(f"{label} is not a regular file")
+    try:
+        document = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, UnicodeDecodeError, json.JSONDecodeError) as error:
+        raise ValueError(f"{label} is not valid JSON") from error
+    if not isinstance(document, dict):
+        raise ValueError(f"{label} must contain one JSON object")
+    return document
+
+
+def _v2_prepared_binding(
+    *,
+    config: Path,
+    dataset_manifest: Path,
+    prepared_train: Path,
+    tokenizer_manifest: Path,
+    preparation_manifest: Path | None,
+    prepared_validation: Path | None,
+) -> tuple[dict[str, object] | None, dict[str, Path]]:
+    evidence = (preparation_manifest, prepared_validation)
+    try:
+        config_document = _json_object(config, "training configuration")
+    except ValueError:
+        if any(path is not None for path in evidence):
+            raise
+        return None, {}
+    experiment_id = config_document.get("experiment_id")
+    is_v2 = isinstance(experiment_id, str) and experiment_id.endswith("-v2")
+    if not is_v2:
+        if any(path is not None for path in evidence):
+            raise ValueError("preparation evidence is accepted only for a v2 experiment")
+        return None, {}
+    if preparation_manifest is None or prepared_validation is None:
+        raise ValueError("v2 staging requires both preparation evidence files")
+
+    dataset_document = _json_object(dataset_manifest, "dataset manifest")
+    preparation = _json_object(preparation_manifest, "preparation manifest")
+    validation = _json_object(prepared_validation, "prepared validation")
+    production = config_document.get("production_contract")
+    training = config_document.get("training")
+    splits = dataset_document.get("splits")
+    train_split = splits.get("train") if isinstance(splits, dict) else None
+    if (
+        not isinstance(production, dict)
+        or not isinstance(training, dict)
+        or not isinstance(train_split, dict)
+    ):
+        raise ValueError("v2 config or dataset contract is malformed")
+
+    config_sha = sha256_file(config)
+    prepared_sha = sha256_file(prepared_train)
+    preparation_sha = sha256_file(preparation_manifest)
+    validation_sha = sha256_file(prepared_validation)
+    tokenizer_sha = sha256_file(tokenizer_manifest)
+    source_train_sha = train_split.get("sha256")
+    prompt_sha = production.get("prompt_contract_sha256")
+    policy = training.get("preparation_policy")
+    records = preparation.get("prepared_records")
+    if (
+        not isinstance(source_train_sha, str)
+        or _SHA256.fullmatch(source_train_sha) is None
+        or not isinstance(prompt_sha, str)
+        or _SHA256.fullmatch(prompt_sha) is None
+        or not isinstance(policy, str)
+        or not policy
+        or type(records) is not int
+        or records < 1
+        or preparation.get("schema_version")
+        != "bookforge-jax-training-preparation-v2"
+        or preparation.get("policy") != policy
+        or preparation.get("source_train_sha256") != source_train_sha
+        or preparation.get("prepared_sha256") != prepared_sha
+        or preparation.get("prompt_contract_sha256") != prompt_sha
+        or preparation.get("assistant_turns_per_record") != 1
+        or preparation.get("pair_adjacency_preserved") is not True
+    ):
+        raise ValueError("v2 preparation manifest is not bound to the staged inputs")
+
+    expected_validation = {
+        "schema_version": "bookforge-jax-prepared-validation-v1",
+        "status": "passed",
+        "config_sha256": config_sha,
+        "prepared_sha256": prepared_sha,
+        "preparation_manifest_sha256": preparation_sha,
+        "tokenizer_manifest_sha256": tokenizer_sha,
+        "prompt_contract_sha256": prompt_sha,
+        "records": records,
+        "assistant_turns_per_record": 1,
+        "input_budget_tokens": production.get("input_budget_tokens"),
+        "completion_budget_tokens": production.get("completion_budget_tokens"),
+        "max_target_length": training.get("max_target_length"),
+    }
+    if any(validation.get(name) != value for name, value in expected_validation.items()):
+        raise ValueError("prepared validation is not bound to the staged inputs")
+    maxima = (
+        ("maximum_prompt_tokens", production.get("input_budget_tokens")),
+        ("maximum_completion_tokens", production.get("completion_budget_tokens")),
+        ("maximum_total_tokens", training.get("max_target_length")),
+    )
+    if any(
+        type(validation.get(name)) is not int
+        or int(validation[name]) < 1
+        or type(limit) is not int
+        or int(validation[name]) > limit
+        for name, limit in maxima
+    ):
+        raise ValueError("prepared validation exceeds the v2 token budgets")
+
+    return (
+        {
+            "policy": policy,
+            "records": records,
+            "prepared_sha256": prepared_sha,
+            "preparation_manifest_sha256": preparation_sha,
+            "prepared_validation_sha256": validation_sha,
+            "prompt_contract_sha256": prompt_sha,
+            "source_train_sha256": source_train_sha,
+            "tokenizer_manifest_sha256": tokenizer_sha,
+        },
+        {
+            "prepared/preparation.manifest.json": preparation_manifest,
+            "prepared/prepared-validation.json": prepared_validation,
+        },
+    )
+
+
 def build_input_manifest(
     *,
     run_id: str,
@@ -89,6 +218,8 @@ def build_input_manifest(
     checkpoint_receipt: Path | None,
     tokenizer: Path,
     tokenizer_manifest: Path,
+    preparation_manifest: Path | None = None,
+    prepared_validation: Path | None = None,
     require_base_orbax: bool = True,
 ) -> tuple[dict[str, object], dict[str, Path]]:
     if _RUN_ID.fullmatch(run_id) is None:
@@ -133,6 +264,15 @@ def build_input_manifest(
     }
     if checkpoint_receipt is not None:
         sources["checkpoint.receipt.json"] = checkpoint_receipt
+    prepared_binding, prepared_sources = _v2_prepared_binding(
+        config=config,
+        dataset_manifest=dataset_manifest,
+        prepared_train=prepared_train,
+        tokenizer_manifest=tokenizer_manifest,
+        preparation_manifest=preparation_manifest,
+        prepared_validation=prepared_validation,
+    )
+    sources.update(prepared_sources)
     for prefix, root in (("checkpoint", checkpoint), ("tokenizer", tokenizer)):
         sources.update(
             (f"{prefix}/{path.relative_to(root).as_posix()}", path) for path in _files(root)
@@ -157,6 +297,8 @@ def build_input_manifest(
     }
     if base_orbax is not None:
         document["base_orbax"] = base_orbax
+    if prepared_binding is not None:
+        document["prepared_training"] = prepared_binding
     return document, sources
 
 
@@ -171,6 +313,8 @@ def build_full_training_input_manifest(
     checkpoint_receipt: Path,
     tokenizer: Path,
     tokenizer_manifest: Path,
+    preparation_manifest: Path | None = None,
+    prepared_validation: Path | None = None,
 ) -> tuple[dict[str, object], dict[str, Path]]:
     """Build a full-training population including the manifest's public splits."""
 
@@ -184,6 +328,8 @@ def build_full_training_input_manifest(
         checkpoint_receipt=checkpoint_receipt,
         tokenizer=tokenizer,
         tokenizer_manifest=tokenizer_manifest,
+        preparation_manifest=preparation_manifest,
+        prepared_validation=prepared_validation,
     )
     for relative, source in public_dataset_sources(dataset_manifest).items():
         if relative in sources:
@@ -220,6 +366,19 @@ def verify_full_training_sources(
     ]
     if len(expected_rows) != len(sources) or manifest.get("files") != expected_rows:
         raise ValueError("full-training source bytes differ from the input manifest")
+    prepared_binding, _ = _v2_prepared_binding(
+        config=sources["config.json"],
+        dataset_manifest=sources["dataset/manifest.json"],
+        prepared_train=sources["prepared/train.jsonl"],
+        tokenizer_manifest=sources["tokenizer.manifest.json"],
+        preparation_manifest=sources.get("prepared/preparation.manifest.json"),
+        prepared_validation=sources.get("prepared/prepared-validation.json"),
+    )
+    if prepared_binding is None:
+        if "prepared_training" in manifest:
+            raise ValueError("non-v2 input manifest contains a prepared-training binding")
+    elif manifest.get("prepared_training") != prepared_binding:
+        raise ValueError("v2 prepared-training binding changed")
     receipt_path = sources.get("checkpoint.receipt.json")
     manifest_path = sources.get("checkpoint.manifest.json")
     checkpoint_rows = [
@@ -269,6 +428,11 @@ def _gcs_location(uri: str) -> tuple[str, str]:
     return parsed.netloc, parsed.path.strip("/")
 
 
+def _is_run_input_prefix(prefix: str, run_id: str) -> bool:
+    parts = prefix.split("/")
+    return len(parts) >= 2 and parts[-2:] == ["inputs", run_id]
+
+
 def upload_inputs(
     *,
     destination: str,
@@ -311,6 +475,8 @@ def _parser() -> argparse.ArgumentParser:
     parser.add_argument("--checkpoint-receipt", type=Path, required=True)
     parser.add_argument("--tokenizer", type=Path, required=True)
     parser.add_argument("--tokenizer-manifest", type=Path, required=True)
+    parser.add_argument("--preparation-manifest", type=Path)
+    parser.add_argument("--prepared-validation", type=Path)
     parser.add_argument("--destination", required=True)
     parser.add_argument("--output", type=Path, required=True)
     parser.add_argument("--execute", action="store_true")
@@ -322,7 +488,7 @@ def main() -> None:
     if args.output.exists():
         raise FileExistsError(f"refusing to overwrite staging evidence: {args.output}")
     _, prefix = _gcs_location(args.destination)
-    if not prefix.endswith(f"/inputs/{args.run_id}"):
+    if not _is_run_input_prefix(prefix, args.run_id):
         raise ValueError("destination must end with /inputs/{run_id}")
     document, sources = build_full_training_input_manifest(
         run_id=args.run_id,
@@ -334,6 +500,8 @@ def main() -> None:
         checkpoint_receipt=args.checkpoint_receipt,
         tokenizer=args.tokenizer,
         tokenizer_manifest=args.tokenizer_manifest,
+        preparation_manifest=args.preparation_manifest,
+        prepared_validation=args.prepared_validation,
     )
     encoded = canonical_bytes(document)
     manifest_sha256 = hashlib.sha256(encoded).hexdigest()

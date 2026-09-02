@@ -338,6 +338,179 @@ def test_full_training_manifest_includes_verified_public_dataset_splits(
     assert {row["path"] for row in document["files"]} == set(sources)
 
 
+def test_v2_full_training_manifest_binds_preparation_evidence(tmp_path: Path) -> None:
+    stage = _load("bookforge_jax_v2_stage_inputs", JAX_ROOT / "stage_inputs.py")
+    prompt_sha = "a" * 64
+    config = tmp_path / "config.json"
+    config.write_text(
+        json.dumps(
+            {
+                "experiment_id": "bookforge-gemma4-e2b-lora-r16-v2",
+                "production_contract": {
+                    "prompt_contract_sha256": prompt_sha,
+                    "input_budget_tokens": 512,
+                    "completion_budget_tokens": 64,
+                },
+                "training": {
+                    "preparation_policy": "balanced-counterfactual-pairs-v1",
+                    "max_target_length": 576,
+                },
+            }
+        ),
+        encoding="utf-8",
+    )
+    train = tmp_path / "train.jsonl"
+    development = tmp_path / "development.jsonl"
+    prepared = tmp_path / "prepared.jsonl"
+    train.write_text('{"split":"train"}\n', encoding="utf-8")
+    development.write_text('{"split":"development"}\n', encoding="utf-8")
+    prepared.write_text('{"messages":[]}\n', encoding="utf-8")
+    dataset_manifest = tmp_path / "dataset.manifest.json"
+    dataset_manifest.write_text(
+        json.dumps(
+            {
+                "splits": {
+                    "train": {
+                        "path": train.name,
+                        "sha256": stage.sha256_file(train),
+                    },
+                    "development": {
+                        "path": development.name,
+                        "sha256": stage.sha256_file(development),
+                    },
+                    "hidden": {"path": None, "public": False},
+                }
+            }
+        ),
+        encoding="utf-8",
+    )
+    preparation = tmp_path / "preparation.manifest.json"
+    preparation.write_text(
+        json.dumps(
+            {
+                "schema_version": "bookforge-jax-training-preparation-v2",
+                "policy": "balanced-counterfactual-pairs-v1",
+                "source_train_sha256": stage.sha256_file(train),
+                "prepared_sha256": stage.sha256_file(prepared),
+                "prompt_contract_sha256": prompt_sha,
+                "prepared_records": 1,
+                "assistant_turns_per_record": 1,
+                "pair_adjacency_preserved": True,
+            }
+        ),
+        encoding="utf-8",
+    )
+    tokenizer = tmp_path / "tokenizer"
+    tokenizer.mkdir()
+    (tokenizer / "tokenizer.json").write_text("{}\n", encoding="utf-8")
+    tokenizer_manifest = tmp_path / "tokenizer.manifest.json"
+    tokenizer_manifest.write_text("{}\n", encoding="utf-8")
+    validation = tmp_path / "prepared-validation.json"
+    validation.write_text(
+        json.dumps(
+            {
+                "schema_version": "bookforge-jax-prepared-validation-v1",
+                "status": "passed",
+                "config_sha256": stage.sha256_file(config),
+                "prepared_sha256": stage.sha256_file(prepared),
+                "preparation_manifest_sha256": stage.sha256_file(preparation),
+                "tokenizer_manifest_sha256": stage.sha256_file(tokenizer_manifest),
+                "prompt_contract_sha256": prompt_sha,
+                "records": 1,
+                "assistant_turns_per_record": 1,
+                "input_budget_tokens": 512,
+                "completion_budget_tokens": 64,
+                "max_target_length": 576,
+                "maximum_prompt_tokens": 20,
+                "maximum_completion_tokens": 10,
+                "maximum_total_tokens": 30,
+            }
+        ),
+        encoding="utf-8",
+    )
+    checkpoint = tmp_path / "checkpoint"
+    leaf = checkpoint / "0/items"
+    leaf.mkdir(parents=True)
+    (leaf / "weights").write_bytes(b"base")
+    from training.jax_fidelity.integrity import artifact_manifest, canonical_json_bytes
+    from training.jax_fidelity.orbax_receipt import orbax_leaf_receipt
+
+    checkpoint_manifest = tmp_path / "checkpoint.manifest.json"
+    checkpoint_manifest.write_bytes(canonical_json_bytes(artifact_manifest(leaf)))
+    checkpoint_receipt = tmp_path / "checkpoint.receipt.json"
+    checkpoint_receipt.write_bytes(
+        canonical_json_bytes(
+            orbax_leaf_receipt(checkpoint, leaf, expected_step=0, role="base-maxtext")
+        )
+    )
+
+    document, sources = stage.build_full_training_input_manifest(
+        run_id="bookforge-jax-v2-train-20260902",
+        config=config,
+        dataset_manifest=dataset_manifest,
+        prepared_train=prepared,
+        checkpoint=checkpoint,
+        checkpoint_manifest=checkpoint_manifest,
+        checkpoint_receipt=checkpoint_receipt,
+        tokenizer=tokenizer,
+        tokenizer_manifest=tokenizer_manifest,
+        preparation_manifest=preparation,
+        prepared_validation=validation,
+    )
+
+    assert set(sources) >= {
+        "prepared/train.jsonl",
+        "prepared/preparation.manifest.json",
+        "prepared/prepared-validation.json",
+    }
+    assert document["prepared_training"] == {
+        "policy": "balanced-counterfactual-pairs-v1",
+        "records": 1,
+        "prepared_sha256": stage.sha256_file(prepared),
+        "preparation_manifest_sha256": stage.sha256_file(preparation),
+        "prepared_validation_sha256": stage.sha256_file(validation),
+        "prompt_contract_sha256": prompt_sha,
+        "source_train_sha256": stage.sha256_file(train),
+        "tokenizer_manifest_sha256": stage.sha256_file(tokenizer_manifest),
+    }
+    stage.verify_full_training_sources(document, sources)
+    document["prepared_training"] = dict(document["prepared_training"])
+    document["prepared_training"]["records"] = 2
+    with pytest.raises(ValueError, match="prepared-training binding changed"):
+        stage.verify_full_training_sources(document, sources)
+
+    with pytest.raises(ValueError, match="both preparation evidence"):
+        stage.build_full_training_input_manifest(
+            run_id="bookforge-jax-v2-missing-20260902",
+            config=config,
+            dataset_manifest=dataset_manifest,
+            prepared_train=prepared,
+            checkpoint=checkpoint,
+            checkpoint_manifest=checkpoint_manifest,
+            checkpoint_receipt=checkpoint_receipt,
+            tokenizer=tokenizer,
+            tokenizer_manifest=tokenizer_manifest,
+        )
+
+
+@pytest.mark.parametrize(
+    "prefix",
+    (
+        "inputs/bookforge-jax-train-20260902",
+        "staging/inputs/bookforge-jax-train-20260902",
+    ),
+)
+def test_full_training_staging_accepts_bucket_root_or_nested_input_prefix(
+    prefix: str,
+) -> None:
+    stage = _load("bookforge_jax_stage_input_prefix", JAX_ROOT / "stage_inputs.py")
+
+    assert stage._is_run_input_prefix(prefix, "bookforge-jax-train-20260902")
+    assert not stage._is_run_input_prefix(
+        f"{prefix}-other", "bookforge-jax-train-20260902"
+    )
+
+
 def test_vertex_base_orbax_gate_rejects_manifest_tampering(tmp_path: Path) -> None:
     worker = _load("bookforge_vertex_orbax_gate", JAX_ROOT / "vertex_entrypoint.py")
     from training.jax_fidelity.integrity import artifact_manifest, canonical_json_bytes

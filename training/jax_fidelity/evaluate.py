@@ -5,6 +5,7 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import sys
 import tempfile
 from pathlib import Path
 from typing import Any
@@ -85,7 +86,7 @@ def main() -> None:
     except PredictionEvidenceError as error:
         raise SystemExit(str(error)) from error
     command = [
-        "python3",
+        sys.executable,
         "-m",
         "bookforge.fidelity_benchmark",
         "--records",

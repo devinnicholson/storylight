@@ -19,6 +19,7 @@ SLOT_LABELS = ("SETTING", "ACTOR", "ACTION", "MAGIC")
 EOS_TOKEN_IDS = (1, 106, 50)
 
 _SHA256 = re.compile(r"sha256:[0-9a-f]{64}\Z")
+_BARE_SHA256 = re.compile(r"[0-9a-f]{64}\Z")
 _GIT_REVISION = re.compile(r"[0-9a-f]{40}\Z")
 
 
@@ -126,6 +127,18 @@ def validate_config(document: Mapping[str, Any]) -> None:
         list(EOS_TOKEN_IDS),
         "production_contract.eos_token_ids",
     )
+    if experiment_id.endswith("-v2"):
+        from .formatting import prompt_contract_sha256
+
+        prompt_sha = production.get("prompt_contract_sha256")
+        if (
+            not isinstance(prompt_sha, str)
+            or _BARE_SHA256.fullmatch(prompt_sha) is None
+            or prompt_sha != prompt_contract_sha256()
+        ):
+            raise ConfigError(
+                "production_contract.prompt_contract_sha256 must match the deployed prompt"
+            )
 
     dataset = _mapping(document.get("dataset"), "dataset")
     manifest_path = dataset.get("manifest_path")
@@ -164,6 +177,42 @@ def validate_config(document: Mapping[str, Any]) -> None:
         raise ConfigError("training.seed must be an integer")
     _exact(training.get("dtype"), "bfloat16", "training.dtype")
     _exact(training.get("weight_dtype"), "bfloat16", "training.weight_dtype")
+    if experiment_id.endswith("-v2"):
+        _exact(
+            training.get("preparation_policy"),
+            "balanced-counterfactual-pairs-v1",
+            "training.preparation_policy",
+        )
+        _exact(training.get("packing"), False, "training.packing")
+        _exact(training.get("num_epoch"), 4, "training.num_epoch")
+        _exact(
+            training.get("enable_data_shuffling"),
+            False,
+            "training.enable_data_shuffling",
+        )
+        _exact(training.get("enable_dropout"), False, "training.enable_dropout")
+        _exact(
+            training.get("gradient_accumulation_steps"),
+            1,
+            "training.gradient_accumulation_steps",
+        )
+        _exact(
+            training.get("gradient_clipping_threshold"),
+            1.0,
+            "training.gradient_clipping_threshold",
+        )
+        _exact(training.get("lr_schedule_type"), "cosine", "training.lr_schedule_type")
+        _exact(
+            training.get("warmup_steps_fraction"),
+            0.05,
+            "training.warmup_steps_fraction",
+        )
+        _exact(
+            training.get("learning_rate_final_fraction"),
+            0.1,
+            "training.learning_rate_final_fraction",
+        )
+        _exact(training.get("adam_weight_decay"), 0.0, "training.adam_weight_decay")
 
     conversion = _mapping(document.get("conversion"), "conversion")
     _exact(conversion.get("scan_layers"), False, "conversion.scan_layers")

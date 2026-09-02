@@ -33,6 +33,13 @@ from bookforge.fidelity_schema import (
 )
 
 MANIFEST_VERSION = "2.0"
+LEGACY_DATASET_ID = "story-fidelity-v1"
+LEGACY_GENERATOR_SOURCE_SHA256 = (
+    "1e68de455a8bdf458dcdcc74ac6ddb616e696a5e7721095c6078866fc974ff2d"
+)
+LEGACY_GENERATOR_CONFIG_SHA256 = (
+    "d2079b1d5a2025056a1eabeec233fbf04f8e305626359613eb7f6017d158fa83"
+)
 VersionText = Annotated[
     str,
     StringConstraints(pattern=r"^[A-Za-z0-9][A-Za-z0-9.+_-]{0,63}$"),
@@ -84,7 +91,7 @@ class FidelityDatasetManifest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     manifest_version: Literal[MANIFEST_VERSION] = MANIFEST_VERSION
-    dataset_id: Literal[DATASET_ID] = DATASET_ID
+    dataset_id: Literal[LEGACY_DATASET_ID, DATASET_ID] = DATASET_ID
     record_schema_version: Literal[SCHEMA_VERSION] = SCHEMA_VERSION
     record_schema_sha256: Digest
     generator: Literal[GENERATOR_ID] = GENERATOR_ID
@@ -288,8 +295,18 @@ def validate_manifest(
                 raise ValueError(f"{label} leakage across splits: {value}")
     if manifest.record_schema_sha256 != record_schema_sha256():
         raise ValueError("record schema checksum mismatch")
-    if manifest.generator_source_sha256 != generator_source_sha256():
+    expected_source_sha256 = (
+        LEGACY_GENERATOR_SOURCE_SHA256
+        if manifest.dataset_id == LEGACY_DATASET_ID
+        else generator_source_sha256()
+    )
+    expected_config_sha256 = (
+        LEGACY_GENERATOR_CONFIG_SHA256
+        if manifest.dataset_id == LEGACY_DATASET_ID
+        else generator_config_sha256()
+    )
+    if manifest.generator_source_sha256 != expected_source_sha256:
         raise ValueError("generator source checksum mismatch")
-    if manifest.generator_config_sha256 != generator_config_sha256():
+    if manifest.generator_config_sha256 != expected_config_sha256:
         raise ValueError("generator configuration checksum mismatch")
     return manifest

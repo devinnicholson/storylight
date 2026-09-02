@@ -36,7 +36,10 @@ from training.jax_fidelity.integrity import (
     canonical_sha256 as canonical_lineage_sha256,
 )
 from training.jax_fidelity.manifests import stable_run_id
-from training.jax_fidelity.merged_candidate import build_merged_candidate_manifest
+from training.jax_fidelity.merged_candidate import (
+    build_merged_candidate_manifest,
+    validate_merged_candidate_declaration,
+)
 from training.jax_fidelity.orbax_receipt import orbax_leaf_receipt, terminal_checkpoint_step
 from training.jax_fidelity.release import (
     ReleaseError,
@@ -53,6 +56,33 @@ from training.jax_fidelity.roundtrip_smoke import (
 )
 
 CONFIG_PATH = ROOT / "experiments/jax-fidelity-lab/config.json"
+
+
+def test_candidate_declaration_can_record_rejection_without_model_shards(
+    tmp_path: Path,
+) -> None:
+    checkpoint = tmp_path / "checkpoint"
+    checkpoint.mkdir()
+    (checkpoint / "model.safetensors").write_bytes(b"model")
+    document = build_merged_candidate_manifest(
+        config_path=CONFIG_PATH,
+        dataset_manifest_sha256="a" * 64,
+        training_run_id="lora-train-negative-test",
+        merged_hf_checkpoint=checkpoint,
+    )
+    manifest = tmp_path / "candidate.manifest.json"
+    manifest.write_bytes(canonical_json_bytes(document))
+    checkpoint.rename(tmp_path / "checkpoint-not-fetched")
+
+    validated = validate_merged_candidate_declaration(
+        manifest,
+        config_path=CONFIG_PATH,
+        expected_manifest_sha256=sha256_file(manifest),
+        expected_dataset_manifest_sha256="a" * 64,
+    )
+
+    assert validated["candidate_id"] == document["candidate_id"]
+    assert validated["eligibility"]["release_authorized"] is False
 
 
 def _evidence(config, checkpoint: Path) -> dict:

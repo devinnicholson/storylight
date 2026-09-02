@@ -30,11 +30,15 @@ from training.jax_fidelity.integrity import (
     validate_dataset_manifest,
 )
 from training.jax_fidelity.manifests import ManifestError, complete_run, stable_run_id, start_run
-from training.jax_fidelity.prepare import prepare_training_jsonl
+from training.jax_fidelity.prepare import (
+    prepare_pair_deduplicated_training_jsonl,
+    prepare_training_jsonl,
+)
 from training.jax_fidelity.runtime import approval_token
 from training.jax_fidelity.verify_runtime import validate_runtime_lock, write_runtime_lock
 
 CONFIG_PATH = ROOT / "experiments/jax-fidelity-lab/config.json"
+CONFIG_V2_PATH = ROOT / "experiments/jax-fidelity-lab/config-v2.json"
 TARGET = (
     "SETTING: moonlit library\n"
     "ACTOR: small copper fox\n"
@@ -86,6 +90,22 @@ def test_config_freezes_text_only_completion_only_lora() -> None:
         config.training["rank"] = 32
 
 
+def test_v2_config_binds_prompt_pair_curriculum_and_optimizer() -> None:
+    config = load_config(CONFIG_V2_PATH)
+
+    assert config.training["rank"] == 16
+    assert config.training["steps"] == 640
+    assert config.training["num_epoch"] == 4
+    assert config.training["packing"] is False
+    assert config.training["enable_data_shuffling"] is False
+    assert config.production["prompt_contract_sha256"]
+
+    drifted = json.loads(CONFIG_V2_PATH.read_text())
+    drifted["production_contract"]["prompt_contract_sha256"] = "0" * 64
+    with pytest.raises(ConfigError, match="deployed prompt"):
+        validate_config(drifted)
+
+
 @pytest.mark.parametrize(
     ("section", "key", "value"),
     [
@@ -112,6 +132,9 @@ def test_formatter_is_the_exact_deployed_four_slot_exchange() -> None:
     assert production_messages(story, target=TARGET) == expected + [
         {"role": "assistant", "content": TARGET}
     ]
+    assert [message["role"] for message in expected] == ["system", "user"]
+    assert "reader@example.invalid" in expected[0]["content"]
+    assert "Never reproduce" in expected[0]["content"]
 
 
 def test_training_record_accepts_dataset_target_mapping() -> None:
@@ -145,7 +168,7 @@ def test_target_validator_rejects_repairable_or_ambiguous_outputs(target: str) -
         validate_slot_target(target)
 
 
-def test_completion_only_supervises_fixed_demo_and_final_assistant_turn() -> None:
+def test_completion_only_supervises_only_the_final_assistant_turn() -> None:
     tokenizer = FakeGemmaTokenizer()
     messages = production_messages("A fox opens a door.", target=TARGET)
     segments = maxtext_sft_segments(tokenizer, messages)
@@ -157,12 +180,9 @@ def test_completion_only_supervises_fixed_demo_and_final_assistant_turn() -> Non
         completion_budget_tokens=10_000,
     )
 
-    assert [is_prompt for _, is_prompt in segments] == [True, False, True, False]
-    assert example["segment_is_prompt"] == [1, 0, 1, 0]
-    assert example["supervised_token_count"][0] > example["completion_token_count"][0]
-    demo_start = example["segment_token_counts"][0]
-    demo_end = demo_start + example["segment_token_counts"][1]
-    assert example["labels"][demo_start:demo_end] == example["input_ids"][demo_start:demo_end]
+    assert [is_prompt for _, is_prompt in segments] == [True, False]
+    assert example["segment_is_prompt"] == [1, 0]
+    assert example["supervised_token_count"] == example["completion_token_count"]
     offset = 0
     for count, is_prompt in zip(
         example["segment_token_counts"], example["segment_is_prompt"], strict=True
@@ -170,6 +190,31 @@ def test_completion_only_supervises_fixed_demo_and_final_assistant_turn() -> Non
         expected = [0] * count if is_prompt else example["input_ids"][offset : offset + count]
         assert example["labels"][offset : offset + count] == expected
         offset += count
+
+
+def test_pair_deduplicated_preparation_is_balanced_and_final_answer_only(
+    tmp_path: Path,
+) -> None:
+    prepared = tmp_path / "train.jsonl"
+    manifest = tmp_path / "preparation.manifest.json"
+
+    result = prepare_pair_deduplicated_training_jsonl(
+        ROOT / "datasets/story-fidelity-v1/train.jsonl",
+        prepared,
+        manifest,
+    )
+    rows = [json.loads(line) for line in prepared.read_text().splitlines()]
+
+    assert result["source_records"] == 4096
+    assert result["source_pairs"] == 2048
+    assert result["distinct_pairs"] == 160
+    assert result["prepared_records"] == len(rows) == 320
+    assert set(result["category_pair_counts"].values()) == {8}
+    assert all(
+        [message["role"] for message in row["messages"]]
+        == ["system", "user", "assistant"]
+        for row in rows
+    )
 
 
 def test_dataset_hash_validation_and_preparation(tmp_path: Path) -> None:
@@ -309,6 +354,34 @@ def test_maxtext_command_retains_every_safety_override() -> None:
     assert "lora.lora_rank=8" in command
     assert "lora.lora_weight_qtype" not in joined
     assert "steps=5" in command
+
+
+def test_v2_train_command_makes_exposure_and_optimizer_explicit() -> None:
+    config = load_config(CONFIG_V2_PATH)
+    command = build_train_command(
+        config,
+        maxtext_checkpoint="/checkpoints/base/items",
+        hf_tokenizer_checkpoint="/hf/base",
+        prepared_train_jsonl="/data/train.jsonl",
+        output_directory="/output",
+        run_name="full-v2",
+        hardware="gpu",
+        smoke=False,
+    )
+
+    assert "steps=640" in command
+    assert "lora.lora_rank=16" in command
+    assert "lora.lora_alpha=32.0" in command
+    assert "packing=false" in command
+    assert "num_epoch=4" in command
+    assert "enable_data_shuffling=false" in command
+    assert "enable_dropout=false" in command
+    assert "gradient_accumulation_steps=1" in command
+    assert "lr_schedule_type=cosine" in command
+    assert "warmup_steps_fraction=0.05" in command
+    assert "learning_rate_final_fraction=0.1" in command
+    assert "adam_weight_decay=0.0" in command
+    assert "checkpoint_period=160" in command
 
 
 def test_container_and_direct_dependencies_are_immutable() -> None:

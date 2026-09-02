@@ -10,7 +10,7 @@ import re
 import shutil
 import subprocess
 import time
-from collections.abc import Callable
+from collections.abc import Callable, Mapping
 from datetime import UTC, datetime
 from pathlib import Path, PurePosixPath
 
@@ -602,6 +602,104 @@ def _validate_gpu_preflight(path: Path) -> dict[str, object]:
     return payload
 
 
+def _verify_v2_prepared_evidence(
+    input_directory: Path,
+    *,
+    experiment: object,
+    input_manifest: dict[str, object],
+    config_sha256: str,
+    prepared_sha256: str,
+    tokenizer_manifest_sha256: str,
+) -> dict[str, object] | None:
+    """Verify the offline preparation receipts required by the v2 experiment."""
+
+    experiment_id = getattr(experiment, "experiment_id", None)
+    if not isinstance(experiment_id, str) or not experiment_id.endswith("-v2"):
+        return None
+    production = getattr(experiment, "production", None)
+    training = getattr(experiment, "training", None)
+    if not isinstance(production, Mapping) or not isinstance(training, Mapping):
+        raise RuntimeError("v2 experiment configuration is not a mapping")
+
+    preparation_path = input_directory / "prepared/preparation.manifest.json"
+    validation_path = input_directory / "prepared/prepared-validation.json"
+    preparation = _json_object(preparation_path)
+    validation = _json_object(validation_path)
+    preparation_sha256 = _sha256(preparation_path)
+    validation_sha256 = _sha256(validation_path)
+    prompt_sha256 = production.get("prompt_contract_sha256")
+    policy = training.get("preparation_policy")
+    records = preparation.get("prepared_records")
+
+    dataset_manifest = _json_object(input_directory / "dataset/manifest.json")
+    splits = dataset_manifest.get("splits")
+    train_split = splits.get("train") if isinstance(splits, dict) else None
+    source_train_sha256 = train_split.get("sha256") if isinstance(train_split, dict) else None
+    if not isinstance(source_train_sha256, str) or _SHA256.fullmatch(source_train_sha256) is None:
+        raise RuntimeError("v2 dataset manifest has no checksum-bound train split")
+    source_train_path = input_directory / "dataset/train.jsonl"
+    if _sha256(source_train_path) != source_train_sha256:
+        raise RuntimeError("v2 source training bytes changed")
+
+    if (
+        preparation.get("schema_version") != "bookforge-jax-training-preparation-v2"
+        or preparation.get("policy") != policy
+        or type(records) is not int
+        or records < 1
+        or preparation.get("source_train_sha256") != source_train_sha256
+        or preparation.get("prepared_sha256") != prepared_sha256
+        or preparation.get("prompt_contract_sha256") != prompt_sha256
+        or preparation.get("assistant_turns_per_record") != 1
+        or preparation.get("pair_adjacency_preserved") is not True
+    ):
+        raise RuntimeError("v2 preparation manifest does not match the training contract")
+
+    expected_validation = {
+        "schema_version": "bookforge-jax-prepared-validation-v1",
+        "status": "passed",
+        "config_sha256": config_sha256,
+        "prepared_sha256": prepared_sha256,
+        "preparation_manifest_sha256": preparation_sha256,
+        "tokenizer_manifest_sha256": tokenizer_manifest_sha256,
+        "prompt_contract_sha256": prompt_sha256,
+        "records": records,
+        "assistant_turns_per_record": 1,
+        "input_budget_tokens": production.get("input_budget_tokens"),
+        "completion_budget_tokens": production.get("completion_budget_tokens"),
+        "max_target_length": training.get("max_target_length"),
+    }
+    if any(validation.get(name) != value for name, value in expected_validation.items()):
+        raise RuntimeError("v2 prepared-validation evidence does not match staged inputs")
+    for name in (
+        "maximum_prompt_tokens",
+        "maximum_completion_tokens",
+        "maximum_total_tokens",
+    ):
+        if type(validation.get(name)) is not int or int(validation[name]) < 1:
+            raise RuntimeError("v2 prepared-validation token evidence is invalid")
+    if (
+        int(validation["maximum_prompt_tokens"]) > int(production["input_budget_tokens"])
+        or int(validation["maximum_completion_tokens"])
+        > int(production["completion_budget_tokens"])
+        or int(validation["maximum_total_tokens"]) > int(training["max_target_length"])
+    ):
+        raise RuntimeError("v2 prepared-validation evidence exceeds the approved token budgets")
+
+    binding = {
+        "policy": policy,
+        "records": records,
+        "prepared_sha256": prepared_sha256,
+        "preparation_manifest_sha256": preparation_sha256,
+        "prepared_validation_sha256": validation_sha256,
+        "prompt_contract_sha256": prompt_sha256,
+        "source_train_sha256": source_train_sha256,
+        "tokenizer_manifest_sha256": tokenizer_manifest_sha256,
+    }
+    if input_manifest.get("prepared_training") != binding:
+        raise RuntimeError("staged input manifest v2 preparation binding changed")
+    return binding
+
+
 def _finalize_completed_scratch(
     *,
     run_id: str,
@@ -823,6 +921,14 @@ def run_finite(request: dict[str, object]) -> dict[str, object]:
         expected_receipt_sha256=checkpoint_receipt_sha,
     )
     verify_artifact_manifest(tokenizer_checkpoint, _json_object(tokenizer_manifest_path))
+    _verify_v2_prepared_evidence(
+        input_directory,
+        experiment=experiment,
+        input_manifest=input_manifest,
+        config_sha256=config_sha,
+        prepared_sha256=prepared_sha,
+        tokenizer_manifest_sha256=tokenizer_manifest_sha,
+    )
     stage = "lora-smoke" if smoke else "lora-train"
     training_run_id = stable_run_id(
         stage=stage,
@@ -1003,6 +1109,14 @@ def finalize_finite(request: dict[str, object]) -> dict[str, object]:
         expected_receipt_sha256=checkpoint_receipt_sha,
     )
     verify_artifact_manifest(tokenizer_checkpoint, _json_object(tokenizer_manifest_path))
+    _verify_v2_prepared_evidence(
+        input_directory,
+        experiment=experiment,
+        input_manifest=input_manifest,
+        config_sha256=config_sha,
+        prepared_sha256=prepared_sha,
+        tokenizer_manifest_sha256=tokenizer_manifest_sha,
+    )
     stage = "lora-smoke" if smoke else "lora-train"
     training_run_id = stable_run_id(
         stage=stage,

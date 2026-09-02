@@ -61,7 +61,7 @@ def build_train_command(
     steps = training["smoke_steps"] if smoke else training["steps"]
     if hardware not in {"gpu", "tpu"}:
         raise ValueError("MaxText training hardware must be gpu or tpu")
-    return [
+    command = [
         "python3",
         "-m",
         "maxtext.trainers.post_train.sft.train_sft_native",
@@ -92,8 +92,27 @@ def build_train_command(
         f"lora.lora_rank={training['rank']}",
         f"lora.lora_alpha={training['alpha']}",
         "enable_checkpointing=True",
-        "checkpoint_period=5",
     ]
+    for name in (
+        "packing",
+        "num_epoch",
+        "enable_data_shuffling",
+        "enable_dropout",
+        "gradient_accumulation_steps",
+        "gradient_clipping_threshold",
+        "lr_schedule_type",
+        "warmup_steps_fraction",
+        "learning_rate_final_fraction",
+        "adam_weight_decay",
+    ):
+        if name not in training:
+            continue
+        value = training[name]
+        rendered = _bool(value) if isinstance(value, bool) else str(value)
+        command.append(f"{name}={rendered}")
+    checkpoint_period = 160 if config.experiment_id.endswith("-v2") else 5
+    command.append(f"checkpoint_period={checkpoint_period}")
+    return command
 
 
 def build_maxtext_to_hf_command(
