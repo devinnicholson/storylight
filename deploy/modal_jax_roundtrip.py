@@ -68,6 +68,46 @@ def _approval_token(
     )
 
 
+def _base_cache_approval_token(
+    source_run_id: str,
+    receipt_sha256: str,
+    completion_sha256: str,
+) -> str:
+    return (
+        f"APPROVE_MODAL_JAX_BASE_CACHE:{source_run_id}:"
+        f"{receipt_sha256}:{completion_sha256}"
+    )
+
+
+def _validate_base_cache_request(
+    request: dict[str, object], *, target_run_id: str
+) -> tuple[str, str, str] | None:
+    names = (
+        "base_cache_run_id",
+        "base_cache_receipt_sha256",
+        "base_cache_completion_sha256",
+        "base_cache_approval_token",
+    )
+    values = [request.get(name) for name in names]
+    if all(value in (None, "") for value in values):
+        return None
+    if not all(isinstance(value, str) and value for value in values):
+        raise ValueError("base checkpoint cache request must be complete")
+    source_run_id, receipt_sha, completion_sha, token = values
+    assert isinstance(source_run_id, str)
+    assert isinstance(receipt_sha, str)
+    assert isinstance(completion_sha, str)
+    assert isinstance(token, str)
+    if _RUN_ID.fullmatch(source_run_id) is None or source_run_id == target_run_id:
+        raise ValueError("base checkpoint cache source run ID is invalid")
+    if _SHA256.fullmatch(receipt_sha) is None or _SHA256.fullmatch(completion_sha) is None:
+        raise ValueError("base checkpoint cache SHA-256 is invalid")
+    expected = _base_cache_approval_token(source_run_id, receipt_sha, completion_sha)
+    if token != expected:
+        raise ValueError("base checkpoint cache approval token is not exact")
+    return source_run_id, receipt_sha, completion_sha
+
+
 def _validate_request(request: dict[str, object]) -> tuple[str, ...]:
     names = (
         "config_sha256",
@@ -211,6 +251,7 @@ def gpu_configuration_preflight(approval_token_value: str) -> dict[str, object]:
             "import json, sys",
             "from maxtext.configs import pyconfig",
             "config = pyconfig.initialize(sys.argv)",
+            "from transformer_engine.jax.sharding import global_shard_guard, MeshResource",
             "import jax",
             "import jax.numpy as jnp",
             "devices = jax.devices()",
@@ -272,6 +313,7 @@ def run_roundtrip_finite(request: dict[str, object]) -> dict[str, object]:
         hf_manifest_sha,
         tokenizer_manifest_sha,
     ) = _validate_request(request)
+    base_cache = _validate_base_cache_request(request, target_run_id=run_id)
     started = time.monotonic()
     input_directory = _INPUT_ROOT / run_id
     scratch = _SCRATCH_ROOT / run_id
@@ -351,42 +393,71 @@ def run_roundtrip_finite(request: dict[str, object]) -> dict[str, object]:
         config_sha256=config_sha,
         input_sha256=hf_to_maxtext_input_sha,
     )
-    base_output = scratch / "base-maxtext"
-    _run_stage(
-        [
-            "python3",
-            "-m",
-            "training.jax_fidelity.convert",
-            "hf-to-maxtext",
-            "--config",
-            str(config_path),
-            "--input-manifest",
-            str(hf_to_maxtext_input),
-            "--input-manifest-sha256",
-            hf_to_maxtext_input_sha,
-            "--hf-checkpoint",
-            str(hf_snapshot),
-            "--output-directory",
-            str(base_output),
-            "--run-directory",
-            str(runs),
-            "--maxtext-root",
-            "/opt/MaxText",
-            "--execute",
-        ],
-        environment=environment,
-        started=started,
-    )
-    hf_to_maxtext_completion = _completion_path(runs, hf_to_maxtext_id)
-    base_leaf = discover_orbax_items(base_output, expected_step=0)
-    base_receipt = orbax_leaf_receipt(
-        base_output,
-        base_leaf,
-        expected_step=0,
-        role="base-maxtext",
-    )
-    base_receipt_path = evidence / "base-orbax.receipt.json"
-    write_orbax_leaf_receipt(base_receipt_path, base_receipt)
+    if base_cache is None:
+        base_output = scratch / "base-maxtext"
+        _run_stage(
+            [
+                "python3",
+                "-m",
+                "training.jax_fidelity.convert",
+                "hf-to-maxtext",
+                "--config",
+                str(config_path),
+                "--input-manifest",
+                str(hf_to_maxtext_input),
+                "--input-manifest-sha256",
+                hf_to_maxtext_input_sha,
+                "--hf-checkpoint",
+                str(hf_snapshot),
+                "--output-directory",
+                str(base_output),
+                "--run-directory",
+                str(runs),
+                "--maxtext-root",
+                "/opt/MaxText",
+                "--execute",
+            ],
+            environment=environment,
+            started=started,
+        )
+        hf_to_maxtext_completion = _completion_path(runs, hf_to_maxtext_id)
+        base_leaf = discover_orbax_items(base_output, expected_step=0)
+        base_receipt = orbax_leaf_receipt(
+            base_output,
+            base_leaf,
+            expected_step=0,
+            role="base-maxtext",
+        )
+        base_receipt_path = evidence / "base-orbax.receipt.json"
+        write_orbax_leaf_receipt(base_receipt_path, base_receipt)
+    else:
+        cache_run_id, expected_receipt_sha, expected_completion_sha = base_cache
+        cache_root = _SCRATCH_ROOT / cache_run_id
+        base_output = cache_root / "base-maxtext"
+        base_receipt_path = cache_root / "evidence/base-orbax.receipt.json"
+        hf_to_maxtext_completion = (
+            cache_root / "runs" / hf_to_maxtext_id / "completion.json"
+        )
+        if _sha256(base_receipt_path) != expected_receipt_sha:
+            raise RuntimeError("cached base Orbax receipt hash changed")
+        if _sha256(hf_to_maxtext_completion) != expected_completion_sha:
+            raise RuntimeError("cached HF-to-MaxText completion hash changed")
+        completion = _json_object(hf_to_maxtext_completion)
+        if (
+            completion.get("run_id") != hf_to_maxtext_id
+            or completion.get("status") != "succeeded"
+            or completion.get("config_sha256") != config_sha
+            or completion.get("evidence", {}).get("input_manifest_sha256")
+            != hf_to_maxtext_input_sha
+        ):
+            raise RuntimeError("cached HF-to-MaxText completion identity changed")
+        base_receipt = _json_object(base_receipt_path)
+        base_leaf = verify_orbax_leaf_receipt(
+            base_output,
+            base_receipt,
+            expected_step=0,
+            role="base-maxtext",
+        )
 
     smoke_id = stable_run_id(
         stage="lora-smoke",
@@ -620,6 +691,7 @@ def run_roundtrip_finite(request: dict[str, object]) -> dict[str, object]:
         "status": "succeeded",
         "backend": "modal-l4",
         "run_id": run_id,
+        "base_cache_run_id": base_cache[0] if base_cache is not None else None,
         "config_sha256": config_sha,
         "dataset_manifest_sha256": dataset_sha,
         "input_manifest_sha256": input_manifest_sha,
@@ -669,6 +741,10 @@ def run_cli(
     hf_snapshot_manifest_sha256: str,
     tokenizer_manifest_sha256: str,
     approval_token_value: str,
+    base_cache_run_id: str = "",
+    base_cache_receipt_sha256: str = "",
+    base_cache_completion_sha256: str = "",
+    base_cache_approval_token_value: str = "",
 ) -> None:
     plan = _json_object(PLAN_PATH)
     if (
@@ -690,6 +766,13 @@ def run_cli(
     )
     if approval_token_value != expected:
         raise RuntimeError("exact one-purpose Modal roundtrip approval token is required")
+    cache_request = {
+        "base_cache_run_id": base_cache_run_id,
+        "base_cache_receipt_sha256": base_cache_receipt_sha256,
+        "base_cache_completion_sha256": base_cache_completion_sha256,
+        "base_cache_approval_token": base_cache_approval_token_value,
+    }
+    _validate_base_cache_request(cache_request, target_run_id=run_id)
     ceiling = plan.get("gross_ceiling_usd")
     if type(ceiling) not in (int, float) or float(ceiling) <= 0:
         raise RuntimeError("Modal roundtrip gross ceiling is invalid")
@@ -716,6 +799,7 @@ def run_cli(
                 "hf_snapshot_manifest_sha256": hf_snapshot_manifest_sha256,
                 "tokenizer_manifest_sha256": tokenizer_manifest_sha256,
                 "approval_token": approval_token_value,
+                **cache_request,
             }
         )
         status = "succeeded"

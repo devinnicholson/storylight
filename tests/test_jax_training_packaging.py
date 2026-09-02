@@ -338,6 +338,8 @@ def test_container_and_direct_dependencies_are_immutable() -> None:
     assert "build-essential" in dockerfile
     assert "NVTE_BUILD_USE_NVIDIA_WHEELS=1" in dockerfile
     assert "nvidia/nccl/lib/libnccl.so.2" in dockerfile
+    assert "nvidia/curand/lib" in dockerfile
+    assert "LD_LIBRARY_PATH=" in dockerfile
     assert "-Wl,-rpath,/usr/local/lib/python3.12/site-packages/nvidia/nccl/lib" in dockerfile
     assert "--no-build-isolation 'transformer-engine-jax==2.18.0'" in dockerfile
     assert (

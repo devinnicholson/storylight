@@ -168,6 +168,26 @@ def test_roundtrip_request_and_modal_function_fail_closed() -> None:
     with pytest.raises(ValueError, match="SHA-256"):
         roundtrip._validate_request(_request(input_manifest_sha256="latest"))
 
+    cache_run_id = "bookforge-roundtrip-cache-20260902"
+    receipt_sha = "1" * 64
+    completion_sha = "2" * 64
+    cache_request = {
+        "base_cache_run_id": cache_run_id,
+        "base_cache_receipt_sha256": receipt_sha,
+        "base_cache_completion_sha256": completion_sha,
+        "base_cache_approval_token": roundtrip._base_cache_approval_token(
+            cache_run_id, receipt_sha, completion_sha
+        ),
+    }
+    assert roundtrip._validate_base_cache_request(
+        cache_request, target_run_id="bookforge-roundtrip-target-20260902"
+    ) == (cache_run_id, receipt_sha, completion_sha)
+    with pytest.raises(ValueError, match="must be complete"):
+        roundtrip._validate_base_cache_request(
+            {"base_cache_run_id": cache_run_id},
+            target_run_id="bookforge-roundtrip-target-20260902",
+        )
+
     source = (ROOT / "deploy/modal_jax_roundtrip.py").read_text()
     plan = json.loads(
         (ROOT / "experiments/jax-fidelity-lab/modal-roundtrip-plan-2026-09.json").read_text()
@@ -183,7 +203,10 @@ def test_roundtrip_request_and_modal_function_fail_closed() -> None:
     assert "validate_runtime_lock(lock_path)" in source
     assert "def gpu_configuration_preflight(approval_token_value: str)" in source
     assert '"skip_jax_distributed_system=true"' in source
+    assert "from transformer_engine.jax.sharding import global_shard_guard" in source
     assert "expected one GPU" in source
+    assert "cached base Orbax receipt hash changed" in source
+    assert "verify_orbax_leaf_receipt(" in source
     assert "@modal.web_endpoint" not in source
     assert source.index('"hf-to-maxtext"') < source.index('stage="lora-smoke"')
     assert source.index('stage="lora-smoke"') < source.index('"maxtext-to-hf"')

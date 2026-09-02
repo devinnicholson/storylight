@@ -45,6 +45,21 @@ CUDA_BUILD_REQUIREMENTS = (
     "nvidia-nvtx-cu12==12.9.79",
 )
 NCCL_LIBRARY_DIR = "/usr/local/lib/python3.12/site-packages/nvidia/nccl/lib"
+CUDA_WHEEL_LIBRARY_DIRS = (
+    "/usr/local/lib/python3.12/site-packages/nvidia/cublas/lib",
+    "/usr/local/lib/python3.12/site-packages/nvidia/cuda_nvrtc/lib",
+    "/usr/local/lib/python3.12/site-packages/nvidia/cuda_runtime/lib",
+    "/usr/local/lib/python3.12/site-packages/nvidia/cudnn/lib",
+    "/usr/local/lib/python3.12/site-packages/nvidia/cufft/lib",
+    "/usr/local/lib/python3.12/site-packages/nvidia/curand/lib",
+    "/usr/local/lib/python3.12/site-packages/nvidia/cusolver/lib",
+    "/usr/local/lib/python3.12/site-packages/nvidia/cusparse/lib",
+    NCCL_LIBRARY_DIR,
+    "/usr/local/lib/python3.12/site-packages/nvidia/nvjitlink/lib",
+    "/usr/local/nvidia/lib",
+    "/usr/local/nvidia/lib64",
+)
+CUDA_WHEEL_LIBRARY_PATH = ":".join(CUDA_WHEEL_LIBRARY_DIRS)
 TRANSFORMER_ENGINE_BUILD_ENV = {
     "NVTE_BUILD_USE_NVIDIA_WHEELS": "1",
     "LIBRARY_PATH": NCCL_LIBRARY_DIR,
@@ -92,6 +107,7 @@ JAX_IMAGE = (
         {
             "PYTHONPATH": "/opt/bookforge:/opt/bookforge/src",
             "JAX_PLATFORMS": "cuda",
+            "LD_LIBRARY_PATH": CUDA_WHEEL_LIBRARY_PATH,
             "HF_HUB_OFFLINE": "1",
             "HF_DATASETS_OFFLINE": "1",
             "TRANSFORMERS_OFFLINE": "1",
