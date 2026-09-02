@@ -40,6 +40,17 @@ _TOKENIZER_FILES = (
     "tokenizer.model",
     "tokenizer_config.json",
 )
+_MULTIMODAL_TENSOR_PREFIXES = (
+    "model.audio_tower.",
+    "model.embed_audio.",
+    "model.embed_vision.",
+    "model.vision_tower.",
+)
+_SHARED_KV_SUFFIXES = (
+    "self_attn.k_norm.weight",
+    "self_attn.k_proj.weight",
+    "self_attn.v_proj.weight",
+)
 
 
 class CheckpointEvidenceError(ValueError):
@@ -113,6 +124,73 @@ def _tokenizer_binding(root: Path) -> dict[str, str]:
     return result
 
 
+def _verify_tokenizer_projection(
+    base: Path,
+    exported: Path,
+) -> tuple[dict[str, str], dict[str, str]]:
+    base_files = _tokenizer_binding(base)
+    exported_files = _tokenizer_binding(exported)
+    base_core = {
+        name: digest
+        for name, digest in base_files.items()
+        if name != "tokenizer_config.json"
+    }
+    exported_core = {
+        name: digest for name, digest in exported_files.items() if name != "tokenizer_config.json"
+    }
+    if exported_core != base_core:
+        raise CheckpointEvidenceError("exported tokenizer vocabulary or template bytes differ")
+
+    base_config = _json_object(base / "tokenizer_config.json", "base tokenizer config")
+    exported_config = _json_object(
+        exported / "tokenizer_config.json", "exported tokenizer config"
+    )
+    is_local = exported_config.pop("is_local", None)
+    local_files_only = exported_config.pop("local_files_only", None)
+    model_tokens = exported_config.pop("model_specific_special_tokens", None)
+    if exported_config != base_config:
+        raise CheckpointEvidenceError("exported tokenizer configuration changed")
+    if is_local is not True or local_files_only is not True or not isinstance(model_tokens, dict):
+        raise CheckpointEvidenceError("exported tokenizer lacks offline serialization metadata")
+    expected_tokens = {
+        name: base_config.get(name)
+        for name in model_tokens
+        if isinstance(name, str) and isinstance(model_tokens[name], str)
+    }
+    if model_tokens != expected_tokens or any(value is None for value in expected_tokens.values()):
+        raise CheckpointEvidenceError("exported tokenizer special-token metadata changed")
+    return base_files, exported_files
+
+
+def _allowed_text_only_omissions(
+    base_names: set[str],
+    text_config: Mapping[str, Any],
+) -> set[str]:
+    omitted = {
+        name
+        for name in base_names
+        if name.startswith(_MULTIMODAL_TENSOR_PREFIXES)
+    }
+    layers = text_config.get("num_hidden_layers")
+    shared_layers = text_config.get("num_kv_shared_layers")
+    if (
+        type(layers) is not int
+        or type(shared_layers) is not int
+        or shared_layers < 0
+        or shared_layers > layers
+    ):
+        raise CheckpointEvidenceError("Gemma 4 shared-KV layer metadata is invalid")
+    for layer in range(layers - shared_layers, layers):
+        for suffix in _SHARED_KV_SUFFIXES:
+            name = f"model.language_model.layers.{layer}.{suffix}"
+            if name not in base_names:
+                raise CheckpointEvidenceError(
+                    f"base checkpoint lacks declared shared-KV tensor: {name}"
+                )
+            omitted.add(name)
+    return omitted
+
+
 def _eos_ids(root: Path, config: Mapping[str, Any], text: Mapping[str, Any]) -> list[int]:
     candidates: list[object] = [config.get("eos_token_id"), text.get("eos_token_id")]
     generation = root / "generation_config.json"
@@ -145,15 +223,23 @@ def inspect_hf_roundtrip(
 
     base_shapes = _safetensor_shapes(base)
     exported_shapes = _safetensor_shapes(exported)
-    if set(base_shapes) != set(exported_shapes):
-        raise CheckpointEvidenceError("exported checkpoint tensor names differ from the base")
-    if base_shapes != exported_shapes:
+    base_names = set(base_shapes)
+    exported_names = set(exported_shapes)
+    unexpected = exported_names - base_names
+    if unexpected:
+        raise CheckpointEvidenceError("exported checkpoint contains unexpected tensor names")
+    omitted = base_names - exported_names
+    allowed_omissions = (
+        _allowed_text_only_omissions(base_names, base_text)
+        if config.production["use_multimodal"] is False
+        else set()
+    )
+    if omitted != allowed_omissions:
+        raise CheckpointEvidenceError("exported checkpoint tensor projection is incomplete")
+    if any(exported_shapes[name] != base_shapes[name] for name in exported_names):
         raise CheckpointEvidenceError("exported checkpoint tensor shapes differ from the base")
 
-    base_tokenizer = _tokenizer_binding(base)
-    exported_tokenizer = _tokenizer_binding(exported)
-    if exported_tokenizer != base_tokenizer:
-        raise CheckpointEvidenceError("exported tokenizer bytes differ from the pinned base")
+    base_tokenizer, exported_tokenizer = _verify_tokenizer_projection(base, exported)
 
     eos_ids = _eos_ids(exported, exported_config, exported_text)
     if eos_ids != list(EOS_TOKEN_IDS):
@@ -186,12 +272,16 @@ def inspect_hf_roundtrip(
         "ple_weights": True,
         "kv_sharing": True,
         "gemma4_metadata": True,
+        "text_only_projection": config.production["use_multimodal"] is False,
+        "omitted_tensor_count": len(omitted),
+        "omitted_tensor_names_sha256": _name_digest(omitted),
         "eos_token_ids": eos_ids,
         "architecture": {name: base_text[name] for name in _ARCHITECTURE_FIELDS},
         "kv_sharing_metadata": kv_sharing,
         "ple_tensor_names_sha256": _name_digest(ple_names),
         "tensor_names_sha256": _name_digest(base_shapes),
         "tokenizer_files": base_tokenizer,
+        "exported_tokenizer_files": exported_tokenizer,
         "base_checkpoint_manifest": artifact_manifest(base),
         "exported_checkpoint_manifest": artifact_manifest(exported),
         "config_sha256": config.sha256,

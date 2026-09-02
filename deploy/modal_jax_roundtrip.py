@@ -47,6 +47,19 @@ def _sha256(path: Path) -> str:
     return digest.hexdigest()
 
 
+def _recovery_code_sha256() -> str:
+    checkpoint_evidence = REPOSITORY_ROOT / "training/jax_fidelity/checkpoint_evidence.py"
+    if not checkpoint_evidence.is_file():
+        checkpoint_evidence = Path(
+            "/opt/bookforge/training/jax_fidelity/checkpoint_evidence.py"
+        )
+    inputs = (
+        _sha256(Path(__file__)),
+        _sha256(checkpoint_evidence),
+    )
+    return hashlib.sha256("".join(inputs).encode()).hexdigest()
+
+
 def _json_object(path: Path) -> dict[str, Any]:
     value = json.loads(path.read_text(encoding="utf-8"))
     if not isinstance(value, dict):
@@ -235,6 +248,7 @@ def _publish_roundtrip_release(
     logit_completion: Path,
     release: Path,
     started: float,
+    recovery_code_sha256: str | None = None,
 ) -> dict[str, object]:
     from training.jax_fidelity.integrity import artifact_manifest
     from training.jax_fidelity.orbax_receipt import verify_orbax_leaf_receipt
@@ -320,6 +334,7 @@ def _publish_roundtrip_release(
         ),
         "merged_hf_manifest_sha256": _sha256(release / "merged-hf.manifest.json"),
         "elapsed_seconds": time.monotonic() - started,
+        "recovery_code_sha256": recovery_code_sha256,
         "files": files,
     }
     completion_path = release / "completion.json"
@@ -834,6 +849,7 @@ def run_roundtrip_finite(request: dict[str, object]) -> dict[str, object]:
         logit_completion=logit_completion,
         release=release,
         started=started,
+        recovery_code_sha256=None,
     )
 
 
@@ -863,6 +879,9 @@ def finalize_roundtrip_finite(request: dict[str, object]) -> dict[str, object]:
         tokenizer_manifest_sha,
     ) = _validate_request(request)
     base_cache = _validate_base_cache_request(request, target_run_id=run_id)
+    recovery_code_sha = request.get("recovery_code_sha256")
+    if recovery_code_sha != _recovery_code_sha256():
+        raise ValueError("roundtrip recovery code hash changed")
     started = time.monotonic()
     input_directory = _INPUT_ROOT / run_id
     scratch = _SCRATCH_ROOT / run_id
@@ -1071,6 +1090,7 @@ def finalize_roundtrip_finite(request: dict[str, object]) -> dict[str, object]:
         logit_completion=logit_completion,
         release=release,
         started=started,
+        recovery_code_sha256=recovery_code_sha,
     )
 
 
@@ -1162,7 +1182,10 @@ def run_cli(
     from infra.gcp.jax.modal_reconciliation import append_reconciliation, reserve_attempt
 
     stage = "jax-roundtrip-recovery" if finalize_existing else "jax-roundtrip-smoke"
+    recovery_code_sha = _recovery_code_sha256() if finalize_existing else None
     attempt_id = f"{stage}:{run_id}:{input_manifest_sha256[:20]}"
+    if recovery_code_sha is not None:
+        attempt_id = f"{attempt_id}:{recovery_code_sha[:12]}"
     reserve_attempt(LEDGER_PATH, attempt_id=attempt_id, stage=stage)
     result: dict[str, object] | None = None
     status = "remote-error"
@@ -1181,6 +1204,7 @@ def run_cli(
             **cache_request,
         }
         if finalize_existing:
+            request["recovery_code_sha256"] = recovery_code_sha
             result = finalize_roundtrip_finite.remote(request)
         else:
             result = run_roundtrip_finite.remote(request)

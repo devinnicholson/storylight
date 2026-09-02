@@ -151,12 +151,23 @@ def test_checkpoint_inspection_binds_architecture_tokenizer_and_ple(
         for index, name in enumerate(checkpoint_evidence._ARCHITECTURE_FIELDS)
     }
     architecture["rope_parameters"] = {"rope_theta": 10000.0}
+    architecture["num_kv_shared_layers"] = 0
     for root in (tmp_path / "base", tmp_path / "exported"):
         root.mkdir()
         _write_json(root / "config.json", {"model_type": "gemma4_text", **architecture})
         _write_json(root / "generation_config.json", {"eos_token_id": [1, 106, 50]})
         (root / "tokenizer.json").write_bytes(b"tokenizer")
-        (root / "tokenizer_config.json").write_bytes(b"config")
+    tokenizer_config = {"image_token": "<|image|>", "tokenizer_class": "GemmaTokenizer"}
+    _write_json(tmp_path / "base/tokenizer_config.json", tokenizer_config)
+    _write_json(
+        tmp_path / "exported/tokenizer_config.json",
+        {
+            **tokenizer_config,
+            "is_local": True,
+            "local_files_only": True,
+            "model_specific_special_tokens": {"image_token": "<|image|>"},
+        },
+    )
 
     shapes = {
         "model.embed_tokens.weight": (256, 64),
@@ -173,6 +184,30 @@ def test_checkpoint_inspection_binds_architecture_tokenizer_and_ple(
     assert result["tensor_names"] is True
     assert result["ple_weights"] is True
     assert result["eos_token_ids"] == [1, 106, 50]
+
+
+def test_text_only_projection_allows_only_multimodal_and_declared_shared_kv() -> None:
+    base_names = {
+        "model.audio_tower.layer.weight",
+        "model.vision_tower.layer.weight",
+        "model.embed_audio.embedding_projection.weight",
+        "model.embed_vision.embedding_projection.weight",
+    }
+    for layer in (2, 3):
+        for suffix in checkpoint_evidence._SHARED_KV_SUFFIXES:
+            base_names.add(f"model.language_model.layers.{layer}.{suffix}")
+
+    allowed = checkpoint_evidence._allowed_text_only_omissions(
+        base_names,
+        {"num_hidden_layers": 4, "num_kv_shared_layers": 2},
+    )
+
+    assert allowed == base_names
+    with pytest.raises(CheckpointEvidenceError, match="lacks declared shared-KV"):
+        checkpoint_evidence._allowed_text_only_omissions(
+            {"model.audio_tower.layer.weight"},
+            {"num_hidden_layers": 4, "num_kv_shared_layers": 2},
+        )
 
 
 def test_roundtrip_evidence_uses_only_terminal_completion_hashes(
