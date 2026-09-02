@@ -228,6 +228,10 @@ def test_roundtrip_request_and_modal_function_fail_closed() -> None:
     assert "verify_orbax_leaf_receipt(" in source
     assert "def finalize_roundtrip_finite(request: dict[str, object])" in source
     assert "roundtrip recovery refuses existing release state" in source
+    assert "normalize_generation_config(" in source
+    assert '"generation-normalization.json"' in source
+    assert '"source-generation-config.json"' in source
+    assert '"maxtext-to-hf.inputs.json"' in source
     assert source.count("verify_conversion_manifest(") >= 3
     assert "finalize_roundtrip_finite.remote(request)" in source
     assert source.count("_publish_roundtrip_release(") == 3

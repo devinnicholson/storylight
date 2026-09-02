@@ -690,6 +690,92 @@ def test_conversion_execution_is_write_once_and_has_terminal_evidence(
         convert_module.main()
 
 
+def test_maxtext_export_restores_generation_metadata_before_completion(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    config = load_config(CONFIG_PATH)
+    base = tmp_path / "base"
+    adapter = tmp_path / "adapter"
+    original = tmp_path / "hf"
+    for directory in (base, adapter, original):
+        directory.mkdir()
+    (base / "checkpoint").write_bytes(b"base")
+    (adapter / "checkpoint").write_bytes(b"adapter")
+    (original / "tokenizer.json").write_bytes(b"tokenizer")
+    _write_json(original / "generation_config.json", {"eos_token_id": [1, 106, 50]})
+    input_manifest = tmp_path / "conversion-input.json"
+    input_sha = _write_json(
+        input_manifest,
+        {
+            "schema_version": "1.0",
+            "artifacts": {
+                "adapter_checkpoint": artifact_manifest(adapter),
+                "base_checkpoint": artifact_manifest(base),
+                "hf_checkpoint": artifact_manifest(original),
+            },
+        },
+    )
+    output = tmp_path / "merged"
+    runs = tmp_path / "runs"
+    run_id = stable_run_id(
+        stage="maxtext-to-hf",
+        config_sha256=config.sha256,
+        dataset_manifest_sha256=input_sha,
+    )
+    monkeypatch.setenv(
+        "BOOKFORGE_JAX_EXECUTION_APPROVAL",
+        f"MAXTEXT-TO-HF:{run_id}:{config.sha256}:{input_sha}",
+    )
+    monkeypatch.setattr(convert_module, "validate_maxtext_checkout", lambda *_: tmp_path)
+
+    def fake_run(_command, *, cwd):
+        assert cwd == tmp_path
+        output.mkdir()
+        (output / "model.safetensors").write_bytes(b"trained")
+
+    monkeypatch.setattr(convert_module, "run_checked", fake_run)
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            "convert",
+            "maxtext-to-hf",
+            "--config",
+            str(CONFIG_PATH),
+            "--input-manifest",
+            str(input_manifest),
+            "--input-manifest-sha256",
+            input_sha,
+            "--base-checkpoint",
+            str(base),
+            "--adapter-checkpoint",
+            str(adapter),
+            "--hf-checkpoint",
+            str(original),
+            "--output-directory",
+            str(output),
+            "--run-directory",
+            str(runs),
+            "--maxtext-root",
+            str(tmp_path),
+            "--execute",
+        ],
+    )
+
+    convert_module.main()
+
+    completion = json.loads((runs / run_id / "completion.json").read_text())
+    receipt = runs / run_id / "generation-normalization.json"
+    assert completion["status"] == "succeeded"
+    assert completion["evidence"]["generation_normalization_receipt_sha256"] == sha256_file(
+        receipt
+    )
+    assert (output / "generation_config.json").read_bytes() == (
+        original / "generation_config.json"
+    ).read_bytes()
+    assert not output.with_name(f".{output.name}.{run_id}.raw").exists()
+
+
 def test_release_producer_rejects_tampered_adapter_bytes(tmp_path: Path) -> None:
     adapter = tmp_path / "adapter"
     manifest, manifest_sha = _checkpoint(adapter, {"checkpoint": b"trained-lora"})

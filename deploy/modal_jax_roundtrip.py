@@ -49,13 +49,20 @@ def _sha256(path: Path) -> str:
 
 def _recovery_code_sha256() -> str:
     checkpoint_evidence = REPOSITORY_ROOT / "training/jax_fidelity/checkpoint_evidence.py"
+    generation_normalization = (
+        REPOSITORY_ROOT / "training/jax_fidelity/hf_generation_normalization.py"
+    )
     if not checkpoint_evidence.is_file():
         checkpoint_evidence = Path(
             "/opt/bookforge/training/jax_fidelity/checkpoint_evidence.py"
         )
+        generation_normalization = Path(
+            "/opt/bookforge/training/jax_fidelity/hf_generation_normalization.py"
+        )
     inputs = (
         _sha256(Path(__file__)),
         _sha256(checkpoint_evidence),
+        _sha256(generation_normalization),
     )
     return hashlib.sha256("".join(inputs).encode()).hexdigest()
 
@@ -241,6 +248,9 @@ def _publish_roundtrip_release(
     smoke_receipt_path: Path,
     smoke_checkpoint_step: int,
     merged_hf: Path,
+    generation_normalization_receipt: Path,
+    source_generation_config: Path,
+    maxtext_to_hf_input: Path,
     roundtrip_path: Path,
     hf_to_maxtext_completion: Path,
     smoke_completion: Path,
@@ -287,6 +297,9 @@ def _publish_roundtrip_release(
         "base-orbax.receipt.json": base_receipt_path,
         "smoke-orbax.receipt.json": smoke_receipt_path,
         "roundtrip.json": roundtrip_path,
+        "generation-normalization.json": generation_normalization_receipt,
+        "source-generation-config.json": source_generation_config,
+        "maxtext-to-hf.inputs.json": maxtext_to_hf_input,
         "hf-to-maxtext.completion.json": hf_to_maxtext_completion,
         "smoke.completion.json": smoke_completion,
         "maxtext-to-hf.completion.json": maxtext_to_hf_completion,
@@ -328,6 +341,15 @@ def _publish_roundtrip_release(
             release / "evidence/smoke-orbax.receipt.json"
         ),
         "roundtrip_evidence_sha256": _sha256(release / "evidence/roundtrip.json"),
+        "generation_normalization_receipt_sha256": _sha256(
+            release / "evidence/generation-normalization.json"
+        ),
+        "source_generation_config_sha256": _sha256(
+            release / "evidence/source-generation-config.json"
+        ),
+        "maxtext_to_hf_input_manifest_sha256": _sha256(
+            release / "evidence/maxtext-to-hf.inputs.json"
+        ),
         "base_orbax_manifest_sha256": _sha256(release / "base-orbax.manifest.json"),
         "smoke_adapter_manifest_sha256": _sha256(
             release / "smoke-adapter.manifest.json"
@@ -754,6 +776,9 @@ def run_roundtrip_finite(request: dict[str, object]) -> dict[str, object]:
         started=started,
     )
     maxtext_to_hf_completion = _completion_path(runs, maxtext_to_hf_id)
+    generation_normalization_receipt = (
+        runs / maxtext_to_hf_id / "generation-normalization.json"
+    )
 
     logit_input = evidence / "logit-check.inputs.json"
     logit_input_sha = _artifact_contract(
@@ -842,6 +867,9 @@ def run_roundtrip_finite(request: dict[str, object]) -> dict[str, object]:
         smoke_receipt_path=smoke_receipt_path,
         smoke_checkpoint_step=smoke_checkpoint_step,
         merged_hf=merged_hf,
+        generation_normalization_receipt=generation_normalization_receipt,
+        source_generation_config=hf_snapshot / "generation_config.json",
+        maxtext_to_hf_input=maxtext_to_hf_input,
         roundtrip_path=roundtrip_path,
         hf_to_maxtext_completion=hf_to_maxtext_completion,
         smoke_completion=smoke_completion,
@@ -1005,7 +1033,7 @@ def finalize_roundtrip_finite(request: dict[str, object]) -> dict[str, object]:
         role="smoke-lora",
     )
 
-    merged_hf = scratch / "merged-hf"
+    raw_merged_hf = scratch / "merged-hf"
     maxtext_to_hf_input = evidence / "maxtext-to-hf.inputs.json"
     maxtext_to_hf_input_sha = _sha256(maxtext_to_hf_input)
     verify_conversion_manifest(
@@ -1032,7 +1060,7 @@ def finalize_roundtrip_finite(request: dict[str, object]) -> dict[str, object]:
         artifact_roots={
             "maxtext_checkpoint": base_leaf,
             "adapter_checkpoint": smoke_leaf,
-            "hf_checkpoint": merged_hf,
+            "hf_checkpoint": raw_merged_hf,
         },
     )
     logit_id = stable_run_id(
@@ -1041,6 +1069,36 @@ def finalize_roundtrip_finite(request: dict[str, object]) -> dict[str, object]:
         dataset_manifest_sha256=logit_input_sha,
     )
     logit_completion = _completion_path(runs, logit_id)
+    maxtext_to_hf_document = _json_object(maxtext_to_hf_completion)
+    raw_manifest = maxtext_to_hf_document.get("evidence", {}).get("output_manifest")
+    from training.jax_fidelity.hf_generation_normalization import (
+        normalize_generation_config,
+        validate_generation_normalization,
+    )
+    from training.jax_fidelity.integrity import artifact_manifest
+
+    if raw_manifest != artifact_manifest(raw_merged_hf):
+        raise RuntimeError("roundtrip recovery raw MaxText export changed")
+    normalized_suffix = recovery_code_sha[:12]
+    merged_hf = scratch / f"merged-hf-normalized-{normalized_suffix}"
+    generation_normalization_receipt = (
+        evidence / f"generation-normalization-{normalized_suffix}.json"
+    )
+    normalization_document = normalize_generation_config(
+        source_checkpoint=raw_merged_hf,
+        original_checkpoint=hf_snapshot,
+        destination=merged_hf,
+        receipt_path=generation_normalization_receipt,
+        prior_conversion_completion_sha256=_sha256(maxtext_to_hf_completion),
+    )
+    validate_generation_normalization(
+        normalization_document,
+        source_checkpoint_manifest=raw_manifest,
+        original_checkpoint_manifest=_json_object(hf_manifest_path),
+        normalized_checkpoint=merged_hf,
+        source_generation_config=hf_snapshot / "generation_config.json",
+        prior_conversion_completion_sha256=_sha256(maxtext_to_hf_completion),
+    )
     roundtrip_document = build_roundtrip_evidence(
         config_path=config_path,
         base_checkpoint=hf_snapshot,
@@ -1083,6 +1141,9 @@ def finalize_roundtrip_finite(request: dict[str, object]) -> dict[str, object]:
         smoke_receipt_path=smoke_receipt_path,
         smoke_checkpoint_step=smoke_checkpoint_step,
         merged_hf=merged_hf,
+        generation_normalization_receipt=generation_normalization_receipt,
+        source_generation_config=hf_snapshot / "generation_config.json",
+        maxtext_to_hf_input=maxtext_to_hf_input,
         roundtrip_path=roundtrip_path,
         hf_to_maxtext_completion=hf_to_maxtext_completion,
         smoke_completion=smoke_completion,

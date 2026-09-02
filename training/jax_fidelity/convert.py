@@ -5,6 +5,7 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import shutil
 from pathlib import Path
 
 from .checkpoint_evidence import parse_max_kl_divergence
@@ -164,7 +165,8 @@ def main() -> None:
         raise
     try:
         checkout = validate_maxtext_checkout(args.maxtext_root, config)
-        evidence_path = args.run_directory.resolve() / run_id / "conversion-evidence.json"
+        stage_directory = args.run_directory.resolve() / run_id
+        evidence_path = stage_directory / "conversion-evidence.json"
         if args.direction == "logit-check":
             output = run_checked_capture(command, cwd=checkout)
             log_path = args.run_directory.resolve() / run_id / "logit-check.log"
@@ -187,6 +189,24 @@ def main() -> None:
             artifacts = [evidence_path, log_path]
         else:
             run_checked(command, cwd=checkout)
+            normalization_receipt: Path | None = None
+            if args.direction == "maxtext-to-hf":
+                from .hf_generation_normalization import normalize_generation_config
+
+                raw_output = args.output_directory.with_name(
+                    f".{args.output_directory.name}.{run_id}.raw"
+                )
+                if raw_output.exists() or raw_output.is_symlink():
+                    raise RuntimeError("raw MaxText export staging directory already exists")
+                os.replace(args.output_directory, raw_output)
+                normalization_receipt = stage_directory / "generation-normalization.json"
+                normalize_generation_config(
+                    source_checkpoint=raw_output,
+                    original_checkpoint=args.hf_checkpoint,
+                    destination=args.output_directory,
+                    receipt_path=normalization_receipt,
+                )
+                shutil.rmtree(raw_output)
             output_manifest = artifact_manifest(args.output_directory)
             evidence = {
                 "schema_version": "1.0",
@@ -195,9 +215,15 @@ def main() -> None:
                 "input_manifest_sha256": args.input_manifest_sha256,
                 "output_manifest": output_manifest,
             }
+            if normalization_receipt is not None:
+                evidence["generation_normalization_receipt_sha256"] = sha256_file(
+                    normalization_receipt
+                )
             artifacts = sorted(
                 path for path in args.output_directory.rglob("*") if path.is_file()
             ) + [evidence_path]
+            if normalization_receipt is not None:
+                artifacts.append(normalization_receipt)
         _write_once_json(evidence_path, evidence)
     except Exception as error:
         complete_run(

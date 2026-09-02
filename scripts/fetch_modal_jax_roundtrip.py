@@ -85,6 +85,9 @@ def _verify_files(root: Path, rows: list[object]) -> None:
 
 def _verify_contract(root: Path, completion: dict[str, Any]) -> None:
     from training.jax_fidelity.configuration import load_config
+    from training.jax_fidelity.hf_generation_normalization import (
+        validate_generation_normalization,
+    )
     from training.jax_fidelity.integrity import sha256_file, verify_artifact_manifest
     from training.jax_fidelity.orbax_receipt import (
         terminal_checkpoint_step,
@@ -109,10 +112,16 @@ def _verify_contract(root: Path, completion: dict[str, Any]) -> None:
     base_receipt_path = root / "evidence/base-orbax.receipt.json"
     smoke_receipt_path = root / "evidence/smoke-orbax.receipt.json"
     roundtrip_path = root / "evidence/roundtrip.json"
+    normalization_path = root / "evidence/generation-normalization.json"
+    source_generation_path = root / "evidence/source-generation-config.json"
+    conversion_input_path = root / "evidence/maxtext-to-hf.inputs.json"
     for path, field in (
         (base_receipt_path, "base_orbax_receipt_sha256"),
         (smoke_receipt_path, "smoke_orbax_receipt_sha256"),
         (roundtrip_path, "roundtrip_evidence_sha256"),
+        (normalization_path, "generation_normalization_receipt_sha256"),
+        (source_generation_path, "source_generation_config_sha256"),
+        (conversion_input_path, "maxtext_to_hf_input_manifest_sha256"),
     ):
         if sha256_file(path) != completion.get(field):
             raise ValueError(f"Modal roundtrip evidence hash changed: {path.name}")
@@ -133,6 +142,39 @@ def _verify_contract(root: Path, completion: dict[str, Any]) -> None:
     verify_artifact_manifest(base_leaf, _json_object(base_manifest_path))
     verify_artifact_manifest(smoke_leaf, _json_object(smoke_manifest_path))
     verify_artifact_manifest(root / "merged-hf", _json_object(merged_manifest_path))
+    conversion_completion_path = root / "evidence/maxtext-to-hf.completion.json"
+    conversion_completion = _json_object(conversion_completion_path)
+    conversion_evidence = conversion_completion.get("evidence")
+    conversion_input = _json_object(conversion_input_path)
+    conversion_artifacts = conversion_input.get("artifacts")
+    if (
+        not isinstance(conversion_evidence, dict)
+        or not isinstance(conversion_artifacts, dict)
+        or conversion_completion.get("status") != "succeeded"
+        or conversion_evidence.get("direction") != "maxtext-to-hf"
+        or conversion_evidence.get("input_manifest_sha256")
+        != sha256_file(conversion_input_path)
+        or conversion_completion.get("run_id") != completion.get("maxtext_to_hf_run_id")
+    ):
+        raise ValueError("Modal roundtrip conversion lineage changed")
+    source_manifest = conversion_evidence.get("output_manifest")
+    original_manifest = conversion_artifacts.get("hf_checkpoint")
+    if not isinstance(source_manifest, dict) or not isinstance(original_manifest, dict):
+        raise ValueError("Modal roundtrip normalization inputs are missing")
+    receipt = _json_object(normalization_path)
+    prior_conversion_sha = (
+        sha256_file(conversion_completion_path)
+        if completion.get("recovery_code_sha256") is not None
+        else None
+    )
+    validate_generation_normalization(
+        receipt,
+        source_checkpoint_manifest=source_manifest,
+        original_checkpoint_manifest=original_manifest,
+        normalized_checkpoint=root / "merged-hf",
+        source_generation_config=source_generation_path,
+        prior_conversion_completion_sha256=prior_conversion_sha,
+    )
     validate_roundtrip_evidence(
         config,
         _json_object(roundtrip_path),
