@@ -92,7 +92,9 @@ def test_helper_uses_aes_stdinpass_keychain_and_ciphertext_only_transfer() -> No
     assert "SecKeychainAddGenericPassword" in source
     assert '"add-generic-password"' not in source
     assert "_confirm_offline_recovery(passphrase)" in source
-    assert 'open("/dev/tty"' in source
+    assert '[_command_path("osascript"), "-"]' in source
+    assert "input_bytes=script.encode" in source
+    assert 'open("/dev/tty"' not in source
     assert "_copy_ciphertext_to_remote(config, archive, remote_partial)" in source
     assert "_copy_ciphertext_from_remote(config, remote_final, restored)" in source
     assert '"ciphertext_only": True' in source
@@ -102,6 +104,29 @@ def test_helper_uses_aes_stdinpass_keychain_and_ciphertext_only_transfer() -> No
     assert "write_bytes(passphrase" not in source
     assert "192.0.2.10" not in source
     assert 'DEFAULT_JETSON_USER = "operator"' not in source
+
+
+def test_recovery_key_reaches_only_the_native_dialog_stdin(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    captured: dict[str, object] = {}
+
+    monkeypatch.setattr(backup, "_command_path", lambda name: f"/usr/bin/{name}")
+
+    def fake_run(command, **kwargs):
+        captured["command"] = command
+        captured.update(kwargs)
+        return b"confirmed\n"
+
+    monkeypatch.setattr(backup, "_run", fake_run)
+    recovery_key = b"A" * 64
+
+    backup._confirm_offline_recovery(recovery_key)
+
+    assert captured["command"] == ["/usr/bin/osascript", "-"]
+    assert recovery_key in captured["input_bytes"]
+    assert captured["suppress_output"] is True
+    assert recovery_key not in " ".join(captured["command"]).encode()
 
 
 def test_private_verifier_gets_repository_imports_without_cloud_secrets(

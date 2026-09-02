@@ -8,7 +8,6 @@ import base64
 import contextlib
 import ctypes
 import ctypes.util
-import getpass
 import hashlib
 import json
 import os
@@ -235,6 +234,7 @@ def _validate_configuration(config: BackupConfiguration) -> tuple[SourceArtifact
         raise BackupError("SSH identity must not be accessible by group or other users")
     for command in (
         "hdiutil",
+        "osascript",
         "security",
         "ssh",
         "scp",
@@ -328,22 +328,41 @@ def _keychain_passphrase(account: str) -> bytes:
 
 def _confirm_offline_recovery(passphrase: bytes) -> None:
     try:
-        with open("/dev/tty", "r+", encoding="utf-8", buffering=1) as terminal:
-            value = passphrase.decode("ascii")
-            terminal.write(
-                "\nBookforge custody recovery key (write this on paper and store it "
-                "away from this Mac and Jetson):\n\n"
-            )
-            terminal.write(value + "\n\n")
-            confirmed = getpass.getpass(
-                "Retype the recovery key to confirm the offline copy: ", stream=terminal
-            )
-    except OSError as error:
-        raise BackupError(
-            "offline recovery-key ceremony requires an interactive terminal"
-        ) from error
-    if not secrets.compare_digest(confirmed, value):
-        raise BackupError("offline recovery-key confirmation did not match")
+        value = passphrase.decode("ascii")
+    except UnicodeDecodeError as error:
+        raise BackupError("recovery key is not ASCII") from error
+    if re.fullmatch(r"[A-Za-z0-9_-]{64}", value) is None:
+        raise BackupError("recovery key has an unexpected format")
+    script = "\n".join(
+        (
+            f'set recoveryKey to "{value}"',
+            (
+                'display dialog "Copy this recovery key to offline storage. Keep it away '
+                'from this Mac and Jetson." default answer recoveryKey buttons '
+                '{"Cancel", "I saved it offline"} default button "I saved it offline" '
+                'cancel button "Cancel" with title "Bookforge custody recovery"'
+            ),
+            (
+                'set confirmedKey to text returned of (display dialog "Retype the '
+                'recovery key to verify your offline copy." default answer "" with hidden '
+                'answer buttons {"Cancel", "Confirm"} default button "Confirm" cancel '
+                'button "Cancel" with title "Bookforge custody recovery")'
+            ),
+            "if confirmedKey is not recoveryKey then",
+            '    display alert "The recovery key did not match. No backup will be created."',
+            "    error number -128",
+            "end if",
+            'return "confirmed"',
+        )
+    )
+    result = _run(
+        [_command_path("osascript"), "-"],
+        input_bytes=script.encode("utf-8"),
+        label="offline recovery-key ceremony",
+        suppress_output=True,
+    )
+    if result.strip() != b"confirmed":
+        raise BackupError("offline recovery-key ceremony returned an invalid confirmation")
 
 
 def _local_account() -> str:
@@ -855,7 +874,7 @@ def _parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--recovery-key-ceremony",
         action="store_true",
-        help="display the recovery key on /dev/tty and require offline-copy confirmation",
+        help="show a private macOS recovery dialog and require offline-copy confirmation",
     )
     parser.add_argument(
         "--check-only",
