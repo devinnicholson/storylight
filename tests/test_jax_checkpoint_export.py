@@ -683,6 +683,7 @@ def test_conversion_execution_is_write_once_and_has_terminal_evidence(
         f"HF-TO-MAXTEXT:{run_id}:{config.sha256}:{input_manifest_sha}",
     )
     monkeypatch.setattr(convert_module, "validate_maxtext_checkout", lambda *_: tmp_path)
+    monkeypatch.setattr(convert_module, "validate_maxtext_import_provenance", lambda *_: {})
 
     def fake_run(_command, *, cwd):
         assert cwd == tmp_path
@@ -760,6 +761,7 @@ def test_maxtext_export_restores_generation_metadata_before_completion(
         f"MAXTEXT-TO-HF:{run_id}:{config.sha256}:{input_sha}",
     )
     monkeypatch.setattr(convert_module, "validate_maxtext_checkout", lambda *_: tmp_path)
+    monkeypatch.setattr(convert_module, "validate_maxtext_import_provenance", lambda *_: {})
 
     def fake_run(_command, *, cwd):
         assert cwd == tmp_path

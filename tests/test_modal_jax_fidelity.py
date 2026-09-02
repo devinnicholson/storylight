@@ -739,12 +739,14 @@ def test_modal_budget_gate_is_present_and_maxtext_checkout_is_exact() -> None:
     assert "status --short" in image_source
     assert " M src/maxtext/trainers/pre_train/train.py" in image_source
     assert " M src/maxtext/utils/train_utils.py" in image_source
-    assert "diff --no-ext-diff --binary --abbrev=8 --unified=1" in image_source
+    assert "diff --no-ext-diff --binary --abbrev=8 --unified=0" in image_source
     assert "| cmp -s -" in image_source
     assert 'REPOSITORY_ROOT / "deploy", "/opt/bookforge/deploy"' in image_source
     assert '"/opt/bookforge/experiments/jax-fidelity-lab/config.json"' in image_source
     assert "--write-lock /opt/bookforge/runtime.lock.json" in image_source
     assert "--lock /opt/bookforge/runtime.lock.json" in image_source
+    assert "/opt/MaxText/src:/opt/bookforge:/opt/bookforge/src" in image_source
+    assert "--maxtext-root /opt/MaxText" in image_source
     assert '"HF_HUB_OFFLINE": "1"' in image_source
     assert '"HF_DATASETS_OFFLINE": "1"' in image_source
     assert '"TRANSFORMERS_OFFLINE": "1"' in image_source

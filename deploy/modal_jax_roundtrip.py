@@ -376,16 +376,19 @@ def _publish_roundtrip_release(
 def hydration_preflight() -> dict[str, object]:
     """Verify worker hydration and the immutable runtime without allocating a GPU."""
 
+    from training.jax_fidelity.runtime import validate_maxtext_import_provenance
     from training.jax_fidelity.verify_runtime import validate_runtime, validate_runtime_lock
 
     lock_path = Path("/opt/bookforge/runtime.lock.json")
     validate_runtime()
     validate_runtime_lock(lock_path)
+    maxtext_imports = validate_maxtext_import_provenance(Path("/opt/MaxText"))
     return {
         "schema_version": "1.0",
         "ready": True,
         "backend": "modal-cpu-preflight",
         "runtime_lock_sha256": _sha256(lock_path),
+        "maxtext_imports": maxtext_imports,
     }
 
 

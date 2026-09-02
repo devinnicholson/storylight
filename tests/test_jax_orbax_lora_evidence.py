@@ -112,7 +112,7 @@ def test_lora_evidence_rejects_actual_step_only_orbax_shape(tmp_path: Path) -> N
 
 
 def test_lora_evidence_rejects_unpaired_and_wrong_rank(tmp_path: Path) -> None:
-    prefix = ("params", "decoder", "layers_0", "self_attention", "query")
+    prefix = ("params", "params", "decoder", "layers_0", "self_attention", "query")
     unpaired = _items(
         tmp_path / "unpaired",
         {("step",): None, (*prefix, "lora_a.kernel"): [2560, 16]},
@@ -146,3 +146,20 @@ def test_lora_evidence_rejects_inconsistent_or_unrecognized_metadata(tmp_path: P
     )
     with pytest.raises(OrbaxReceiptError, match="unrecognized"):
         lora_checkpoint_evidence(unknown, expected_rank=16)
+
+
+def test_lora_topology_ignores_optimizer_moment_copies(tmp_path: Path) -> None:
+    model = ("params", "params", "decoder", "layers_0", "self_attention", "query")
+    mu = ("opt_state", "0", "mu", "params", "decoder", "layers_0", "query")
+    nu = ("opt_state", "0", "nu", "params", "decoder", "layers_0", "query")
+    paths = {("step",): None}
+    for prefix in (model, mu, nu):
+        paths[(*prefix, "lora_a.kernel")] = [2560, 16]
+        paths[(*prefix, "lora_b.kernel")] = [16, 8, 256]
+    items = _items(tmp_path, paths)
+
+    evidence = lora_checkpoint_evidence(items, expected_rank=16, expected_pair_count=1)
+
+    assert evidence["lora_pair_count"] == 1
+    assert evidence["lora_tensor_count"] == 2
+    assert evidence["optimizer_lora_tensor_count"] == 4

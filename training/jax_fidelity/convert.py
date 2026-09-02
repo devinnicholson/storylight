@@ -30,6 +30,7 @@ from .runtime import (
     run_checked,
     run_checked_capture,
     validate_maxtext_checkout,
+    validate_maxtext_import_provenance,
 )
 
 
@@ -165,6 +166,7 @@ def main() -> None:
         raise
     try:
         checkout = validate_maxtext_checkout(args.maxtext_root, config)
+        validate_maxtext_import_provenance(checkout)
         stage_directory = args.run_directory.resolve() / run_id
         evidence_path = stage_directory / "conversion-evidence.json"
         if args.direction == "logit-check":

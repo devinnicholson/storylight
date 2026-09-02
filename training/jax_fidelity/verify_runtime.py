@@ -12,6 +12,7 @@ import sys
 from pathlib import Path
 
 from .integrity import canonical_json_bytes, canonical_sha256
+from .runtime import validate_maxtext_import_provenance
 
 PACKAGE_NAMES = {
     "jax": "jax",
@@ -98,8 +99,11 @@ def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--write-lock", type=Path)
     parser.add_argument("--lock", type=Path)
+    parser.add_argument("--maxtext-root", type=Path)
     args = parser.parse_args()
     validate_runtime()
+    if args.maxtext_root is not None:
+        validate_maxtext_import_provenance(args.maxtext_root)
     if args.write_lock is not None:
         write_runtime_lock(args.write_lock)
     if args.lock is not None:

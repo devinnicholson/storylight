@@ -391,10 +391,14 @@ def test_pinned_native_maxtext_patch_materializes_lora_before_optimizer() -> Non
     ).read_text()
 
     assert "model = lora_utils.apply_lora_to_model(model, mesh, config)" in patch
-    assert patch.index("apply_lora_to_model") < patch.index("wrt = (")
+    assert "if lora_enabled:" in patch
     assert "src/maxtext/utils/train_utils.py" in patch
     assert "nnx.state(new_state.model, train_param_type)" in patch
     assert "src/maxtext/trainers/pre_train/train.py" in patch
+    assert "Bookforge native LoRA census" in patch
+    assert "BOOKFORGE_EXPECTED_LORA_PAIR_COUNT" in patch
+    assert 'scalar_metrics["learning/update_norm"]' in patch
+    assert 'scalar_metrics["learning/changed_trainable_leaves"]' in patch
 
 
 def test_container_and_direct_dependencies_are_immutable() -> None:
@@ -437,7 +441,7 @@ def test_container_and_direct_dependencies_are_immutable() -> None:
     assert "git -C /opt/MaxText apply --check" in dockerfile
     assert "git -C /opt/MaxText apply \"$BOOKFORGE_MAXTEXT_APPROVED_PATCH\"" in dockerfile
     assert (
-        "git -C /opt/MaxText diff --no-ext-diff --binary --abbrev=8 --unified=1"
+        "git -C /opt/MaxText diff --no-ext-diff --binary --abbrev=8 --unified=0"
         in dockerfile
     )
     assert "src/maxtext/trainers/pre_train/train.py" in dockerfile
@@ -450,6 +454,8 @@ def test_container_and_direct_dependencies_are_immutable() -> None:
         "538fe7a3f3376d94cf3f04e77741aa6d7e8efa45" in dockerfile
     )
     assert "--write-lock /opt/bookforge/runtime.lock.json" in dockerfile
+    assert "PYTHONPATH=/opt/MaxText/src:/opt/bookforge:/opt/bookforge/src" in dockerfile
+    assert "--maxtext-root /opt/MaxText" in dockerfile
 
 
 def test_full_runtime_lock_detects_installed_dependency_drift(tmp_path: Path) -> None:
@@ -523,14 +529,17 @@ def test_executed_training_writes_nonempty_terminal_completion(
         ),
     )
     monkeypatch.setattr(train_module, "validate_maxtext_checkout", lambda *_: tmp_path)
+    monkeypatch.setattr(train_module, "validate_maxtext_import_provenance", lambda *_: {})
     monkeypatch.setattr(train_module, "validate_runtime", lambda: None)
     runtime_lock = tmp_path / "runtime.lock.json"
     write_runtime_lock(runtime_lock)
     monkeypatch.setenv("BOOKFORGE_JAX_RUNTIME_LOCK", str(runtime_lock))
 
-    def fake_run(command, *, cwd):
+    def fake_run(command, *, cwd, environment=None):
         assert cwd == tmp_path
         assert "hardware=gpu" in command
+        assert environment is not None
+        assert "BOOKFORGE_EXPECTED_LORA_PAIR_COUNT" not in environment
         output.mkdir()
         (output / "adapter-checkpoint").write_bytes(b"lora")
 

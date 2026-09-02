@@ -94,7 +94,7 @@ JAX_IMAGE = (
         "test \"$(git -C /opt/MaxText status --short)\" = "
         "\"$(printf '%s\\n%s' ' M src/maxtext/trainers/pre_train/train.py' "
         "' M src/maxtext/utils/train_utils.py')\"",
-        "git -C /opt/MaxText diff --no-ext-diff --binary --abbrev=8 --unified=1 -- "
+        "git -C /opt/MaxText diff --no-ext-diff --binary --abbrev=8 --unified=0 -- "
         "src/maxtext/trainers/pre_train/train.py src/maxtext/utils/train_utils.py "
         "| cmp -s - /opt/bookforge/patches/maxtext-native-lora-materialization.patch",
     )
@@ -132,14 +132,16 @@ JAX_IMAGE = (
         copy=True,
     )
     .run_commands(
-        "PYTHONPATH=/opt/bookforge:/opt/bookforge/src python -m "
-        "training.jax_fidelity.verify_runtime --write-lock /opt/bookforge/runtime.lock.json",
-        "PYTHONPATH=/opt/bookforge:/opt/bookforge/src python -m "
-        "training.jax_fidelity.verify_runtime --lock /opt/bookforge/runtime.lock.json",
+        "PYTHONPATH=/opt/MaxText/src:/opt/bookforge:/opt/bookforge/src python -m "
+        "training.jax_fidelity.verify_runtime --maxtext-root /opt/MaxText "
+        "--write-lock /opt/bookforge/runtime.lock.json",
+        "PYTHONPATH=/opt/MaxText/src:/opt/bookforge:/opt/bookforge/src python -m "
+        "training.jax_fidelity.verify_runtime --maxtext-root /opt/MaxText "
+        "--lock /opt/bookforge/runtime.lock.json",
     )
     .env(
         {
-            "PYTHONPATH": "/opt/bookforge:/opt/bookforge/src",
+            "PYTHONPATH": "/opt/MaxText/src:/opt/bookforge:/opt/bookforge/src",
             "JAX_PLATFORMS": "cuda",
             # Gemma 4 E2B LoRA compiles to a ~19.6 GiB L4 graph. JAX defaults
             # to a 75% (16.5 GiB) pool, so expose a bounded 95% pool while

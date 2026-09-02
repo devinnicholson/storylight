@@ -27,8 +27,31 @@ from .runtime import (
     require_approval,
     run_checked,
     validate_maxtext_checkout,
+    validate_maxtext_import_provenance,
 )
 from .verify_runtime import validate_runtime, validate_runtime_lock
+
+
+def _failure_diagnostics(output_directory: Path) -> list[dict[str, object]]:
+    """Bind small learning/checkpoint metadata without publishing failed artifacts."""
+
+    if not output_directory.is_dir():
+        return []
+    diagnostics: list[dict[str, object]] = []
+    candidates = sorted(output_directory.rglob("*tfevents*")) + sorted(
+        output_directory.rglob("_METADATA")
+    )
+    for path in candidates:
+        if path.is_symlink() or not path.is_file():
+            continue
+        diagnostics.append(
+            {
+                "path": path.relative_to(output_directory).as_posix(),
+                "bytes": path.stat().st_size,
+                "sha256": sha256_file(path),
+            }
+        )
+    return diagnostics
 
 
 def _maxtext_hardware() -> str:
@@ -109,6 +132,7 @@ def main() -> None:
     print(json.dumps(plan, indent=2, sort_keys=True))
     if not args.execute:
         return
+    maxtext_imports: dict[str, str] = {}
     try:
         require_approval(token)
     except ExecutionRefused as error:
@@ -122,6 +146,7 @@ def main() -> None:
         raise
     try:
         checkout = validate_maxtext_checkout(args.maxtext_root, config)
+        maxtext_imports = validate_maxtext_import_provenance(checkout)
         maxtext_patch_sha256 = approved_maxtext_patch_sha256(config)
         validate_runtime()
         runtime_lock = Path(
@@ -130,7 +155,11 @@ def main() -> None:
         if not runtime_lock.is_file():
             raise RuntimeError("full installed dependency lock is missing")
         validate_runtime_lock(runtime_lock)
-        run_checked(command, cwd=checkout)
+        training_environment = os.environ.copy()
+        expected_pair_count = config.training.get("expected_lora_pair_count")
+        if expected_pair_count is not None:
+            training_environment["BOOKFORGE_EXPECTED_LORA_PAIR_COUNT"] = str(expected_pair_count)
+        run_checked(command, cwd=checkout, environment=training_environment)
         artifacts = sorted(path for path in args.output_directory.rglob("*") if path.is_file())
         if not artifacts:
             raise RuntimeError("MaxText completed without writing checkpoint artifacts")
@@ -176,7 +205,13 @@ def main() -> None:
             run_id=run_id,
             status="failed",
             artifacts=[],
-            evidence={"error_type": type(error).__name__, "error": str(error), "inputs": inputs},
+            evidence={
+                "error_type": type(error).__name__,
+                "error": str(error),
+                "inputs": inputs,
+                "maxtext_imports": maxtext_imports,
+                "diagnostic_files": _failure_diagnostics(args.output_directory),
+            },
         )
         raise
     terminal_evidence = {
@@ -185,6 +220,7 @@ def main() -> None:
             "path": str(runtime_lock.resolve()),
             "sha256": sha256_file(runtime_lock),
         },
+        "maxtext_imports": maxtext_imports,
         "learning": learning_evidence,
         "terminal_adapter": adapter_evidence,
     }

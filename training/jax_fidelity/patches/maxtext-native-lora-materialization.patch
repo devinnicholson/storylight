@@ -1,23 +1,64 @@
 diff --git a/src/maxtext/trainers/pre_train/train.py b/src/maxtext/trainers/pre_train/train.py
-index 274d9acc..d165bfc0 100644
+index 274d9acc..8fd8aa43 100644
 --- a/src/maxtext/trainers/pre_train/train.py
 +++ b/src/maxtext/trainers/pre_train/train.py
-@@ -719,3 +719,3 @@ def train_step(model, config, state_mesh_shardings, params_shardings, state, dat
-     else:
+@@ -491,0 +492 @@ def train_step(model, config, state_mesh_shardings, params_shardings, state, dat
++      pre_update_params = nnx.to_pure_dict(curr_params)
+@@ -642,0 +644,11 @@ def train_step(model, config, state_mesh_shardings, params_shardings, state, dat
++    post_update_params = nnx.to_pure_dict(nnx.state(new_state.model, train_param_type))
++    parameter_updates = jax.tree_util.tree_map(
++        lambda after, before: after.astype(jnp.float32) - before.astype(jnp.float32),
++        post_update_params,
++        pre_update_params,
++    )
++    update_norm = max_utils.l2norm_pytree(parameter_updates)
++    changed_trainable_leaves = sum(
++        jnp.any(update != 0).astype(jnp.int32)
++        for update in jax.tree_util.tree_leaves(parameter_updates)
++    )
+@@ -720 +732 @@ def train_step(model, config, state_mesh_shardings, params_shardings, state, dat
 -      model_params = nnx.state(new_state.model, nnx.Param)
 +      model_params = nnx.state(new_state.model, train_param_type)
-       scalar_metrics["learning/param_norm"] = max_utils.l2norm_pytree(model_params)
+@@ -721,0 +734,2 @@ def train_step(model, config, state_mesh_shardings, params_shardings, state, dat
++      scalar_metrics["learning/update_norm"] = update_norm
++      scalar_metrics["learning/changed_trainable_leaves"] = changed_trainable_leaves
 diff --git a/src/maxtext/utils/train_utils.py b/src/maxtext/utils/train_utils.py
-index 35f47e59..eb14af61 100644
+index 35f47e59..a63733e7 100644
 --- a/src/maxtext/utils/train_utils.py
 +++ b/src/maxtext/utils/train_utils.py
-@@ -269,5 +269,8 @@ def setup_train_loop(config, recorder, devices=None):
-         model = _create_model_partial()
+@@ -17,0 +18 @@
++import os
+@@ -269,0 +271,3 @@ def setup_train_loop(config, recorder, devices=None):
 +        lora_enabled = getattr(getattr(config, "lora", None), "enable_lora", False)
 +        if lora_enabled:
 +          model = lora_utils.apply_lora_to_model(model, mesh, config)
-         wrt = (
-             getattr(nnx, "LoRAParam", nnx.Param)
+@@ -272 +276 @@ def setup_train_loop(config, recorder, devices=None):
 -            if getattr(getattr(config, "lora", None), "enable_lora", False)
 +            if lora_enabled
-             else nnx.Param
+@@ -339,0 +344,26 @@ def setup_train_loop(config, recorder, devices=None):
++      if getattr(getattr(config, "lora", None), "enable_lora", False):
++        lora_state = nnx.state(state.model, nnx.LoRAParam)
++        lora_entries = list(lora_state.flat_state())
++        lora_tensor_count = len(lora_entries)
++        trainable_elements = sum(var.value.size for _, var in lora_entries)
++        expected_pairs = os.environ.get("BOOKFORGE_EXPECTED_LORA_PAIR_COUNT")
++        if lora_tensor_count == 0 or trainable_elements == 0:
++          raise ValueError(
++              "LoRA is enabled but the native train state has no trainable adapter tensors."
++          )
++        if expected_pairs is not None and lora_tensor_count != int(expected_pairs) * 2:
++          raise ValueError(
++              f"Native LoRA tensor count {lora_tensor_count} does not match "
++              f"the expected {int(expected_pairs) * 2}."
++          )
++        optimizer_entries = list(nnx.state(state.optimizer).flat_state())
++        optimizer_array_count = sum(hasattr(var.value, "shape") for _, var in optimizer_entries)
++        if optimizer_array_count < lora_tensor_count * 2:
++          raise ValueError(
++              "Native LoRA optimizer state does not contain moment slots for every adapter tensor."
++          )
++        max_logging.log(
++            "Bookforge native LoRA census: "
++            f"tensors={lora_tensor_count} trainable_elements={trainable_elements} "
++            f"optimizer_arrays={optimizer_array_count}"
++        )

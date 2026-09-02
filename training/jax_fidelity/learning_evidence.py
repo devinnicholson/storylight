@@ -24,6 +24,8 @@ REQUIRED_SCALARS = (
     "learning/total_weights",
 )
 V3_PARAMETER_NORM_SCALAR = "learning/param_norm"
+V3_UPDATE_NORM_SCALAR = "learning/update_norm"
+V3_CHANGED_LEAVES_SCALAR = "learning/changed_trainable_leaves"
 V3_ACCEPTANCE_SCHEMA = "bookforge-jax-v3-learnability-acceptance-v1"
 V3_THRESHOLD_FIELDS = {
     "schema_version",
@@ -83,8 +85,11 @@ def summarize_scalar_series(
     if type(expected_steps) is not int or expected_steps < 1:
         raise LearningEvidenceError("expected_steps must be a positive integer")
     expected_indices = list(range(expected_steps))
+    thresholds = _v3_thresholds(v3_acceptance) if v3_acceptance is not None else None
     summaries: dict[str, dict[str, float | int]] = {}
     required_scalars = list(REQUIRED_SCALARS)
+    if thresholds is not None:
+        required_scalars.extend((V3_UPDATE_NORM_SCALAR, V3_CHANGED_LEAVES_SCALAR))
     if require_full_v3:
         if v3_acceptance is None:
             raise LearningEvidenceError("full v3 training requires immutable thresholds")
@@ -112,7 +117,8 @@ def summarize_scalar_series(
     supervised_weights = values_by_name["learning/total_weights"]
     if any(value < 0 for value in raw_gradients + clipped_gradients):
         raise LearningEvidenceError("gradient norm cannot be negative")
-    if max(raw_gradients) <= 0 or max(clipped_gradients) <= 0:
+    epsilon = float(thresholds["nonzero_gradient_epsilon"]) if thresholds else 0.0
+    if max(raw_gradients) <= epsilon or max(clipped_gradients) <= epsilon:
         raise LearningEvidenceError("training produced no nonzero gradients")
     if max(learning_rates) <= 0:
         raise LearningEvidenceError("training never used a positive learning rate")
@@ -129,8 +135,15 @@ def summarize_scalar_series(
         "completion_tokens_present_every_step": True,
         "scalars": summaries,
     }
-    if v3_acceptance is not None:
-        thresholds = _v3_thresholds(v3_acceptance)
+    if thresholds is not None:
+        update_norms = values_by_name[V3_UPDATE_NORM_SCALAR]
+        changed_leaves = values_by_name[V3_CHANGED_LEAVES_SCALAR]
+        if any(value < 0 for value in update_norms + changed_leaves):
+            raise LearningEvidenceError("update evidence cannot be negative")
+        if max(update_norms) <= epsilon or max(changed_leaves) < 1:
+            raise LearningEvidenceError("training produced no trainable parameter update")
+        evidence["nonzero_update_observed"] = True
+        evidence["changed_trainable_leaf_observed"] = True
         acceptance: dict[str, Any] = {
             "schema_version": V3_ACCEPTANCE_SCHEMA,
             "mode": "smoke",
@@ -138,6 +151,8 @@ def summarize_scalar_series(
             "minimum_step_proof": {
                 "nonzero_raw_gradient": True,
                 "nonzero_clipped_gradient": True,
+                "nonzero_parameter_update": True,
+                "changed_trainable_leaf": True,
                 "positive_learning_rate": True,
                 "supervised_completion_tokens": True,
             },
@@ -148,7 +163,6 @@ def summarize_scalar_series(
                 raise LearningEvidenceError(
                     "full v3 run is too short for disjoint rolling loss windows"
                 )
-            epsilon = float(thresholds["nonzero_gradient_epsilon"])
             raw_nonzero = sum(value > epsilon for value in raw_gradients)
             clipped_nonzero = sum(value > epsilon for value in clipped_gradients)
             minimum_nonzero = math.ceil(
@@ -213,6 +227,8 @@ def verify_tensorboard_learning(
     accumulator.Reload()
     available = set(accumulator.Tags().get("scalars", ()))
     required = set(REQUIRED_SCALARS)
+    if v3_acceptance is not None:
+        required.update((V3_UPDATE_NORM_SCALAR, V3_CHANGED_LEAVES_SCALAR))
     if require_full_v3:
         required.add(V3_PARAMETER_NORM_SCALAR)
     missing = sorted(required - available)
@@ -268,6 +284,8 @@ def verify_v3_terminal_acceptance(
         or learning_evidence.get("optimizer_steps") != expected_steps
         or learning_evidence.get("nonzero_raw_gradient_observed") is not True
         or learning_evidence.get("nonzero_clipped_gradient_observed") is not True
+        or learning_evidence.get("nonzero_update_observed") is not True
+        or learning_evidence.get("changed_trainable_leaf_observed") is not True
         or learning_evidence.get("positive_learning_rate_observed") is not True
         or learning_evidence.get("completion_tokens_present_every_step") is not True
         or not isinstance(acceptance, Mapping)

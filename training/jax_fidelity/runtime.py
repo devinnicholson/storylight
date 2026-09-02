@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import importlib.util
 import os
 import subprocess
 from collections.abc import Sequence
@@ -13,6 +14,18 @@ from .integrity import sha256_file
 
 class ExecutionRefused(RuntimeError):
     """A heavy command lacked an exact, one-purpose approval boundary."""
+
+
+_PATCHED_MAXTEXT_MODULES = {
+    "maxtext.utils.train_utils": (
+        "src/maxtext/utils/train_utils.py",
+        "model = lora_utils.apply_lora_to_model(model, mesh, config)",
+    ),
+    "maxtext.trainers.pre_train.train": (
+        "src/maxtext/trainers/pre_train/train.py",
+        "nnx.state(new_state.model, train_param_type)",
+    ),
+}
 
 
 def approved_maxtext_patch_sha256(config: ExperimentConfig) -> str | None:
@@ -93,7 +106,7 @@ def validate_maxtext_checkout(root: Path | str, config: ExperimentConfig) -> Pat
             "--no-ext-diff",
             "--binary",
             "--abbrev=8",
-            "--unified=1",
+            "--unified=0",
             "--",
             "src/maxtext/trainers/pre_train/train.py",
             "src/maxtext/utils/train_utils.py",
@@ -106,8 +119,36 @@ def validate_maxtext_checkout(root: Path | str, config: ExperimentConfig) -> Pat
     return checkout
 
 
-def run_checked(command: Sequence[str], *, cwd: Path) -> None:
-    subprocess.run(list(command), cwd=cwd, check=True)
+def validate_maxtext_import_provenance(root: Path | str) -> dict[str, str]:
+    """Prove this interpreter resolves MaxText from the patched source checkout."""
+
+    checkout = Path(root).resolve()
+    resolved: dict[str, str] = {}
+    for module_name, (relative_path, required_source) in _PATCHED_MAXTEXT_MODULES.items():
+        expected = (checkout / relative_path).resolve()
+        if not expected.is_file() or required_source not in expected.read_text(encoding="utf-8"):
+            raise ExecutionRefused(f"patched MaxText source is missing for {module_name}")
+        try:
+            spec = importlib.util.find_spec(module_name)
+        except (ImportError, ModuleNotFoundError, ValueError) as error:
+            raise ExecutionRefused(
+                f"cannot resolve patched MaxText module {module_name}"
+            ) from error
+        if spec is None or spec.origin is None:
+            raise ExecutionRefused(f"cannot resolve patched MaxText module {module_name}")
+        actual = Path(spec.origin).resolve()
+        if actual != expected:
+            raise ExecutionRefused(
+                f"{module_name} resolves outside the approved MaxText checkout: {actual}"
+            )
+        resolved[module_name] = str(actual)
+    return resolved
+
+
+def run_checked(
+    command: Sequence[str], *, cwd: Path, environment: dict[str, str] | None = None
+) -> None:
+    subprocess.run(list(command), cwd=cwd, check=True, env=environment)
 
 
 def run_checked_capture(command: Sequence[str], *, cwd: Path) -> str:

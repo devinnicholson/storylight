@@ -10,6 +10,7 @@ from training.jax_fidelity.runtime import (
     ExecutionRefused,
     approved_maxtext_patch_sha256,
     validate_maxtext_checkout,
+    validate_maxtext_import_provenance,
 )
 
 
@@ -59,7 +60,7 @@ def test_exact_approved_maxtext_patch_is_accepted(
                 "--no-ext-diff",
                 "--binary",
                 "--abbrev=8",
-                "--unified=1",
+                "--unified=0",
                 "--",
                 *paths,
                 text=False,
@@ -91,7 +92,7 @@ def test_approved_patch_comparison_uses_stable_object_id_width(
                 "--no-ext-diff",
                 "--binary",
                 "--abbrev=8",
-                "--unified=1",
+                "--unified=0",
                 "--",
                 *paths,
                 text=False,
@@ -161,7 +162,7 @@ def test_exact_two_file_config_approved_patch_is_accepted(
                 "--no-ext-diff",
                 "--binary",
                 "--abbrev=8",
-                "--unified=1",
+                "--unified=0",
                 "--",
                 "src/maxtext/trainers/pre_train/train.py",
                 "src/maxtext/utils/train_utils.py",
@@ -195,7 +196,7 @@ def test_partial_one_file_patch_is_rejected(
                 "--no-ext-diff",
                 "--binary",
                 "--abbrev=8",
-                "--unified=1",
+                "--unified=0",
                 "--",
                 "src/maxtext/utils/train_utils.py",
                 text=False,
@@ -206,3 +207,62 @@ def test_partial_one_file_patch_is_rejected(
 
     with pytest.raises(ExecutionRefused, match="unapproved changes"):
         validate_maxtext_checkout(checkout, config)
+
+
+def test_maxtext_import_provenance_accepts_only_patched_checkout(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    checkout = tmp_path / "MaxText"
+    modules = {
+        "maxtext.utils.train_utils": (
+            checkout / "src/maxtext/utils/train_utils.py",
+            "model = lora_utils.apply_lora_to_model(model, mesh, config)\n",
+        ),
+        "maxtext.trainers.pre_train.train": (
+            checkout / "src/maxtext/trainers/pre_train/train.py",
+            "nnx.state(new_state.model, train_param_type)\n",
+        ),
+    }
+    for path, source in modules.values():
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(source, encoding="utf-8")
+
+    monkeypatch.setattr(
+        "training.jax_fidelity.runtime.importlib.util.find_spec",
+        lambda name: SimpleNamespace(origin=str(modules[name][0])),
+    )
+
+    assert validate_maxtext_import_provenance(checkout) == {
+        name: str(path.resolve()) for name, (path, _) in modules.items()
+    }
+
+
+def test_maxtext_import_provenance_rejects_installed_wheel(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    checkout = tmp_path / "MaxText"
+    sources = {
+        "maxtext.utils.train_utils": (
+            "src/maxtext/utils/train_utils.py",
+            "model = lora_utils.apply_lora_to_model(model, mesh, config)\n",
+        ),
+        "maxtext.trainers.pre_train.train": (
+            "src/maxtext/trainers/pre_train/train.py",
+            "nnx.state(new_state.model, train_param_type)\n",
+        ),
+    }
+    for relative, source in sources.values():
+        path = checkout / relative
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(source, encoding="utf-8")
+
+    wheel_module = tmp_path / "site-packages/maxtext/utils/train_utils.py"
+    wheel_module.parent.mkdir(parents=True)
+    wheel_module.write_text("unpatched\n", encoding="utf-8")
+    monkeypatch.setattr(
+        "training.jax_fidelity.runtime.importlib.util.find_spec",
+        lambda _name: SimpleNamespace(origin=str(wheel_module)),
+    )
+
+    with pytest.raises(ExecutionRefused, match="outside the approved MaxText checkout"):
+        validate_maxtext_import_provenance(checkout)

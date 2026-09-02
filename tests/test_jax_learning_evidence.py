@@ -33,6 +33,8 @@ def _v3_series(steps: int = 100) -> dict[str, list[tuple[int, float]]]:
     series["learning/param_norm"] = [
         (step, 10.0 + (0.5 * step / (steps - 1))) for step in range(steps)
     ]
+    series["learning/update_norm"] = [(step, 0.01) for step in range(steps)]
+    series["learning/changed_trainable_leaves"] = [(step, 205.0) for step in range(steps)]
     return series
 
 
@@ -61,6 +63,23 @@ def test_learning_evidence_rejects_the_v2_zero_gradient_failure() -> None:
 
     with pytest.raises(LearningEvidenceError, match="no nonzero gradients"):
         summarize_scalar_series(series, expected_steps=5)
+
+
+def test_v3_smoke_enforces_epsilon_and_parameter_update() -> None:
+    series = _series(1)
+    series["learning/current_learning_rate"] = [(0, 1e-4)]
+    series["learning/raw_grad_norm"] = [(0, 1e-13)]
+    series["learning/grad_norm"] = [(0, 1e-13)]
+    series["learning/update_norm"] = [(0, 0.01)]
+    series["learning/changed_trainable_leaves"] = [(0, 1.0)]
+    with pytest.raises(LearningEvidenceError, match="no nonzero gradients"):
+        summarize_scalar_series(series, expected_steps=1, v3_acceptance=_thresholds())
+
+    series["learning/raw_grad_norm"] = [(0, 0.01)]
+    series["learning/grad_norm"] = [(0, 0.01)]
+    series["learning/update_norm"] = [(0, 0.0)]
+    with pytest.raises(LearningEvidenceError, match="no trainable parameter update"):
+        summarize_scalar_series(series, expected_steps=1, v3_acceptance=_thresholds())
 
 
 def test_learning_evidence_rejects_missing_steps_and_empty_supervision() -> None:
@@ -133,6 +152,8 @@ def test_v3_full_gate_rejects_unchanged_parameter_norm() -> None:
 def test_v3_smoke_requires_optimizer_tokens_and_adapter_checkpoint_proof() -> None:
     series = _series(1)
     series["learning/current_learning_rate"] = [(0, 1e-4)]
+    series["learning/update_norm"] = [(0, 0.01)]
+    series["learning/changed_trainable_leaves"] = [(0, 205.0)]
     learning = summarize_scalar_series(
         series,
         expected_steps=1,

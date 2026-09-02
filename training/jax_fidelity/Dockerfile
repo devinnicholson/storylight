@@ -25,7 +25,7 @@ RUN git -C /opt/MaxText apply --check "$BOOKFORGE_MAXTEXT_APPROVED_PATCH" \
     && test "$(git -C /opt/MaxText status --short)" = "$(printf '%s\n%s' \
         ' M src/maxtext/trainers/pre_train/train.py' \
         ' M src/maxtext/utils/train_utils.py')" \
-    && git -C /opt/MaxText diff --no-ext-diff --binary --abbrev=8 --unified=1 -- \
+    && git -C /opt/MaxText diff --no-ext-diff --binary --abbrev=8 --unified=0 -- \
         src/maxtext/trainers/pre_train/train.py src/maxtext/utils/train_utils.py \
         | cmp -s - "$BOOKFORGE_MAXTEXT_APPROVED_PATCH"
 
@@ -52,9 +52,10 @@ RUN test -f /usr/local/lib/python3.12/site-packages/nvidia/cuda_runtime/lib/libc
     && python -c "import glob; assert glob.glob('/usr/local/lib/python3.12/site-packages/nvidia/cudart/lib/lib*.so.*[0-9]')"
 
 COPY . /opt/bookforge
+ENV PYTHONPATH=/opt/MaxText/src:/opt/bookforge:/opt/bookforge/src
 RUN python -m training.jax_fidelity --config experiments/jax-fidelity-lab/config.json \
-    && python -m training.jax_fidelity.verify_runtime --write-lock /opt/bookforge/runtime.lock.json \
-    && python -m training.jax_fidelity.verify_runtime --lock /opt/bookforge/runtime.lock.json
+    && python -m training.jax_fidelity.verify_runtime --maxtext-root /opt/MaxText --write-lock /opt/bookforge/runtime.lock.json \
+    && python -m training.jax_fidelity.verify_runtime --maxtext-root /opt/MaxText --lock /opt/bookforge/runtime.lock.json
 
 ENTRYPOINT ["python", "-m", "training.jax_fidelity"]
 CMD ["--config", "experiments/jax-fidelity-lab/config.json"]

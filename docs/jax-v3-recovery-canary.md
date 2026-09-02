@@ -85,10 +85,12 @@ to the v2 preparation verifier.
 
 The v3 config fixes the acceptance thresholds; operators cannot relax them at
 launch time. A one-step smoke is accepted only when the event stream covers the
-single optimizer step and proves nonzero raw and clipped gradients, a positive
-learning rate, and supervised completion tokens. Its terminal Orbax checkpoint
-must also contain the exact 205 paired rank-16 LoRA modules at step zero and
-bind the approved MaxText patch.
+single optimizer step and proves raw and clipped gradients above `1e-12`, a
+nonzero FP32 adapter update, at least one changed trainable leaf, a positive
+learning rate, and supervised completion tokens. Before compilation, the native
+state must also contain exactly 410 trainable LoRA tensors and optimizer moment
+slots for every tensor. Its terminal Orbax checkpoint must contain the exact 205
+paired rank-16 LoRA modules at step zero and bind the approved MaxText patch.
 
 The 100-step canary adds three requirements:
 

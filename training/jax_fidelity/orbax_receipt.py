@@ -66,6 +66,12 @@ def _lora_side(path: tuple[str | int, ...]) -> tuple[tuple[str | int, ...], str]
     return None
 
 
+def _is_model_parameter_path(path: tuple[str | int, ...]) -> bool:
+    """Return whether an on-disk leaf belongs to the Linen model-parameter tree."""
+
+    return len(path) > 2 and path[:2] == ("params", "params")
+
+
 def lora_checkpoint_evidence(
     items: Path | str,
     *,
@@ -135,9 +141,13 @@ def lora_checkpoint_evidence(
         raise OrbaxReceiptError("Orbax adapter checkpoint has unrecognized LoRA tensor paths")
 
     pairs: dict[tuple[str | int, ...], dict[str, tuple[int, ...]]] = {}
+    optimizer_lora_tensor_count = 0
     for path, value_metadata in leaves.items():
         identity = _lora_side(path)
         if identity is None:
+            continue
+        if not _is_model_parameter_path(path):
+            optimizer_lora_tensor_count += 1
             continue
         module, side = identity
         if (
@@ -188,6 +198,7 @@ def lora_checkpoint_evidence(
         "tree_leaf_count": len(leaves),
         "lora_tensor_count": len(evidence_pairs) * 2,
         "lora_pair_count": len(evidence_pairs),
+        "optimizer_lora_tensor_count": optimizer_lora_tensor_count,
         "rank": expected_rank,
         "pairs": evidence_pairs,
     }
