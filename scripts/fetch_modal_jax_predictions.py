@@ -6,8 +6,8 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
+import os
 import re
-import shutil
 import subprocess
 import tempfile
 from pathlib import Path
@@ -180,8 +180,12 @@ def fetch_predictions(
             run_id=run_id,
             expected_sha256=expected_completion_sha256,
         )
-        payload = temporary / "payload"
-        _modal_get(remote, payload)
+        download_root = temporary / "download"
+        download_root.mkdir()
+        _modal_get(remote, download_root)
+        payload = download_root / run_id
+        if not payload.is_dir() or payload.is_symlink():
+            raise ValueError("Modal prediction directory download had an unexpected shape")
         remote_completion = payload / "completion.json"
         if (
             not remote_completion.is_file()
@@ -191,7 +195,7 @@ def fetch_predictions(
         _verify_files(payload, completion["files"])
         _verify_intent(payload / "intent.json", completion)
         _verify_predictions(payload / "predictions.jsonl")
-        shutil.copytree(payload, destination)
+        os.replace(payload, destination)
     return {
         "schema_version": "1.0",
         "status": "fetched-and-verified",

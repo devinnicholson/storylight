@@ -46,10 +46,12 @@ NVIDIA_PYTORCH_IMAGE = _pinned_nvidia_image()
 prediction_image = (
     modal.Image.from_registry(NVIDIA_PYTORCH_IMAGE)
     .pip_install(
+        "accelerate==1.12.0",
         "transformers==5.13.0",
         "huggingface-hub==1.26.0",
         "safetensors==0.8.0",
         "pydantic==2.13.4",
+        "pydantic-settings==2.15.0",
     )
     .add_local_dir(REPOSITORY_ROOT / "src", "/opt/bookforge/src", copy=True)
     .add_local_dir(REPOSITORY_ROOT / "training", "/opt/bookforge/training", copy=True)
@@ -65,11 +67,16 @@ prediction_image = (
     )
     .env(
         {
+            "BOOKFORGE_NVIDIA_PYTORCH_IMAGE": NVIDIA_PYTORCH_IMAGE,
             "PYTHONPATH": "/opt/bookforge:/opt/bookforge/src",
             "TOKENIZERS_PARALLELISM": "false",
             "HF_HUB_OFFLINE": "1",
             "TRANSFORMERS_OFFLINE": "1",
         }
+    )
+    .run_commands(
+        "python -c 'import accelerate, pydantic_settings; "
+        "from training.jax_fidelity.predict import generate_predictions'"
     )
 )
 

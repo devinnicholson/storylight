@@ -227,6 +227,10 @@ def test_prediction_worker_is_finite_offline_and_exactly_bound(tmp_path: Path) -
     assert "gpu=GPU" in source
     assert "retries=RETRIES" in source and "RETRIES = 0" in source
     assert "max_containers=MAX_CONTAINERS" in source and "MAX_CONTAINERS = 1" in source
+    assert '"BOOKFORGE_NVIDIA_PYTORCH_IMAGE": NVIDIA_PYTORCH_IMAGE' in source
+    assert '"pydantic-settings==2.15.0"' in source
+    assert '"accelerate==1.12.0"' in source
+    assert "import accelerate, pydantic_settings" in source
     assert "@app.web_endpoint" not in source
     assert '"HF_HUB_OFFLINE": "1"' in source
     assert '"TRANSFORMERS_OFFLINE": "1"' in source
@@ -298,10 +302,11 @@ def test_prediction_fetch_requires_completion_hash_and_verifies_public_output(
         if remote.endswith("/completion.json"):
             destination.write_bytes(completion_bytes)
             return
-        destination.mkdir(parents=True)
-        (destination / "intent.json").write_bytes(intent)
-        (destination / "predictions.jsonl").write_bytes(predictions)
-        (destination / "completion.json").write_bytes(completion_bytes)
+        payload = destination / run_id
+        payload.mkdir(parents=True)
+        (payload / "intent.json").write_bytes(intent)
+        (payload / "predictions.jsonl").write_bytes(predictions)
+        (payload / "completion.json").write_bytes(completion_bytes)
 
     monkeypatch.setattr(fetcher, "_modal_get", fake_get)
     destination = tmp_path / "predictions"
