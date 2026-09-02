@@ -328,6 +328,7 @@ def test_container_and_direct_dependencies_are_immutable() -> None:
     assert "maxtext[cuda12]" in lock
     assert "tpu-post-train" not in lock
     assert "git clone --filter=blob:none --no-checkout" in dockerfile
+    assert "build-essential" in dockerfile
     assert (
         "git -C /opt/MaxText checkout --detach "
         "538fe7a3f3376d94cf3f04e77741aa6d7e8efa45" in dockerfile

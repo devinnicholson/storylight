@@ -7,7 +7,7 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
     PIP_NO_CACHE_DIR=1
 
 RUN apt-get update \
-    && apt-get install --yes --no-install-recommends git ca-certificates \
+    && apt-get install --yes --no-install-recommends git ca-certificates build-essential \
     && rm -rf /var/lib/apt/lists/*
 
 RUN git clone --filter=blob:none --no-checkout https://github.com/AI-Hypercomputer/maxtext.git /opt/MaxText \

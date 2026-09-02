@@ -149,6 +149,7 @@ def test_modal_budget_gate_is_present_and_maxtext_checkout_is_exact() -> None:
     assert 'BUDGET_MONTH = "2026-09"' in source
     assert "workspace_total + float(ceiling) > WORKSPACE_HARD_STOP_USD" in source
     assert "git clone https://github.com/AI-Hypercomputer/maxtext.git /opt/MaxText" in image_source
+    assert 'apt_install("git", "ca-certificates", "build-essential")' in image_source
     assert "maxtext_revision" in image_source
     assert "git -C /opt/MaxText rev-parse HEAD" in image_source
     assert "--write-lock /opt/bookforge/runtime.lock.json" in image_source

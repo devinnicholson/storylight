@@ -38,7 +38,7 @@ def maxtext_revision() -> str:
 MAXTEXT_REVISION = maxtext_revision()
 JAX_IMAGE = (
     modal.Image.from_registry(pinned_image_uri())
-    .apt_install("git", "ca-certificates")
+    .apt_install("git", "ca-certificates", "build-essential")
     .run_commands(
         "git clone https://github.com/AI-Hypercomputer/maxtext.git /opt/MaxText",
         f"git -C /opt/MaxText checkout {MAXTEXT_REVISION}",
