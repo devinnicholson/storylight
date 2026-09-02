@@ -58,7 +58,7 @@ def _prediction_release(
         {
             "schema_version": "1.0",
             "status": "succeeded",
-            "backend": "modal-l40s-cuda",
+            "backend": "modal-l4-cuda",
             "run_id": "prediction-test-01",
             "candidate_id": CANDIDATE_ID,
             "input_manifest_sha256": "8" * 64,

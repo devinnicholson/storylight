@@ -157,12 +157,15 @@ def test_full_training_release_selects_exact_terminal_adapter_leaf(tmp_path: Pat
         merge._verify_training_release(root, **arguments)
 
 
-def test_merge_worker_is_one_shot_l40s_and_completion_is_last() -> None:
+def test_merge_worker_is_one_shot_l4_and_completion_is_last() -> None:
     source = (ROOT / "deploy/modal_jax_merge.py").read_text(encoding="utf-8")
     plan = json.loads(
         (ROOT / "experiments/jax-fidelity-lab/modal-merge-plan-2026-09.json").read_text()
     )
-    assert plan["gpu"] == "L40S"
+    assert plan["gpu"] == "L4"
+    assert 'GPU = "L4"' in source
+    assert 'plan.get("gpu") != GPU' in source
+    assert 'roundtrip.get("backend") != "modal-l4x2"' in source
     assert plan["function_calls"] == 1
     assert plan["automatic_retries"] == 0
     assert plan["web_endpoint"] is False
@@ -185,7 +188,7 @@ def test_merge_fetch_completion_rejects_wrong_hash_and_nonprovisional_status(
     document = {
         "schema_version": "1.0",
         "status": "succeeded",
-        "backend": "modal-l40s",
+        "backend": "modal-l4",
         "release_type": "provisional-merged-hf-development-candidate",
         "merge_run_id": "bookforge-full-merge-20260901",
         "development_evaluated": False,
@@ -198,6 +201,14 @@ def test_merge_fetch_completion_rejects_wrong_hash_and_nonprovisional_status(
         expected_sha256=sha256_file(path),
     )
     assert fetched["release_authorized"] is False
+    document["backend"] = "modal-l40s"
+    _write(path, document)
+    with pytest.raises(ValueError, match="identity"):
+        fetcher._completion(
+            path,
+            merge_run_id="bookforge-full-merge-20260901",
+            expected_sha256=sha256_file(path),
+        )
     with pytest.raises(ValueError, match="checksum"):
         fetcher._completion(
             path,

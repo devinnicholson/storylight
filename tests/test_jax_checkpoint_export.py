@@ -104,6 +104,9 @@ def _passing_development_evaluation(
         "checks": {"schema_valid": True, "development_improvement": True},
         "reasons": [],
         "baseline_summary_sha256": "a" * 64,
+        "baseline_completion_sha256": "5" * 64,
+        "baseline_candidate_manifest_sha256": "6" * 64,
+        "baseline_engine_sha256": "7" * 64,
         "candidate_summary_sha256": "b" * 64,
         "development_records_sha256": "d" * 64,
         "predictions_sha256": "e" * 64,
@@ -520,7 +523,7 @@ def test_release_producer_emits_exact_checksum_bound_consumer_schema(tmp_path: P
         {
             "schema_version": "1.0",
             "status": "succeeded",
-            "backend": "modal-l40s",
+            "backend": "modal-l4",
             "release_type": "provisional-merged-hf-development-candidate",
             "merge_run_id": "bookforge-full-merge-20260901",
             "candidate_id": candidate_id,

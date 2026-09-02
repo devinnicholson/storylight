@@ -778,7 +778,7 @@ def _validate_typed_stage_artifact(
 
     if stage_name == "train":
         _validate_training_run_id(run, document.get("training_run_id"))
-        if document.get("backend") not in {"vertex-tpu-v6e", "modal-l40s"}:
+        if document.get("backend") not in {"vertex-tpu-v6e", "modal-l4x2"}:
             raise FidelityRunError("training artifact has an invalid finite backend")
         if document.get("automatic_retries") != 0:
             raise FidelityRunError("training artifact did not disable automatic retries")

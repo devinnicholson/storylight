@@ -34,6 +34,21 @@ A refusal caused by an already-existing CustomJob is explicitly marked fallback-
 after billing reconciliation, so a completed Vertex attempt can never authorize a second Modal
 spend for the same run ID.
 
+If billing is disabled before a runnable training image exists,
+`record_unavailable_fallback.py` provides a separate, truthful pre-build path. It consumes the
+content-addressed image *build plan*, not a fabricated image digest or incomplete CustomJob plan.
+The recorder verifies the active project, explicit `billingEnabled: false`, a run date no more
+than seven days old, and an empty exact-name `CreateCustomJob` Admin Activity query over the full
+400-day retention window. It also refuses any local build intent or receipt for the planned image
+source. The write-once rejection binds all seven staged-input hashes, the unbuilt image source and
+build-plan hashes, and the intended Vertex machine, account, storage prefixes, timeout, and retry
+policy. Its tagged image target is explicitly non-runnable: `runnable_digest_uri` remains null and
+no `spec_sha256` is claimed because no complete Vertex submission specification exists.
+Modal accepts this distinct producer only while the evidence is fresh and every billing, audit,
+image, input, and intended-resource binding is internally exact. This path records why GCP could
+not be used; it does not submit an image build, create a CustomJob, or assert that billing-disabled
+API errors prove the absence of historical resources.
+
 The worker service account receives the custom role in `least-privilege-role.yaml` only on the
 two private buckets. The launcher receives Vertex job creation plus
 `iam.serviceAccounts.actAs`; neither account receives Owner, Editor, or Secret Manager access.

@@ -6,11 +6,17 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
+import os
 import shutil
 import subprocess
+import sys
 import tempfile
 from pathlib import Path
 from typing import Any
+
+REPOSITORY_ROOT = Path(__file__).resolve().parents[1]
+if str(REPOSITORY_ROOT) not in sys.path:
+    sys.path.insert(0, str(REPOSITORY_ROOT))
 
 VOLUME_NAME = "bookforge-jax-fidelity-release"
 REMOTE_ROOT = "roundtrip"
@@ -204,8 +210,12 @@ def fetch_roundtrip(
             run_id=run_id,
             expected_sha256=expected_completion_sha256,
         )
-        payload = temporary / "payload"
-        _modal_get(remote, payload)
+        download_root = temporary / "download"
+        download_root.mkdir()
+        _modal_get(remote, download_root)
+        payload = download_root / run_id
+        if not payload.is_dir() or payload.is_symlink():
+            raise ValueError("Modal roundtrip directory download had an unexpected shape")
         if (payload / "completion.json").is_file():
             if _sha256(payload / "completion.json") != expected_completion_sha256:
                 raise ValueError("roundtrip directory completion differs from trusted completion")
@@ -213,7 +223,10 @@ def fetch_roundtrip(
             shutil.copyfile(completion_path, payload / "completion.json")
         _verify_files(payload, completion["files"])
         _verify_contract(payload, completion)
-        shutil.copytree(payload, destination)
+        # The verified release is large. The temporary directory is created on
+        # the destination filesystem, so rename it into custody without a
+        # second full checkpoint copy or a transient 2x disk-space spike.
+        os.replace(payload, destination)
     return {
         "schema_version": "1.0",
         "status": "fetched-and-verified",

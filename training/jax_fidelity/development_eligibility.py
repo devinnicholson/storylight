@@ -19,6 +19,10 @@ from bookforge.fidelity_benchmark import (
 )
 from bookforge.fidelity_schema import DatasetSplit
 
+from .baseline_development import (
+    BaselineDevelopmentError,
+    validate_baseline_bundle,
+)
 from .configuration import load_config
 from .integrity import canonical_json_bytes, canonical_sha256, sha256_file
 from .prediction_evidence import (
@@ -36,6 +40,9 @@ _ELIGIBILITY_FIELDS = {
     "reasons",
     "summary",
     "baseline_summary_sha256",
+    "baseline_completion_sha256",
+    "baseline_candidate_manifest_sha256",
+    "baseline_engine_sha256",
     "candidate_summary_sha256",
     "config_sha256",
     "dataset_manifest_sha256",
@@ -187,6 +194,12 @@ def validate_development_eligibility(
         or any(type(result) is not bool or not result for result in checks.values())
         or reasons != []
         or _SHA256.fullmatch(str(document.get("baseline_summary_sha256"))) is None
+        or _SHA256.fullmatch(str(document.get("baseline_completion_sha256"))) is None
+        or _SHA256.fullmatch(
+            str(document.get("baseline_candidate_manifest_sha256"))
+        )
+        is None
+        or _SHA256.fullmatch(str(document.get("baseline_engine_sha256"))) is None
         or _SHA256.fullmatch(str(document.get("candidate_summary_sha256"))) is None
         or document.get("evaluation_input_sha256")
         != canonical_sha256(
@@ -327,6 +340,48 @@ def validate_development_evidence_chain(
     return prediction, evaluation
 
 
+def validate_baseline_evidence_chain(
+    *,
+    baseline_report_path: Path,
+    baseline_report_sha256: str,
+    baseline_completion_path: Path,
+    baseline_completion_sha256: str,
+    baseline_candidate_manifest_sha256: str,
+    baseline_engine_sha256: str,
+    dataset_manifest_path: Path,
+    dataset_manifest_sha256: str,
+    development_records_sha256: str,
+) -> dict[str, Any]:
+    """Require the report declared by one trusted accepted-baseline completion."""
+
+    root = baseline_completion_path.parent
+    if (
+        baseline_completion_path.resolve() != (root / "completion.json").resolve()
+        or baseline_report_path.resolve()
+        != (root / "baseline-development.json").resolve()
+    ):
+        raise DevelopmentEligibilityError(
+            "baseline report and completion must be the declared baseline bundle"
+        )
+    try:
+        completion = validate_baseline_bundle(
+            root,
+            expected_completion_sha256=baseline_completion_sha256,
+            dataset_manifest_path=dataset_manifest_path,
+            dataset_manifest_sha256=dataset_manifest_sha256,
+            development_records_sha256=development_records_sha256,
+            accepted_manifest_sha256=baseline_candidate_manifest_sha256,
+            accepted_engine_sha256=baseline_engine_sha256,
+        )
+    except (BaselineDevelopmentError, OSError) as error:
+        raise DevelopmentEligibilityError(str(error)) from error
+    if completion.get("report_sha256") != baseline_report_sha256:
+        raise DevelopmentEligibilityError(
+            "baseline completion does not declare the approved baseline report"
+        )
+    return completion
+
+
 def _write_once(path: Path, document: dict[str, Any]) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     descriptor = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o400)
@@ -355,6 +410,10 @@ def main() -> None:
     parser.add_argument("--candidate-report-sha256", required=True)
     parser.add_argument("--baseline-report", type=Path, required=True)
     parser.add_argument("--baseline-report-sha256", required=True)
+    parser.add_argument("--baseline-completion", type=Path, required=True)
+    parser.add_argument("--baseline-completion-sha256", required=True)
+    parser.add_argument("--baseline-candidate-manifest-sha256", required=True)
+    parser.add_argument("--baseline-engine-sha256", required=True)
     parser.add_argument("--output", type=Path, required=True)
     args = parser.parse_args()
 
@@ -399,6 +458,17 @@ def main() -> None:
         dataset_manifest_sha256=args.dataset_manifest_sha256,
         candidate_report_sha256=args.candidate_report_sha256,
     )
+    validate_baseline_evidence_chain(
+        baseline_report_path=args.baseline_report,
+        baseline_report_sha256=args.baseline_report_sha256,
+        baseline_completion_path=args.baseline_completion,
+        baseline_completion_sha256=args.baseline_completion_sha256,
+        baseline_candidate_manifest_sha256=args.baseline_candidate_manifest_sha256,
+        baseline_engine_sha256=args.baseline_engine_sha256,
+        dataset_manifest_path=args.dataset_manifest,
+        dataset_manifest_sha256=args.dataset_manifest_sha256,
+        development_records_sha256=prediction["development_records_sha256"],
+    )
     checks = decide_development_eligibility(candidate, baseline)
     passed = all(checks.values())
     document = {
@@ -410,6 +480,9 @@ def main() -> None:
         "reasons": [name for name, result in checks.items() if not result],
         "summary": asdict(candidate),
         "baseline_summary_sha256": args.baseline_report_sha256,
+        "baseline_completion_sha256": args.baseline_completion_sha256,
+        "baseline_candidate_manifest_sha256": args.baseline_candidate_manifest_sha256,
+        "baseline_engine_sha256": args.baseline_engine_sha256,
         "candidate_summary_sha256": args.candidate_report_sha256,
         "config_sha256": config_sha256,
         "dataset_manifest_sha256": args.dataset_manifest_sha256,

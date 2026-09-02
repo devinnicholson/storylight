@@ -49,6 +49,7 @@ def _request(**updates: object) -> dict[str, object]:
         "submission_intent_created": False,
         "custom_job_created": False,
         "job_absence_verified": True,
+        "run_id_absence_basis": "vertex-list",
         "fallback_allowed": True,
         "reason": "quota unavailable",
     }
@@ -92,10 +93,10 @@ def test_modal_fallback_is_finite_pinned_and_has_no_endpoint() -> None:
     plan = json.loads(PLAN.read_text())
     source = Path("deploy/modal_jax_fidelity.py").read_text()
 
-    assert plan["gpu"] == "L40S"
+    assert plan["gpu"] == "L4:2"
     assert plan["container_count"] == 1
     assert plan["function_calls"] == 1
-    assert plan["timeout_seconds"] == 2700
+    assert plan["timeout_seconds"] == 3600
     assert plan["automatic_retries"] == 0
     assert plan["minimum_containers"] == 0
     assert plan["web_endpoint"] is False
@@ -103,9 +104,343 @@ def test_modal_fallback_is_finite_pinned_and_has_no_endpoint() -> None:
     assert plan["gross_ceiling_policy"] == "declared-estimate-not-provider-enforced"
     assert "@sha256:" in modal_jax_fidelity._pinned_image_uri()
     assert "gpu=GPU" in source
+    assert 'BACKEND = "modal-l4x2"' in source
     assert "retries=0" in source
     assert "max_containers=MAX_CONTAINERS" in source
+    assert "input_volume.reload()" in source
+    assert "scratch_volume.commit()" in source
+    assert source.index("scratch_volume.commit()") < source.index("subprocess.run(command")
+    training_call = source.index("subprocess.run(command")
+    durable_success = source.index("# This is the durability boundary", training_call)
+    inline_finalize = source.index("return _finalize_completed_scratch(", durable_success)
+    assert training_call < durable_success < inline_finalize
+    assert "timeout=training_timeout" in source
+    assert source.rindex("scratch_volume.commit()") < source.rindex(
+        "release_commit=release_volume.commit"
+    )
+    assert "run_two_gpu_fsdp_preflight(" in source
+    assert plan["publication_reserve_seconds"] == 600
+    assert plan["finalize_recovery_timeout_seconds"] == 1800
+    assert plan["finalize_recovery_gpu"] is None
+    assert plan["finalize_recovery_function_calls_max"] == 1
+    assert plan["finalize_recovery_automatic_retries"] == 0
+    assert plan["finalize_recovery_web_endpoint"] is False
+    assert "def finalize_finite(" in source
+    assert "exact Modal JAX finalize-only approval token" in source
+    finalize_definition = source.index("def finalize_finite(")
+    finalize_decorator = source.rfind("@app.function(", 0, finalize_definition)
+    assert "gpu=" not in source[finalize_decorator:finalize_definition]
+    assert "provider/gpu-preflight.json" not in source
     assert "@modal.web_endpoint" not in source
+    assert "smoke: bool = False" in source
+
+
+def test_modal_training_timeout_preserves_publication_reserve() -> None:
+    assert modal_jax_fidelity._bounded_training_timeout(0) == 3000
+    assert modal_jax_fidelity._bounded_training_timeout(240.25) == 2759
+    with pytest.raises(RuntimeError, match="no safe training window"):
+        modal_jax_fidelity._bounded_training_timeout(3000)
+
+
+def test_release_publication_resumes_without_overwrite_and_commits_completion_last(
+    tmp_path: Path,
+) -> None:
+    staging = tmp_path / "staging"
+    staging.mkdir()
+    first = staging / "adapter/model.bin"
+    first.parent.mkdir()
+    first.write_bytes(b"adapter")
+    second = staging / "training/completion.json"
+    second.parent.mkdir()
+    second.write_bytes(b"training")
+    rows = [
+        {
+            "path": path.relative_to(staging).as_posix(),
+            "bytes": path.stat().st_size,
+            "sha256": hashlib.sha256(path.read_bytes()).hexdigest(),
+        }
+        for path in (first, second)
+    ]
+    (staging / "completion.json").write_text(
+        json.dumps({"status": "succeeded", "files": rows}, indent=2, sort_keys=True) + "\n"
+    )
+    destination = tmp_path / "release"
+    existing = destination / "adapter/model.bin"
+    existing.parent.mkdir(parents=True)
+    existing.write_bytes(b"adapter")
+    existing_stat = existing.stat()
+    commits: list[set[str]] = []
+
+    def commit() -> None:
+        commits.append(
+            {
+                path.relative_to(destination).as_posix()
+                for path in destination.rglob("*")
+                if path.is_file()
+            }
+        )
+
+    modal_jax_fidelity._publish_staged_release(staging, destination, commit=commit)
+
+    assert commits == [
+        {"adapter/model.bin", "training/completion.json"},
+        {"adapter/model.bin", "training/completion.json", "completion.json"},
+    ]
+    assert existing.stat().st_ino == existing_stat.st_ino
+    assert existing.stat().st_mtime_ns == existing_stat.st_mtime_ns
+    commits.clear()
+    modal_jax_fidelity._publish_staged_release(staging, destination, commit=commit)
+    assert commits == []
+
+
+def test_release_publication_recovers_after_first_commit_interruption(
+    tmp_path: Path,
+) -> None:
+    staging = tmp_path / "staging"
+    staging.mkdir()
+    artifact = staging / "adapter.bin"
+    artifact.write_bytes(b"adapter")
+    row = {
+        "path": "adapter.bin",
+        "bytes": artifact.stat().st_size,
+        "sha256": hashlib.sha256(artifact.read_bytes()).hexdigest(),
+    }
+    (staging / "completion.json").write_text(
+        json.dumps({"status": "succeeded", "files": [row]}, indent=2, sort_keys=True) + "\n"
+    )
+    destination = tmp_path / "release"
+
+    def interrupted_commit() -> None:
+        raise RuntimeError("simulated commit interruption")
+
+    with pytest.raises(RuntimeError, match="simulated commit"):
+        modal_jax_fidelity._publish_staged_release(
+            staging, destination, commit=interrupted_commit
+        )
+    artifact_stat = (destination / "adapter.bin").stat()
+    assert not (destination / "completion.json").exists()
+    commits = 0
+
+    def commit() -> None:
+        nonlocal commits
+        commits += 1
+
+    modal_jax_fidelity._publish_staged_release(staging, destination, commit=commit)
+    assert commits == 2
+    assert (destination / "adapter.bin").stat().st_ino == artifact_stat.st_ino
+    assert (destination / "completion.json").is_file()
+
+
+def test_failed_release_copy_removes_uncommitted_partial_destination(tmp_path: Path) -> None:
+    destination = tmp_path / "release/model.bin"
+    with pytest.raises(FileNotFoundError):
+        modal_jax_fidelity._copy_release_file_once(
+            tmp_path / "missing.bin",
+            destination,
+            {"path": "model.bin", "bytes": 1, "sha256": "0" * 64},
+        )
+    assert not destination.exists()
+
+
+def test_finalize_completed_scratch_never_trains_and_is_idempotent(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    run_id = "bookforge-modal-full-20260902"
+    training_run_id = "lora-train-fixture"
+    values = {
+        "config_sha256": "a" * 64,
+        "dataset_manifest_sha256": "b" * 64,
+        "prepared_train_sha256": "c" * 64,
+        "input_manifest_sha256": "d" * 64,
+        "checkpoint_manifest_sha256": "e" * 64,
+        "checkpoint_receipt_sha256": "f" * 64,
+        "tokenizer_manifest_sha256": "1" * 64,
+        "gcp_rejection_sha256": "2" * 64,
+    }
+    scratch = tmp_path / "scratch"
+    output = scratch / "output"
+    output.mkdir(parents=True)
+    (output / "adapter.bin").write_bytes(b"adapter")
+    attempt = modal_jax_fidelity._attempt_document(
+        run_id=run_id,
+        training_run_id=training_run_id,
+        smoke=False,
+        **values,
+    )
+    (scratch / "attempt.json").write_text(json.dumps(attempt))
+    (scratch / "gpu-preflight.json").write_text(
+        json.dumps(
+            {
+                "hardware": "gpu",
+                "devices": 2,
+                "platform": "gpu",
+                "memory_fraction": "0.95",
+                "ici_fsdp_parallelism": -1,
+                "mesh_shape": {"fsdp": 2},
+            }
+        )
+    )
+    training = scratch / "runs" / training_run_id
+    training.mkdir(parents=True)
+    (training / "completion.json").write_text(
+        json.dumps(
+            {
+                "run_id": training_run_id,
+                "status": "succeeded",
+                "artifacts": [{"path": str(output / "adapter.bin")}],
+                "evidence": {"runtime_lock": {"sha256": "3" * 64}},
+            }
+        )
+    )
+
+    def fake_package(**kwargs):
+        destination = Path(kwargs["destination"])
+        destination.mkdir()
+        (destination / "adapter.bin").write_bytes(b"adapter")
+        return {"status": "succeeded", "package_manifest_sha256": "4" * 64}
+
+    monkeypatch.setattr(
+        "training.jax_fidelity.remote_release.package_training_release", fake_package
+    )
+    monkeypatch.setattr(
+        modal_jax_fidelity.subprocess,
+        "run",
+        lambda *_args, **_kwargs: pytest.fail("finalization must never run training"),
+    )
+    release = tmp_path / "release"
+    commits = 0
+    scratch_commits = 0
+
+    def commit() -> None:
+        nonlocal commits
+        commits += 1
+
+    def scratch_commit() -> None:
+        nonlocal scratch_commits
+        scratch_commits += 1
+
+    result = modal_jax_fidelity._finalize_completed_scratch(
+        run_id=run_id,
+        training_run_id=training_run_id,
+        smoke=False,
+        scratch_directory=scratch,
+        release_directory=release,
+        scratch_commit=scratch_commit,
+        release_commit=commit,
+        **values,
+    )
+    assert result["status"] == "succeeded"
+    assert commits == 2
+    assert scratch_commits == 1
+    first_completion = (release / "completion.json").read_bytes()
+
+    result_again = modal_jax_fidelity._finalize_completed_scratch(
+        run_id=run_id,
+        training_run_id=training_run_id,
+        smoke=False,
+        scratch_directory=scratch,
+        release_directory=release,
+        scratch_commit=scratch_commit,
+        release_commit=commit,
+        **values,
+    )
+    assert result_again == result
+    assert commits == 2
+    assert scratch_commits == 1
+    assert (release / "completion.json").read_bytes() == first_completion
+
+
+def test_finalize_discards_only_completionless_derivative_staging(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    run_id = "bookforge-modal-full-20260902"
+    training_run_id = "lora-train-fixture"
+    values = {
+        "config_sha256": "a" * 64,
+        "dataset_manifest_sha256": "b" * 64,
+        "prepared_train_sha256": "c" * 64,
+        "input_manifest_sha256": "d" * 64,
+        "checkpoint_manifest_sha256": "e" * 64,
+        "checkpoint_receipt_sha256": "f" * 64,
+        "tokenizer_manifest_sha256": "1" * 64,
+        "gcp_rejection_sha256": "2" * 64,
+    }
+    scratch = tmp_path / "scratch"
+    scratch.mkdir()
+    (scratch / "attempt.json").write_text(
+        json.dumps(
+            modal_jax_fidelity._attempt_document(
+                run_id=run_id,
+                training_run_id=training_run_id,
+                smoke=False,
+                **values,
+            )
+        )
+    )
+    (scratch / "gpu-preflight.json").write_text(
+        json.dumps(
+            {
+                "hardware": "gpu",
+                "devices": 2,
+                "platform": "gpu",
+                "memory_fraction": "0.95",
+                "ici_fsdp_parallelism": -1,
+                "mesh_shape": {"fsdp": 2},
+            }
+        )
+    )
+    output = scratch / "output"
+    output.mkdir()
+    (output / "adapter.bin").write_bytes(b"adapter")
+    training = scratch / "runs" / training_run_id
+    training.mkdir(parents=True)
+    (training / "completion.json").write_text(
+        json.dumps(
+            {
+                "run_id": training_run_id,
+                "status": "succeeded",
+                "artifacts": [{"path": str(output / "adapter.bin")}],
+                "evidence": {"runtime_lock": {"sha256": "3" * 64}},
+            }
+        )
+    )
+    incomplete = scratch / "finalized-release"
+    incomplete.mkdir()
+    (incomplete / "partial.bin").write_bytes(b"partial")
+    package_calls = 0
+
+    def fake_package(**kwargs):
+        nonlocal package_calls
+        package_calls += 1
+        destination = Path(kwargs["destination"])
+        assert not destination.exists()
+        destination.mkdir()
+        (destination / "adapter.bin").write_bytes(b"adapter")
+        return {"status": "succeeded", "package_manifest_sha256": "4" * 64}
+
+    monkeypatch.setattr(
+        "training.jax_fidelity.remote_release.package_training_release", fake_package
+    )
+    scratch_commits = 0
+
+    def scratch_commit() -> None:
+        nonlocal scratch_commits
+        scratch_commits += 1
+
+    result = modal_jax_fidelity._finalize_completed_scratch(
+        run_id=run_id,
+        training_run_id=training_run_id,
+        smoke=False,
+        scratch_directory=scratch,
+        release_directory=tmp_path / "release",
+        scratch_commit=scratch_commit,
+        release_commit=lambda: None,
+        **values,
+    )
+    assert result["status"] == "succeeded"
+    assert package_calls == 1
+    assert scratch_commits == 2
+    assert not (scratch / "finalized-release/partial.bin").exists()
 
 
 def test_modal_request_requires_hashes_exact_approval_and_prebillable_rejection() -> None:
@@ -175,6 +510,16 @@ def test_modal_budget_gate_is_present_and_maxtext_checkout_is_exact() -> None:
     assert 'for name in ("HF_TOKEN", "HUGGING_FACE_HUB_TOKEN")' in image_source
     assert "verify_base_orbax(" in source
     assert "base_checkpoint_receipt_sha256" in source
+
+
+def test_modal_billing_parser_accepts_current_and_legacy_fields() -> None:
+    parse = modal_jax_fidelity._parse_modal_billing_total
+
+    assert parse('[{"cost": "1.25"}, {"Cost": 0.5}]') == pytest.approx(1.75)
+    with pytest.raises(RuntimeError, match="no cost"):
+        parse('[{"date": "2026-09-02"}]')
+    with pytest.raises(RuntimeError, match="conflicting"):
+        parse('[{"cost": 1, "Cost": 2}]')
 
 
 def test_modal_release_fetch_verifies_every_file_before_copy(monkeypatch, tmp_path: Path) -> None:

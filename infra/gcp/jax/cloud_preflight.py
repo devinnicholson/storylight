@@ -6,6 +6,7 @@ from __future__ import annotations
 import argparse
 import datetime as dt
 import json
+import re
 import subprocess
 from collections.abc import Callable
 from pathlib import Path
@@ -18,6 +19,32 @@ REQUIRED_SERVICES = {
     "storage.googleapis.com",
 }
 Run = Callable[..., subprocess.CompletedProcess[str]]
+AUDIT_FRESHNESS = "400d"
+_RUN_DATE = re.compile(r"(?:^|-)(20\d{6})(?:-|$)")
+
+
+def _create_job_audit_filter(run_id: str) -> str:
+    return " AND ".join(
+        (
+            'logName="projects/'
+            f'{PROJECT_ID}/logs/cloudaudit.googleapis.com%2Factivity"',
+            'protoPayload.serviceName="aiplatform.googleapis.com"',
+            'protoPayload.methodName="google.cloud.aiplatform.v1.JobService.CreateCustomJob"',
+            f'protoPayload.request.customJob.displayName="{run_id}"',
+        )
+    )
+
+
+def _run_id_is_recent(run_id: str, *, now: dt.datetime) -> bool:
+    match = _RUN_DATE.search(run_id)
+    if match is None:
+        return False
+    try:
+        stamped = dt.datetime.strptime(match.group(1), "%Y%m%d").date()
+    except ValueError:
+        return False
+    age = now.date() - stamped
+    return dt.timedelta(0) <= age <= dt.timedelta(days=7)
 
 
 def _run_json(runner: Run, *arguments: str) -> object:
@@ -72,6 +99,15 @@ def collect_snapshots(
             f"--region={REGION}",
             f"--filter=displayName={run_id}",
             "--format=json(name,displayName,state)",
+        ),
+        "job_audit_log": (
+            "logging",
+            "read",
+            _create_job_audit_filter(run_id),
+            f"--project={PROJECT_ID}",
+            f"--freshness={AUDIT_FRESHNESS}",
+            "--limit=1",
+            "--format=json",
         ),
         "scratch_bucket": (
             "storage",
@@ -177,6 +213,19 @@ def evaluate(
 
     configuration = snapshots.get("configuration")
     core = configuration.get("core") if isinstance(configuration, dict) else None
+    billing = snapshots.get("billing")
+    billing_disabled = isinstance(billing, dict) and billing.get("billingEnabled") is False
+    checked_at = dt.datetime.now(dt.UTC)
+    if snapshots.get("jobs") == []:
+        run_id_absence_basis: str | None = "vertex-list"
+    elif (
+        billing_disabled
+        and snapshots.get("job_audit_log") == []
+        and _run_id_is_recent(run_id, now=checked_at)
+    ):
+        run_id_absence_basis = "billing-disabled-plus-empty-create-audit-log"
+    else:
+        run_id_absence_basis = None
     checks = {
         "active_project": isinstance(core, dict) and core.get("project") == PROJECT_ID,
         "active_account": isinstance(core, dict) and bool(core.get("account")),
@@ -191,7 +240,7 @@ def evaluate(
                 if isinstance(row, dict) and isinstance(row.get("config"), dict)
             }
         ),
-        "run_id_absent": snapshots.get("jobs") == [],
+        "run_id_absent": run_id_absence_basis is not None,
         "scratch_private_with_expiry": _bucket_is_private(
             snapshots.get("scratch_bucket"), lifecycle_required=True
         ),
@@ -213,10 +262,20 @@ def evaluate(
         "run_id": run_id,
         "spec_sha256": spec_sha256,
         "input_bindings_sha256": input_bindings_sha256,
-        "checked_at": dt.datetime.now(dt.UTC).isoformat(),
+        "checked_at": checked_at.isoformat(),
         "checks": checks,
         "ready": not failed,
         "failed_checks": failed,
+        "run_id_absence_basis": run_id_absence_basis,
+        "run_id_absence_evidence": (
+            {
+                "audit_filter": _create_job_audit_filter(run_id),
+                "freshness": AUDIT_FRESHNESS,
+                "maximum_run_id_age_days": 7,
+            }
+            if run_id_absence_basis == "billing-disabled-plus-empty-create-audit-log"
+            else None
+        ),
         "remote_mutation": False,
     }
     return report

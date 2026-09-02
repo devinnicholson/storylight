@@ -13,6 +13,7 @@ import pytest
 
 ROOT = Path(__file__).parents[1]
 JAX_ROOT = ROOT / "infra/gcp/jax"
+sys.path.insert(0, str(ROOT))
 
 
 def _load_job_plan():
@@ -267,6 +268,76 @@ def test_full_training_staging_rejects_missing_or_wrong_base_orbax_receipt(
         stage.build_input_manifest(**arguments, checkpoint_receipt=receipt)
 
 
+def test_full_training_manifest_includes_verified_public_dataset_splits(
+    tmp_path: Path,
+) -> None:
+    stage = _load("bookforge_jax_full_stage_inputs", JAX_ROOT / "stage_inputs.py")
+    config = tmp_path / "config.json"
+    prepared = tmp_path / "prepared.jsonl"
+    train = tmp_path / "train.jsonl"
+    development = tmp_path / "development.jsonl"
+    tokenizer_manifest = tmp_path / "tokenizer.manifest.json"
+    for path, contents in (
+        (config, "{}\n"),
+        (prepared, '{"prepared":true}\n'),
+        (train, '{"split":"train"}\n'),
+        (development, '{"split":"development"}\n'),
+        (tokenizer_manifest, "{}\n"),
+    ):
+        path.write_text(contents, encoding="utf-8")
+    dataset_manifest = tmp_path / "manifest.json"
+    dataset_manifest.write_text(
+        json.dumps(
+            {
+                "splits": {
+                    "train": {"path": train.name, "sha256": stage.sha256_file(train)},
+                    "development": {
+                        "path": development.name,
+                        "sha256": stage.sha256_file(development),
+                    },
+                    "hidden": {"records": 512},
+                }
+            }
+        ),
+        encoding="utf-8",
+    )
+    checkpoint = tmp_path / "checkpoint"
+    leaf = checkpoint / "run/checkpoints/0/items"
+    leaf.mkdir(parents=True)
+    (leaf / "weights").write_bytes(b"base")
+    tokenizer = tmp_path / "tokenizer"
+    tokenizer.mkdir()
+    (tokenizer / "tokenizer.json").write_text("{}\n", encoding="utf-8")
+    from training.jax_fidelity.integrity import artifact_manifest, canonical_json_bytes
+    from training.jax_fidelity.orbax_receipt import orbax_leaf_receipt
+
+    checkpoint_manifest = tmp_path / "checkpoint.manifest.json"
+    checkpoint_manifest.write_bytes(canonical_json_bytes(artifact_manifest(leaf)))
+    checkpoint_receipt = tmp_path / "checkpoint.receipt.json"
+    checkpoint_receipt.write_bytes(
+        canonical_json_bytes(
+            orbax_leaf_receipt(checkpoint, leaf, expected_step=0, role="base-maxtext")
+        )
+    )
+
+    document, sources = stage.build_full_training_input_manifest(
+        run_id="bookforge-jax-train-20260902",
+        config=config,
+        dataset_manifest=dataset_manifest,
+        prepared_train=prepared,
+        checkpoint=checkpoint,
+        checkpoint_manifest=checkpoint_manifest,
+        checkpoint_receipt=checkpoint_receipt,
+        tokenizer=tokenizer,
+        tokenizer_manifest=tokenizer_manifest,
+    )
+
+    assert sources["dataset/train.jsonl"] == train.resolve()
+    assert sources["dataset/development.jsonl"] == development.resolve()
+    assert not any("hidden" in path for path in sources)
+    assert {row["path"] for row in document["files"]} == set(sources)
+
+
 def test_vertex_base_orbax_gate_rejects_manifest_tampering(tmp_path: Path) -> None:
     worker = _load("bookforge_vertex_orbax_gate", JAX_ROOT / "vertex_entrypoint.py")
     from training.jax_fidelity.integrity import artifact_manifest, canonical_json_bytes
@@ -319,6 +390,9 @@ def test_modal_staging_uploads_manifest_last_without_force(
 ) -> None:
     sys.path.insert(0, str(JAX_ROOT))
     stage = _load("bookforge_modal_stage_inputs", JAX_ROOT / "stage_modal_inputs.py")
+    stage_inputs = _load(
+        "bookforge_modal_stage_inputs_core", JAX_ROOT / "stage_inputs.py"
+    )
     run_id = "bookforge-jax-smoke-20260901"
     config = tmp_path / "config.json"
     dataset = tmp_path / "dataset.json"
@@ -349,7 +423,7 @@ def test_modal_staging_uploads_manifest_last_without_force(
             )
         )
     )
-    manifest, sources = stage.build_input_manifest(
+    manifest, sources = stage_inputs.build_input_manifest(
         run_id=run_id,
         config=config,
         dataset_manifest=dataset,
@@ -578,8 +652,17 @@ def test_read_only_cloud_preflight_never_queries_secret_manager() -> None:
     )
 
     assert "secret" not in snapshots
+    assert "job_audit_log" in snapshots
     assert "secretmanager.googleapis.com" not in module.REQUIRED_SERVICES
     assert all("secrets" not in command and "secretmanager" not in command for command in calls)
+    audit_command = next(command for command in calls if command[1:3] == ["logging", "read"])
+    assert "--freshness=400d" in audit_command
+    assert 'protoPayload.serviceName="aiplatform.googleapis.com"' in audit_command[3]
+    assert "JobService.CreateCustomJob" in audit_command[3]
+    assert (
+        'protoPayload.request.customJob.displayName="bookforge-jax-smoke-20260901"'
+        in audit_command[3]
+    )
 
 
 def test_read_only_cloud_preflight_requires_every_admission_fact() -> None:
@@ -621,6 +704,7 @@ def test_read_only_cloud_preflight_requires_every_admission_fact() -> None:
     )
 
     assert report["ready"] is True
+    assert report["run_id_absence_basis"] == "vertex-list"
     snapshots["billing"] = {"billingEnabled": False}
     rejected = module.evaluate(
         snapshots,
@@ -631,6 +715,57 @@ def test_read_only_cloud_preflight_requires_every_admission_fact() -> None:
     )
     assert rejected["ready"] is False
     assert "billing_enabled" in rejected["failed_checks"]
+
+
+def test_billing_disabled_fallback_requires_recent_exact_create_audit_absence() -> None:
+    sys.path.insert(0, str(JAX_ROOT))
+    module = _load(
+        "bookforge_jax_billing_disabled_preflight", JAX_ROOT / "cloud_preflight.py"
+    )
+    date = datetime.now(UTC).strftime("%Y%m%d")
+    run_id = f"bookforge-jax-train-{date}-a1b2c3d4"
+    snapshots = {
+        "configuration": {
+            "core": {"account": "operator@example.com", "project": module.PROJECT_ID}
+        },
+        "billing": {"billingEnabled": False, "billingAccountName": ""},
+        "services": [],
+        "jobs": {"collection_error": {"returncode": 1}},
+        "job_audit_log": [],
+        "scratch_bucket": {"collection_error": {"returncode": 1}},
+        "release_bucket": {"collection_error": {"returncode": 1}},
+        "quota": {"collection_error": {"returncode": 1}},
+    }
+
+    report = module.evaluate(
+        snapshots,
+        run_id=run_id,
+        credits_attestation={},
+        spec_sha256="a" * 64,
+        input_bindings_sha256="b" * 64,
+    )
+
+    assert report["ready"] is False
+    assert report["checks"]["run_id_absent"] is True
+    assert report["run_id_absence_basis"] == (
+        "billing-disabled-plus-empty-create-audit-log"
+    )
+    assert report["run_id_absence_evidence"] == {
+        "audit_filter": module._create_job_audit_filter(run_id),
+        "freshness": "400d",
+        "maximum_run_id_age_days": 7,
+    }
+
+    snapshots["job_audit_log"] = [{"insertId": "existing-create"}]
+    present = module.evaluate(
+        snapshots,
+        run_id=run_id,
+        credits_attestation={},
+        spec_sha256="a" * 64,
+        input_bindings_sha256="b" * 64,
+    )
+    assert present["checks"]["run_id_absent"] is False
+    assert present["run_id_absence_basis"] is None
 
 
 def test_failed_read_only_admission_creates_modal_fallback_evidence(
@@ -651,15 +786,16 @@ def test_failed_read_only_admission_creates_modal_fallback_evidence(
         "spec_sha256": plan["spec_sha256"],
         "input_bindings_sha256": plan["input_bindings_sha256"],
         "checked_at": datetime.now(UTC).isoformat(),
-        "checks": {"billing_enabled": False},
+        "checks": {"billing_enabled": False, "run_id_absent": True},
         "ready": False,
         "failed_checks": ["billing_enabled"],
+        "run_id_absence_basis": "vertex-list",
         "remote_mutation": False,
     }
     evidence_path = tmp_path / "admission.json"
     evidence_path.write_text(json.dumps(evidence))
     state = tmp_path / "state"
-    monkeypatch.setattr(submitter, "_preflight", lambda _plan: None)
+    monkeypatch.setattr(submitter, "_preflight", lambda _plan, _admission: None)
 
     with pytest.raises(submitter.PreflightRejected, match="billing_enabled"):
         submitter.submit(plan_path, state, evidence_path)
@@ -672,6 +808,7 @@ def test_failed_read_only_admission_creates_modal_fallback_evidence(
     assert rejection["submission_intent_created"] is False
     assert rejection["custom_job_created"] is False
     assert rejection["job_absence_verified"] is True
+    assert rejection["run_id_absence_basis"] == "vertex-list"
 
 
 def test_stale_or_job_present_admission_never_authorizes_fallback(tmp_path: Path) -> None:
@@ -691,6 +828,7 @@ def test_stale_or_job_present_admission_never_authorizes_fallback(tmp_path: Path
         "checks": {"run_id_absent": False},
         "ready": False,
         "failed_checks": ["run_id_absent"],
+        "run_id_absence_basis": None,
         "remote_mutation": False,
     }
     path = tmp_path / "admission.json"
@@ -710,6 +848,13 @@ def test_stale_or_job_present_admission_never_authorizes_fallback(tmp_path: Path
         submitter._validated_admission_evidence(path, plan)
     assert stale.value.fallback_allowed is False
     assert stale.value.job_absence_verified is False
+
+    malformed = {"ready": False, "failed_checks": "billing_enabled"}
+    with pytest.raises(submitter.PreflightRejected) as malformed_rejection:
+        submitter._require_ready_admission(malformed)
+    assert malformed_rejection.value.fallback_allowed is False
+    assert malformed_rejection.value.job_absence_verified is False
+    assert malformed_rejection.value.run_id_absence_basis is None
 
 
 def _portable_release(source: Path, run_id: str) -> tuple[dict[str, bytes], str]:

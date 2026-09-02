@@ -22,7 +22,7 @@ REPOSITORY_ROOT = Path(__file__).parents[1]
 PLAN_PATH = REPOSITORY_ROOT / "experiments/jax-fidelity-lab/modal-merge-plan-2026-09.json"
 LEDGER_PATH = REPOSITORY_ROOT / "experiments/jax-fidelity-lab/modal-ledger-2026-09.json"
 APP_NAME = "bookforge-jax-full-adapter-merge"
-GPU = "L40S"
+GPU = "L4"
 TIMEOUT_SECONDS = 1_800
 BUDGET_MONTH = "2026-09"
 WORKSPACE_HARD_STOP_USD = 28.0
@@ -403,7 +403,7 @@ def merge_finite(request: dict[str, object]) -> dict[str, object]:
     roundtrip = _json_object(roundtrip_completion_path)
     if (
         roundtrip.get("status") != "succeeded"
-        or roundtrip.get("backend") != "modal-l40s"
+        or roundtrip.get("backend") != "modal-l4x2"
         or roundtrip.get("run_id") != roundtrip_run_id
         or roundtrip.get("config_sha256") != bindings["config_sha256"]
         or roundtrip.get("dataset_manifest_sha256") != bindings["dataset_manifest_sha256"]
@@ -605,7 +605,7 @@ def merge_finite(request: dict[str, object]) -> dict[str, object]:
     payload: dict[str, object] = {
         "schema_version": "1.0",
         "status": "succeeded",
-        "backend": "modal-l40s",
+        "backend": "modal-l4",
         "release_type": "provisional-merged-hf-development-candidate",
         "merge_run_id": merge_run_id,
         "candidate_id": candidate["candidate_id"],
@@ -663,7 +663,10 @@ def merge_cli(
     plan = _json_object(PLAN_PATH)
     if (
         plan.get("status") != "plan-only"
+        or plan.get("gpu") != GPU
+        or plan.get("container_count") != 1
         or plan.get("function_calls") != 1
+        or plan.get("timeout_seconds") != TIMEOUT_SECONDS
         or plan.get("automatic_retries") != 0
         or plan.get("web_endpoint") is not False
         or plan.get("budget_month") != BUDGET_MONTH

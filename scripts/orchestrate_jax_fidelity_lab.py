@@ -158,7 +158,7 @@ def _parser() -> argparse.ArgumentParser:
     training.add_argument("--runtime-lock", type=Path, required=True)
     training.add_argument(
         "--backend",
-        choices=("vertex-tpu-v6e", "modal-l40s"),
+        choices=("vertex-tpu-v6e", "modal-l4x2"),
         required=True,
     )
 

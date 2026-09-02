@@ -14,6 +14,8 @@ from pathlib import Path
 
 from job_plan import PROJECT_ID, REGION, approval_token
 
+_BILLING_DISABLED_ABSENCE = "billing-disabled-plus-empty-create-audit-log"
+
 
 class PreflightRejected(RuntimeError):
     """The job was rejected before any billable resource was requested."""
@@ -24,10 +26,12 @@ class PreflightRejected(RuntimeError):
         *,
         fallback_allowed: bool = True,
         job_absence_verified: bool = False,
+        run_id_absence_basis: str | None = None,
     ) -> None:
         super().__init__(message)
         self.fallback_allowed = fallback_allowed
         self.job_absence_verified = job_absence_verified
+        self.run_id_absence_basis = run_id_absence_basis
 
 
 def _gcloud(*arguments: str) -> str:
@@ -91,8 +95,30 @@ def _validated_plan(path: Path) -> dict[str, object]:
     return value
 
 
-def _preflight(plan: dict[str, object]) -> None:
+def _preflight(plan: dict[str, object], admission: dict[str, object]) -> None:
     run_id = str(plan["run_id"])
+    active_project = _gcloud("config", "get-value", "project")
+    if active_project != PROJECT_ID:
+        raise PreflightRejected(
+            f"active gcloud project must be {PROJECT_ID}", fallback_allowed=False
+        )
+    billing = json.loads(
+        _gcloud("beta", "billing", "projects", "describe", PROJECT_ID, "--format=json")
+    )
+    if not isinstance(billing, dict) or billing.get("billingEnabled") is not True:
+        checks = admission.get("checks")
+        absence_basis = admission.get("run_id_absence_basis")
+        absence_verified = (
+            isinstance(checks, dict)
+            and checks.get("run_id_absent") is True
+            and absence_basis == _BILLING_DISABLED_ABSENCE
+        )
+        raise PreflightRejected(
+            "project billing is not enabled",
+            fallback_allowed=absence_verified,
+            job_absence_verified=absence_verified,
+            run_id_absence_basis=absence_basis if absence_verified else None,
+        )
     jobs = json.loads(
         _gcloud(
             "ai",
@@ -109,29 +135,18 @@ def _preflight(plan: dict[str, object]) -> None:
             "run ID already exists or the job lookup was not empty",
             fallback_allowed=False,
         )
-    active_project = _gcloud("config", "get-value", "project")
-    if active_project != PROJECT_ID:
-        raise PreflightRejected(
-            f"active gcloud project must be {PROJECT_ID}",
-            job_absence_verified=True,
-        )
-    billing = json.loads(
-        _gcloud("beta", "billing", "projects", "describe", PROJECT_ID, "--format=json")
-    )
-    if not isinstance(billing, dict) or billing.get("billingEnabled") is not True:
-        raise PreflightRejected(
-            "project billing is not enabled", job_absence_verified=True
-        )
     credits_verification = os.environ.get("BOOKFORGE_GCP_CREDITS_VERIFIED")
     if credits_verification != f"VERIFIED:{run_id}":
         raise PreflightRejected(
             "promotional-credit verification is missing for this run",
             job_absence_verified=True,
+            run_id_absence_basis="vertex-list",
         )
     if os.environ.get("BOOKFORGE_GCP_JAX_APPROVAL") != plan["approval_token"]:
         raise PreflightRejected(
             "exact one-purpose GCP approval token is missing",
             job_absence_verified=True,
+            run_id_absence_basis="vertex-list",
         )
 
 
@@ -193,6 +208,37 @@ def _validated_admission_evidence(path: Path, plan: dict[str, object]) -> dict[s
             "read-only admission did not prove the run ID absent",
             fallback_allowed=False,
         )
+    if "run_id_absent" not in checks:
+        raise PreflightRejected(
+            "cloud admission evidence omitted the run-ID absence check",
+            fallback_allowed=False,
+        )
+    absence_basis = evidence.get("run_id_absence_basis")
+    if checks.get("run_id_absent") is True and absence_basis not in {
+        "vertex-list",
+        _BILLING_DISABLED_ABSENCE,
+    }:
+        raise PreflightRejected(
+            "cloud admission evidence has no valid run-ID absence basis",
+            fallback_allowed=False,
+        )
+    if absence_basis == _BILLING_DISABLED_ABSENCE and evidence.get(
+        "run_id_absence_evidence"
+    ) != {
+        "audit_filter": (
+            'logName="projects/'
+            f'{PROJECT_ID}/logs/cloudaudit.googleapis.com%2Factivity" AND '
+            'protoPayload.serviceName="aiplatform.googleapis.com" AND '
+            'protoPayload.methodName="google.cloud.aiplatform.v1.JobService.CreateCustomJob" AND '
+            f'protoPayload.request.customJob.displayName="{plan["run_id"]}"'
+        ),
+        "freshness": "400d",
+        "maximum_run_id_age_days": 7,
+    }:
+        raise PreflightRejected(
+            "cloud admission evidence has malformed CustomJob audit evidence",
+            fallback_allowed=False,
+        )
     return evidence
 
 
@@ -204,11 +250,17 @@ def _require_ready_admission(evidence: dict[str, object]) -> None:
         raise PreflightRejected(
             "cloud admission evidence has malformed failed checks",
             fallback_allowed=False,
-            job_absence_verified=True,
+            job_absence_verified=False,
         )
+    checks = evidence.get("checks")
+    absence_verified = isinstance(checks, dict) and checks.get("run_id_absent") is True
     raise PreflightRejected(
         "read-only cloud admission failed: " + ", ".join(failed_checks),
-        job_absence_verified=True,
+        fallback_allowed=absence_verified,
+        job_absence_verified=absence_verified,
+        run_id_absence_basis=(
+            str(evidence["run_id_absence_basis"]) if absence_verified else None
+        ),
     )
 
 
@@ -239,6 +291,7 @@ def _record_preflight_rejection(
             "submission_intent_created": False,
             "custom_job_created": False if rejection.job_absence_verified else None,
             "job_absence_verified": rejection.job_absence_verified,
+            "run_id_absence_basis": rejection.run_id_absence_basis,
             "fallback_allowed": (
                 rejection.fallback_allowed and rejection.job_absence_verified
             ),
@@ -327,7 +380,7 @@ def submit(
     _assert_no_unreconciled_paid_attempt(state_directory)
     try:
         admission = _validated_admission_evidence(admission_evidence_path, plan)
-        _preflight(plan)
+        _preflight(plan, admission)
         _require_ready_admission(admission)
     except PreflightRejected as error:
         _record_preflight_rejection(state_directory, plan, error)

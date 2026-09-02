@@ -316,7 +316,7 @@ def verify_merge_provenance(
     if (
         completion.get("schema_version") != "1.0"
         or completion.get("status") != "succeeded"
-        or completion.get("backend") != "modal-l40s"
+        or completion.get("backend") != "modal-l4"
         or completion.get("release_type")
         != "provisional-merged-hf-development-candidate"
         or completion.get("config_sha256") != config.sha256

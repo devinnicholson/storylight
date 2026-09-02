@@ -401,68 +401,18 @@ def hydration_preflight() -> dict[str, object]:
 def gpu_configuration_preflight(approval_token_value: str) -> dict[str, object]:
     """Prove the two-GPU MaxText FSDP configuration before training."""
 
-    from training.jax_fidelity.configuration import load_config
-
     config_path = Path("/opt/bookforge/experiments/jax-fidelity-lab/config.json")
     config_sha = _sha256(config_path)
     expected = f"APPROVE_MODAL_JAX_GPU_PREFLIGHT:{config_sha}"
     if approval_token_value != expected:
         raise ValueError("exact Modal JAX GPU preflight approval token is required")
-    experiment = load_config(config_path)
-    script = "\n".join(
-        [
-            "import json, os, sys",
-            "from maxtext.configs import pyconfig",
-            "config = pyconfig.initialize(sys.argv)",
-            "from transformer_engine.jax.sharding import global_shard_guard, MeshResource",
-            "import jax",
-            "import jax.numpy as jnp",
-            "memory_fraction = os.environ.get('XLA_PYTHON_CLIENT_MEM_FRACTION')",
-            "if memory_fraction != '0.95':",
-            "    raise RuntimeError(f'unexpected JAX memory fraction: {memory_fraction!r}')",
-            "devices = jax.devices()",
-            "if len(devices) != 2 or any(device.platform != 'gpu' for device in devices):",
-            "    raise RuntimeError(f'expected two GPUs, found {devices!r}')",
-            "if config.ici_fsdp_parallelism != -1:",
-            "    raise RuntimeError('MaxText FSDP auto-sharding is disabled')",
-            "from maxtext.utils import maxtext_utils",
-            "mesh = maxtext_utils.create_device_mesh(config, devices)",
-            "mesh_shape = dict(zip(config.mesh_axes, mesh.shape, strict=True))",
-            "if mesh_shape.get('fsdp') != 2:",
-            "    raise RuntimeError(f'expected a two-way FSDP mesh, found {mesh_shape!r}')",
-            "value = jax.device_get(jnp.arange(1024, dtype=jnp.bfloat16).sum())",
-            "print(json.dumps({'hardware': config.hardware, 'devices': len(devices), "
-            "'platform': devices[0].platform, 'memory_fraction': memory_fraction, "
-            "'ici_fsdp_parallelism': config.ici_fsdp_parallelism, 'mesh_shape': mesh_shape, "
-            "'probe_sum': float(value)}), flush=True)",
-        ]
+    from training.jax_fidelity.modal_gpu_preflight import run_two_gpu_fsdp_preflight
+
+    payload = run_two_gpu_fsdp_preflight(
+        config_path=config_path,
+        maxtext_root=Path("/opt/MaxText"),
+        environment=offline_environment(os.environ),
     )
-    command = [
-        "python3",
-        "-c",
-        script,
-        "/opt/MaxText/src/maxtext/configs/base.yml",
-        f"model_name={experiment.production['maxtext_model_name']}",
-        "hardware=gpu",
-        "skip_jax_distributed_system=true",
-        f"use_multimodal={str(experiment.production['use_multimodal']).lower()}",
-        f"scan_layers={str(experiment.production['scan_layers']).lower()}",
-        "enable_checkpointing=false",
-    ]
-    try:
-        completed = subprocess.run(
-            command,
-            cwd="/opt/MaxText",
-            env=offline_environment(os.environ),
-            check=True,
-            capture_output=True,
-            text=True,
-            timeout=240,
-        )
-    except subprocess.CalledProcessError as error:
-        detail = (error.stderr or error.stdout or "no subprocess output").strip()
-        raise RuntimeError(f"GPU configuration preflight failed:\n{detail}") from error
-    payload = json.loads(completed.stdout.strip().splitlines()[-1])
     print(json.dumps(payload, sort_keys=True), flush=True)
     return {"schema_version": "1.0", "ready": True, **payload}
 

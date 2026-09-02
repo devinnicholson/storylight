@@ -11,7 +11,7 @@ import subprocess
 import tempfile
 from pathlib import Path
 
-from stage_inputs import build_input_manifest, canonical_bytes
+from stage_inputs import build_input_manifest, canonical_bytes, public_dataset_sources
 
 VOLUME_NAME = "bookforge-jax-fidelity-inputs"
 APPROVAL_ENVIRONMENT = "BOOKFORGE_MODAL_JAX_ROUNDTRIP_STAGE_APPROVAL"
@@ -23,45 +23,6 @@ def _sha256(path: Path) -> str:
         for block in iter(lambda: stream.read(1024 * 1024), b""):
             digest.update(block)
     return digest.hexdigest()
-
-
-def _dataset_sources(manifest_path: Path) -> dict[str, Path]:
-    try:
-        document = json.loads(manifest_path.read_text(encoding="utf-8"))
-    except (OSError, UnicodeDecodeError, json.JSONDecodeError) as error:
-        raise ValueError("dataset manifest is not valid JSON") from error
-    splits = document.get("splits") if isinstance(document, dict) else None
-    if not isinstance(splits, dict) or not splits:
-        raise ValueError("dataset manifest has no splits")
-    sources: dict[str, Path] = {}
-    root = manifest_path.resolve().parent
-    for name, declaration in sorted(splits.items()):
-        if not isinstance(declaration, dict):
-            raise ValueError(f"dataset split {name!r} is malformed")
-        raw_relative = declaration.get("path")
-        if raw_relative is None:
-            continue
-        if not isinstance(raw_relative, str) or not raw_relative:
-            raise ValueError(f"dataset split {name!r} has an invalid path")
-        relative = Path(raw_relative)
-        if relative.is_absolute() or ".." in relative.parts:
-            raise ValueError(f"dataset split {name!r} escaped the manifest directory")
-        unresolved = root / relative
-        if unresolved.is_symlink():
-            raise ValueError(f"dataset split {name!r} may not be a symbolic link")
-        source = unresolved.resolve()
-        try:
-            source.relative_to(root)
-        except ValueError as error:
-            raise ValueError(f"dataset split {name!r} escaped the manifest directory") from error
-        if not source.is_file():
-            raise ValueError(f"dataset split {name!r} is not a regular file")
-        if _sha256(source) != declaration.get("sha256"):
-            raise ValueError(f"dataset split {name!r} SHA-256 mismatch")
-        sources[f"dataset/{relative.as_posix()}"] = source
-    if not sources:
-        raise ValueError("roundtrip staging requires accessible public dataset splits")
-    return sources
 
 
 def build_roundtrip_input_manifest(
@@ -89,7 +50,7 @@ def build_roundtrip_input_manifest(
         tokenizer_manifest=tokenizer_manifest,
         require_base_orbax=False,
     )
-    for relative, source in _dataset_sources(dataset_manifest).items():
+    for relative, source in public_dataset_sources(dataset_manifest).items():
         if relative in sources:
             raise ValueError(f"duplicate staged input path: {relative}")
         sources[relative] = source

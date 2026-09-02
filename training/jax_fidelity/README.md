@@ -121,11 +121,43 @@ trusted SHA-256 values for that receipt, manifest, and the remote completion;
 re-verifies the leaf bytes; retains the tokenizer-manifest binding; and records
 the base content digest in the typed training-stage evidence.
 
+The Modal full trainer reserves the final 600 seconds of its one-hour function
+deadline for durability and publication. Immediately after successful training,
+it commits the complete scratch checkpoint and terminal training receipt. It
+then publishes release data in one commit and `completion.json` in a second
+commit. If inline publication cannot finish, the same deployment exposes a
+CPU-only recovery mode; it validates the exact input, attempt, two-GPU FSDP, and
+training-completion hashes and cannot invoke training or overwrite conflicting
+release bytes:
+
+When the active Google Cloud project has billing disabled before its
+digest-pinned JAX image can be built, produce the fallback rejection with
+`infra/gcp/jax/record_unavailable_fallback.py`. The recorder consumes the exact
+image build plan and intended Vertex resource without inventing an image digest.
+It performs only project, billing, and exact-name `CreateCustomJob` Admin
+Activity reads, then writes the evidence once. The Modal worker accepts this
+producer only when billing is explicitly disabled, the dated run ID and 400-day
+audit absence are fresh and exact, no image build or job intent exists, and all
+input and intended-resource hashes match the Modal request.
+
+```bash
+modal run deploy/modal_jax_fidelity.py --help
+# Reuse the original arguments and add both options printed by the approved plan:
+#   --finalize-only
+#   --finalize-approval-token-value \
+#   APPROVE_MODAL_JAX_FINALIZE:{run_id}:{input_manifest_sha256}:{gcp_rejection_sha256}
+```
+
+Completion-less derivative staging is safe to rebuild from the retained
+checkpoint. Completion-bearing staging is immutable. A recovery interrupted
+after its first release commit resumes by verifying every existing byte and
+adding only missing files before publishing completion last.
+
 After the full adapter succeeds, `modal_jax_merge.py` is the only remote merge
 boundary. One exact approval binds the original staged HF snapshot and input
 manifest, the successful roundtrip completion and base-Orbax receipt, the
 portable full-training completion and adapter manifest, and the config,
-dataset, and training run hashes. The finite L40S worker selects the single
+dataset, and training run hashes. The finite L4 worker selects the single
 configured terminal LoRA `items` leaf, invokes MaxText-to-HF once, and writes a
 prediction-only `candidate.manifest.json`. It has no retries or web endpoint,
 and `completion.json` is published last.
@@ -141,10 +173,79 @@ python scripts/fetch_modal_jax_merge.py \
   --execute
 ```
 
-The fetched directory contains `merged-hf/` and
-`candidate.manifest.json`, the exact layout accepted by
-`stage_modal_prediction_inputs.py`. The candidate remains explicitly
-ineligible for release until development evaluation succeeds.
+Prediction does not require downloading and re-uploading the merged checkpoint.
+Fetch only the four small receipts needed to plan the handoff (these commands are
+read-only), then build an exact local plan:
+
+```bash
+modal volume get bookforge-jax-fidelity-inputs \
+  /ROUNDTRIP_RUN_ID/inputs.manifest.json /tmp/roundtrip-inputs.manifest.json
+modal volume get bookforge-jax-fidelity-release \
+  /merged/MERGE_RUN_ID/completion.json /tmp/merge-completion.json
+modal volume get bookforge-jax-fidelity-release \
+  /merged/MERGE_RUN_ID/candidate.manifest.json /tmp/candidate.manifest.json
+modal volume get bookforge-jax-fidelity-release \
+  /merged/MERGE_RUN_ID/merged-hf.manifest.json /tmp/merged-hf.manifest.json
+
+python scripts/plan_modal_jax_prediction_handoff.py \
+  --source-input-manifest /tmp/roundtrip-inputs.manifest.json \
+  --merge-completion /tmp/merge-completion.json \
+  --candidate-manifest /tmp/candidate.manifest.json \
+  --checkpoint-manifest /tmp/merged-hf.manifest.json \
+  --dataset-manifest datasets/story-fidelity-v1/manifest.json \
+  --development-records datasets/story-fidelity-v1/development.jsonl \
+  --prediction-run-id PREDICTION_RUN_ID \
+  --output /tmp/prediction-handoff-plan.json
+```
+
+The planner is local and non-mutating. Inspect its hashes, references, and exact
+approval values. The following is the only handoff mutation; it runs in one
+CPU-only, no-retry container and publishes only
+`prediction/PREDICTION_RUN_ID/inputs.manifest.json`. It copies no checkpoint
+bytes:
+
+```bash
+modal run deploy/modal_jax_prediction_handoff.py \
+  --source-run-id "$(jq -r .source_run_id /tmp/prediction-handoff-plan.json)" \
+  --source-input-manifest-sha256 "$(jq -r .source_input_manifest_sha256 /tmp/prediction-handoff-plan.json)" \
+  --merge-run-id "$(jq -r .merge_run_id /tmp/prediction-handoff-plan.json)" \
+  --merge-completion-sha256 "$(jq -r .merge_completion_sha256 /tmp/prediction-handoff-plan.json)" \
+  --prediction-run-id "$(jq -r .prediction_run_id /tmp/prediction-handoff-plan.json)" \
+  --candidate-id "$(jq -r .candidate_id /tmp/prediction-handoff-plan.json)" \
+  --candidate-manifest-sha256 "$(jq -r .candidate_manifest_sha256 /tmp/prediction-handoff-plan.json)" \
+  --checkpoint-manifest-sha256 "$(jq -r .checkpoint_manifest_sha256 /tmp/prediction-handoff-plan.json)" \
+  --checkpoint-content-sha256 "$(jq -r .checkpoint_content_sha256 /tmp/prediction-handoff-plan.json)" \
+  --target-manifest-sha256 "$(jq -r .target_manifest_sha256 /tmp/prediction-handoff-plan.json)" \
+  --approval-token-value "$(jq -r .approval_token /tmp/prediction-handoff-plan.json)"
+```
+
+The reference stager re-verifies the source input manifest, public 512-record
+development population, L4 merge completion, candidate manifest, and every
+merged checkpoint byte. It rejects hidden paths, symbolic links, legacy
+backends, changed hashes, and existing output prefixes. The prediction worker
+reloads both Modal volumes, rebuilds the same reference manifest, and reads the
+checkpoint directly from `/releases/merged/MERGE_RUN_ID` while retaining the
+original prediction approval contract:
+
+```bash
+BOOKFORGE_NVIDIA_PYTORCH_IMAGE='nvcr.io/nvidia/pytorch:TAG@sha256:DIGEST' \
+modal run deploy/modal_jax_prediction.py \
+  --run-id "$(jq -r .prediction_run_id /tmp/prediction-handoff-plan.json)" \
+  --candidate-id "$(jq -r .target_manifest.bindings.candidate_id /tmp/prediction-handoff-plan.json)" \
+  --config-sha256 "$(jq -r .target_manifest.bindings.config_sha256 /tmp/prediction-handoff-plan.json)" \
+  --dataset-manifest-sha256 "$(jq -r .target_manifest.bindings.dataset_manifest_sha256 /tmp/prediction-handoff-plan.json)" \
+  --development-records-sha256 "$(jq -r .target_manifest.bindings.development_records_sha256 /tmp/prediction-handoff-plan.json)" \
+  --candidate-manifest-sha256 "$(jq -r .target_manifest.bindings.candidate_manifest_sha256 /tmp/prediction-handoff-plan.json)" \
+  --checkpoint-manifest-sha256 "$(jq -r .target_manifest.bindings.checkpoint_manifest_sha256 /tmp/prediction-handoff-plan.json)" \
+  --checkpoint-content-sha256 "$(jq -r .target_manifest.bindings.checkpoint_content_sha256 /tmp/prediction-handoff-plan.json)" \
+  --input-manifest-sha256 "$(jq -r .target_manifest_sha256 /tmp/prediction-handoff-plan.json)" \
+  --batch-size "$(jq -r .prediction_batch_size /tmp/prediction-handoff-plan.json)" \
+  --approval-token-value "$(jq -r .prediction_approval_token /tmp/prediction-handoff-plan.json)"
+```
+
+The older fetched `merged-hf/` plus `candidate.manifest.json` staging path
+remains accepted for offline recovery. Either path leaves the candidate
+explicitly ineligible for release until development evaluation succeeds.
 
 After development eligibility passes, `release.py` does not trust the fetched
 directory by location alone. Its mandatory inputs include the trusted merge
@@ -155,6 +256,62 @@ receipt/manifest. It replays the conversion input contract against those exact
 three source leaves, validates the merged-HF manifest against the produced
 bytes, and copies every custody hash into `terminal_evidence` before writing the
 immutable release manifest last.
+
+The accepted-engine development baseline is recoverable without cloud compute.
+`baseline_development.py` accepts either the original report and its trusted
+SHA-256 or regenerates the report against the loopback-only accepted TensorRT
+endpoint. Both paths re-check the accepted engine bytes, accepted identity
+manifest, repository dataset manifest, complete 512-record development file,
+privacy-only report schema, and the four headline metrics frozen before
+training. It writes a read-only report and publishes `completion.json` last.
+
+On Jetson, first capture the accepted engine identity if a durable copy does not
+already exist. This copies the engine locally; it does not upload it or change
+the active route:
+
+```bash
+cd /opt/bookforge
+deploy/jetson/emit-accepted-planner-identity.sh \
+  --source-dataset-manifest-sha256 \
+  e717eb38c44fceeeae3a2bc88981767c316ca1339198ce1077b893252afeb1de \
+  --output "$HOME/bookforge-evidence/accepted-baseline-identity"
+```
+
+Then start the accepted TensorRT service on `127.0.0.1:11435`, compute the
+printed identity-manifest SHA-256, and plan the free local regeneration. The
+regenerator verifies that this service's main process names the accepted engine
+directory before and after evaluation:
+
+```bash
+systemctl --user start bookforge-tensorrt-planner.service
+/opt/bookforge/.venv/bin/python -m training.jax_fidelity.baseline_development \
+  --dataset-manifest datasets/story-fidelity-v1/manifest.json \
+  --dataset-manifest-sha256 \
+  e717eb38c44fceeeae3a2bc88981767c316ca1339198ce1077b893252afeb1de \
+  --development-records datasets/story-fidelity-v1/development.jsonl \
+  --development-records-sha256 \
+  5de3cfe3532b28e907816a6a77dfc45143de696f2b715890aef1460f60474533 \
+  --accepted-manifest \
+  "$HOME/bookforge-evidence/accepted-baseline-identity/candidate.manifest.json" \
+  --accepted-manifest-sha256 ACCEPTED_MANIFEST_SHA256 \
+  --accepted-engine \
+  "$HOME/.local/share/bookforge/tensorrt-edgellm-v0.10.0/models/gemma4-e2b-it-int4-awq-v010/engines/llm/llm.engine" \
+  --accepted-engine-sha256 \
+  95b69991b68c57a2d2d4bfa4116feb9ec57295588551d109353a42a9c16c4fdf \
+  --base-url http://127.0.0.1:11435 \
+  --output-directory "$HOME/bookforge-evidence/baseline-development-e717eb38"
+```
+
+Set `BOOKFORGE_BASELINE_DEVELOPMENT_APPROVAL` to the exact token printed by the
+plan and repeat the same command with `--execute`. If the original report is
+recovered instead, add `--source-report PATH` and
+`--source-report-sha256 SHA256`; those options preserve and verify its exact
+bytes rather than calling the endpoint. Preserve the printed completion
+SHA-256. `development_eligibility.py` requires the report and completion from
+this same directory, their two trusted hashes, and the accepted manifest and
+engine hashes. It rejects a loose report even when that report's checksum is
+known. `completion.json` therefore binds the accepted engine, dataset,
+development population, source, and report into the eligibility lineage.
 
 The evaluator consumes predictions already generated by a checkpoint runner:
 
@@ -180,6 +337,22 @@ bytes, prediction completion, and checkpoint manifests into one chain before
 the development improvement and non-regression gates can pass. The evaluator's
 approval token covers the record, prediction, and prediction-completion hashes.
 Hidden evaluation remains unavailable until that chain passes.
+
+The eligibility invocation must include these baseline arguments in addition
+to the candidate prediction and evaluation arguments:
+
+```bash
+python -m training.jax_fidelity.development_eligibility \
+  ... \
+  --baseline-report BASELINE_DIRECTORY/baseline-development.json \
+  --baseline-report-sha256 BASELINE_REPORT_SHA256 \
+  --baseline-completion BASELINE_DIRECTORY/completion.json \
+  --baseline-completion-sha256 TRUSTED_BASELINE_COMPLETION_SHA256 \
+  --baseline-candidate-manifest-sha256 ACCEPTED_MANIFEST_SHA256 \
+  --baseline-engine-sha256 \
+  95b69991b68c57a2d2d4bfa4116feb9ec57295588551d109353a42a9c16c4fdf
+```
+
 The private endpoint evaluator accepts an explicit absolute
 `--hidden-state-root`, which must be a mode-0700 durable directory, so the
 one-shot claim works on an encrypted workstation as well as `/var/lib`.

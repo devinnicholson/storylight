@@ -211,13 +211,16 @@ def test_prediction_worker_is_finite_offline_and_exactly_bound(tmp_path: Path) -
     validated = worker._validate_request(request)
     assert validated[0] == manifest["run_id"]
     assert validated[-1] == 4
-    with pytest.raises(ValueError, match="approval"):
+    with pytest.raises(ValueError, match="batch_size"):
         worker._validate_request({**request, "batch_size": 8})
+    with pytest.raises(ValueError, match="approval"):
+        worker._validate_request({**request, "approval_token": "approve"})
     with pytest.raises(ValueError, match="SHA-256"):
         worker._validate_request({**request, "candidate_manifest_sha256": "latest"})
 
     source = (ROOT / "deploy/modal_jax_prediction.py").read_text(encoding="utf-8")
-    assert 'GPU = "L40S"' in source
+    assert 'GPU = "L4"' in source
+    assert "MAX_BATCH_SIZE = 4" in source
     assert 'volumes={"/inputs": input_volume, "/releases": release_volume}' in source
     assert '_INPUT_ROOT = Path("/inputs/prediction")' in source
     assert '_OUTPUT_ROOT = Path("/releases/prediction")' in source
@@ -277,7 +280,7 @@ def test_prediction_fetch_requires_completion_hash_and_verifies_public_output(
     completion = {
         "schema_version": "1.0",
         "status": "succeeded",
-        "backend": "modal-l40s-cuda",
+        "backend": "modal-l4-cuda",
         "run_id": run_id,
         **bindings,
         "input_manifest_sha256": "9" * 64,
@@ -310,6 +313,17 @@ def test_prediction_fetch_requires_completion_hash_and_verifies_public_output(
     assert receipt["status"] == "fetched-and-verified"
     assert receipt["hidden_evaluated"] is False
     assert (destination / "predictions.jsonl").read_bytes() == predictions
+
+    legacy_completion = dict(completion)
+    legacy_completion["backend"] = "modal-l40s-cuda"
+    legacy_path = tmp_path / "legacy-completion.json"
+    legacy_path.write_bytes(canonical_json_bytes(legacy_completion))
+    with pytest.raises(ValueError, match="identity"):
+        fetcher._completion(
+            legacy_path,
+            run_id=run_id,
+            expected_sha256=sha256_file(legacy_path),
+        )
 
     with pytest.raises(ValueError, match="completion checksum"):
         fetcher.fetch_predictions(

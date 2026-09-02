@@ -14,9 +14,10 @@ import modal
 
 REPOSITORY_ROOT = Path(__file__).parents[1]
 APP_NAME = "bookforge-jax-development-prediction"
-GPU = "L40S"
+GPU = "L4"
 MAX_CONTAINERS = 1
 RETRIES = 0
+MAX_BATCH_SIZE = 4
 TIMEOUT_SECONDS = 1_200
 BUDGET_MONTH = "2026-09"
 WORKSPACE_HARD_STOP_USD = 28.0
@@ -24,6 +25,7 @@ FULL_CALL_CEILING_USD = 1.25
 LEDGER_PATH = REPOSITORY_ROOT / "experiments/jax-fidelity-lab/modal-ledger-2026-09.json"
 _INPUT_ROOT = Path("/inputs/prediction")
 _OUTPUT_ROOT = Path("/releases/prediction")
+_MERGED_RELEASE_ROOT = Path("/releases/merged")
 _SHA256 = re.compile(r"[0-9a-f]{64}\Z")
 _RUN_ID = re.compile(r"[a-z][a-z0-9-]{7,62}\Z")
 _CANDIDATE_ID = re.compile(r"fidelity-[0-9a-f]{20}\Z")
@@ -54,6 +56,11 @@ prediction_image = (
     .add_local_file(
         REPOSITORY_ROOT / "infra/gcp/jax/stage_modal_prediction_inputs.py",
         "/opt/bookforge/infra/gcp/jax/stage_modal_prediction_inputs.py",
+        copy=True,
+    )
+    .add_local_file(
+        REPOSITORY_ROOT / "infra/gcp/jax/prediction_handoff.py",
+        "/opt/bookforge/infra/gcp/jax/prediction_handoff.py",
         copy=True,
     )
     .env(
@@ -123,8 +130,8 @@ def _validate_request(request: dict[str, object]) -> tuple[str, str, dict[str, o
             raise ValueError(f"{name} must be a lowercase SHA-256")
         hashes[name] = value
     batch_size = request.get("batch_size")
-    if type(batch_size) is not int or not 1 <= batch_size <= 16:
-        raise ValueError("batch_size must be an integer in 1..16")
+    if type(batch_size) is not int or not 1 <= batch_size <= MAX_BATCH_SIZE:
+        raise ValueError(f"batch_size must be an integer in 1..{MAX_BATCH_SIZE}")
     bindings: dict[str, object] = {
         "candidate_id": candidate_id,
         "config_sha256": hashes["config_sha256"],
@@ -155,6 +162,97 @@ def _write_once(path: Path, content: bytes, mode: int = 0o400) -> None:
         os.fsync(stream.fileno())
 
 
+def _resolve_prediction_inputs(
+    input_directory: Path,
+    *,
+    run_id: str,
+    expected_manifest_sha256: str,
+    expected_bindings: dict[str, object],
+    input_root: Path = _INPUT_ROOT.parent,
+    merged_release_root: Path = _MERGED_RELEASE_ROOT,
+) -> dict[str, Path]:
+    """Resolve a materialized population or a verified no-reupload reference."""
+
+    manifest_path = input_directory / "inputs.manifest.json"
+    if manifest_path.is_symlink() or not manifest_path.is_file():
+        raise RuntimeError("prediction input manifest is not a regular file")
+    try:
+        document = json.loads(manifest_path.read_text(encoding="utf-8"))
+    except (OSError, UnicodeDecodeError, json.JSONDecodeError) as error:
+        raise RuntimeError("prediction input manifest is not valid JSON") from error
+    if not isinstance(document, dict):
+        raise RuntimeError("prediction input manifest must be a JSON object")
+    producer = document.get("producer")
+    if producer == "bookforge-modal-development-prediction-stager":
+        from infra.gcp.jax.stage_modal_prediction_inputs import verify_staged_inputs
+
+        verify_staged_inputs(
+            input_directory,
+            run_id=run_id,
+            expected_manifest_sha256=expected_manifest_sha256,
+            expected_bindings=expected_bindings,
+        )
+        return {
+            "config": input_directory / "config.json",
+            "dataset_manifest": input_directory / "dataset/manifest.json",
+            "development_records": input_directory / "dataset/development.jsonl",
+            "candidate_manifest": input_directory / "candidate/candidate.manifest.json",
+            "checkpoint": input_directory / "candidate/merged-hf",
+        }
+
+    from infra.gcp.jax.prediction_handoff import (
+        PRODUCER,
+        manifest_sha256,
+        sha256_file,
+        verify_reference_sources,
+    )
+
+    if producer != PRODUCER:
+        raise RuntimeError("prediction input manifest producer is unsupported")
+    if sha256_file(manifest_path) != expected_manifest_sha256:
+        raise RuntimeError("prediction reference manifest checksum changed")
+    actual = {
+        path.relative_to(input_directory).as_posix()
+        for path in input_directory.rglob("*")
+        if path.is_file()
+    }
+    if actual != {"inputs.manifest.json"} or any(
+        path.is_symlink() for path in input_directory.rglob("*")
+    ):
+        raise RuntimeError("prediction reference prefix contains materialized or unsafe state")
+    derivation = document.get("derivation")
+    if not isinstance(derivation, dict):
+        raise RuntimeError("prediction reference has no source derivation")
+    source_run_id = derivation.get("source_run_id")
+    source_manifest_sha = derivation.get("source_input_manifest_sha256")
+    merge_run_id = derivation.get("merge_run_id")
+    merge_completion_sha = derivation.get("merge_completion_sha256")
+    if not all(
+        isinstance(value, str)
+        for value in (
+            source_run_id,
+            source_manifest_sha,
+            merge_run_id,
+            merge_completion_sha,
+        )
+    ):
+        raise RuntimeError("prediction reference source derivation is malformed")
+    rebuilt, paths = verify_reference_sources(
+        source_input_root=input_root / source_run_id,
+        source_input_manifest_sha256=source_manifest_sha,
+        merge_release_root=merged_release_root / merge_run_id,
+        merge_completion_sha256=merge_completion_sha,
+        prediction_run_id=run_id,
+    )
+    if (
+        rebuilt != document
+        or manifest_sha256(rebuilt) != expected_manifest_sha256
+        or rebuilt.get("bindings") != expected_bindings
+    ):
+        raise RuntimeError("prediction reference manifest or bindings changed")
+    return paths
+
+
 @app.function(
     image=prediction_image,
     gpu=GPU,
@@ -169,15 +267,14 @@ def predict_finite(request: dict[str, object]) -> dict[str, object]:
     """Generate all 512 development outputs once, with no network model access."""
 
     run_id, candidate_id, bindings, input_manifest_sha, batch_size = _validate_request(request)
+    input_volume.reload()
+    release_volume.reload()
     input_directory = _INPUT_ROOT / run_id
     output_directory = _OUTPUT_ROOT / run_id
     if output_directory.exists():
         raise RuntimeError("prediction output prefix already has terminal or partial state")
 
-    from infra.gcp.jax.stage_modal_prediction_inputs import (
-        validate_public_dataset,
-        verify_staged_inputs,
-    )
+    from infra.gcp.jax.stage_modal_prediction_inputs import validate_public_dataset
     from training.jax_fidelity.configuration import load_config
     from training.jax_fidelity.integrity import (
         artifact_manifest,
@@ -187,17 +284,17 @@ def predict_finite(request: dict[str, object]) -> dict[str, object]:
     from training.jax_fidelity.merged_candidate import validate_merged_candidate_manifest
     from training.jax_fidelity.predict import generate_predictions, load_records
 
-    verify_staged_inputs(
+    paths = _resolve_prediction_inputs(
         input_directory,
         run_id=run_id,
         expected_manifest_sha256=input_manifest_sha,
         expected_bindings=bindings,
     )
-    config_path = input_directory / "config.json"
-    dataset_manifest = input_directory / "dataset/manifest.json"
-    records_path = input_directory / "dataset/development.jsonl"
-    candidate_manifest = input_directory / "candidate/candidate.manifest.json"
-    checkpoint = input_directory / "candidate/merged-hf"
+    config_path = paths["config"]
+    dataset_manifest = paths["dataset_manifest"]
+    records_path = paths["development_records"]
+    candidate_manifest = paths["candidate_manifest"]
+    checkpoint = paths["checkpoint"]
     config = load_config(config_path)
     dataset_sha, records_sha = validate_public_dataset(dataset_manifest, records_path)
     if config.sha256 != bindings["config_sha256"]:
@@ -265,7 +362,7 @@ def predict_finite(request: dict[str, object]) -> dict[str, object]:
     payload: dict[str, object] = {
         "schema_version": "1.0",
         "status": "succeeded",
-        "backend": "modal-l40s-cuda",
+        "backend": "modal-l4-cuda",
         "run_id": run_id,
         "candidate_id": candidate_id,
         "input_manifest_sha256": input_manifest_sha,
@@ -310,7 +407,7 @@ def predict_cli(
     checkpoint_content_sha256: str,
     input_manifest_sha256: str,
     approval_token_value: str,
-    batch_size: int = 8,
+    batch_size: int = 4,
 ) -> None:
     if datetime.now(UTC).strftime("%Y-%m") != BUDGET_MONTH:
         raise RuntimeError("Modal prediction authorization is outside its budget month")

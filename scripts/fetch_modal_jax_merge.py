@@ -40,7 +40,7 @@ def _completion(path: Path, *, merge_run_id: str, expected_sha256: str) -> dict[
     if (
         document.get("schema_version") != "1.0"
         or document.get("status") != "succeeded"
-        or document.get("backend") != "modal-l40s"
+        or document.get("backend") != "modal-l4"
         or document.get("release_type") != "provisional-merged-hf-development-candidate"
         or document.get("merge_run_id") != merge_run_id
         or document.get("development_evaluated") is not False

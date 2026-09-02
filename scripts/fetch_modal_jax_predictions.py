@@ -59,7 +59,7 @@ def _completion(path: Path, *, run_id: str, expected_sha256: str) -> dict[str, A
     if (
         document.get("schema_version") != "1.0"
         or document.get("status") != "succeeded"
-        or document.get("backend") != "modal-l40s-cuda"
+        or document.get("backend") != "modal-l4-cuda"
         or document.get("run_id") != run_id
         or document.get("split") != "development"
         or document.get("predictions") != 512

@@ -141,7 +141,7 @@ def validate_prediction_completion(
         set(document) != _COMPLETION_FIELDS
         or document.get("schema_version") != "1.0"
         or document.get("status") != "succeeded"
-        or document.get("backend") != "modal-l40s-cuda"
+        or document.get("backend") != "modal-l4-cuda"
         or not isinstance(document.get("run_id"), str)
         or _RUN_ID.fullmatch(document["run_id"]) is None
         or not isinstance(document.get("candidate_id"), str)

@@ -199,6 +199,9 @@ def test_roundtrip_request_and_modal_function_fail_closed() -> None:
         )
 
     source = (ROOT / "deploy/modal_jax_roundtrip.py").read_text()
+    preflight_source = (
+        ROOT / "training/jax_fidelity/modal_gpu_preflight.py"
+    ).read_text()
     plan = json.loads(
         (ROOT / "experiments/jax-fidelity-lab/modal-roundtrip-plan-2026-09.json").read_text()
     )
@@ -215,12 +218,11 @@ def test_roundtrip_request_and_modal_function_fail_closed() -> None:
     assert '"backend": "modal-cpu-preflight"' in source
     assert "validate_runtime_lock(lock_path)" in source
     assert "def gpu_configuration_preflight(approval_token_value: str)" in source
-    assert '"skip_jax_distributed_system=true"' in source
-    assert "from transformer_engine.jax.sharding import global_shard_guard" in source
-    assert "unexpected JAX memory fraction" in source
-    assert "expected two GPUs" in source
-    assert "MaxText FSDP auto-sharding is disabled" in source
-    assert "expected a two-way FSDP mesh" in source
+    assert '"skip_jax_distributed_system=true"' in preflight_source
+    assert "unexpected JAX memory fraction" in preflight_source
+    assert "expected two GPUs" in preflight_source
+    assert "MaxText FSDP auto-sharding is disabled" in preflight_source
+    assert "expected a two-way FSDP mesh" in preflight_source
     assert "cached base Orbax receipt hash changed" in source
     assert "cached HF-to-MaxText input contract changed" in source
     assert "cached HF-to-MaxText run manifest hash changed" in source

@@ -12,7 +12,11 @@ import tempfile
 from collections.abc import Callable
 from pathlib import Path
 
-from stage_inputs import build_input_manifest, canonical_bytes, verify_full_training_sources
+from stage_inputs import (
+    build_full_training_input_manifest,
+    canonical_bytes,
+    verify_full_training_sources,
+)
 
 VOLUME_NAME = "bookforge-jax-fidelity-inputs"
 APPROVAL_ENVIRONMENT = "BOOKFORGE_MODAL_JAX_STAGE_APPROVAL"
@@ -132,7 +136,7 @@ def main() -> None:
     args = _parser().parse_args()
     if args.output.exists():
         raise FileExistsError(f"refusing to overwrite staging evidence: {args.output}")
-    manifest, sources = build_input_manifest(
+    manifest, sources = build_full_training_input_manifest(
         run_id=args.run_id,
         config=args.config,
         dataset_manifest=args.dataset_manifest,

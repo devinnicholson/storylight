@@ -28,7 +28,7 @@ from typing import Any
 SCHEMA_VERSION = "bookforge-fidelity-custody-backup-v1"
 KEYCHAIN_SERVICE = "com.bookforge.story-fidelity-v1.custody-backup"
 DATASET_MANIFEST_SHA256 = "e717eb38c44fceeeae3a2bc88981767c316ca1339198ce1077b893252afeb1de"
-CONFIG_SHA256 = "a009feaaaef4907f1ed41e82d7c0c5ef906b00adc574cd0e00fca8a986097f9c"
+CONFIG_SHA256 = "db6b3788aa555f89624f30d05a827f1911c0d62e5376e3aced40333dff833fd0"
 PRIVATE_SHA256 = {
     "hidden.jsonl": "ef32a7ca378d8239352936b08665c3b45fe12dab47b8d5a1bf2356859f8db61c",
     "hidden.key": "0597ce504ae95b47d44e5454d7fce644bff92cc1976130222eb32bf6cd6cf4cd",

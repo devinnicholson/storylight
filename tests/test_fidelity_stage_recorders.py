@@ -78,6 +78,9 @@ def _passing_development_evaluation(
         "checks": {"schema_valid": True, "development_improvement": True},
         "reasons": [],
         "baseline_summary_sha256": "a" * 64,
+        "baseline_completion_sha256": "5" * 64,
+        "baseline_candidate_manifest_sha256": "6" * 64,
+        "baseline_engine_sha256": "7" * 64,
         "candidate_summary_sha256": "b" * 64,
         "development_records_sha256": "d" * 64,
         "predictions_sha256": "e" * 64,
@@ -447,7 +450,7 @@ def test_training_recorder_accepts_exact_portable_completion_lineage(
                 "run_id": campaign.run_id,
                 "training_run_id": training_id,
                 "status": "succeeded",
-                "backend": "modal-l40s",
+                "backend": "modal-l4x2",
                 "config_sha256": campaign.config_sha256,
                 "dataset_manifest_sha256": campaign.dataset_manifest_sha256,
                 "base_checkpoint_manifest_sha256": sha256_file(base_manifest_path),
@@ -503,7 +506,7 @@ def test_training_recorder_accepts_exact_portable_completion_lineage(
         "--runtime-lock",
         str(package / "runtime.lock.json"),
         "--backend",
-        "modal-l40s",
+        "modal-l4x2",
     ]
     subprocess.run(
         command,

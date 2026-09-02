@@ -36,7 +36,7 @@ def test_backup_contract_pins_the_exact_private_and_public_inputs() -> None:
         == "e717eb38c44fceeeae3a2bc88981767c316ca1339198ce1077b893252afeb1de"
     )
     assert (
-        backup.CONFIG_SHA256 == "a009feaaaef4907f1ed41e82d7c0c5ef906b00adc574cd0e00fca8a986097f9c"
+        backup.CONFIG_SHA256 == "db6b3788aa555f89624f30d05a827f1911c0d62e5376e3aced40333dff833fd0"
     )
 
 
