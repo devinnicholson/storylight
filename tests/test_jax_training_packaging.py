@@ -401,7 +401,7 @@ def test_pinned_native_maxtext_patch_materializes_lora_before_optimizer() -> Non
     assert "src/maxtext/trainers/pre_train/train.py" in patch
     assert "Bookforge native LoRA census" in patch
     assert "BOOKFORGE_EXPECTED_LORA_PAIR_COUNT" in patch
-    assert "index 35f47e59..86bdc3aa 100644" in patch
+    assert "index 35f47e59..73b808a5 100644" in patch
     assert 'scalar_metrics["learning/update_norm"]' in patch
     assert 'scalar_metrics["learning/changed_trainable_leaves"]' in patch
     assert "typed path collision" in patch

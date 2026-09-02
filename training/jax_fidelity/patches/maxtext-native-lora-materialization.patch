@@ -23,13 +23,13 @@ index 274d9acc..8fd8aa43 100644
 +      scalar_metrics["learning/update_norm"] = update_norm
 +      scalar_metrics["learning/changed_trainable_leaves"] = changed_trainable_leaves
 diff --git a/src/maxtext/utils/train_utils.py b/src/maxtext/utils/train_utils.py
-index 35f47e59..86bdc3aa 100644
+index 35f47e59..73b808a5 100644
 --- a/src/maxtext/utils/train_utils.py
 +++ b/src/maxtext/utils/train_utils.py
 @@ -17,0 +18,2 @@
 +import os
 +import jax.numpy as jnp
-@@ -268,0 +271,7 @@ def setup_train_loop(config, recorder, devices=None):
+@@ -269,0 +272,7 @@ def setup_train_loop(config, recorder, devices=None):
 +        lora_enabled = getattr(getattr(config, "lora", None), "enable_lora", False)
 +        if lora_enabled and getattr(config, "gradient_accumulation_steps", 1) != 1:
 +          raise ValueError(

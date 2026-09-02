@@ -73,6 +73,13 @@ def test_native_lora_patch_refuses_gradient_accumulation() -> None:
     assert "native LoRA evidence requires gradient_accumulation_steps=1" in source
 
 
+def test_native_lora_patch_materializes_after_model_construction() -> None:
+    source = MAXTEXT_PATCH.read_text(encoding="utf-8")
+
+    assert "@@ -269,0 +272,7 @@ def setup_train_loop" in source
+    assert "@@ -268,0 +271,7 @@ def setup_train_loop" not in source
+
+
 def test_cpu_runtime_is_fixed_before_jax_import(monkeypatch) -> None:
     preflight = _load()
     monkeypatch.delitem(sys.modules, "jax", raising=False)
