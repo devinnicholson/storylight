@@ -1,14 +1,17 @@
 # Bookforge-owned direct pins. MaxText's transitive dependency set is resolved
 # inside the immutable container, then `verify_runtime.py` rejects drift in the
 # inference-relevant stack before a run can start.
+--extra-index-url https://download.pytorch.org/whl/cpu
+
 jax==0.11.0
 jaxlib==0.11.0
 flax==0.12.8
-optax==0.2.6
+optax==0.2.8
 orbax-checkpoint==0.12.2
 datasets==5.0.1
 huggingface-hub==1.26.0
-safetensors==0.7.0
-transformers==5.12.1
+safetensors==0.8.0
+transformers==5.13.0
+torch==2.10.0+cpu
 google-cloud-storage==3.13.1
-maxtext[cuda12,tpu-post-train] @ git+https://github.com/AI-Hypercomputer/maxtext.git@538fe7a3f3376d94cf3f04e77741aa6d7e8efa45
+maxtext[cuda12] @ git+https://github.com/AI-Hypercomputer/maxtext.git@538fe7a3f3376d94cf3f04e77741aa6d7e8efa45

@@ -44,9 +44,9 @@ NVIDIA_PYTORCH_IMAGE = _pinned_nvidia_image()
 prediction_image = (
     modal.Image.from_registry(NVIDIA_PYTORCH_IMAGE)
     .pip_install(
-        "transformers==5.12.1",
+        "transformers==5.13.0",
         "huggingface-hub==1.26.0",
-        "safetensors==0.7.0",
+        "safetensors==0.8.0",
         "pydantic==2.13.4",
     )
     .add_local_dir(REPOSITORY_ROOT / "src", "/opt/bookforge/src", copy=True)

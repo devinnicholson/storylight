@@ -7,9 +7,9 @@
   "jaxlib": "0.11.0",
   "maxtext_release": "0.2.4",
   "maxtext_revision": "538fe7a3f3376d94cf3f04e77741aa6d7e8efa45",
-  "optax": "0.2.6",
+  "optax": "0.2.8",
   "orbax_checkpoint": "0.12.2",
   "python": "3.12.11",
-  "safetensors": "0.7.0",
-  "transformers": "5.12.1"
+  "safetensors": "0.8.0",
+  "transformers": "5.13.0"
 }

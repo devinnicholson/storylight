@@ -316,12 +316,17 @@ def test_container_and_direct_dependencies_are_immutable() -> None:
     assert "FROM python:3.12.11-slim-bookworm@sha256:" in dockerfile
     assert "jax==0.11.0" in lock
     assert "flax==0.12.8" in lock
-    assert "optax==0.2.6" in lock
+    assert "optax==0.2.8" in lock
+    assert "safetensors==0.8.0" in lock
+    assert "transformers==5.13.0" in lock
     assert "orbax-checkpoint==0.12.2" in lock
     assert "google-cloud-secret-manager" not in lock
     assert "google-cloud-storage==3.13.1" in lock
     assert "@538fe7a3f3376d94cf3f04e77741aa6d7e8efa45" in lock
-    assert "maxtext[cuda12,tpu-post-train]" in lock
+    assert "torch==2.10.0+cpu" in lock
+    assert "https://download.pytorch.org/whl/cpu" in lock
+    assert "maxtext[cuda12]" in lock
+    assert "tpu-post-train" not in lock
     assert "git clone --filter=blob:none --no-checkout" in dockerfile
     assert (
         "git -C /opt/MaxText checkout --detach "

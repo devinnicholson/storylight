@@ -177,7 +177,7 @@ def validate_config(document: Mapping[str, Any]) -> None:
     _exact(versions.get("jax"), "0.11.0", "versions.jax")
     _exact(versions.get("jaxlib"), "0.11.0", "versions.jaxlib")
     _exact(versions.get("flax"), "0.12.8", "versions.flax")
-    _exact(versions.get("optax"), "0.2.6", "versions.optax")
+    _exact(versions.get("optax"), "0.2.8", "versions.optax")
     _exact(versions.get("orbax_checkpoint"), "0.12.2", "versions.orbax_checkpoint")
     _exact(versions.get("maxtext_release"), "0.2.4", "versions.maxtext_release")
     maxtext_revision = versions.get("maxtext_revision")
