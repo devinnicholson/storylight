@@ -140,6 +140,14 @@ def test_shared_image_excludes_mutable_python_cache_artifacts() -> None:
     assert source.count("ignore=LOCAL_SOURCE_IGNORE") == 4
 
 
+def test_shared_image_installs_stable_dependencies_before_mutable_patch() -> None:
+    source = IMAGE_DEFINITION.read_text(encoding="utf-8")
+
+    dependency_layer = source.index(".pip_install_from_requirements(")
+    patch_layer = source.index(".add_local_file(\n        MAXTEXT_NATIVE_LORA_PATCH")
+    assert dependency_layer < patch_layer
+
+
 def test_cpu_preflight_receipt_is_immutable_complete_and_ledger_bound(
     tmp_path: Path,
 ) -> None:

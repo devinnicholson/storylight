@@ -201,24 +201,6 @@ JAX_IMAGE = (
         f'test "$(git -C /opt/MaxText rev-parse HEAD)" = "{MAXTEXT_REVISION}"',
         'test -z "$(git -C /opt/MaxText status --porcelain)"',
     )
-    .add_local_file(
-        MAXTEXT_NATIVE_LORA_PATCH,
-        "/opt/bookforge/patches/maxtext-native-lora-materialization.patch",
-        copy=True,
-    )
-    .run_commands(
-        "git -C /opt/MaxText apply --check --unidiff-zero "
-        "/opt/bookforge/patches/maxtext-native-lora-materialization.patch",
-        "git -C /opt/MaxText apply --unidiff-zero "
-        "/opt/bookforge/patches/maxtext-native-lora-materialization.patch",
-        "git -C /opt/MaxText diff --check",
-        "test \"$(git -C /opt/MaxText status --short)\" = "
-        "\"$(printf '%s\\n%s' ' M src/maxtext/trainers/pre_train/train.py' "
-        "' M src/maxtext/utils/train_utils.py')\"",
-        "git -C /opt/MaxText diff --no-ext-diff --binary --abbrev=8 --unified=0 -- "
-        "src/maxtext/trainers/pre_train/train.py src/maxtext/utils/train_utils.py "
-        "| cmp -s - /opt/bookforge/patches/maxtext-native-lora-materialization.patch",
-    )
     # Transformer Engine 2.18's isolated build requirements omit the NVTX
     # wheel even though its compiler searches nvidia/nvtx/include. Seed the
     # exact CUDA build environment, then compile that extension against it.
@@ -242,6 +224,26 @@ JAX_IMAGE = (
         f"ln -sfnT cuda_runtime {NVIDIA_PYTHON_ROOT}/cudart",
         "python -c \"import glob; assert glob.glob("
         f"'{NVIDIA_PYTHON_ROOT}/cudart/lib/lib*.so.*[0-9]')\"",
+    )
+    # Keep the stable, multi-gigabyte dependency layers above the mutable
+    # Bookforge patch so a patch revision only rebuilds the final image layers.
+    .add_local_file(
+        MAXTEXT_NATIVE_LORA_PATCH,
+        "/opt/bookforge/patches/maxtext-native-lora-materialization.patch",
+        copy=True,
+    )
+    .run_commands(
+        "git -C /opt/MaxText apply --check --unidiff-zero "
+        "/opt/bookforge/patches/maxtext-native-lora-materialization.patch",
+        "git -C /opt/MaxText apply --unidiff-zero "
+        "/opt/bookforge/patches/maxtext-native-lora-materialization.patch",
+        "git -C /opt/MaxText diff --check",
+        "test \"$(git -C /opt/MaxText status --short)\" = "
+        "\"$(printf '%s\\n%s' ' M src/maxtext/trainers/pre_train/train.py' "
+        "' M src/maxtext/utils/train_utils.py')\"",
+        "git -C /opt/MaxText diff --no-ext-diff --binary --abbrev=8 --unified=0 -- "
+        "src/maxtext/trainers/pre_train/train.py src/maxtext/utils/train_utils.py "
+        "| cmp -s - /opt/bookforge/patches/maxtext-native-lora-materialization.patch",
     )
     .add_local_dir(
         REPOSITORY_ROOT / "training",
