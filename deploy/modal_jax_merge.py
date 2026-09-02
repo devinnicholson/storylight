@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import math
 import os
 import re
 import shutil
@@ -635,10 +636,28 @@ def _authoritative_workspace_total() -> float:
         text=True,
         timeout=30,
     )
-    rows = json.loads(completed.stdout)
+    return _parse_modal_billing_total(completed.stdout)
+
+
+def _parse_modal_billing_total(payload: str) -> float:
+    rows = json.loads(payload)
     if not isinstance(rows, list):
         raise RuntimeError("Modal billing report was not a JSON list")
-    return sum(float(row["Cost"]) for row in rows)
+    costs: list[float] = []
+    for row in rows:
+        if not isinstance(row, dict):
+            raise RuntimeError("Modal billing report entry was not an object")
+        current = row.get("cost")
+        legacy = row.get("Cost")
+        if current is None and legacy is None:
+            raise RuntimeError("Modal billing report entry had no cost")
+        if current is not None and legacy is not None and str(current) != str(legacy):
+            raise RuntimeError("Modal billing report entry had conflicting costs")
+        cost = float(current if current is not None else legacy)
+        if not math.isfinite(cost) or cost < 0:
+            raise RuntimeError("Modal billing report entry had an invalid cost")
+        costs.append(cost)
+    return math.fsum(costs)
 
 
 @app.local_entrypoint()

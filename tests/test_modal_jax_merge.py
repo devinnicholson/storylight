@@ -143,6 +143,16 @@ def test_merge_request_requires_every_hash_and_exact_approval() -> None:
         merge._validate_request(_request(training_run_sha256="latest"))
 
 
+def test_merge_billing_parser_accepts_current_and_legacy_fields() -> None:
+    assert merge._parse_modal_billing_total(
+        '[{"cost": "1.25"}, {"Cost": 0.5}]'
+    ) == pytest.approx(1.75)
+    with pytest.raises(RuntimeError, match="no cost"):
+        merge._parse_modal_billing_total('[{"description": "missing"}]')
+    with pytest.raises(RuntimeError, match="conflicting"):
+        merge._parse_modal_billing_total('[{"cost": 1, "Cost": 2}]')
+
+
 def test_full_training_release_selects_exact_terminal_adapter_leaf(tmp_path: Path) -> None:
     root, arguments = _training_release(tmp_path)
     adapter, evidence = merge._verify_training_release(root, **arguments)
