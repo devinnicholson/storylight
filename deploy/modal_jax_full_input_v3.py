@@ -296,7 +296,7 @@ def clone_population(request: dict[str, object]) -> dict[str, object]:
     timeout=TIMEOUT_SECONDS,
     retries=0,
     max_containers=MAX_CONTAINERS,
-    volumes={str(_INPUT_ROOT): input_volume, str(_RELEASE_ROOT): release_volume},
+    volumes={str(_INPUT_ROOT): input_volume, "/releases": release_volume},
 )
 def clone_finite(request: dict[str, object]) -> dict[str, object]:
     input_volume.reload()

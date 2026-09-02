@@ -351,3 +351,10 @@ def test_v3_runtime_rejects_hidden_declarations_and_probe_as_training(
             prepared_sha256=sha256_file(probe),
             tokenizer_manifest_sha256=manifest["prepared_training"]["tokenizer_manifest_sha256"],
         )
+
+
+def test_v3_clone_mounts_release_volume_at_its_actual_root() -> None:
+    source = (ROOT / "deploy/modal_jax_full_input_v3.py").read_text(encoding="utf-8")
+
+    assert '_RELEASE_ROOT = Path("/releases/roundtrip")' in source
+    assert '"/releases": release_volume' in source
