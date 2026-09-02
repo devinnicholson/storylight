@@ -14,6 +14,7 @@ from typing import Any
 
 VOLUME_NAME = "bookforge-jax-fidelity-release"
 REMOTE_ROOT = "roundtrip"
+EXPECTED_BACKEND = "modal-l4x2"
 
 
 def _sha256(path: Path) -> str:
@@ -46,7 +47,7 @@ def _completion(path: Path, *, run_id: str, expected_sha256: str) -> dict[str, A
     if (
         document.get("schema_version") != "1.0"
         or document.get("status") != "succeeded"
-        or document.get("backend") != "modal-l40s"
+        or document.get("backend") != EXPECTED_BACKEND
         or document.get("run_id") != run_id
     ):
         raise ValueError("Modal roundtrip completion identity changed")

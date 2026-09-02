@@ -22,7 +22,8 @@ REPOSITORY_ROOT = Path(__file__).parents[1]
 PLAN_PATH = REPOSITORY_ROOT / "experiments/jax-fidelity-lab/modal-roundtrip-plan-2026-09.json"
 LEDGER_PATH = REPOSITORY_ROOT / "experiments/jax-fidelity-lab/modal-ledger-2026-09.json"
 APP_NAME = "bookforge-jax-roundtrip-smoke"
-GPU = "L40S"
+GPU = "L4:2"
+BACKEND = "modal-l4x2"
 TIMEOUT_SECONDS = 2_700
 WORKSPACE_HARD_STOP_USD = 28.0
 BUDGET_MONTH = "2026-09"
@@ -237,7 +238,7 @@ def hydration_preflight() -> dict[str, object]:
     max_containers=1,
 )
 def gpu_configuration_preflight(approval_token_value: str) -> dict[str, object]:
-    """Prove the single-GPU MaxText configuration before checkpoint conversion."""
+    """Prove the two-GPU MaxText FSDP configuration before training."""
 
     from training.jax_fidelity.configuration import load_config
 
@@ -259,11 +260,14 @@ def gpu_configuration_preflight(approval_token_value: str) -> dict[str, object]:
             "if memory_fraction != '0.95':",
             "    raise RuntimeError(f'unexpected JAX memory fraction: {memory_fraction!r}')",
             "devices = jax.devices()",
-            "if len(devices) != 1 or devices[0].platform != 'gpu':",
-            "    raise RuntimeError(f'expected one GPU, found {devices!r}')",
+            "if len(devices) != 2 or any(device.platform != 'gpu' for device in devices):",
+            "    raise RuntimeError(f'expected two GPUs, found {devices!r}')",
+            "if config.ici_fsdp_parallelism != 2:",
+            "    raise RuntimeError(f'expected FSDP=2, found {config.ici_fsdp_parallelism!r}')",
             "value = jax.device_get(jnp.arange(1024, dtype=jnp.bfloat16).sum())",
             "print(json.dumps({'hardware': config.hardware, 'devices': len(devices), "
             "'platform': devices[0].platform, 'memory_fraction': memory_fraction, "
+            "'ici_fsdp_parallelism': config.ici_fsdp_parallelism, "
             "'probe_sum': float(value)}), flush=True)",
         ]
     )
@@ -727,7 +731,7 @@ def run_roundtrip_finite(request: dict[str, object]) -> dict[str, object]:
     payload: dict[str, object] = {
         "schema_version": "1.0",
         "status": "succeeded",
-        "backend": "modal-l40s",
+        "backend": BACKEND,
         "run_id": run_id,
         "base_cache_run_id": base_cache[0] if base_cache is not None else None,
         "config_sha256": config_sha,
@@ -807,6 +811,7 @@ def run_cli(
     plan = _json_object(PLAN_PATH)
     if (
         plan.get("status") != "plan-only"
+        or plan.get("gpu") != GPU
         or plan.get("automatic_retries") != 0
         or plan.get("function_calls") != 1
     ):

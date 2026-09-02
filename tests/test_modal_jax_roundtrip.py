@@ -193,12 +193,14 @@ def test_roundtrip_request_and_modal_function_fail_closed() -> None:
         (ROOT / "experiments/jax-fidelity-lab/modal-roundtrip-plan-2026-09.json").read_text()
     )
     assert plan["function_calls"] == 1
-    assert plan["gpu"] == "L40S"
+    assert plan["gpu"] == "L4:2"
     assert plan["automatic_retries"] == 0
     assert plan["timeout_seconds"] == 2700
     assert "retries=0" in source
     assert "max_containers=1" in source
-    assert 'GPU = "L40S"' in source
+    assert 'GPU = "L4:2"' in source
+    assert 'BACKEND = "modal-l4x2"' in source
+    assert 'plan.get("gpu") != GPU' in source
     assert "def hydration_preflight()" in source
     assert '"backend": "modal-cpu-preflight"' in source
     assert "validate_runtime_lock(lock_path)" in source
@@ -206,7 +208,8 @@ def test_roundtrip_request_and_modal_function_fail_closed() -> None:
     assert '"skip_jax_distributed_system=true"' in source
     assert "from transformer_engine.jax.sharding import global_shard_guard" in source
     assert "unexpected JAX memory fraction" in source
-    assert "expected one GPU" in source
+    assert "expected two GPUs" in source
+    assert "expected FSDP=2" in source
     assert "cached base Orbax receipt hash changed" in source
     assert "cached HF-to-MaxText input contract changed" in source
     assert "cached HF-to-MaxText run manifest hash changed" in source
@@ -287,7 +290,7 @@ def test_roundtrip_fetch_requires_trusted_completion_and_every_declared_byte(
             {
                 "schema_version": "1.0",
                 "status": "succeeded",
-                "backend": "modal-l40s",
+                "backend": "modal-l4x2",
                 "run_id": "bookforge-roundtrip-smoke-20260901",
                 "files": rows,
             },
