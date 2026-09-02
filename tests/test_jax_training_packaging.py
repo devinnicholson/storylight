@@ -39,6 +39,7 @@ from training.jax_fidelity.verify_runtime import validate_runtime_lock, write_ru
 
 CONFIG_PATH = ROOT / "experiments/jax-fidelity-lab/config.json"
 CONFIG_V2_PATH = ROOT / "experiments/jax-fidelity-lab/config-v2.json"
+CONFIG_V3_PATH = ROOT / "experiments/jax-fidelity-lab/config-v3-canary.json"
 TARGET = (
     "SETTING: moonlit library\n"
     "ACTOR: small copper fox\n"
@@ -385,6 +386,22 @@ def test_v2_train_command_makes_exposure_and_optimizer_explicit() -> None:
     assert "skip_step_on_spikes=false" in command
     assert "trainable_parameters_mask=[]" in command
     assert "checkpoint_period=160" in command
+
+
+def test_v3_train_command_uses_l4_safe_attention() -> None:
+    config = load_config(CONFIG_V3_PATH)
+    command = build_train_command(
+        config,
+        maxtext_checkpoint="/checkpoints/base/items",
+        hf_tokenizer_checkpoint="/hf/base",
+        prepared_train_jsonl="/data/train.jsonl",
+        output_directory="/output",
+        run_name="recovery-smoke",
+        hardware="gpu",
+        smoke=True,
+    )
+
+    assert "attention=dot_product" in command
 
 
 def test_pinned_native_maxtext_patch_materializes_lora_before_optimizer() -> None:

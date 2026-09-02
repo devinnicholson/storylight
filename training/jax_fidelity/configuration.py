@@ -293,6 +293,7 @@ def validate_config(document: Mapping[str, Any]) -> None:
             "training.learning_rate_final_fraction",
         )
         _exact(training.get("adam_weight_decay"), 0.0, "training.adam_weight_decay")
+        _exact(training.get("attention"), "dot_product", "training.attention")
 
         recovery = _mapping(document.get("recovery"), "recovery")
         expected_recovery_fields = {

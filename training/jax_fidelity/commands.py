@@ -96,6 +96,8 @@ def build_train_command(
         "trainable_parameters_mask=[]",
         "enable_checkpointing=True",
     ]
+    if "attention" in training:
+        command.append(f"attention={training['attention']}")
     for name in (
         "packing",
         "num_epoch",
