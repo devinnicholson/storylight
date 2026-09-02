@@ -535,7 +535,7 @@ def run_roundtrip_finite(request: dict[str, object]) -> dict[str, object]:
     payload: dict[str, object] = {
         "schema_version": "1.0",
         "status": "succeeded",
-        "backend": "modal-l40s",
+        "backend": "modal-l4",
         "run_id": run_id,
         "config_sha256": config_sha,
         "dataset_manifest_sha256": dataset_sha,

@@ -206,7 +206,7 @@ def test_roundtrip_fetch_requires_trusted_completion_and_every_declared_byte(
             {
                 "schema_version": "1.0",
                 "status": "succeeded",
-                "backend": "modal-l40s",
+                "backend": "modal-l4",
                 "run_id": "bookforge-roundtrip-smoke-20260901",
                 "files": rows,
             },
