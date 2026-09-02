@@ -107,6 +107,7 @@ def _run(
     input_bytes: bytes | None = None,
     label: str,
     suppress_output: bool = False,
+    environment: Mapping[str, str] | None = None,
 ) -> bytes:
     try:
         result = subprocess.run(
@@ -115,6 +116,7 @@ def _run(
             capture_output=True,
             check=False,
             close_fds=True,
+            env=environment,
         )
     except OSError as error:
         raise BackupError(f"could not start {label}") from error
@@ -181,6 +183,29 @@ def _source_artifacts(config: BackupConfiguration) -> tuple[SourceArtifact, ...]
     )
 
 
+def _verification_environment(repository: Path) -> dict[str, str]:
+    """Provide only the local import path and non-secret process basics."""
+
+    return {
+        "HOME": str(Path.home()),
+        "LANG": os.environ.get("LANG", "C.UTF-8"),
+        "PATH": os.environ.get("PATH", os.defpath),
+        "PYTHONPATH": str(repository / "src"),
+    }
+
+
+def _verification_interpreter(repository: Path) -> str:
+    candidate = repository / ".venv/bin/python"
+    try:
+        resolved = candidate.resolve(strict=True)
+        metadata = resolved.stat()
+    except OSError as error:
+        raise BackupError("the repository Python environment is missing") from error
+    if not stat.S_ISREG(metadata.st_mode) or not os.access(candidate, os.X_OK):
+        raise BackupError("the repository Python environment is not executable")
+    return str(candidate)
+
+
 def _validate_configuration(config: BackupConfiguration) -> tuple[SourceArtifact, ...]:
     if sys.platform != "darwin":
         raise BackupError("custody sparseimage creation must run on macOS")
@@ -222,7 +247,7 @@ def _validate_configuration(config: BackupConfiguration) -> tuple[SourceArtifact
     _lstat_regular(verifier, label="custody verifier", private=False)
     _run(
         [
-            sys.executable,
+            _verification_interpreter(config.repository),
             str(verifier),
             "--verify-only",
             "--output-dir",
@@ -235,6 +260,7 @@ def _validate_configuration(config: BackupConfiguration) -> tuple[SourceArtifact
             str(config.custody_root / "custody.json"),
         ],
         label="private custody verification",
+        environment=_verification_environment(config.repository),
     )
     return artifacts
 

@@ -104,6 +104,32 @@ def test_helper_uses_aes_stdinpass_keychain_and_ciphertext_only_transfer() -> No
     assert 'DEFAULT_JETSON_USER = "operator"' not in source
 
 
+def test_private_verifier_gets_repository_imports_without_cloud_secrets(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("HF_TOKEN", "must-not-cross-the-process-boundary")
+    monkeypatch.setenv("GOOGLE_APPLICATION_CREDENTIALS", "/private/credential.json")
+
+    environment = backup._verification_environment(ROOT)
+
+    assert environment["PYTHONPATH"] == str(ROOT / "src")
+    assert "HF_TOKEN" not in environment
+    assert "GOOGLE_APPLICATION_CREDENTIALS" not in environment
+    assert set(environment) == {"HOME", "LANG", "PATH", "PYTHONPATH"}
+
+
+def test_private_verifier_requires_the_repository_environment(tmp_path: Path) -> None:
+    with pytest.raises(backup.BackupError, match="environment is missing"):
+        backup._verification_interpreter(tmp_path)
+
+    interpreter = tmp_path / ".venv/bin/python"
+    interpreter.parent.mkdir(parents=True)
+    interpreter.write_text("#!/bin/sh\nexit 0\n", encoding="utf-8")
+    interpreter.chmod(0o700)
+
+    assert backup._verification_interpreter(tmp_path) == str(interpreter)
+
+
 def test_help_is_non_mutating_and_documents_check_only() -> None:
     result = subprocess.run(
         [sys.executable, str(HELPER), "--help"],
