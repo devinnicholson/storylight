@@ -204,6 +204,7 @@ def test_roundtrip_request_and_modal_function_fail_closed() -> None:
     assert "def gpu_configuration_preflight(approval_token_value: str)" in source
     assert '"skip_jax_distributed_system=true"' in source
     assert "from transformer_engine.jax.sharding import global_shard_guard" in source
+    assert "unexpected JAX memory fraction" in source
     assert "expected one GPU" in source
     assert "cached base Orbax receipt hash changed" in source
     assert "cached HF-to-MaxText input contract changed" in source

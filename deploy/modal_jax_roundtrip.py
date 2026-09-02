@@ -249,18 +249,22 @@ def gpu_configuration_preflight(approval_token_value: str) -> dict[str, object]:
     experiment = load_config(config_path)
     script = "\n".join(
         [
-            "import json, sys",
+            "import json, os, sys",
             "from maxtext.configs import pyconfig",
             "config = pyconfig.initialize(sys.argv)",
             "from transformer_engine.jax.sharding import global_shard_guard, MeshResource",
             "import jax",
             "import jax.numpy as jnp",
+            "memory_fraction = os.environ.get('XLA_PYTHON_CLIENT_MEM_FRACTION')",
+            "if memory_fraction != '0.95':",
+            "    raise RuntimeError(f'unexpected JAX memory fraction: {memory_fraction!r}')",
             "devices = jax.devices()",
             "if len(devices) != 1 or devices[0].platform != 'gpu':",
             "    raise RuntimeError(f'expected one GPU, found {devices!r}')",
             "value = jax.device_get(jnp.arange(1024, dtype=jnp.bfloat16).sum())",
             "print(json.dumps({'hardware': config.hardware, 'devices': len(devices), "
-            "'platform': devices[0].platform, 'probe_sum': float(value)}), flush=True)",
+            "'platform': devices[0].platform, 'memory_fraction': memory_fraction, "
+            "'probe_sum': float(value)}), flush=True)",
         ]
     )
     command = [

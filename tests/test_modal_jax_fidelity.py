@@ -159,6 +159,7 @@ def test_modal_budget_gate_is_present_and_maxtext_checkout_is_exact() -> None:
     assert '"LIBRARY_PATH": NCCL_LIBRARY_DIR' in image_source
     assert '"/usr/local/lib/python3.12/site-packages/nvidia/curand/lib"' in image_source
     assert '"LD_LIBRARY_PATH": CUDA_WHEEL_LIBRARY_PATH' in image_source
+    assert '"XLA_PYTHON_CLIENT_MEM_FRACTION": "0.95"' in image_source
     assert "ln -sfnT cuda_runtime" in image_source
     assert "cudart/lib/lib*.so.*[0-9]" in image_source
     assert 'extra_options="--no-build-isolation"' in image_source

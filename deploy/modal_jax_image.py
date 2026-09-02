@@ -119,6 +119,10 @@ JAX_IMAGE = (
         {
             "PYTHONPATH": "/opt/bookforge:/opt/bookforge/src",
             "JAX_PLATFORMS": "cuda",
+            # Gemma 3 4B LoRA compiles to a ~19.6 GiB L4 graph. JAX defaults
+            # to a 75% (16.5 GiB) pool, so expose a bounded 95% pool while
+            # leaving device headroom for the CUDA runtime.
+            "XLA_PYTHON_CLIENT_MEM_FRACTION": "0.95",
             "LD_LIBRARY_PATH": CUDA_WHEEL_LIBRARY_PATH,
             "HF_HUB_OFFLINE": "1",
             "HF_DATASETS_OFFLINE": "1",
@@ -139,6 +143,7 @@ def offline_environment(environment: dict[str, str]) -> dict[str, str]:
             "HF_HUB_OFFLINE": "1",
             "HF_DATASETS_OFFLINE": "1",
             "TRANSFORMERS_OFFLINE": "1",
+            "XLA_PYTHON_CLIENT_MEM_FRACTION": "0.95",
         }
     )
     return sanitized
