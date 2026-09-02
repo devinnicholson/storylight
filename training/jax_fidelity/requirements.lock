@@ -21,4 +21,7 @@ google-cloud-storage==3.13.1
 nvidia-nvtx-cu12==12.9.79; sys_platform == "linux"
 nvidia-curand-cu12==10.3.10.19; sys_platform == "linux"
 transformer-engine-jax==2.18.0; sys_platform == "linux"
-maxtext[cuda12] @ git+https://github.com/AI-Hypercomputer/maxtext.git@538fe7a3f3376d94cf3f04e77741aa6d7e8efa45
+# The image verifies this exact revision before pip runs. Installing from that
+# checkout avoids a redundant, failure-prone GitHub clone during dependency
+# resolution while preserving the immutable commit binding.
+maxtext[cuda12] @ file:///opt/MaxText

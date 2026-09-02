@@ -447,7 +447,8 @@ def test_container_and_direct_dependencies_are_immutable() -> None:
     assert "orbax-checkpoint==0.12.2" in lock
     assert "google-cloud-secret-manager" not in lock
     assert "google-cloud-storage==3.13.1" in lock
-    assert "@538fe7a3f3376d94cf3f04e77741aa6d7e8efa45" in lock
+    assert "maxtext[cuda12] @ file:///opt/MaxText" in lock
+    assert "git+https://github.com/AI-Hypercomputer/maxtext" not in lock
     assert "torch==2.10.0+cpu" in lock
     assert "https://download.pytorch.org/whl/cpu" in lock
     assert "maxtext[cuda12]" in lock
