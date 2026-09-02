@@ -29,18 +29,31 @@ def _orbax_key_path(serialized: object, entry: object) -> tuple[str | int, ...]:
     key_metadata = entry.get("key_metadata")
     if not isinstance(key_metadata, list) or not key_metadata:
         raise OrbaxReceiptError("Orbax tree metadata has no key path")
+    raw_path: list[str] = []
     path: list[str | int] = []
     for component in key_metadata:
         key = component.get("key") if isinstance(component, dict) else None
-        if type(key) not in (str, int) or key == "":
+        key_type = component.get("key_type") if isinstance(component, dict) else None
+        if not isinstance(key, str) or key == "" or type(key_type) is not int:
             raise OrbaxReceiptError("Orbax tree metadata key path is malformed")
-        path.append(key)
+        raw_path.append(key)
+        if key_type == 1:
+            if not key.isascii() or not key.isdecimal():
+                raise OrbaxReceiptError("Orbax sequence key is not a non-negative index")
+            index = int(key)
+            if str(index) != key:
+                raise OrbaxReceiptError("Orbax sequence key is not canonical")
+            path.append(index)
+        elif key_type == 2:
+            path.append(key)
+        else:
+            raise OrbaxReceiptError("Orbax tree metadata key type is unsupported")
 
     try:
         decoded = ast.literal_eval(serialized)
     except (SyntaxError, ValueError) as error:
         raise OrbaxReceiptError("Orbax serialized tree path is malformed") from error
-    if not isinstance(decoded, tuple) or tuple(path) != decoded:
+    if not isinstance(decoded, tuple) or tuple(raw_path) != decoded:
         raise OrbaxReceiptError("Orbax serialized and structured tree paths disagree")
     return tuple(path)
 
@@ -80,7 +93,7 @@ def _optimizer_moment_identity(
 
     if (
         len(path) < 6
-        or path[:2] != ("opt_state", "0")
+        or path[:2] != ("opt_state", 0)
         or path[2] not in ("mu", "nu")
         or path[3] != "params"
     ):
@@ -126,22 +139,39 @@ def _flatten_restored_tree(
 
 def _validate_restored_lora_arrays(
     restored_tree: object,
-    expected_shapes: Mapping[tuple[str | int, ...], tuple[int, ...]],
+    expected_write_shapes: Mapping[tuple[str | int, ...], tuple[int, ...]],
 ) -> None:
     """Prove the metadata-backed LoRA leaves are real finite floating arrays."""
 
     restored = _flatten_restored_tree(restored_tree)
     restored_lora = {path: value for path, value in restored.items() if _lora_side(path)}
-    if set(restored_lora) != set(expected_shapes):
+    if set(restored_lora) != set(expected_write_shapes):
         raise OrbaxReceiptError("restored Orbax LoRA array paths differ from metadata")
-    for path, expected_shape in expected_shapes.items():
+    for path, expected_write_shape in expected_write_shapes.items():
         value = restored_lora[path]
         shape = getattr(value, "shape", None)
         dtype = getattr(value, "dtype", None)
-        if shape is None or tuple(shape) != expected_shape:
-            raise OrbaxReceiptError("restored Orbax LoRA array shape differs from metadata")
+        restored_shape = None if shape is None else tuple(shape)
+        if (
+            restored_shape is None
+            or len(restored_shape) != len(expected_write_shape)
+            or any(
+                restored_dimension < write_dimension
+                or restored_dimension % write_dimension
+                for restored_dimension, write_dimension in zip(
+                    restored_shape, expected_write_shape, strict=True
+                )
+            )
+        ):
+            raise OrbaxReceiptError(
+                "restored Orbax LoRA array shape differs from metadata: "
+                f"path={path!r}, metadata_write={expected_write_shape!r}, "
+                f"restored_global={restored_shape!r}"
+            )
         if dtype is None or getattr(dtype, "kind", None) != "f":
-            raise OrbaxReceiptError("restored Orbax LoRA value is not a floating array")
+            raise OrbaxReceiptError(
+                f"restored Orbax LoRA value is not a floating array: path={path!r}"
+            )
         try:
             import numpy as np
 
@@ -149,28 +179,25 @@ def _validate_restored_lora_arrays(
         except Exception as error:
             raise OrbaxReceiptError("restored Orbax LoRA array could not be inspected") from error
         if not finite:
-            raise OrbaxReceiptError("restored Orbax LoRA array contains non-finite values")
+            raise OrbaxReceiptError(
+                f"restored Orbax LoRA array contains non-finite values: path={path!r}"
+            )
 
 
-def lora_checkpoint_evidence(
+def _lora_checkpoint_evidence(
     items: Path | str,
     *,
-    expected_rank: int,
+    expected_rank: int | None,
     expected_pair_count: int | None = None,
     expected_step: int | None = None,
     approved_maxtext_patch_sha256: str | None = None,
     restored_tree: object | None = None,
 ) -> dict[str, Any]:
-    """Validate paired LoRA tensors from an Orbax ``items/_METADATA`` file.
+    """Implement strict LoRA storage validation with optional rank semantics."""
 
-    Orbax's OCDBT filenames are content-addressed and do not expose parameter
-    names. ``_METADATA`` is the authoritative tree map, so the gate parses its
-    structured key metadata, checks it against Orbax's serialized tuple key, and
-    validates every LoRA A/B shape. A step-only checkpoint is therefore rejected
-    before conversion can produce a no-op merged model.
-    """
-
-    if type(expected_rank) is not int or expected_rank < 1:
+    if expected_rank is not None and (
+        type(expected_rank) is not int or expected_rank < 1
+    ):
         raise OrbaxReceiptError("expected LoRA rank must be a positive integer")
     if expected_pair_count is not None and (
         type(expected_pair_count) is not int or expected_pair_count < 1
@@ -222,7 +249,7 @@ def lora_checkpoint_evidence(
         raise OrbaxReceiptError("Orbax adapter checkpoint has unrecognized LoRA tensor paths")
 
     pairs: dict[tuple[str | int, ...], dict[str, tuple[int, ...]]] = {}
-    expected_restored_shapes: dict[tuple[str | int, ...], tuple[int, ...]] = {}
+    expected_write_shapes: dict[tuple[str | int, ...], tuple[int, ...]] = {}
     optimizer_moments: dict[
         tuple[str, tuple[str | int, ...], str], tuple[int, ...]
     ] = {}
@@ -233,7 +260,9 @@ def lora_checkpoint_evidence(
         if not _is_model_parameter_path(path):
             moment_identity = _optimizer_moment_identity(path)
             if moment_identity is None:
-                raise OrbaxReceiptError("Orbax checkpoint has an unexpected LoRA optimizer path")
+                raise OrbaxReceiptError(
+                    f"Orbax checkpoint has an unexpected LoRA optimizer path: {path!r}"
+                )
             if moment_identity in optimizer_moments:
                 raise OrbaxReceiptError("Orbax checkpoint has a duplicate LoRA optimizer moment")
             raw_shape = value_metadata.get("write_shape")
@@ -245,7 +274,7 @@ def lora_checkpoint_evidence(
             ):
                 raise OrbaxReceiptError("Orbax LoRA optimizer moment is not a restorable array")
             optimizer_moments[moment_identity] = tuple(raw_shape)
-            expected_restored_shapes[path] = tuple(raw_shape)
+            expected_write_shapes[path] = tuple(raw_shape)
             continue
         module, side = identity
         if (
@@ -264,7 +293,7 @@ def lora_checkpoint_evidence(
         if side in module_sides:
             raise OrbaxReceiptError("Orbax adapter checkpoint has duplicate LoRA tensor sides")
         module_sides[side] = tuple(raw_shape)
-        expected_restored_shapes[path] = tuple(raw_shape)
+        expected_write_shapes[path] = tuple(raw_shape)
 
     if not pairs:
         raise OrbaxReceiptError("Orbax adapter checkpoint contains no LoRA tensors")
@@ -275,8 +304,14 @@ def lora_checkpoint_evidence(
             raise OrbaxReceiptError("Orbax adapter checkpoint has an unpaired LoRA tensor")
         a_shape = sides["a"]
         b_shape = sides["b"]
-        if a_shape[-1] != expected_rank or b_shape[0] != expected_rank:
-            raise OrbaxReceiptError("Orbax LoRA tensor shape does not match the approved rank")
+        if expected_rank is not None and (
+            a_shape[-1] != expected_rank or b_shape[0] != expected_rank
+        ):
+            raise OrbaxReceiptError(
+                "Orbax LoRA tensor shape does not match the approved rank: "
+                f"module={module!r}, a_shape={a_shape!r}, b_shape={b_shape!r}, "
+                f"rank={expected_rank}"
+            )
         evidence_pairs.append(
             {
                 "module_path": "/".join(str(component) for component in module),
@@ -305,7 +340,7 @@ def lora_checkpoint_evidence(
 
     if restored_tree is None:
         restored_tree = _restore_orbax_tree(root)
-    _validate_restored_lora_arrays(restored_tree, expected_restored_shapes)
+    _validate_restored_lora_arrays(restored_tree, expected_write_shapes)
 
     evidence: dict[str, Any] = {
         "schema_version": "1.0",
@@ -315,18 +350,65 @@ def lora_checkpoint_evidence(
         "lora_tensor_count": len(evidence_pairs) * 2,
         "lora_pair_count": len(evidence_pairs),
         "optimizer_lora_tensor_count": len(optimizer_moments),
-        "rank": expected_rank,
         "payload_arrays_restored": True,
-        "restored_lora_array_count": len(expected_restored_shapes),
+        "restored_lora_array_count": len(expected_write_shapes),
         "pairs": evidence_pairs,
     }
     if expected_pair_count is not None:
         evidence["expected_lora_pair_count"] = expected_pair_count
+    if expected_rank is not None:
+        evidence["rank"] = expected_rank
     if expected_step is not None:
         evidence["checkpoint_step"] = expected_step
         evidence["checkpoint_step_binding"] = "directory-name-plus-root-step-leaf"
     if approved_maxtext_patch_sha256 is not None:
         evidence["approved_maxtext_patch_sha256"] = approved_maxtext_patch_sha256
+    return evidence
+
+
+def lora_checkpoint_evidence(
+    items: Path | str,
+    *,
+    expected_rank: int,
+    expected_pair_count: int | None = None,
+    expected_step: int | None = None,
+    approved_maxtext_patch_sha256: str | None = None,
+    restored_tree: object | None = None,
+) -> dict[str, Any]:
+    """Validate a production LoRA checkpoint's storage, topology, and rank.
+
+    Orbax's OCDBT filenames are content-addressed and do not expose parameter
+    names. ``_METADATA`` is the authoritative tree map, so the gate parses its
+    structured key metadata, checks it against Orbax's serialized tuple key, and
+    validates every LoRA A/B shape. A step-only checkpoint is therefore rejected
+    before conversion can produce a no-op merged model.
+    """
+
+    return _lora_checkpoint_evidence(
+        items,
+        expected_rank=expected_rank,
+        expected_pair_count=expected_pair_count,
+        expected_step=expected_step,
+        approved_maxtext_patch_sha256=approved_maxtext_patch_sha256,
+        restored_tree=restored_tree,
+    )
+
+
+def lora_checkpoint_storage_evidence(
+    items: Path | str,
+    *,
+    expected_pair_count: int,
+    restored_tree: object | None = None,
+) -> dict[str, Any]:
+    """Validate paired LoRA tensors and exact Adam moments without rank semantics."""
+
+    evidence = _lora_checkpoint_evidence(
+        items,
+        expected_rank=None,
+        expected_pair_count=expected_pair_count,
+        restored_tree=restored_tree,
+    )
+    evidence["rank_validation"] = "not-applicable-storage-roundtrip"
     return evidence
 
 

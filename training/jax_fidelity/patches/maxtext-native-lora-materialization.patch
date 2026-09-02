@@ -1,3 +1,17 @@
+diff --git a/src/maxtext/common/checkpointing.py b/src/maxtext/common/checkpointing.py
+index 854c1b39..0dc4fdc9 100644
+--- a/src/maxtext/common/checkpointing.py
++++ b/src/maxtext/common/checkpointing.py
+@@ -935,0 +936,9 @@ def _filter_lora_trainable_state(state):
++    if isinstance(val, (list, tuple)):
++      filtered = [
++          _filter_dict(child, path + (str(index),))
++          for index, child in enumerate(val)
++      ]
++      if not any(child is not None for child in filtered):
++        return None
++      return tuple(filtered) if isinstance(val, tuple) else filtered
++
 diff --git a/src/maxtext/trainers/pre_train/train.py b/src/maxtext/trainers/pre_train/train.py
 index 274d9acc..8fd8aa43 100644
 --- a/src/maxtext/trainers/pre_train/train.py

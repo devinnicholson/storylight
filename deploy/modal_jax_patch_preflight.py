@@ -323,12 +323,17 @@ def native_lora_trace_preflight() -> dict[str, object]:
     sys.path.insert(0, str(MAXTEXT_ROOT))
 
     import jax
+    import orbax.checkpoint as ocp
     from flax import nnx
+    from maxtext.common import checkpointing, train_state_nnx
     from maxtext.utils import train_utils
     from tests.integration.lora_e2e_nnx_test import (
         _tiny_lora_pyconfig,
     )
 
+    from training.jax_fidelity.orbax_receipt import (
+        lora_checkpoint_storage_evidence,
+    )
     from training.jax_fidelity.runtime import (
         validate_maxtext_import_provenance,
     )
@@ -352,10 +357,16 @@ def native_lora_trace_preflight() -> dict[str, object]:
             steps=1,
             enable_checkpointing=False,
             skip_jax_distributed_system=True,
+            ici_fsdp_parallelism=-1,
+            ici_data_parallelism=1,
+            sharding_tolerance=1.0,
             lora={
                 "enable_lora": True,
                 "lora_rank": 4,
                 "lora_alpha": 8.0,
+                "lora_module_path": (
+                    r"decoder/layers_[0-9]+/self_attention/(query|key|value|out)"
+                ),
             },
         )
         setup = train_utils.setup_train_loop(config, recorder=None, devices=devices)
@@ -364,8 +375,8 @@ def native_lora_trace_preflight() -> dict[str, object]:
     mesh = setup[4]
     state = setup[-1]
     mesh_shape = {str(name): int(size) for name, size in mesh.shape.items()}
-    if mesh_shape.get("data") != EXPECTED_CPU_DEVICES:
-        raise RuntimeError(f"tiny Gemma4 did not use a two-way data mesh: {mesh_shape}")
+    if mesh_shape.get("fsdp") != EXPECTED_CPU_DEVICES or mesh_shape.get("data") != 1:
+        raise RuntimeError(f"tiny Gemma4 did not use the production FSDP mesh: {mesh_shape}")
 
     lora_entries = list(nnx.state(state.model, nnx.LoRAParam).flat_state())
     planned_lora_entries = list(
@@ -404,6 +415,26 @@ def native_lora_trace_preflight() -> dict[str, object]:
         jnp_module=jax.numpy,
     )
 
+    checkpoint_state = train_state_nnx.to_checkpoint_dict(nnx.state(state))
+    filtered_checkpoint = checkpointing._filter_lora_trainable_state(checkpoint_state)
+    if not isinstance(filtered_checkpoint, dict):
+        raise RuntimeError("MaxText produced no LoRA checkpoint state")
+    with tempfile.TemporaryDirectory(
+        prefix="bookforge-native-lora-orbax-preflight-"
+    ) as checkpoint_root:
+        checkpoint_items = Path(checkpoint_root) / "items"
+        ocp.PyTreeCheckpointer().save(str(checkpoint_items), filtered_checkpoint)
+        checkpoint_evidence = lora_checkpoint_storage_evidence(
+            checkpoint_items,
+            expected_pair_count=len(lora_entries) // 2,
+        )
+    if (
+        checkpoint_evidence["lora_tensor_count"] != len(lora_entries)
+        or checkpoint_evidence["optimizer_lora_tensor_count"]
+        != optimizer_lora_tensor_count
+    ):
+        raise RuntimeError("saved Orbax LoRA census differs from native state")
+
     payload: dict[str, object] = {
         "schema_version": "bookforge-jax-native-lora-cpu-preflight-v1",
         "status": "passed",
@@ -420,6 +451,11 @@ def native_lora_trace_preflight() -> dict[str, object]:
         "optimizer_overhead_array_count": (
             optimizer_array_count - optimizer_lora_tensor_count
         ),
+        "checkpoint_filter_roundtrip_passed": True,
+        "checkpoint_tree_leaf_count": checkpoint_evidence["tree_leaf_count"],
+        "checkpoint_restored_lora_array_count": checkpoint_evidence[
+            "restored_lora_array_count"
+        ],
         "lora_sharding_specs": sorted(sharding_specs),
         "maxtext_patch_sha256": _sha256(MAXTEXT_PATCH),
         "maxtext_imports": imports,

@@ -50,10 +50,20 @@ def test_native_lora_patch_preflight_is_finite_cpu_only_and_real() -> None:
     assert "_tiny_lora_pyconfig" in source
     assert "train_utils.setup_train_loop" in source
     assert "model_name=\"gemma4-26b\"" in source
+    assert "decoder/layers_[0-9]+/self_attention/(query|key|value|out)" in source
+    assert "ici_fsdp_parallelism=-1" in source
+    assert "ici_data_parallelism=1" in source
+    assert "sharding_tolerance=1.0" in source
+    assert 'mesh_shape.get("fsdp") != EXPECTED_CPU_DEVICES' in source
     assert "nnx.state(state.model, nnx.LoRAParam)" in source
     assert "nnx.filter_state(state_mesh_shardings.model, nnx.LoRAParam)" in source
     assert "value.sharding.spec != planned.spec" in source
     assert "_optimizer_lora_moment_count" in source
+    assert "train_state_nnx.to_checkpoint_dict(nnx.state(state))" in source
+    assert "checkpointing._filter_lora_trainable_state(checkpoint_state)" in source
+    assert "ocp.PyTreeCheckpointer().save" in source
+    assert "lora_checkpoint_storage_evidence(" in source
+    assert '"checkpoint_filter_roundtrip_passed": True' in source
     assert 'parts[:2] != ("opt_state", "0")' in source
     assert 'parts[2] not in ("mu", "nu")' in source
     assert '"nested_eval_shape_trace_passed": True' in source
@@ -78,6 +88,15 @@ def test_native_lora_patch_materializes_after_model_construction() -> None:
 
     assert "@@ -269,0 +272,7 @@ def setup_train_loop" in source
     assert "@@ -268,0 +271,7 @@ def setup_train_loop" not in source
+
+
+def test_native_lora_patch_preserves_linen_optimizer_sequences() -> None:
+    source = MAXTEXT_PATCH.read_text(encoding="utf-8")
+
+    assert "src/maxtext/common/checkpointing.py" in source
+    assert "if isinstance(val, (list, tuple)):" in source
+    assert "for index, child in enumerate(val)" in source
+    assert "tuple(filtered) if isinstance(val, tuple) else filtered" in source
 
 
 def test_cpu_runtime_is_fixed_before_jax_import(monkeypatch) -> None:

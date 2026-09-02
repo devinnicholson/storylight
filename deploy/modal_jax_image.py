@@ -239,9 +239,11 @@ JAX_IMAGE = (
         "/opt/bookforge/patches/maxtext-native-lora-materialization.patch",
         "git -C /opt/MaxText diff --check",
         "test \"$(git -C /opt/MaxText status --short)\" = "
-        "\"$(printf '%s\\n%s' ' M src/maxtext/trainers/pre_train/train.py' "
+        "\"$(printf '%s\\n%s\\n%s' ' M src/maxtext/common/checkpointing.py' "
+        "' M src/maxtext/trainers/pre_train/train.py' "
         "' M src/maxtext/utils/train_utils.py')\"",
         "git -C /opt/MaxText diff --no-ext-diff --binary --abbrev=8 --unified=0 -- "
+        "src/maxtext/common/checkpointing.py "
         "src/maxtext/trainers/pre_train/train.py src/maxtext/utils/train_utils.py "
         "| cmp -s - /opt/bookforge/patches/maxtext-native-lora-materialization.patch",
     )

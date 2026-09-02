@@ -25,7 +25,7 @@ RECOVERY_CATEGORY_COUNT = 20
 # attention targets + 35 * (wi_0/wi_1/wo) MLP targets.
 GEMMA4_E2B_LORA_PAIR_COUNT = 205
 MAXTEXT_NATIVE_LORA_PATCH_SHA256 = (
-    "825595d1c22face572bd69c2bfdbc32aabfefd1cd4a3b6daaba3cfe486efe06e"
+    "a146ed0b229e345a630128eb41e98b6a2916ce397759d0850e14f6014638ac5e"
 )
 
 _SHA256 = re.compile(r"sha256:[0-9a-f]{64}\Z")

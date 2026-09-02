@@ -26,10 +26,13 @@ def _git(root: Path, *arguments: str, text: bool = True) -> str | bytes:
 
 def _checkout(tmp_path: Path) -> tuple[Path, SimpleNamespace]:
     checkout = tmp_path / "MaxText"
+    checkpointing = checkout / "src/maxtext/common/checkpointing.py"
     source = checkout / "src/maxtext/utils/train_utils.py"
     train = checkout / "src/maxtext/trainers/pre_train/train.py"
+    checkpointing.parent.mkdir(parents=True)
     source.parent.mkdir(parents=True)
     train.parent.mkdir(parents=True)
+    checkpointing.write_text("before\n", encoding="utf-8")
     source.write_text("before\n", encoding="utf-8")
     train.write_text("before\n", encoding="utf-8")
     _git(checkout, "init")
@@ -46,6 +49,7 @@ def test_exact_approved_maxtext_patch_is_accepted(
 ) -> None:
     checkout, config = _checkout(tmp_path)
     paths = (
+        "src/maxtext/common/checkpointing.py",
         "src/maxtext/trainers/pre_train/train.py",
         "src/maxtext/utils/train_utils.py",
     )
@@ -78,6 +82,7 @@ def test_approved_patch_comparison_uses_stable_object_id_width(
     checkout, config = _checkout(tmp_path)
     _git(checkout, "config", "core.abbrev", "12")
     paths = (
+        "src/maxtext/common/checkpointing.py",
         "src/maxtext/trainers/pre_train/train.py",
         "src/maxtext/utils/train_utils.py",
     )
@@ -109,6 +114,7 @@ def test_changed_or_additional_maxtext_patch_is_rejected(
 ) -> None:
     checkout, config = _checkout(tmp_path)
     for relative in (
+        "src/maxtext/common/checkpointing.py",
         "src/maxtext/trainers/pre_train/train.py",
         "src/maxtext/utils/train_utils.py",
     ):
@@ -147,10 +153,13 @@ def test_config_required_patch_is_checksum_bound_and_cannot_be_omitted(
         approved_maxtext_patch_sha256(config)
 
 
-def test_exact_two_file_config_approved_patch_is_accepted(
+def test_exact_three_file_config_approved_patch_is_accepted(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     checkout, base_config = _checkout(tmp_path)
+    (checkout / "src/maxtext/common/checkpointing.py").write_text(
+        "after\n", encoding="utf-8"
+    )
     (checkout / "src/maxtext/utils/train_utils.py").write_text("after\n", encoding="utf-8")
     (checkout / "src/maxtext/trainers/pre_train/train.py").write_text("after\n", encoding="utf-8")
     patch = tmp_path / "approved.patch"
@@ -164,6 +173,7 @@ def test_exact_two_file_config_approved_patch_is_accepted(
                 "--abbrev=8",
                 "--unified=0",
                 "--",
+                "src/maxtext/common/checkpointing.py",
                 "src/maxtext/trainers/pre_train/train.py",
                 "src/maxtext/utils/train_utils.py",
                 text=False,
@@ -214,6 +224,10 @@ def test_maxtext_import_provenance_accepts_only_patched_checkout(
 ) -> None:
     checkout = tmp_path / "MaxText"
     modules = {
+        "maxtext.common.checkpointing": (
+            checkout / "src/maxtext/common/checkpointing.py",
+            "if isinstance(val, (list, tuple)):\n",
+        ),
         "maxtext.utils.train_utils": (
             checkout / "src/maxtext/utils/train_utils.py",
             "model = lora_utils.apply_lora_to_model(model, None, config)\n",
@@ -242,6 +256,10 @@ def test_maxtext_import_provenance_rejects_installed_wheel(
 ) -> None:
     checkout = tmp_path / "MaxText"
     sources = {
+        "maxtext.common.checkpointing": (
+            "src/maxtext/common/checkpointing.py",
+            "if isinstance(val, (list, tuple)):\n",
+        ),
         "maxtext.utils.train_utils": (
             "src/maxtext/utils/train_utils.py",
             "model = lora_utils.apply_lora_to_model(model, None, config)\n",

@@ -15,16 +15,22 @@ from training.jax_fidelity.configuration import ConfigError, load_config, valida
 from training.jax_fidelity.orbax_receipt import (
     OrbaxReceiptError,
     lora_checkpoint_evidence,
+    lora_checkpoint_storage_evidence,
 )
 
 ROOT = Path(__file__).resolve().parents[1]
 _RESTORED: dict[Path, object] = {}
 
 
-def _put(tree: dict[str, object], path: tuple[str, ...], value: object) -> None:
+def _put(
+    tree: dict[str | int, object], path: tuple[str | int, ...], value: object
+) -> None:
     node = tree
     for component in path[:-1]:
-        node = node.setdefault(component, {})  # type: ignore[assignment]
+        child = node.setdefault(component, {})
+        if not isinstance(child, dict):
+            raise AssertionError("fixture path collides with an existing leaf")
+        node = child
     node[path[-1]] = value
 
 
@@ -32,7 +38,7 @@ def _evidence(items: Path, **kwargs: object) -> dict[str, object]:
     return lora_checkpoint_evidence(items, restored_tree=_RESTORED[items], **kwargs)
 
 
-def _entry(path: tuple[str, ...], shape: list[int] | None) -> dict[str, object]:
+def _entry(path: tuple[str | int, ...], shape: list[int] | None) -> dict[str, object]:
     value: dict[str, object] = {
         "value_type": "jax.Array",
         "skip_deserialize": False,
@@ -40,20 +46,34 @@ def _entry(path: tuple[str, ...], shape: list[int] | None) -> dict[str, object]:
     if shape is not None:
         value["write_shape"] = shape
     return {
-        "key_metadata": [{"key": component, "key_type": 2} for component in path],
+        "key_metadata": [
+            {
+                "key": str(component) if isinstance(component, int) else component,
+                "key_type": 1 if isinstance(component, int) else 2,
+            }
+            for component in path
+        ],
         "value_metadata": value,
     }
 
 
-def _items(tmp_path: Path, paths: dict[tuple[str, ...], list[int] | None]) -> Path:
+def _items(
+    tmp_path: Path, paths: dict[tuple[str | int, ...], list[int] | None]
+) -> Path:
     items = tmp_path / "items"
     items.mkdir(parents=True)
-    tree = {repr(path): _entry(path, shape) for path, shape in paths.items()}
+    tree = {}
+    for path, shape in paths.items():
+        serialized_path = tuple(
+            str(component) if isinstance(component, int) else component
+            for component in path
+        )
+        tree[repr(serialized_path)] = _entry(path, shape)
     (items / "_METADATA").write_text(
         json.dumps({"tree_metadata": tree, "use_ocdbt": True}),
         encoding="utf-8",
     )
-    restored: dict[str, object] = {}
+    restored: dict[str | int, object] = {}
     for path, shape in paths.items():
         _put(restored, path, np.zeros(shape or (), dtype=np.float32))
     _RESTORED[items] = restored
@@ -65,16 +85,16 @@ def _paired_lora_tree(
     *,
     a_shape: list[int] | None = None,
     b_shape: list[int] | None = None,
-) -> dict[tuple[str, ...], list[int] | None]:
+) -> dict[tuple[str | int, ...], list[int] | None]:
     a_shape = a_shape or [2560, 16]
     b_shape = b_shape or [16, 8, 256]
-    paths: dict[tuple[str, ...], list[int] | None] = {
+    paths: dict[tuple[str | int, ...], list[int] | None] = {
         ("step",): None,
         (*prefix, "lora_a.kernel"): a_shape,
         (*prefix, "lora_b.kernel"): b_shape,
     }
     for moment in ("mu", "nu"):
-        optimizer_prefix = ("opt_state", "0", moment, "params", *prefix[2:])
+        optimizer_prefix = ("opt_state", 0, moment, "params", *prefix[2:])
         paths[(*optimizer_prefix, "lora_a.kernel")] = a_shape
         paths[(*optimizer_prefix, "lora_b.kernel")] = b_shape
     return paths
@@ -90,6 +110,76 @@ def test_lora_evidence_accepts_paired_maxtext_orbax_paths(tmp_path: Path) -> Non
     assert evidence["lora_tensor_count"] == 2
     assert evidence["rank"] == 16
     assert evidence["pairs"][0]["module_path"].endswith("self_attention/query")
+
+
+def test_lora_storage_evidence_accepts_nonstandard_tiny_shapes(tmp_path: Path) -> None:
+    prefix = ("params", "params", "decoder", "layers_0", "self_attention", "key")
+    items = _items(
+        tmp_path,
+        _paired_lora_tree(prefix, a_shape=[4, 4], b_shape=[2, 512]),
+    )
+
+    evidence = lora_checkpoint_storage_evidence(
+        items,
+        expected_pair_count=1,
+        restored_tree=_RESTORED[items],
+    )
+
+    assert evidence["rank_validation"] == "not-applicable-storage-roundtrip"
+    assert evidence["lora_tensor_count"] == 2
+    assert evidence["optimizer_lora_tensor_count"] == 4
+    assert evidence["restored_lora_array_count"] == 6
+    assert "rank" not in evidence
+
+
+def test_lora_storage_evidence_reconciles_restored_sequence_index(tmp_path: Path) -> None:
+    prefix = ("params", "params", "decoder", "layers_0", "self_attention", "key")
+    items = _items(tmp_path, _paired_lora_tree(prefix))
+    restored = _RESTORED[items]
+    assert isinstance(restored, dict)
+    optimizer = restored["opt_state"]
+    assert isinstance(optimizer, dict)
+    restored["opt_state"] = [optimizer[0]]
+
+    evidence = lora_checkpoint_storage_evidence(
+        items,
+        expected_pair_count=1,
+        restored_tree=restored,
+    )
+
+    assert evidence["optimizer_lora_tensor_count"] == 4
+    assert evidence["restored_lora_array_count"] == 6
+
+
+def test_lora_storage_evidence_validates_chunked_write_shapes(tmp_path: Path) -> None:
+    prefix = ("params", "params", "decoder", "layers_0", "self_attention", "key")
+    items = _items(tmp_path, _paired_lora_tree(prefix))
+    restored = _RESTORED[items]
+    assert isinstance(restored, dict)
+    params = restored["params"]
+    assert isinstance(params, dict)
+    model = params["params"]
+    assert isinstance(model, dict)
+
+    class ChunkedArray:
+        shape = (5120, 16)
+        dtype = np.dtype(np.float32)
+
+        def __array__(self, dtype: object = None, copy: object = None) -> np.ndarray:
+            del copy
+            return np.zeros(self.shape, dtype=dtype or self.dtype)
+
+    model["decoder"]["layers_0"]["self_attention"]["key"]["lora_a.kernel"] = (
+        ChunkedArray()
+    )
+
+    evidence = lora_checkpoint_storage_evidence(
+        items,
+        expected_pair_count=1,
+        restored_tree=restored,
+    )
+
+    assert evidence["payload_arrays_restored"] is True
 
 
 def test_lora_evidence_binds_exact_topology_step_and_patch(tmp_path: Path) -> None:
@@ -186,8 +276,8 @@ def test_lora_topology_ignores_optimizer_moment_copies(tmp_path: Path) -> None:
 
 def test_lora_evidence_requires_exact_optimizer_moments(tmp_path: Path) -> None:
     model = ("params", "params", "decoder", "layers_0", "query")
-    mu = ("opt_state", "0", "mu", "params", "decoder", "layers_0", "query")
-    nu = ("opt_state", "0", "nu", "params", "decoder", "layers_0", "query")
+    mu = ("opt_state", 0, "mu", "params", "decoder", "layers_0", "query")
+    nu = ("opt_state", 0, "nu", "params", "decoder", "layers_0", "query")
 
     for label, paths in (
         (
@@ -216,6 +306,33 @@ def test_lora_evidence_requires_exact_optimizer_moments(tmp_path: Path) -> None:
     ):
         items = _items(tmp_path / label, paths)
         with pytest.raises(OrbaxReceiptError, match="moments|shape"):
+            _evidence(items, expected_rank=16, expected_pair_count=1)
+
+
+def test_lora_evidence_rejects_dictionary_or_wrong_optimizer_chain_index(
+    tmp_path: Path,
+) -> None:
+    model = ("params", "params", "decoder", "layers_0", "query")
+    for label, chain_index in (("dictionary-zero", "0"), ("wrong-slot", 1)):
+        paths: dict[tuple[str | int, ...], list[int] | None] = {
+            ("step",): None,
+            (*model, "lora_a.kernel"): [2560, 16],
+            (*model, "lora_b.kernel"): [16, 256],
+        }
+        for moment in ("mu", "nu"):
+            prefix = (
+                "opt_state",
+                chain_index,
+                moment,
+                "params",
+                "decoder",
+                "layers_0",
+                "query",
+            )
+            paths[(*prefix, "lora_a.kernel")] = [2560, 16]
+            paths[(*prefix, "lora_b.kernel")] = [16, 256]
+        items = _items(tmp_path / label, paths)
+        with pytest.raises(OrbaxReceiptError, match="unexpected LoRA optimizer path"):
             _evidence(items, expected_rank=16, expected_pair_count=1)
 
 

@@ -495,8 +495,9 @@ def test_container_and_direct_dependencies_are_immutable() -> None:
         "git -C /opt/MaxText diff --no-ext-diff --binary --abbrev=8 --unified=0"
         in dockerfile
     )
+    assert "src/maxtext/common/checkpointing.py" in dockerfile
     assert "src/maxtext/trainers/pre_train/train.py" in dockerfile
-    assert "$(printf '%s\\n%s'" in dockerfile
+    assert "$(printf '%s\\n%s\\n%s'" in dockerfile
     assert 'cmp -s - "$BOOKFORGE_MAXTEXT_APPROVED_PATCH"' in dockerfile
     assert "-Wl,-rpath,/usr/local/lib/python3.12/site-packages/nvidia/nccl/lib" in dockerfile
     assert "--no-build-isolation 'transformer-engine-jax==2.18.0'" in dockerfile

@@ -17,6 +17,10 @@ class ExecutionRefused(RuntimeError):
 
 
 _PATCHED_MAXTEXT_MODULES = {
+    "maxtext.common.checkpointing": (
+        "src/maxtext/common/checkpointing.py",
+        "if isinstance(val, (list, tuple)):",
+    ),
     "maxtext.utils.train_utils": (
         "src/maxtext/utils/train_utils.py",
         "model = lora_utils.apply_lora_to_model(model, None, config)",
@@ -89,6 +93,7 @@ def validate_maxtext_checkout(root: Path | str, config: ExperimentConfig) -> Pat
         return checkout
 
     approved_dirty_state = (
+        " M src/maxtext/common/checkpointing.py\n"
         " M src/maxtext/trainers/pre_train/train.py\n"
         " M src/maxtext/utils/train_utils.py\n"
     )
@@ -108,6 +113,7 @@ def validate_maxtext_checkout(root: Path | str, config: ExperimentConfig) -> Pat
             "--abbrev=8",
             "--unified=0",
             "--",
+            "src/maxtext/common/checkpointing.py",
             "src/maxtext/trainers/pre_train/train.py",
             "src/maxtext/utils/train_utils.py",
         ],

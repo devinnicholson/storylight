@@ -22,10 +22,12 @@ COPY training/jax_fidelity/patches/maxtext-native-lora-materialization.patch /op
 RUN git -C /opt/MaxText apply --check --unidiff-zero "$BOOKFORGE_MAXTEXT_APPROVED_PATCH" \
     && git -C /opt/MaxText apply --unidiff-zero "$BOOKFORGE_MAXTEXT_APPROVED_PATCH" \
     && git -C /opt/MaxText diff --check \
-    && test "$(git -C /opt/MaxText status --short)" = "$(printf '%s\n%s' \
+    && test "$(git -C /opt/MaxText status --short)" = "$(printf '%s\n%s\n%s' \
+        ' M src/maxtext/common/checkpointing.py' \
         ' M src/maxtext/trainers/pre_train/train.py' \
         ' M src/maxtext/utils/train_utils.py')" \
     && git -C /opt/MaxText diff --no-ext-diff --binary --abbrev=8 --unified=0 -- \
+        src/maxtext/common/checkpointing.py \
         src/maxtext/trainers/pre_train/train.py src/maxtext/utils/train_utils.py \
         | cmp -s - "$BOOKFORGE_MAXTEXT_APPROVED_PATCH"
 
