@@ -300,3 +300,26 @@ def test_roundtrip_fetch_requires_trusted_completion_and_every_declared_byte(
     artifact.write_bytes(b"tampered")
     with pytest.raises(ValueError, match="failed verification"):
         fetcher._verify_files(root, document["files"])
+
+
+def test_modal_billing_parser_accepts_current_and_legacy_fields() -> None:
+    parse = roundtrip._parse_modal_billing_total
+
+    assert parse('[{"cost":"0.25"},{"cost":"1.5"}]') == pytest.approx(1.75)
+    assert parse('[{"Cost":"0.25"},{"Cost":"1.5"}]') == pytest.approx(1.75)
+
+
+@pytest.mark.parametrize(
+    "payload",
+    [
+        "{}",
+        "[null]",
+        '[{"description":"missing"}]',
+        '[{"cost":"NaN"}]',
+        '[{"cost":"-0.1"}]',
+        '[{"cost":"1","Cost":"2"}]',
+    ],
+)
+def test_modal_billing_parser_rejects_unsafe_reports(payload: str) -> None:
+    with pytest.raises((RuntimeError, ValueError)):
+        roundtrip._parse_modal_billing_total(payload)
