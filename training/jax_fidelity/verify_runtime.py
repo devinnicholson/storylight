@@ -8,6 +8,7 @@ import json
 import os
 import platform
 import re
+import sys
 from pathlib import Path
 
 from .integrity import canonical_json_bytes, canonical_sha256
@@ -32,7 +33,11 @@ def _normalized_name(name: str) -> str:
 
 def runtime_lock_document() -> dict[str, object]:
     packages: dict[str, str] = {}
+    environment_root = Path(sys.prefix).resolve()
     for distribution in importlib.metadata.distributions():
+        distribution_root = Path(distribution.locate_file("")).resolve()
+        if not distribution_root.is_relative_to(environment_root):
+            continue
         raw_name = distribution.metadata.get("Name")
         if not raw_name:
             continue

@@ -13,6 +13,7 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
 import training.jax_fidelity.train as train_module
+import training.jax_fidelity.verify_runtime as verify_runtime_module
 from bookforge.tensorrt_slot_client import _slot_messages
 from training.jax_fidelity.commands import build_train_command
 from training.jax_fidelity.configuration import ConfigError, load_config, validate_config
@@ -356,6 +357,33 @@ def test_full_runtime_lock_detects_installed_dependency_drift(tmp_path: Path) ->
     lock.write_text(json.dumps(document) + "\n")
     with pytest.raises(RuntimeError, match="full installed dependency set"):
         validate_runtime_lock(lock)
+
+
+def test_runtime_lock_ignores_modal_control_plane_overlay(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    class Distribution:
+        def __init__(self, version: str, root: Path) -> None:
+            self.metadata = {"Name": "multidict"}
+            self.version = version
+            self.root = root
+
+        def locate_file(self, _: str) -> Path:
+            return self.root
+
+    environment_package = Distribution(
+        "6.7.1", Path(sys.prefix) / "lib/python3.12/site-packages"
+    )
+    modal_overlay = Distribution("6.6.0", tmp_path / "modal-control-plane")
+    monkeypatch.setattr(
+        verify_runtime_module.importlib.metadata,
+        "distributions",
+        lambda: [environment_package, modal_overlay],
+    )
+
+    document = verify_runtime_module.runtime_lock_document()
+
+    assert document["packages"] == [{"name": "multidict", "version": "6.7.1"}]
 
 
 def test_executed_training_writes_nonempty_terminal_completion(
