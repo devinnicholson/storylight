@@ -868,6 +868,28 @@ def test_modal_billing_parser_accepts_current_and_legacy_fields() -> None:
         parse('[{"cost": 1, "Cost": 2}]')
 
 
+def test_modal_billing_guard_retries_transient_cli_failure(monkeypatch) -> None:
+    attempts = 0
+    sleeps: list[float] = []
+
+    class Completed:
+        stdout = '[{"cost":"0.125"}]'
+
+    def fake_run(*_args, **_kwargs):
+        nonlocal attempts
+        attempts += 1
+        if attempts == 1:
+            raise modal_jax_fidelity.subprocess.CalledProcessError(1, "modal")
+        return Completed()
+
+    monkeypatch.setattr(modal_jax_fidelity.subprocess, "run", fake_run)
+    monkeypatch.setattr(modal_jax_fidelity.time, "sleep", sleeps.append)
+
+    assert modal_jax_fidelity._authoritative_workspace_total() == 0.125
+    assert attempts == 2
+    assert sleeps == [1.0]
+
+
 def test_modal_release_fetch_verifies_every_file_before_copy(monkeypatch, tmp_path: Path) -> None:
     run_id = "bookforge-modal-smoke-20260901"
     output = tmp_path / "output"

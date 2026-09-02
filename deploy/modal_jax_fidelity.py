@@ -45,6 +45,8 @@ FINALIZE_TIMEOUT_SECONDS = 1_800
 MAX_CONTAINERS = 1
 BUDGET_MONTH = "2026-09"
 WORKSPACE_HARD_STOP_USD = 28.0
+BILLING_REPORT_ATTEMPTS = 3
+BILLING_REPORT_RETRY_BASE_SECONDS = 1.0
 LEDGER_PATH = REPOSITORY_ROOT / "experiments/jax-fidelity-lab/modal-ledger-2026-09.json"
 _SHA256 = re.compile(r"^[0-9a-f]{64}$")
 _RUN_ID = re.compile(r"^[a-z][a-z0-9-]{7,62}$")
@@ -2224,14 +2226,21 @@ def finalize_finite(request: dict[str, object]) -> dict[str, object]:
 
 
 def _authoritative_workspace_total() -> float:
-    completed = subprocess.run(
-        ["modal", "billing", "report", "--for", "this month", "--json"],
-        check=True,
-        capture_output=True,
-        text=True,
-        timeout=30,
-    )
-    return _parse_modal_billing_total(completed.stdout)
+    for attempt in range(BILLING_REPORT_ATTEMPTS):
+        try:
+            completed = subprocess.run(
+                ["modal", "billing", "report", "--for", "this month", "--json"],
+                check=True,
+                capture_output=True,
+                text=True,
+                timeout=30,
+            )
+            return _parse_modal_billing_total(completed.stdout)
+        except subprocess.CalledProcessError:
+            if attempt == BILLING_REPORT_ATTEMPTS - 1:
+                raise
+            time.sleep(BILLING_REPORT_RETRY_BASE_SECONDS * (2**attempt))
+    raise AssertionError("unreachable")
 
 
 def _parse_modal_billing_total(payload: str) -> float:
