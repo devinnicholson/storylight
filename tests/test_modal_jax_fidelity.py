@@ -160,6 +160,7 @@ def test_modal_budget_gate_is_present_and_maxtext_checkout_is_exact() -> None:
     assert "maxtext_revision" in image_source
     assert "git -C /opt/MaxText rev-parse HEAD" in image_source
     assert 'REPOSITORY_ROOT / "deploy", "/opt/bookforge/deploy"' in image_source
+    assert '"/opt/bookforge/experiments/jax-fidelity-lab/config.json"' in image_source
     assert "--write-lock /opt/bookforge/runtime.lock.json" in image_source
     assert "--lock /opt/bookforge/runtime.lock.json" in image_source
     assert '"HF_HUB_OFFLINE": "1"' in image_source
