@@ -86,7 +86,10 @@ def _verify_files(root: Path, rows: list[object]) -> None:
 def _verify_contract(root: Path, completion: dict[str, Any]) -> None:
     from training.jax_fidelity.configuration import load_config
     from training.jax_fidelity.integrity import sha256_file, verify_artifact_manifest
-    from training.jax_fidelity.orbax_receipt import verify_orbax_leaf_receipt
+    from training.jax_fidelity.orbax_receipt import (
+        terminal_checkpoint_step,
+        verify_orbax_leaf_receipt,
+    )
     from training.jax_fidelity.roundtrip_smoke import validate_roundtrip_evidence
 
     config_path = root / "inputs/config.json"
@@ -124,7 +127,7 @@ def _verify_contract(root: Path, completion: dict[str, Any]) -> None:
     smoke_leaf = verify_orbax_leaf_receipt(
         root / "smoke-adapter",
         smoke_receipt,
-        expected_step=5,
+        expected_step=terminal_checkpoint_step(config.training["smoke_steps"]),
         role="smoke-lora",
     )
     verify_artifact_manifest(base_leaf, _json_object(base_manifest_path))

@@ -351,6 +351,7 @@ def run_roundtrip_finite(request: dict[str, object]) -> dict[str, object]:
     from training.jax_fidelity.orbax_receipt import (
         discover_orbax_items,
         orbax_leaf_receipt,
+        terminal_checkpoint_step,
         verify_orbax_leaf_receipt,
         write_orbax_leaf_receipt,
     )
@@ -550,14 +551,15 @@ def run_roundtrip_finite(request: dict[str, object]) -> dict[str, object]:
         started=started,
     )
     smoke_completion = _completion_path(runs, smoke_id)
+    smoke_checkpoint_step = terminal_checkpoint_step(experiment.training["smoke_steps"])
     smoke_leaf = discover_orbax_items(
         smoke_output,
-        expected_step=experiment.training["smoke_steps"],
+        expected_step=smoke_checkpoint_step,
     )
     smoke_receipt = orbax_leaf_receipt(
         smoke_output,
         smoke_leaf,
-        expected_step=experiment.training["smoke_steps"],
+        expected_step=smoke_checkpoint_step,
         role="smoke-lora",
     )
     smoke_receipt_path = evidence / "smoke-orbax.receipt.json"
@@ -698,7 +700,7 @@ def run_roundtrip_finite(request: dict[str, object]) -> dict[str, object]:
     verify_orbax_leaf_receipt(
         smoke_release_root,
         smoke_receipt,
-        expected_step=experiment.training["smoke_steps"],
+        expected_step=smoke_checkpoint_step,
         role="smoke-lora",
     )
     _copy_tree(merged_hf, release / "merged-hf")

@@ -302,7 +302,7 @@ def verify_merge_provenance(
 
     from .manifests import stable_run_id
     from .merged_candidate import validate_merged_candidate_manifest
-    from .orbax_receipt import verify_orbax_leaf_receipt
+    from .orbax_receipt import terminal_checkpoint_step, verify_orbax_leaf_receipt
 
     config = load_config(config_path)
     merge_root = Path(merge_release_root).resolve()
@@ -410,7 +410,7 @@ def verify_merge_provenance(
         selected_adapter = verify_orbax_leaf_receipt(
             adapter_checkpoint,
             adapter_receipt,
-            expected_step=config.training["steps"],
+            expected_step=terminal_checkpoint_step(config.training["steps"]),
             role="full-lora",
         )
     except ValueError as error:

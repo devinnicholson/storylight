@@ -19,6 +19,7 @@ from training.jax_fidelity.integrity import (
     sha256_file,
 )
 from training.jax_fidelity.manifests import stable_run_id
+from training.jax_fidelity.orbax_receipt import terminal_checkpoint_step
 
 
 def _load(name: str, path: Path):
@@ -64,7 +65,8 @@ def _training_release(tmp_path: Path) -> tuple[Path, dict[str, object]]:
     )
     release_id = "bookforge-full-training-20260901"
     root = tmp_path / release_id
-    leaf = root / "adapter/run/checkpoints/160/items"
+    terminal_step = terminal_checkpoint_step(config.training["steps"])
+    leaf = root / f"adapter/run/checkpoints/{terminal_step}/items"
     leaf.mkdir(parents=True)
     (leaf / "checkpoint").write_bytes(b"full adapter")
     adapter_manifest = artifact_manifest(root / "adapter")
@@ -144,7 +146,10 @@ def test_merge_request_requires_every_hash_and_exact_approval() -> None:
 def test_full_training_release_selects_exact_terminal_adapter_leaf(tmp_path: Path) -> None:
     root, arguments = _training_release(tmp_path)
     adapter, evidence = merge._verify_training_release(root, **arguments)
-    assert (adapter / "run/checkpoints/160/items/checkpoint").read_bytes() == b"full adapter"
+    terminal_step = terminal_checkpoint_step(load_config(CONFIG).training["steps"])
+    assert (
+        adapter / f"run/checkpoints/{terminal_step}/items/checkpoint"
+    ).read_bytes() == b"full adapter"
     assert evidence["run"]["stage"] == "lora-train"
 
     arguments["base_binding"] = {"content_sha256": "0" * 64, "files": 2, "bytes": 19}

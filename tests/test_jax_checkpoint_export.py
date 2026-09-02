@@ -37,7 +37,7 @@ from training.jax_fidelity.integrity import (
 )
 from training.jax_fidelity.manifests import stable_run_id
 from training.jax_fidelity.merged_candidate import build_merged_candidate_manifest
-from training.jax_fidelity.orbax_receipt import orbax_leaf_receipt
+from training.jax_fidelity.orbax_receipt import orbax_leaf_receipt, terminal_checkpoint_step
 from training.jax_fidelity.release import (
     ReleaseError,
     produce_release,
@@ -310,7 +310,8 @@ def test_release_producer_emits_exact_checksum_bound_consumer_schema(tmp_path: P
         tmp_path / "original-hf", {"model.safetensors": b"original-hf"}
     )
     adapter = tmp_path / "adapter"
-    adapter_leaf = adapter / "run/checkpoints/160/items"
+    adapter_step = terminal_checkpoint_step(config.training["steps"])
+    adapter_leaf = adapter / f"run/checkpoints/{adapter_step}/items"
     adapter_leaf.mkdir(parents=True)
     (adapter_leaf / "checkpoint").write_bytes(b"trained-lora")
     adapter_manifest = tmp_path / "adapter.manifest.json"
@@ -377,7 +378,7 @@ def test_release_producer_emits_exact_checksum_bound_consumer_schema(tmp_path: P
             "run_manifest_sha256": run_sha,
             "artifacts": [
                 {
-                    "path": "run/checkpoints/160/items/checkpoint",
+                    "path": f"run/checkpoints/{adapter_step}/items/checkpoint",
                     "sha256": sha256_file(adapter_file),
                     "bytes": adapter_file.stat().st_size,
                 }
@@ -416,7 +417,7 @@ def test_release_producer_emits_exact_checksum_bound_consumer_schema(tmp_path: P
         orbax_leaf_receipt(
             adapter,
             adapter_leaf,
-            expected_step=config.training["steps"],
+            expected_step=adapter_step,
             role="full-lora",
         ),
     )

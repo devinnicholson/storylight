@@ -373,6 +373,7 @@ def merge_finite(request: dict[str, object]) -> dict[str, object]:
     from training.jax_fidelity.orbax_receipt import (
         discover_orbax_items,
         orbax_leaf_receipt,
+        terminal_checkpoint_step,
         verify_orbax_leaf_receipt,
         write_orbax_leaf_receipt,
     )
@@ -448,14 +449,15 @@ def merge_finite(request: dict[str, object]) -> dict[str, object]:
         dataset_manifest_sha256=bindings["dataset_manifest_sha256"],
         base_binding=base_binding,
     )
+    adapter_checkpoint_step = terminal_checkpoint_step(config.training["steps"])
     adapter_leaf = discover_orbax_items(
         adapter_root,
-        expected_step=config.training["steps"],
+        expected_step=adapter_checkpoint_step,
     )
     adapter_receipt = orbax_leaf_receipt(
         adapter_root,
         adapter_leaf,
-        expected_step=config.training["steps"],
+        expected_step=adapter_checkpoint_step,
         role="full-lora",
     )
     adapter_rows = {row["path"]: row for row in training["adapter_manifest"]["files"]}
@@ -466,7 +468,7 @@ def merge_finite(request: dict[str, object]) -> dict[str, object]:
     verify_orbax_leaf_receipt(
         adapter_root,
         adapter_receipt,
-        expected_step=config.training["steps"],
+        expected_step=adapter_checkpoint_step,
         role="full-lora",
     )
 

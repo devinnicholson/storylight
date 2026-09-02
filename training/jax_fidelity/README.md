@@ -67,7 +67,7 @@ treated as compatibility proof by itself.
 
 The finite Modal compatibility worker performs HF-to-MaxText conversion, an
 exact five-step LoRA smoke, merged-HF export, and the forward-KL gate in one
-no-retry L40S call. Its staging command includes the public train and
+no-retry, two-L4 call. Its staging command includes the public train and
 development files so the remote worker can independently validate the dataset
 manifest; private hidden records are never staged.
 
@@ -88,7 +88,7 @@ modal run deploy/modal_jax_roundtrip.py --help
 
 Both commands are non-executing until their printed, checksum-bound approval
 values are supplied to the documented environment/CLI boundary. A successful
-worker records the only valid step-0 base Orbax `items` leaf and step-5 LoRA
+worker records the only valid step-0 base Orbax `items` leaf and step-4 LoRA
 `items` leaf, publishes their complete byte manifests, and writes
 `completion.json` last. Fetching is separately checksum-gated:
 

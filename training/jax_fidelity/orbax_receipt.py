@@ -14,6 +14,14 @@ class OrbaxReceiptError(ValueError):
     """An Orbax output did not contain one unambiguous checkpoint leaf."""
 
 
+def terminal_checkpoint_step(completed_steps: int) -> int:
+    """Map a positive optimizer-step count to MaxText's zero-based checkpoint step."""
+
+    if type(completed_steps) is not int or completed_steps < 1:
+        raise OrbaxReceiptError("completed_steps must be a positive integer")
+    return completed_steps - 1
+
+
 def _safe_directory(path: Path, *, label: str) -> Path:
     resolved = path.resolve()
     if not resolved.is_dir() or path.is_symlink():

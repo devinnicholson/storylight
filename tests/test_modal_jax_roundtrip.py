@@ -18,9 +18,19 @@ from training.jax_fidelity.orbax_receipt import (
     OrbaxReceiptError,
     discover_orbax_items,
     orbax_leaf_receipt,
+    terminal_checkpoint_step,
     verify_orbax_leaf_receipt,
     write_orbax_leaf_receipt,
 )
+
+
+def test_terminal_checkpoint_step_uses_maxtext_zero_based_numbering() -> None:
+    assert terminal_checkpoint_step(5) == 4
+    assert terminal_checkpoint_step(160) == 159
+    with pytest.raises(OrbaxReceiptError, match="positive integer"):
+        terminal_checkpoint_step(0)
+    with pytest.raises(OrbaxReceiptError, match="positive integer"):
+        terminal_checkpoint_step(True)
 
 
 def _load(name: str, path: Path):
