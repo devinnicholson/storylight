@@ -44,6 +44,12 @@ CUDA_BUILD_REQUIREMENTS = (
     "nvidia-cudnn-frontend==1.28.0",
     "nvidia-nvtx-cu12==12.9.79",
 )
+NCCL_LIBRARY_DIR = "/usr/local/lib/python3.12/site-packages/nvidia/nccl/lib"
+TRANSFORMER_ENGINE_BUILD_ENV = {
+    "NVTE_BUILD_USE_NVIDIA_WHEELS": "1",
+    "LIBRARY_PATH": NCCL_LIBRARY_DIR,
+    "LDFLAGS": f"-L{NCCL_LIBRARY_DIR} -Wl,-rpath,{NCCL_LIBRARY_DIR}",
+}
 JAX_IMAGE = (
     modal.Image.from_registry(pinned_image_uri())
     .apt_install("git", "ca-certificates", "build-essential")
@@ -57,10 +63,14 @@ JAX_IMAGE = (
     # wheel even though its compiler searches nvidia/nvtx/include. Seed the
     # exact CUDA build environment, then compile that extension against it.
     .pip_install(*CUDA_BUILD_REQUIREMENTS)
+    .run_commands(
+        f"test -f {NCCL_LIBRARY_DIR}/libnccl.so.2",
+        f"ln -sfn libnccl.so.2 {NCCL_LIBRARY_DIR}/libnccl.so",
+    )
     .pip_install(
         "transformer-engine-jax==2.18.0",
         extra_options="--no-build-isolation",
-        env={"NVTE_BUILD_USE_NVIDIA_WHEELS": "1"},
+        env=TRANSFORMER_ENGINE_BUILD_ENV,
     )
     .pip_install_from_requirements(REPOSITORY_ROOT / "training/jax_fidelity/requirements.lock")
     .add_local_dir(REPOSITORY_ROOT / "training", "/opt/bookforge/training", copy=True)

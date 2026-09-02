@@ -24,7 +24,12 @@ RUN python -m pip install \
         'flax==0.12.8' \
         'nvidia-cudnn-frontend==1.28.0' \
         'nvidia-nvtx-cu12==12.9.79'
-RUN NVTE_BUILD_USE_NVIDIA_WHEELS=1 python -m pip install \
+RUN test -f /usr/local/lib/python3.12/site-packages/nvidia/nccl/lib/libnccl.so.2 \
+    && ln -sfn libnccl.so.2 /usr/local/lib/python3.12/site-packages/nvidia/nccl/lib/libnccl.so
+RUN NVTE_BUILD_USE_NVIDIA_WHEELS=1 \
+    LIBRARY_PATH=/usr/local/lib/python3.12/site-packages/nvidia/nccl/lib \
+    LDFLAGS='-L/usr/local/lib/python3.12/site-packages/nvidia/nccl/lib -Wl,-rpath,/usr/local/lib/python3.12/site-packages/nvidia/nccl/lib' \
+    python -m pip install \
         --no-build-isolation 'transformer-engine-jax==2.18.0'
 RUN python -m pip install --requirement /tmp/bookforge-jax-requirements.lock
 

@@ -151,6 +151,8 @@ def test_modal_budget_gate_is_present_and_maxtext_checkout_is_exact() -> None:
     assert "git clone https://github.com/AI-Hypercomputer/maxtext.git /opt/MaxText" in image_source
     assert 'apt_install("git", "ca-certificates", "build-essential")' in image_source
     assert '"nvidia-nvtx-cu12==12.9.79"' in image_source
+    assert 'NCCL_LIBRARY_DIR = "/usr/local/lib/python3.12/site-packages/nvidia/nccl/lib"' in image_source
+    assert '"LIBRARY_PATH": NCCL_LIBRARY_DIR' in image_source
     assert 'extra_options="--no-build-isolation"' in image_source
     assert "maxtext_revision" in image_source
     assert "git -C /opt/MaxText rev-parse HEAD" in image_source
