@@ -121,6 +121,51 @@ trusted SHA-256 values for that receipt, manifest, and the remote completion;
 re-verifies the leaf bytes; retains the tokenizer-manifest binding; and records
 the base content digest in the typed training-stage evidence.
 
+### Measured JAX performance policy
+
+The full trainer binds MaxText and JAX to a dedicated persistent compilation-cache
+volume before either runtime initializes. A cold/warm two-L4 experiment reduced
+end-to-end duration from 738 to 331 seconds and authoritative provider cost from
+$0.63757900 to $0.32375199 without changing the learning evidence. The cache is
+an optimization only: every run still validates the pinned source, input,
+checkpoint, LoRA coverage, and terminal learning receipts.
+
+Activation rematerialization has a separate, measured policy. Two no-remat
+repetitions reduced the median steady step from 0.947 seconds to 0.579-0.842
+seconds, but increased the 100-step job to 594-724 seconds because startup became
+more expensive and varied across hosts. The fail-closed comparison therefore
+keeps the bounded canary on full rematerialization and reserves no-remat for runs
+of at least 2,941 optimizer steps, including a 10% safety margin. See
+`experiments/jax-fidelity-lab/remat-ab-2026-09-03.json` for the hashed source
+receipts, exact costs, and break-even calculation. `config-v3-remat-none-probe.json`
+is retained as experiment evidence, not as the canary default.
+
+Regenerate that decision only from downloaded, checksum-bound provider releases:
+
+```bash
+python scripts/compare_jax_remat_runs.py \
+  --baseline-config experiments/jax-fidelity-lab/config-v3-canary.json \
+  --candidate-config experiments/jax-fidelity-lab/config-v3-remat-none-probe.json \
+  --baseline-release BASELINE_RELEASE \
+  --baseline-billing BASELINE_BILLING_REPORT \
+  --baseline-app-id BASELINE_APP_ID \
+  --candidate-release CANDIDATE_RELEASE_1 \
+  --candidate-billing CANDIDATE_BILLING_REPORT_1 \
+  --candidate-app-id CANDIDATE_APP_ID_1 \
+  --candidate-label no-remat-first \
+  --candidate-release CANDIDATE_RELEASE_2 \
+  --candidate-billing CANDIDATE_BILLING_REPORT_2 \
+  --candidate-app-id CANDIDATE_APP_ID_2 \
+  --candidate-label no-remat-warm \
+  --output remat-ab.json
+```
+
+Install the `jax-analysis` extra to read TensorBoard event streams. Ahead-of-time
+MaxText executable serialization is not enabled for this L4 path: upstream's GPU
+AOT topology currently describes A3/H100 hosts, while Bookforge runs two L4s.
+The persistent JAX cache is the supported portable optimization for this backend;
+an L4-specific AOT patch requires its own exact-hardware compatibility gate.
+
 The Modal full trainer reserves the final 600 seconds of its one-hour function
 deadline for durability and publication. Immediately after successful training,
 it commits the complete scratch checkpoint and terminal training receipt. It

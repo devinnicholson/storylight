@@ -55,6 +55,7 @@ def build_train_command(
     run_name: str,
     hardware: str,
     smoke: bool,
+    jax_cache_directory: Path | str | None = None,
 ) -> list[str]:
     training = config.training
     production = config.production
@@ -64,6 +65,7 @@ def build_train_command(
     command = [
         "python3",
         "-m",
+        "training.jax_fidelity.maxtext_entrypoint",
         "maxtext.trainers.post_train.sft.train_sft_native",
         MAXTEXT_SFT_CONFIG,
         f"run_name={run_name}",
@@ -96,6 +98,20 @@ def build_train_command(
         "trainable_parameters_mask=[]",
         "enable_checkpointing=True",
     ]
+    if jax_cache_directory is not None:
+        cache_directory = Path(jax_cache_directory)
+        if not cache_directory.is_absolute():
+            raise ValueError("JAX compilation cache directory must be absolute")
+        # MaxText's base config defaults this to ~/jax_cache and calls
+        # compilation_cache.set_cache_dir() after our process wrapper starts.
+        # Bind MaxText's own setting so it cannot redirect the executable cache
+        # away from the persistent provider volume.
+        command.extend(
+            [
+                f"jax_cache_dir={cache_directory}",
+                "dump_hlo=false",
+            ]
+        )
     if "attention" in training:
         command.append(f"attention={training['attention']}")
     for name in (
@@ -109,6 +125,7 @@ def build_train_command(
         "warmup_steps_fraction",
         "learning_rate_final_fraction",
         "adam_weight_decay",
+        "remat_policy",
     ):
         if name not in training:
             continue

@@ -26,6 +26,9 @@ modal-authoring = [
 gcp = [
     "google-auth[requests]>=2.40,<3",
 ]
+jax-analysis = [
+    "tensorboard>=2.20,<3",
+]
 
 [dependency-groups]
 dev = [

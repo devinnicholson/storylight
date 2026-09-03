@@ -24,10 +24,17 @@ def run_two_gpu_fsdp_preflight(
     script = "\n".join(
         [
             "import json, os, sys",
+            "import jax",
+            "from pathlib import Path",
+            "from training.jax_fidelity.compilation_cache import (",
+            "    cache_inventory, configure_persistent_compilation_cache)",
+            "cache_config = configure_persistent_compilation_cache(jax, os.environ)",
             "from maxtext.configs import pyconfig",
             "config = pyconfig.initialize(sys.argv)",
-            "import jax",
             "import jax.numpy as jnp",
+            "post_config = configure_persistent_compilation_cache(jax, os.environ)",
+            "if post_config != cache_config:",
+            "    raise RuntimeError('MaxText initialization changed the JAX cache config')",
             "memory_fraction = os.environ.get('XLA_PYTHON_CLIENT_MEM_FRACTION')",
             "if memory_fraction != '0.95':",
             "    raise RuntimeError(f'unexpected JAX memory fraction: {memory_fraction!r}')",
@@ -42,10 +49,18 @@ def run_two_gpu_fsdp_preflight(
             "if mesh_shape.get('fsdp') != 2:",
             "    raise RuntimeError(f'expected a two-way FSDP mesh, found {mesh_shape!r}')",
             "value = jax.device_get(jnp.arange(1024, dtype=jnp.bfloat16).sum())",
+            "cache_probe = jax.jit(lambda operand: jnp.sin(operand) + jnp.cos(operand))(",
+            "    jnp.ones((4096, 4096), dtype=jnp.float32))",
+            "cache_probe.block_until_ready()",
+            "if cache_config['configured']:",
+            "    cache_config['inventory'] = cache_inventory(",
+            "        Path(cache_config['cache_directory']))",
+            "    if cache_config['inventory']['files'] <= 0:",
+            "        raise RuntimeError('JAX preflight wrote no persistent cache entries')",
             "print(json.dumps({'hardware': config.hardware, 'devices': len(devices), "
             "'platform': devices[0].platform, 'memory_fraction': memory_fraction, "
             "'ici_fsdp_parallelism': config.ici_fsdp_parallelism, 'mesh_shape': mesh_shape, "
-            "'probe_sum': float(value)}), flush=True)",
+            "'probe_sum': float(value), 'compilation_cache': cache_config}), flush=True)",
         ]
     )
     command = [
@@ -77,6 +92,8 @@ def run_two_gpu_fsdp_preflight(
         payload = json.loads(completed.stdout.strip().splitlines()[-1])
     except (IndexError, json.JSONDecodeError) as error:
         raise RuntimeError("GPU configuration preflight returned invalid evidence") from error
+    cache = payload.get("compilation_cache") if isinstance(payload, dict) else None
+    expected_cache_directory = environment.get("JAX_COMPILATION_CACHE_DIR")
     if (
         not isinstance(payload, dict)
         or payload.get("hardware") != "gpu"
@@ -86,6 +103,19 @@ def run_two_gpu_fsdp_preflight(
         or payload.get("ici_fsdp_parallelism") != -1
         or not isinstance(payload.get("mesh_shape"), dict)
         or payload["mesh_shape"].get("fsdp") != 2
+        or not isinstance(cache, dict)
+        or cache.get("configured") is not bool(expected_cache_directory)
     ):
         raise RuntimeError("GPU configuration preflight evidence changed")
+    if expected_cache_directory:
+        inventory = cache.get("inventory")
+        if (
+            cache.get("cache_directory") != expected_cache_directory
+            or not isinstance(inventory, dict)
+            or type(inventory.get("files")) is not int
+            or int(inventory["files"]) <= 0
+            or type(inventory.get("bytes")) is not int
+            or int(inventory["bytes"]) <= 0
+        ):
+            raise RuntimeError("GPU preflight did not prove the persistent cache")
     return payload

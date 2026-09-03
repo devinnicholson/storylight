@@ -63,6 +63,22 @@ _GCP_IMAGE_TAG = re.compile(
 _INPUT_ROOT = Path("/inputs")
 _SCRATCH_ROOT = Path("/scratch")
 _RELEASE_ROOT = Path("/releases")
+_COMPILATION_CACHE_ROOT = Path("/jax-cache")
+# Keep the first production MaxText cache population isolated from the earlier
+# preflight-only probe. The legacy ``entries`` prefix is retained as evidence;
+# deleting it would make the failed experiment harder to audit.
+_COMPILATION_CACHE_DIRECTORY = _COMPILATION_CACHE_ROOT / "maxtext-entries-v1"
+_COMPILATION_CACHE_OWNER_PATH = _COMPILATION_CACHE_ROOT / "owner.json"
+_COMPILATION_CACHE_VOLUME_NAME = "bookforge-jax-fidelity-compile-cache-v1"
+_COMPILATION_CACHE_SCHEMA = "bookforge-jax-compilation-cache-v1"
+_COMPILATION_CACHE_ENVIRONMENT = {
+    "JAX_COMPILATION_CACHE_DIR": str(_COMPILATION_CACHE_DIRECTORY),
+    "JAX_ENABLE_COMPILATION_CACHE": "true",
+    "JAX_PERSISTENT_CACHE_MIN_COMPILE_TIME_SECS": "0",
+    "JAX_PERSISTENT_CACHE_MIN_ENTRY_SIZE_BYTES": "-1",
+    "JAX_PERSISTENT_CACHE_ENABLE_XLA_CACHES": "all",
+    "JAX_RAISE_PERSISTENT_CACHE_ERRORS": "true",
+}
 _FAILURE_LOG_LIMIT_BYTES = 256 * 1024
 _FAILURE_LOG_TAIL_BYTES = 16 * 1024
 _RUNTIME_PROVENANCE_SCHEMA = "bookforge-modal-jax-runtime-provenance-v1"
@@ -106,6 +122,163 @@ def _canonical_sha256(value: object) -> str:
     return hashlib.sha256(encoded).hexdigest()
 
 
+def _compilation_cache_owner() -> dict[str, object]:
+    return {
+        "schema_version": _COMPILATION_CACHE_SCHEMA,
+        "producer": "bookforge-modal-jax-full-trainer",
+        "volume_name": _COMPILATION_CACHE_VOLUME_NAME,
+        "trust_boundary": "single-workspace-dedicated-modal-volume",
+    }
+
+
+def _compilation_cache_inventory(directory: Path) -> dict[str, object]:
+    if not directory.is_dir() or directory.is_symlink():
+        raise RuntimeError("JAX compilation cache directory is missing or unsafe")
+    files = 0
+    total_bytes = 0
+    for path in directory.rglob("*"):
+        if path.is_symlink():
+            raise RuntimeError("JAX compilation cache contains a symbolic link")
+        if path.is_dir():
+            continue
+        if not path.is_file():
+            raise RuntimeError("JAX compilation cache contains a non-regular entry")
+        files += 1
+        total_bytes += path.stat().st_size
+    return {"files": files, "bytes": total_bytes}
+
+
+def _prepare_compilation_cache(
+    environment: dict[str, str],
+    *,
+    root: Path = _COMPILATION_CACHE_ROOT,
+) -> dict[str, object]:
+    """Claim one trusted cache volume and configure JAX before import."""
+
+    if not root.is_dir():
+        raise RuntimeError("JAX compilation cache volume is not mounted")
+    owner_path = root / _COMPILATION_CACHE_OWNER_PATH.name
+    cache_directory = root / _COMPILATION_CACHE_DIRECTORY.name
+    expected_owner = _compilation_cache_owner()
+    expected_owner_sha256 = _canonical_sha256(expected_owner)
+    if owner_path.exists() or owner_path.is_symlink():
+        if owner_path.is_symlink() or not owner_path.is_file():
+            raise RuntimeError("JAX compilation cache owner marker is unsafe")
+        if _json_object(owner_path) != expected_owner:
+            raise RuntimeError("JAX compilation cache owner marker changed")
+    else:
+        if any(root.iterdir()):
+            raise RuntimeError("unclaimed JAX compilation cache volume is not empty")
+        _write_once_json(owner_path, expected_owner)
+    cache_directory.mkdir(mode=0o700, exist_ok=True)
+    if cache_directory.is_symlink() or not cache_directory.is_dir():
+        raise RuntimeError("JAX compilation cache directory is unsafe")
+    environment.update(_COMPILATION_CACHE_ENVIRONMENT)
+    return {
+        "schema_version": _COMPILATION_CACHE_SCHEMA,
+        "status": "prepared",
+        "volume_name": _COMPILATION_CACHE_VOLUME_NAME,
+        "owner_sha256": expected_owner_sha256,
+        "cache_directory": str(cache_directory),
+        "environment": dict(_COMPILATION_CACHE_ENVIRONMENT),
+        "before": _compilation_cache_inventory(cache_directory),
+    }
+
+
+def _complete_compilation_cache(
+    prepared: Mapping[str, object],
+    *,
+    root: Path = _COMPILATION_CACHE_ROOT,
+    after_preflight: Mapping[str, object] | None = None,
+    maxtext_entrypoint: Mapping[str, object] | None = None,
+) -> dict[str, object]:
+    if (
+        prepared.get("schema_version") != _COMPILATION_CACHE_SCHEMA
+        or prepared.get("status") != "prepared"
+        or prepared.get("volume_name") != _COMPILATION_CACHE_VOLUME_NAME
+        or prepared.get("owner_sha256") != _canonical_sha256(_compilation_cache_owner())
+        or prepared.get("environment") != _COMPILATION_CACHE_ENVIRONMENT
+        or prepared.get("cache_directory") != str(root / _COMPILATION_CACHE_DIRECTORY.name)
+    ):
+        raise RuntimeError("JAX compilation cache preparation receipt changed")
+    before = prepared.get("before")
+    if not isinstance(before, dict):
+        raise RuntimeError("JAX compilation cache has no initial inventory")
+    if after_preflight is None:
+        after_preflight = before
+    if (
+        type(after_preflight.get("files")) is not int
+        or int(after_preflight["files"]) < int(before.get("files", -1))
+        or type(after_preflight.get("bytes")) is not int
+        or int(after_preflight["bytes"]) < int(before.get("bytes", -1))
+    ):
+        raise RuntimeError("JAX compilation cache preflight inventory changed")
+    after = _compilation_cache_inventory(root / _COMPILATION_CACHE_DIRECTORY.name)
+    if int(after["files"]) < int(after_preflight["files"]):
+        raise RuntimeError("JAX compilation cache lost entries during training")
+    if int(before.get("files", 0)) == 0 and int(after["files"]) <= int(after_preflight["files"]):
+        raise RuntimeError("cold MaxText training wrote no persistent cache entries")
+    return {
+        **prepared,
+        "status": "complete",
+        "after_preflight": dict(after_preflight),
+        "after": after,
+        "added_files": int(after["files"]) - int(before.get("files", -1)),
+        "added_bytes": int(after["bytes"]) - int(before.get("bytes", -1)),
+        "cache_was_warm": int(before.get("files", 0)) > 0,
+        "maxtext_entrypoint": dict(maxtext_entrypoint or {}),
+    }
+
+
+def _validate_compilation_cache_evidence(
+    document: Mapping[str, object],
+    *,
+    root: Path = _COMPILATION_CACHE_ROOT,
+) -> dict[str, object]:
+    before = document.get("before")
+    after_preflight = document.get("after_preflight")
+    after = document.get("after")
+    entrypoint = document.get("maxtext_entrypoint")
+    if (
+        not isinstance(before, dict)
+        or not isinstance(after_preflight, dict)
+        or not isinstance(after, dict)
+        or not isinstance(entrypoint, dict)
+    ):
+        raise RuntimeError("JAX compilation cache evidence has no inventories")
+    for inventory in (before, after_preflight, after):
+        if (
+            type(inventory.get("files")) is not int
+            or int(inventory["files"]) < 0
+            or type(inventory.get("bytes")) is not int
+            or int(inventory["bytes"]) < 0
+        ):
+            raise RuntimeError("JAX compilation cache inventory is malformed")
+    expected_added_files = int(after["files"]) - int(before["files"])
+    expected_added_bytes = int(after["bytes"]) - int(before["bytes"])
+    if (
+        document.get("schema_version") != _COMPILATION_CACHE_SCHEMA
+        or document.get("status") != "complete"
+        or document.get("volume_name") != _COMPILATION_CACHE_VOLUME_NAME
+        or document.get("owner_sha256") != _canonical_sha256(_compilation_cache_owner())
+        or document.get("cache_directory") != str(root / _COMPILATION_CACHE_DIRECTORY.name)
+        or document.get("environment") != _COMPILATION_CACHE_ENVIRONMENT
+        or document.get("added_files") != expected_added_files
+        or document.get("added_bytes") != expected_added_bytes
+        or document.get("cache_was_warm") is not (int(before["files"]) > 0)
+        or int(after_preflight["files"]) < int(before["files"])
+        or int(after["files"]) < int(after_preflight["files"])
+    ):
+        raise RuntimeError("JAX compilation cache evidence changed")
+    from training.jax_fidelity.compilation_cache import validate_cache_receipt
+
+    validate_cache_receipt(
+        entrypoint,
+        expected_directory=root / _COMPILATION_CACHE_DIRECTORY.name,
+    )
+    return dict(document)
+
+
 def _recent_run_id(run_id: str, *, now: datetime) -> bool:
     match = _RUN_DATE.search(run_id)
     if match is None:
@@ -121,8 +294,7 @@ def _recent_run_id(run_id: str, *, now: datetime) -> bool:
 def _gcp_audit_filter(run_id: str) -> str:
     return " AND ".join(
         (
-            'logName="projects/your-gcp-project/logs/'
-            'cloudaudit.googleapis.com%2Factivity"',
+            'logName="projects/your-gcp-project/logs/cloudaudit.googleapis.com%2Factivity"',
             'protoPayload.serviceName="aiplatform.googleapis.com"',
             f'protoPayload.methodName="{_GCP_CREATE_METHOD}"',
             f'protoPayload.request.customJob.displayName="{run_id}"',
@@ -149,9 +321,7 @@ def _validate_gcp_unavailability_rejection(
     if checked_at.tzinfo is None:
         return False
     age = datetime.now(UTC) - checked_at.astimezone(UTC)
-    if not (0 <= age.total_seconds() <= 1_800) or not _recent_run_id(
-        run_id, now=datetime.now(UTC)
-    ):
+    if not (0 <= age.total_seconds() <= 1_800) or not _recent_run_id(run_id, now=datetime.now(UTC)):
         return False
     billing = rejection.get("billing_verification")
     audit = rejection.get("audit_absence")
@@ -235,9 +405,7 @@ def _validate_gcp_unavailability_rejection(
         or resource.get("automatic_retries") != 0
         or resource.get("endpoint_created") is not False
         or not isinstance(service_account, str)
-        or not service_account.endswith(
-            "@your-gcp-project.iam.gserviceaccount.com"
-        )
+        or not service_account.endswith("@your-gcp-project.iam.gserviceaccount.com")
         or not isinstance(input_prefix, str)
         or not input_prefix.startswith("gs://")
         or not input_prefix.endswith(f"/inputs/{run_id}")
@@ -258,8 +426,7 @@ def _validate_gcp_unavailability_rejection(
             "digest_resolved": False,
             "build_attempted": False,
         }
-        or rejection.get("intended_vertex_resource_sha256")
-        != _canonical_sha256(resource)
+        or rejection.get("intended_vertex_resource_sha256") != _canonical_sha256(resource)
     )
 
 
@@ -456,9 +623,7 @@ def _collect_training_runtime_provenance(
     }
 
 
-def _validate_source_manifest_snapshot(
-    path: Path, *, expected_sha256: str
-) -> dict[str, object]:
+def _validate_source_manifest_snapshot(path: Path, *, expected_sha256: str) -> dict[str, object]:
     if not path.is_file() or path.is_symlink():
         raise RuntimeError("durable Bookforge source manifest is missing or unsafe")
     if _sha256(path) != expected_sha256:
@@ -586,9 +751,7 @@ def _validate_runtime_provenance(
     manifest = _validate_source_manifest_snapshot(
         source_snapshot_path, expected_sha256=expected_source_manifest_sha256
     )
-    source_binding = _relative_file_binding(
-        source_snapshot_path, trusted_root=scratch_directory
-    )
+    source_binding = _relative_file_binding(source_snapshot_path, trusted_root=scratch_directory)
     for name, expected in (
         ("path", source_binding["path"]),
         ("bytes", source_binding["bytes"]),
@@ -765,9 +928,7 @@ def _run_training_process(
             returncode = process.returncode
     reader.join(timeout=10)
     if reader.is_alive():
-        capture_errors.append(
-            RuntimeError("training subprocess output reader did not terminate")
-        )
+        capture_errors.append(RuntimeError("training subprocess output reader did not terminate"))
         with suppress(OSError, ValueError):
             process.stdout.close()
         reader.join(timeout=1)
@@ -799,8 +960,7 @@ def _run_training_process(
     )
     if capture_errors:
         process_evidence["capture_errors"] = [
-            {"type": type(error).__name__, "message": str(error)}
-            for error in capture_errors
+            {"type": type(error).__name__, "message": str(error)} for error in capture_errors
         ]
     process_error: BaseException | None
     if timeout_error is not None:
@@ -812,9 +972,7 @@ def _run_training_process(
     elif capture_errors:
         process_error = RuntimeError("training subprocess evidence capture failed")
         for capture_error in capture_errors:
-            process_error.add_note(
-                f"{type(capture_error).__name__}: {capture_error}"
-            )
+            process_error.add_note(f"{type(capture_error).__name__}: {capture_error}")
     else:
         process_error = None
     return process_evidence, process_error
@@ -1003,12 +1161,8 @@ def _persist_failure_envelope(
         row.update({"present": True, "verified": True})
         return row
 
-    runtime_lock_snapshot = snapshot(
-        runtime_lock, evidence_directory / "runtime.lock.json"
-    )
-    patch_snapshot = snapshot(
-        approved_patch, evidence_directory / "approved-maxtext.patch"
-    )
+    runtime_lock_snapshot = snapshot(runtime_lock, evidence_directory / "runtime.lock.json")
+    patch_snapshot = snapshot(approved_patch, evidence_directory / "approved-maxtext.patch")
     if isinstance(approved_patch, dict) and "expected_sha256" in approved_patch:
         patch_snapshot["expected_sha256"] = approved_patch["expected_sha256"]
     source_snapshots: list[dict[str, object]] = []
@@ -1133,9 +1287,7 @@ def _persist_failure_and_raise(
 def _bounded_training_timeout(elapsed_seconds: float) -> int:
     """Reserve a fixed tail of the Modal deadline for durable publication."""
 
-    available = math.floor(
-        TIMEOUT_SECONDS - PUBLICATION_RESERVE_SECONDS - elapsed_seconds
-    )
+    available = math.floor(TIMEOUT_SECONDS - PUBLICATION_RESERVE_SECONDS - elapsed_seconds)
     if available < 1:
         raise RuntimeError("Modal deadline has no safe training window remaining")
     return min(TRAINING_TIMEOUT_SECONDS, available)
@@ -1258,9 +1410,7 @@ def _copy_release_file_once(
     digest = hashlib.sha256()
     try:
         try:
-            with source.open("rb") as reader, os.fdopen(
-                descriptor, "wb", closefd=False
-            ) as writer:
+            with source.open("rb") as reader, os.fdopen(descriptor, "wb", closefd=False) as writer:
                 for block in iter(lambda: reader.read(8 * 1024 * 1024), b""):
                     digest.update(block)
                     writer.write(block)
@@ -1274,8 +1424,7 @@ def _copy_release_file_once(
         raise
     try:
         verified = (
-            destination.stat().st_size == row["bytes"]
-            and digest.hexdigest() == row["sha256"]
+            destination.stat().st_size == row["bytes"] and digest.hexdigest() == row["sha256"]
         )
     except BaseException:
         destination.unlink(missing_ok=True)
@@ -1384,9 +1533,7 @@ def _validate_request(
     checkpoint_manifest_sha = request.get("base_checkpoint_manifest_sha256")
     checkpoint_receipt_sha = request.get("base_checkpoint_receipt_sha256")
     tokenizer_manifest_sha = request.get("tokenizer_manifest_sha256")
-    bookforge_source_manifest_sha = request.get(
-        "bookforge_source_manifest_sha256"
-    )
+    bookforge_source_manifest_sha = request.get("bookforge_source_manifest_sha256")
     rejection_sha = request.get("gcp_rejection_sha256")
     smoke = request.get("smoke")
     approval = request.get("approval_token")
@@ -1468,6 +1615,10 @@ def _validate_request(
 input_volume = modal.Volume.from_name("bookforge-jax-fidelity-inputs", create_if_missing=False)
 scratch_volume = modal.Volume.from_name("bookforge-jax-fidelity-scratch", create_if_missing=False)
 release_volume = modal.Volume.from_name("bookforge-jax-fidelity-release", create_if_missing=False)
+compilation_cache_volume = modal.Volume.from_name(
+    _COMPILATION_CACHE_VOLUME_NAME,
+    create_if_missing=False,
+)
 app = modal.App(APP_NAME)
 
 
@@ -1600,9 +1751,7 @@ def _verify_training_completion_acceptance(
                 expected_pair_count=expected_lora_pair_count,
                 initial_step=0,
                 terminal_step=expected_steps - 1,
-                minimum_relative_delta=v3_acceptance[
-                    "minimum_checkpoint_lora_relative_delta"
-                ],
+                minimum_relative_delta=v3_acceptance["minimum_checkpoint_lora_relative_delta"],
                 approved_maxtext_patch_sha256=approved_maxtext_patch_sha256,
             )
             actual_adapter = actual_progression["terminal_adapter"]
@@ -1681,6 +1830,14 @@ def _finalize_completed_scratch(
     gpu_preflight = _validate_gpu_preflight(gpu_preflight_path)
     runtime_provenance_path = scratch_directory / _RUNTIME_PROVENANCE_PATH
     source_manifest_path = scratch_directory / _SOURCE_MANIFEST_SNAPSHOT_PATH
+    compilation_cache_path = scratch_directory / "compilation-cache.json"
+    compilation_cache_evidence: dict[str, object] | None = None
+    if compilation_cache_path.exists() or compilation_cache_path.is_symlink():
+        if compilation_cache_path.is_symlink() or not compilation_cache_path.is_file():
+            raise RuntimeError("durable JAX compilation cache evidence is unsafe")
+        compilation_cache_evidence = _validate_compilation_cache_evidence(
+            _json_object(compilation_cache_path)
+        )
     _validate_runtime_provenance(
         scratch_directory,
         run_id=run_id,
@@ -1746,10 +1903,17 @@ def _finalize_completed_scratch(
             "gpu_preflight_sha256": _sha256(gpu_preflight_path),
             "runtime_provenance_sha256": runtime_provenance_sha256,
         }
+        if compilation_cache_evidence is not None:
+            expected_identity["compilation_cache_sha256"] = _sha256(compilation_cache_path)
         if any(payload.get(name) != value for name, value in expected_identity.items()):
             raise RuntimeError("durable finalization staging identity changed")
         if payload.get("gpu_preflight") != gpu_preflight:
             raise RuntimeError("durable finalization GPU evidence changed")
+        if compilation_cache_evidence is None:
+            if "compilation_cache" in payload or "compilation_cache_sha256" in payload:
+                raise RuntimeError("durable finalization cache evidence changed")
+        elif payload.get("compilation_cache") != compilation_cache_evidence:
+            raise RuntimeError("durable finalization cache evidence changed")
         rows = _safe_release_rows(staging, payload)
         expected_provider_hashes = {
             f"provider/{filename}": expected_sha256
@@ -1760,6 +1924,10 @@ def _finalize_completed_scratch(
                 (_SOURCE_MANIFEST_SNAPSHOT_PATH, bookforge_source_manifest_sha256),
             )
         }
+        if compilation_cache_evidence is not None:
+            expected_provider_hashes["provider/compilation-cache.json"] = _sha256(
+                compilation_cache_path
+            )
         if any(
             rows.get(path, {}).get("sha256") != expected_sha256
             for path, expected_sha256 in expected_provider_hashes.items()
@@ -1779,6 +1947,7 @@ def _finalize_completed_scratch(
         release_gpu_preflight = provider_evidence / "gpu-preflight.json"
         release_runtime_provenance = provider_evidence / _RUNTIME_PROVENANCE_PATH
         release_source_manifest = provider_evidence / _SOURCE_MANIFEST_SNAPSHOT_PATH
+        release_compilation_cache = provider_evidence / "compilation-cache.json"
         shutil.copyfile(attempt_path, release_attempt, follow_symlinks=False)
         shutil.copyfile(gpu_preflight_path, release_gpu_preflight, follow_symlinks=False)
         shutil.copyfile(
@@ -1791,10 +1960,18 @@ def _finalize_completed_scratch(
             release_source_manifest,
             follow_symlinks=False,
         )
+        if compilation_cache_evidence is not None:
+            shutil.copyfile(
+                compilation_cache_path,
+                release_compilation_cache,
+                follow_symlinks=False,
+            )
         release_attempt.chmod(0o400)
         release_gpu_preflight.chmod(0o400)
         release_runtime_provenance.chmod(0o400)
         release_source_manifest.chmod(0o400)
+        if compilation_cache_evidence is not None:
+            release_compilation_cache.chmod(0o400)
         files: list[dict[str, object]] = []
         for source in sorted(item for item in staging.rglob("*") if item.is_file()):
             if source.is_symlink():
@@ -1829,6 +2006,9 @@ def _finalize_completed_scratch(
             "gpu_preflight": gpu_preflight,
             "files": files,
         }
+        if compilation_cache_evidence is not None:
+            payload["compilation_cache_sha256"] = _sha256(release_compilation_cache)
+            payload["compilation_cache"] = compilation_cache_evidence
         _write_once_json(staging_completion, payload)
         scratch_commit()
     _publish_staged_release(staging, release_directory, commit=release_commit)
@@ -1847,6 +2027,7 @@ def _finalize_completed_scratch(
         str(_INPUT_ROOT): input_volume,
         str(_SCRATCH_ROOT): scratch_volume,
         str(_RELEASE_ROOT): release_volume,
+        str(_COMPILATION_CACHE_ROOT): compilation_cache_volume,
     },
 )
 def run_finite(request: dict[str, object]) -> dict[str, object]:
@@ -1869,6 +2050,7 @@ def run_finite(request: dict[str, object]) -> dict[str, object]:
     input_volume.reload()
     scratch_volume.reload()
     release_volume.reload()
+    compilation_cache_volume.reload()
     input_directory = _INPUT_ROOT / run_id
     scratch_directory = _SCRATCH_ROOT / run_id
     release_directory = _RELEASE_ROOT / run_id
@@ -1957,11 +2139,15 @@ def run_finite(request: dict[str, object]) -> dict[str, object]:
     gpu_preflight_path = scratch_directory / "gpu-preflight.json"
     training_completion_path = run_directory / training_run_id / "completion.json"
     environment: dict[str, str] | None = None
+    compilation_cache: dict[str, object] | None = None
     runtime_provenance: dict[str, object] | None = None
     process_evidence: dict[str, object] | None = None
     failure_stage = "environment"
     try:
         environment = offline_environment(os.environ.copy())
+        failure_stage = "compilation-cache"
+        compilation_cache = _prepare_compilation_cache(environment)
+        compilation_cache_volume.commit()
         failure_stage = "runtime-provenance"
         runtime_provenance = _collect_training_runtime_provenance(
             experiment,
@@ -1984,6 +2170,13 @@ def run_finite(request: dict[str, object]) -> dict[str, object]:
         )
         _write_once_json(gpu_preflight_path, gpu_preflight)
         scratch_volume.commit()
+        preflight_cache = gpu_preflight.get("compilation_cache")
+        if not isinstance(preflight_cache, dict) or not isinstance(
+            preflight_cache.get("inventory"), dict
+        ):
+            raise RuntimeError("GPU preflight cache evidence is missing")
+        maxtext_cache_receipt_path = scratch_directory / "maxtext-cache-runtime.json"
+        environment["BOOKFORGE_JAX_CACHE_RECEIPT_PATH"] = str(maxtext_cache_receipt_path)
         environment["BOOKFORGE_JAX_EXECUTION_APPROVAL"] = approval_token(
             stage=stage,
             run_id=training_run_id,
@@ -2028,6 +2221,26 @@ def run_finite(request: dict[str, object]) -> dict[str, object]:
             log_path=scratch_directory / "failure-evidence" / "training-subprocess.log",
             scratch_directory=scratch_directory,
         )
+        compilation_cache_volume.commit()
+        if process_error is not None and not maxtext_cache_receipt_path.is_file():
+            raise process_error
+        from training.jax_fidelity.compilation_cache import validate_cache_receipt
+
+        maxtext_cache_receipt = validate_cache_receipt(
+            _json_object(maxtext_cache_receipt_path),
+            expected_directory=_COMPILATION_CACHE_DIRECTORY,
+        )
+        compilation_cache = _complete_compilation_cache(
+            compilation_cache,
+            after_preflight=preflight_cache["inventory"],
+            maxtext_entrypoint=maxtext_cache_receipt,
+        )
+        process_evidence["compilation_cache"] = compilation_cache
+        _write_once_json(
+            scratch_directory / "compilation-cache.json",
+            compilation_cache,
+        )
+        scratch_volume.commit()
         if process_error is not None:
             raise process_error
         failure_stage = "terminal-validation"
@@ -2081,17 +2294,11 @@ def run_finite(request: dict[str, object]) -> dict[str, object]:
         release_commit=release_volume.commit,
         experiment_id=experiment.experiment_id,
         expected_steps=(
-            experiment.training["smoke_steps"]
-            if smoke
-            else experiment.training["steps"]
+            experiment.training["smoke_steps"] if smoke else experiment.training["steps"]
         ),
         expected_rank=experiment.training["rank"],
-        expected_lora_pair_count=experiment.training.get(
-            "expected_lora_pair_count", 1
-        ),
-        approved_maxtext_patch_sha256=experiment.training.get(
-            "approved_maxtext_patch_sha256", ""
-        ),
+        expected_lora_pair_count=experiment.training.get("expected_lora_pair_count", 1),
+        approved_maxtext_patch_sha256=experiment.training.get("approved_maxtext_patch_sha256", ""),
         v3_acceptance=(
             experiment.recovery["learnability_acceptance"]
             if experiment.experiment_id.endswith("-v3-canary")
@@ -2221,17 +2428,11 @@ def finalize_finite(request: dict[str, object]) -> dict[str, object]:
         release_commit=release_volume.commit,
         experiment_id=experiment.experiment_id,
         expected_steps=(
-            experiment.training["smoke_steps"]
-            if smoke
-            else experiment.training["steps"]
+            experiment.training["smoke_steps"] if smoke else experiment.training["steps"]
         ),
         expected_rank=experiment.training["rank"],
-        expected_lora_pair_count=experiment.training.get(
-            "expected_lora_pair_count", 1
-        ),
-        approved_maxtext_patch_sha256=experiment.training.get(
-            "approved_maxtext_patch_sha256", ""
-        ),
+        expected_lora_pair_count=experiment.training.get("expected_lora_pair_count", 1),
+        approved_maxtext_patch_sha256=experiment.training.get("approved_maxtext_patch_sha256", ""),
         v3_acceptance=(
             experiment.recovery["learnability_acceptance"]
             if experiment.experiment_id.endswith("-v3-canary")
@@ -2383,9 +2584,7 @@ def run_cli(
                     "authoritative_workspace_total_usd": workspace_total,
                     "finalize_only": True,
                     "finalize_only_gpu": None,
-                    "trusted_completion_sha256": hashlib.sha256(
-                        completion_bytes
-                    ).hexdigest(),
+                    "trusted_completion_sha256": hashlib.sha256(completion_bytes).hexdigest(),
                     "result": result,
                 },
                 indent=2,

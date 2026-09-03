@@ -113,6 +113,7 @@ def main() -> None:
         run_name=run_id,
         hardware=_maxtext_hardware(),
         smoke=args.smoke,
+        jax_cache_directory=os.environ.get("JAX_COMPILATION_CACHE_DIR"),
     )
     token = approval_token(
         stage=stage,
@@ -164,13 +165,9 @@ def main() -> None:
         artifacts = sorted(path for path in args.output_directory.rglob("*") if path.is_file())
         if not artifacts:
             raise RuntimeError("MaxText completed without writing checkpoint artifacts")
-        completed_steps = (
-            config.training["smoke_steps"] if args.smoke else config.training["steps"]
-        )
+        completed_steps = config.training["smoke_steps"] if args.smoke else config.training["steps"]
         is_v3_recovery = config.experiment_id == RECOVERY_EXPERIMENT_ID
-        v3_thresholds = (
-            config.recovery["learnability_acceptance"] if is_v3_recovery else None
-        )
+        v3_thresholds = config.recovery["learnability_acceptance"] if is_v3_recovery else None
         learning_evidence = verify_tensorboard_learning(
             args.output_directory,
             expected_steps=completed_steps,
@@ -192,9 +189,7 @@ def main() -> None:
                 expected_pair_count=config.training["expected_lora_pair_count"],
                 initial_step=0,
                 terminal_step=terminal_step,
-                minimum_relative_delta=v3_thresholds[
-                    "minimum_checkpoint_lora_relative_delta"
-                ],
+                minimum_relative_delta=v3_thresholds["minimum_checkpoint_lora_relative_delta"],
                 approved_maxtext_patch_sha256=maxtext_patch_sha256,
             )
             adapter_evidence = checkpoint_progression_evidence["terminal_adapter"]
@@ -211,9 +206,7 @@ def main() -> None:
             smoke=args.smoke,
             expected_steps=completed_steps,
             expected_rank=config.training["rank"],
-            expected_lora_pair_count=config.training.get(
-                "expected_lora_pair_count", 1
-            ),
+            expected_lora_pair_count=config.training.get("expected_lora_pair_count", 1),
             approved_maxtext_patch_sha256=maxtext_patch_sha256,
             learning_evidence=learning_evidence,
             adapter_evidence=adapter_evidence,

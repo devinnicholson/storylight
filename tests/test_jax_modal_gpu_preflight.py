@@ -32,6 +32,10 @@ def test_two_gpu_preflight_returns_measured_fsdp_evidence(
         "ici_fsdp_parallelism": -1,
         "mesh_shape": {"fsdp": 2},
         "probe_sum": 523776.0,
+        "compilation_cache": {
+            "schema_version": "bookforge-jax-cache-runtime-v1",
+            "configured": False,
+        },
     }
     monkeypatch.setattr(
         modal_gpu_preflight.subprocess,
@@ -59,6 +63,10 @@ def test_two_gpu_preflight_rejects_non_fsdp_mesh(
         "ici_fsdp_parallelism": -1,
         "mesh_shape": {"fsdp": 1, "tensor": 2},
         "probe_sum": 523776.0,
+        "compilation_cache": {
+            "schema_version": "bookforge-jax-cache-runtime-v1",
+            "configured": False,
+        },
     }
     monkeypatch.setattr(
         modal_gpu_preflight.subprocess,

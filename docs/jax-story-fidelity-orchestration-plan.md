@@ -1,7 +1,8 @@
 # Bookforge JAX Story Fidelity orchestration plan
 
-Status: repository implementation and no-spend preflight complete, 2026-09-01. Model-heavy,
-paid-cloud, hidden-evaluation, and physical-device stages remain deliberately unexecuted.
+Status: repository implementation, native JAX LoRA recovery, and bounded Modal L4 training
+complete through the 100-step learning canary, updated 2026-09-03. Candidate evaluation,
+merged export, hidden evaluation, and physical-device promotion remain gated.
 
 ## Objective
 
@@ -417,5 +418,20 @@ the previously accepted 20-case renderer-safe contest score.
 The next permitted stage is `baseline`. It requires an accepted-engine identity bundle plus
 checksum-bound development and one-shot private-hidden endpoint reports. Before that run, the
 private hidden key, records, and custody receipt must be moved from volatile local storage to a
-durable encrypted location outside the repository. Round-trip conversion, training, cloud export,
+durable encrypted location outside the repository. Further candidate training, merged export,
 Jetson shadowing, and promotion remain behind separate approval tokens.
+
+### 2026-09-03 training-performance checkpoint
+
+The finite Modal fallback now configures JAX's persistent executable cache before MaxText imports
+and publishes a validated cache receipt with each release. The identical cold/warm experiment cut
+duration from 738 to 331 seconds and provider cost from $0.63757900 to $0.32375199 while retaining
+the same 100 optimizer steps and complete LoRA learning gates.
+
+A repeated activation-rematerialization experiment then compared the warm full-remat run against
+two no-remat runs. Median step time improved from 0.947 seconds to 0.579 and 0.842 seconds, but
+end-to-end duration regressed to 724 and 594 seconds. The observed host variance is 1.456x. The
+machine-checked policy in `experiments/jax-fidelity-lab/remat-ab-2026-09-03.json` therefore keeps
+the 100-step canary on full rematerialization and allows no-remat only at 2,941 or more steps, after
+the conservative break-even and a 10% safety margin. Both candidates passed all learning and
+checkpoint-progression gates; the rejection is purely an end-to-end performance decision.

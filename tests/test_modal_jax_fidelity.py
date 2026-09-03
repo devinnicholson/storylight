@@ -324,6 +324,12 @@ def test_modal_fallback_is_finite_pinned_and_has_no_endpoint() -> None:
     assert "max_containers=MAX_CONTAINERS" in source
     assert "input_volume.reload()" in source
     assert "scratch_volume.commit()" in source
+    assert "compilation_cache_volume.reload()" in source
+    assert "compilation_cache_volume.commit()" in source
+    assert (
+        'str(_COMPILATION_CACHE_ROOT): compilation_cache_volume'
+        in source
+    )
     run_finite = source.index("def run_finite(")
     training_call = source.index("_run_training_process(", run_finite)
     assert source.index("scratch_volume.commit()", run_finite) < training_call
@@ -358,6 +364,88 @@ def test_modal_fallback_is_finite_pinned_and_has_no_endpoint() -> None:
     assert "@modal.web_endpoint" not in source
     assert "smoke: bool = False" in source
 
+
+def test_modal_jax_compilation_cache_is_trusted_persistent_and_audited(
+    tmp_path: Path,
+) -> None:
+    environment = {"PATH": "/usr/bin"}
+
+    prepared = modal_jax_fidelity._prepare_compilation_cache(
+        environment,
+        root=tmp_path,
+    )
+
+    assert json.loads((tmp_path / "owner.json").read_text()) == (
+        modal_jax_fidelity._compilation_cache_owner()
+    )
+    assert prepared["before"] == {"files": 0, "bytes": 0}
+    assert environment | modal_jax_fidelity._COMPILATION_CACHE_ENVIRONMENT == environment
+    preflight_entry = tmp_path / "maxtext-entries-v1/preflight-cache-key"
+    preflight_entry.write_bytes(b"preflight executable")
+    after_preflight = modal_jax_fidelity._compilation_cache_inventory(
+        tmp_path / "maxtext-entries-v1"
+    )
+    entry = tmp_path / "maxtext-entries-v1/maxtext-cache-key"
+    entry.write_bytes(b"compiled executable")
+    entrypoint = {
+        "schema_version": "bookforge-jax-cache-runtime-v1",
+        "configured": True,
+        "cache_directory": str(tmp_path / "maxtext-entries-v1"),
+        "config": {
+            "jax_compilation_cache_dir": str(tmp_path / "maxtext-entries-v1"),
+            "jax_enable_compilation_cache": True,
+            "jax_persistent_cache_min_compile_time_secs": 0.0,
+            "jax_persistent_cache_min_entry_size_bytes": -1,
+            "jax_persistent_cache_enable_xla_caches": "all",
+            "jax_raise_persistent_cache_errors": True,
+        },
+    }
+
+    completed = modal_jax_fidelity._complete_compilation_cache(
+        prepared,
+        root=tmp_path,
+        after_preflight=after_preflight,
+        maxtext_entrypoint=entrypoint,
+    )
+
+    assert completed["cache_was_warm"] is False
+    assert completed["added_files"] == 2
+    assert completed["added_bytes"] == len(b"preflight executablecompiled executable")
+    assert modal_jax_fidelity._validate_compilation_cache_evidence(
+        completed,
+        root=tmp_path,
+    ) == completed
+
+
+def test_modal_jax_compilation_cache_rejects_unclaimed_or_changed_volume(
+    tmp_path: Path,
+) -> None:
+    (tmp_path / "unexpected").write_text("not trusted")
+    with pytest.raises(RuntimeError, match="not empty"):
+        modal_jax_fidelity._prepare_compilation_cache({}, root=tmp_path)
+
+    (tmp_path / "unexpected").unlink()
+    (tmp_path / "owner.json").write_text("{}")
+    with pytest.raises(RuntimeError, match="owner marker changed"):
+        modal_jax_fidelity._prepare_compilation_cache({}, root=tmp_path)
+
+
+def test_modal_jax_compilation_cache_rejects_cold_training_without_entries(
+    tmp_path: Path,
+) -> None:
+    prepared = modal_jax_fidelity._prepare_compilation_cache({}, root=tmp_path)
+    preflight_entry = tmp_path / "maxtext-entries-v1/preflight-cache-key"
+    preflight_entry.write_bytes(b"preflight")
+    after_preflight = modal_jax_fidelity._compilation_cache_inventory(
+        tmp_path / "maxtext-entries-v1"
+    )
+
+    with pytest.raises(RuntimeError, match="cold MaxText training wrote no"):
+        modal_jax_fidelity._complete_compilation_cache(
+            prepared,
+            root=tmp_path,
+            after_preflight=after_preflight,
+        )
 
 def test_modal_training_timeout_preserves_publication_reserve() -> None:
     assert modal_jax_fidelity._bounded_training_timeout(0) == 3000

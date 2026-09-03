@@ -200,6 +200,8 @@ def validate_config(document: Mapping[str, Any]) -> None:
         raise ConfigError("training.seed must be an integer")
     _exact(training.get("dtype"), "bfloat16", "training.dtype")
     _exact(training.get("weight_dtype"), "bfloat16", "training.weight_dtype")
+    if training.get("remat_policy") not in (None, "full", "none"):
+        raise ConfigError("training.remat_policy must be full or none")
     if experiment_id.endswith("-v2"):
         _exact(
             training.get("preparation_policy"),
@@ -338,9 +340,7 @@ def validate_config(document: Mapping[str, Any]) -> None:
             "minimum_rolling_loss_relative_reduction",
             "minimum_checkpoint_lora_relative_delta",
         }:
-            raise ConfigError(
-                "recovery.learnability_acceptance has unexpected fields"
-            )
+            raise ConfigError("recovery.learnability_acceptance has unexpected fields")
         for name, expected in (
             ("schema_version", "bookforge-jax-v3-learnability-acceptance-v2"),
             ("nonzero_gradient_epsilon", 1e-12),
@@ -412,9 +412,10 @@ def validate_config(document: Mapping[str, Any]) -> None:
             "recovery.previous_attempt.experiment_id",
         )
         training_run_id = previous.get("training_run_id")
-        if not isinstance(training_run_id, str) or re.fullmatch(
-            r"lora-train-[0-9a-f]{20}", training_run_id
-        ) is None:
+        if (
+            not isinstance(training_run_id, str)
+            or re.fullmatch(r"lora-train-[0-9a-f]{20}", training_run_id) is None
+        ):
             raise ConfigError("recovery.previous_attempt.training_run_id is invalid")
         for field in (
             "config_sha256",

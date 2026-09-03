@@ -339,10 +339,13 @@ def test_maxtext_command_retains_every_safety_override() -> None:
         run_name="smoke",
         hardware="gpu",
         smoke=True,
+        jax_cache_directory="/jax-cache/entries",
     )
     joined = " ".join(command)
 
     assert "model_name=gemma4-e2b" in command
+    assert "training.jax_fidelity.maxtext_entrypoint" in command
+    assert "maxtext.trainers.post_train.sft.train_sft_native" in command
     assert "tokenizer_path=/hf/base" in command
     assert "src/maxtext/configs/post_train/sft.yml" in command
     assert "dataset_type=hf" in command
@@ -355,6 +358,24 @@ def test_maxtext_command_retains_every_safety_override() -> None:
     assert "lora.lora_rank=8" in command
     assert "lora.lora_weight_qtype" not in joined
     assert "steps=5" in command
+    assert "jax_cache_dir=/jax-cache/entries" in command
+    assert "dump_hlo=false" in command
+
+
+def test_maxtext_command_rejects_relative_cache_directory() -> None:
+    config = load_config(CONFIG_PATH)
+    with pytest.raises(ValueError, match="must be absolute"):
+        build_train_command(
+            config,
+            maxtext_checkpoint="/checkpoints/base/items",
+            hf_tokenizer_checkpoint="/hf/base",
+            prepared_train_jsonl="/data/train.jsonl",
+            output_directory="/output",
+            run_name="smoke",
+            hardware="gpu",
+            smoke=True,
+            jax_cache_directory="relative/cache",
+        )
 
 
 def test_v2_train_command_makes_exposure_and_optimizer_explicit() -> None:
@@ -415,6 +436,29 @@ def test_v3_train_command_uses_l4_safe_attention() -> None:
         smoke=False,
     )
     assert "checkpoint_period=99" in full_command
+
+
+def test_train_command_can_disable_unnecessary_activation_rematerialization(
+    tmp_path: Path,
+) -> None:
+    document = json.loads(CONFIG_V3_PATH.read_text(encoding="utf-8"))
+    document["training"]["remat_policy"] = "none"
+    path = tmp_path / "no-remat.json"
+    path.write_text(json.dumps(document), encoding="utf-8")
+    config = load_config(path)
+
+    command = build_train_command(
+        config,
+        maxtext_checkpoint="/checkpoints/base/items",
+        hf_tokenizer_checkpoint="/hf/base",
+        prepared_train_jsonl="/data/train.jsonl",
+        output_directory="/output",
+        run_name="no-remat",
+        hardware="gpu",
+        smoke=False,
+    )
+
+    assert "remat_policy=none" in command
 
 
 def test_pinned_native_maxtext_patch_materializes_lora_before_optimizer() -> None:
