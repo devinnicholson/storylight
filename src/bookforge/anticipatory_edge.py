@@ -26,9 +26,10 @@ from bookforge.anticipatory import (
     PrivacyAttestation,
     RenderedScene,
 )
-from bookforge.domain import FrozenStrictModel
+from bookforge.domain import FrozenStrictModel, GeneratedPagePlan
 from bookforge.live_scene import SceneText, VisualStyle
 from bookforge.live_scene_planner import LiveScenePlan, LiveScenePlanningResult
+from bookforge.nemotron_critic import NemotronCriticRequest
 
 MAX_ASSET_BYTES = 8 * 1024 * 1024
 RUNTIME_PREWARM_TIMEOUT_SECONDS = 240
@@ -127,10 +128,20 @@ class AnticipatoryEdgeCoordinator:
         self,
         request: LocalAnticipationPrepareRequest,
     ) -> LocalAnticipationPrepareResponse:
+        response, _ = await self.prepare_with_pages(request)
+        return response
+
+    async def prepare_with_pages(
+        self,
+        request: LocalAnticipationPrepareRequest,
+    ) -> tuple[LocalAnticipationPrepareResponse, list[GeneratedPagePlan]]:
+        """Keep local page plans available for playback without sending them to GKE."""
+
         session_token = request.session_token or new_anticipation_session_token()
         expires_at = self._now() + timedelta(seconds=request.expires_in_seconds)
         specs: list[AnticipatorySceneSpec] = []
         evidence: list[LocalPlanningEvidence] = []
+        pages: list[GeneratedPagePlan] = []
         for candidate in request.candidates:
             result = await self.planner.plan(
                 text=candidate.text,
@@ -160,6 +171,14 @@ class AnticipatoryEdgeCoordinator:
                     model_revision=result.model_revision,
                 )
             )
+            pages.append(
+                result.plan.to_page(
+                    source_text=candidate.text,
+                    visual_style=request.visual_style,
+                    seed=candidate.seed,
+                    page_id=f"anticipation-{request.sequence}",
+                )
+            )
         anticipation = await self.client.submit(
             AnticipatoryBatchRequest(
                 session_token=session_token,
@@ -168,12 +187,19 @@ class AnticipatoryEdgeCoordinator:
                 session_cost_ceiling_usd=request.session_cost_ceiling_usd,
             )
         )
-        return LocalAnticipationPrepareResponse(
+        if (
+            anticipation.session_token != session_token
+            or anticipation.sequence != request.sequence
+            or [record.spec for record in anticipation.candidates] != specs
+        ):
+            raise AnticipatoryEdgeError("Cloud returned a different anticipation request")
+        response = LocalAnticipationPrepareResponse(
             session_token=session_token,
             sequence=request.sequence,
             planning=evidence,
             anticipation=anticipation,
         )
+        return response, pages
 
     async def status(self, session_token: str, sequence: int) -> AnticipationStatus:
         return await self.client.status(session_token, sequence)
@@ -247,12 +273,23 @@ def scene_spec_from_local_plan(
     continuity_sha256 = hashlib.sha256(
         json.dumps(sanitized_plan, sort_keys=True, separators=(",", ":")).encode()
     ).hexdigest()
-    expected_subjects = [plan.focus.prompt, plan.accent.prompt]
+    expected_subjects = list(dict.fromkeys([page.layers[1].prompt, page.layers[2].prompt]))
+    # Keep visual facts, not the renderer's repeated composition boilerplate,
+    # inside the critic's small context window. The page above ran the privacy gate.
+    visual_brief = (
+        f"{page.scene_summary}. Setting: {page.layers[0].prompt}. "
+        f"Main subject: {page.layers[1].prompt}. Supporting visual: {page.layers[2].prompt}."
+    )
+    NemotronCriticRequest(
+        visual_brief=visual_brief,
+        expected_subjects=expected_subjects,
+        forbidden_content=["readable text", "duplicate principal subject", "interface chrome"],
+    )
     return AnticipatorySceneSpec(
         branch_id=branch_id,
         sequence=sequence,
         source=source,
-        visual_brief=page.scene_spec.master_prompt,
+        visual_brief=visual_brief,
         visual_style=visual_style,
         expected_subjects=expected_subjects,
         forbidden_content=[

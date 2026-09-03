@@ -156,6 +156,15 @@ def test_gateway_configuration_requires_loopback_backend_and_long_token() -> Non
 
 
 def test_gateway_exposes_only_the_bounded_anticipatory_control_paths() -> None:
+    prepared = "/v1/prepared-projections/prepared_" + "a" * 24
+    assert _route_allowed("POST", "/v1/prepared-projections") is True
+    assert _route_allowed("POST", "/v1/prepared-projections:activate") is True
+    assert _route_allowed("POST", "/v1/prepared-projections:prewarm") is True
+    assert _route_allowed("POST", prepared + "/stage") is True
+    assert _route_allowed("POST", prepared + "/arbitrary-action") is False
+    assert _route_allowed("POST", "/v1/prepared-projections/runtime") is False
+    assert _route_allowed("GET", "/v1/prepared-projections/runtime") is True
+    assert _route_allowed("DELETE", prepared) is True
     assert _route_allowed("POST", "/v1/anticipations:prepare") is True
     assert _route_allowed("POST", "/v1/anticipations:commit") is True
     assert _route_allowed("GET", "/v1/anticipations/anticipate_abc/1") is True

@@ -1,6 +1,18 @@
 # Bookforge living implementation plan
 
-Last updated: 2026-08-22
+Last updated: 2026-09-03
+
+## Latest increment — next-page rehearsal
+
+The exact-page workbench now prepares a privacy-gated scene through GKE/Nemotron without changing
+the current projection, verifies and caches master/depth assets locally, and switches on an explicit
+user action with no cloud call. Unit, HTTP, and browser-fixture verification cover the new flow.
+The live six-case GKE v5 benchmark remains separate cloud evidence; the combined physical
+Jetson/GKE/projector run and laptop-independent authenticated ingress are the next gates.
+See [the current architecture and verification record](anticipatory-story-engine.md).
+
+The original milestones below are the August 22 snapshot, retained as project history; their
+deployment statuses are not the current cloud/hardware inventory.
 
 ## North-star demonstration
 

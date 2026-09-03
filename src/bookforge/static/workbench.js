@@ -1246,6 +1246,18 @@ if (!canRecordAudio) {
   elements.browserNote.textContent = "The scene creator still works here. Chrome on localhost supports the private local microphone flow.";
 }
 
+window.BookforgeAnticipation.init({
+  sessionId: readerSessionId,
+  visualStyle: () => elements.style.value.trim(),
+  currentProjection: () => ({
+    server_instance_id: liveServerInstanceId,
+    session_revision: liveSessionRevision,
+  }),
+  onShow: (pointer) => {
+    handleLiveSceneSessionPointer(pointer, {restoreInputs: true});
+    ensureProjectionPreview();
+  },
+});
 connectLiveSceneSessionEvents();
 restoreInitialScene();
 void warmEdgePlanner();

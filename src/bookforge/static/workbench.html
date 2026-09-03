@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <meta name="theme-color" content="#07110f" />
     <title>Bookforge Live Scene Foundry</title>
-    <link rel="stylesheet" href="/workbench-assets/workbench.css?v=0.2.0-live7" />
+    <link rel="stylesheet" href="/workbench-assets/workbench.css?v=0.2.0-live8" />
   </head>
   <body>
     <main class="shell">
@@ -79,6 +79,31 @@
             The first animated draft should appear almost immediately. Richer stages replace it without
             refreshing the projector, so you can see where every second goes.
           </p>
+          <section class="next-page" aria-labelledby="nextPageHeading">
+            <p class="section-label">Next-page rehearsal · GKE + Nemotron</p>
+            <h3 id="nextPageHeading">Have the next world waiting.</h3>
+            <p>Prepare a known next passage while the current scene stays on screen. Nemotron checks
+              the artwork; this device downloads and verifies it before you switch.</p>
+            <label class="field-block">
+              <span>Next passage</span>
+              <textarea id="nextPageText" rows="4" maxlength="2400"
+                placeholder="What happens on the next page?"></textarea>
+            </label>
+            <div class="live-actions">
+              <button class="button" id="nextPagePrepare" disabled>Prepare next scene</button>
+              <button class="button primary" id="nextPageShow" disabled>Show prepared scene</button>
+              <button class="button" id="nextPageDiscard" disabled>Discard</button>
+            </div>
+            <p id="nextPageStatus" role="status" aria-live="polite">Checking next-page setup…</p>
+            <p class="generation-metrics" id="nextPageMetrics"></p>
+            <details class="options">
+              <summary>Cloud warmup and limits</summary>
+              <p>Preparation and warmup can use cloud credits. Opening this panel does not start a GPU.
+                Start the bounded GKE runtime first. Prepared pages are kept for 15 minutes or until
+                the local API restarts. A prepared scene uses artwork with depth motion, not generated video.</p>
+              <button class="button" id="nextPageWarm" disabled>Warm GKE path (uses credits)</button>
+            </details>
+          </section>
         </article>
 
         <article class="card output-card">
@@ -235,6 +260,7 @@
         separate local-only milestone after the live generation path is proven.
       </footer>
     </main>
-    <script src="/workbench-assets/workbench.js?v=0.2.0-live17"></script>
+    <script src="/workbench-assets/anticipatory-workbench.js?v=1"></script>
+    <script src="/workbench-assets/workbench.js?v=0.2.0-live18"></script>
   </body>
 </html>

@@ -29,6 +29,14 @@ from bookforge.anticipatory_edge import (
     LocalAnticipationPrepareRequest,
     LocalAnticipationPrepareResponse,
 )
+from bookforge.anticipatory_playback import (
+    ActivateProjectionRequest,
+    AnticipatoryPlayback,
+    PreparedProjectionId,
+    PreparedProjectionStatus,
+    PrepareProjectionRequest,
+    PrewarmProjectionRequest,
+)
 from bookforge.asr import TranscriptionError, build_asr_backend
 from bookforge.asr_backend import AsrBackend, AsrBackendError, AsrBackendUnavailableError
 from bookforge.asset_cache import AssetCache, AssetCacheError
@@ -61,6 +69,7 @@ from bookforge.live_scene import (
     DETERMINISTIC_LIVE_SCENE_COMPILER_MODEL,
     LiveSceneArtifactKind,
     LiveSceneCapacityError,
+    LiveSceneConflictError,
     LiveSceneCreateRequest,
     LiveSceneJob,
     LiveSceneJobId,
@@ -291,6 +300,7 @@ async def lifespan(app: FastAPI):
             name="bookforge-live-planner-startup-warmup",
         )
     app.state.anticipatory = None
+    app.state.anticipatory_playback = None
     if settings.anticipatory_backend == "gke":
         if not settings.anticipatory_url:
             raise ValueError("BOOKFORGE_ANTICIPATORY_URL is required for the GKE backend")
@@ -316,6 +326,11 @@ async def lifespan(app: FastAPI):
                 allow_loopback_http=settings.anticipatory_allow_loopback_http,
             ),
             edge_gate_revision=settings.anticipatory_edge_gate_revision,
+        )
+        app.state.anticipatory_playback = AnticipatoryPlayback(
+            edge=app.state.anticipatory,
+            cache=app.state.asset_cache,
+            registry=app.state.live_scenes,
         )
     yield
     planner_warmup_task = app.state.live_scene_planner_warmup_task
@@ -770,6 +785,82 @@ async def warmup_live_scene_planner(request: Request) -> LiveScenePlannerWarmupR
         input_tokens=result.metrics.input_tokens,
         output_tokens=result.metrics.output_tokens,
     )
+
+
+def _prepared_playback(request: Request) -> AnticipatoryPlayback:
+    if not _is_local_connection(request):
+        raise HTTPException(status_code=403, detail="Prepared projection controls are local-only")
+    playback = request.app.state.anticipatory_playback
+    if playback is None:
+        raise HTTPException(status_code=409, detail="GKE next-page preparation is not configured")
+    return playback
+
+
+@app.get("/v1/prepared-projections/runtime")
+async def prepared_projection_runtime(request: Request) -> dict:
+    if not _is_local_connection(request):
+        raise HTTPException(status_code=403, detail="Prepared projection controls are local-only")
+    return {
+        "enabled": request.app.state.anticipatory_playback is not None,
+        "server_instance_id": request.app.state.live_scenes.server_instance_id,
+        "detail": "No cloud request was made. Start the bounded GKE runtime before warming it.",
+    }
+
+
+@app.post("/v1/prepared-projections:prewarm")
+async def prewarm_prepared_projection(payload: PrewarmProjectionRequest, request: Request) -> dict:
+    playback = _prepared_playback(request)
+    try:
+        return await playback.edge.client.prewarm_runtime()
+    except AnticipatoryEdgeError as error:
+        raise HTTPException(status_code=503, detail=str(error)) from error
+
+
+@app.post("/v1/prepared-projections", response_model=PreparedProjectionStatus, status_code=202)
+async def prepare_projection(payload: PrepareProjectionRequest, request: Request):
+    playback = _prepared_playback(request)
+    try:
+        return await playback.prepare(payload)
+    except (RuntimeError, ValueError) as error:
+        raise HTTPException(status_code=503, detail=str(error)) from error
+
+
+@app.get("/v1/prepared-projections/{prepared_id}", response_model=PreparedProjectionStatus)
+async def prepared_projection_status(prepared_id: PreparedProjectionId, request: Request):
+    playback = _prepared_playback(request)
+    try:
+        return await playback.status(prepared_id)
+    except AnticipatoryEdgeError as error:
+        raise HTTPException(status_code=409, detail=str(error)) from error
+
+
+@app.post("/v1/prepared-projections/{prepared_id}/stage", response_model=PreparedProjectionStatus)
+async def stage_prepared_projection(prepared_id: PreparedProjectionId, request: Request):
+    playback = _prepared_playback(request)
+    try:
+        return await playback.stage(prepared_id)
+    except (RuntimeError, ValueError) as error:
+        raise HTTPException(status_code=409, detail=str(error)) from error
+
+
+@app.post("/v1/prepared-projections:activate", response_model=LiveSceneSessionStatus)
+async def activate_prepared_projection(payload: ActivateProjectionRequest, request: Request):
+    playback = _prepared_playback(request)
+    try:
+        return await playback.activate(payload)
+    except (AnticipatoryEdgeError, LiveSceneConflictError, LiveSceneCapacityError) as error:
+        raise HTTPException(status_code=409, detail=str(error)) from error
+    except RuntimeError as error:
+        raise HTTPException(status_code=503, detail=str(error)) from error
+
+
+@app.delete("/v1/prepared-projections/{prepared_id}", status_code=204)
+async def discard_prepared_projection(prepared_id: PreparedProjectionId, request: Request):
+    playback = _prepared_playback(request)
+    try:
+        await playback.discard(prepared_id)
+    except AnticipatoryEdgeError as error:
+        raise HTTPException(status_code=409, detail=str(error)) from error
 
 
 def _anticipatory_coordinator(request: Request) -> AnticipatoryEdgeCoordinator:

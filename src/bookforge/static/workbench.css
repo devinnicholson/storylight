@@ -202,3 +202,9 @@ footer { margin-top: 20px; text-align: center; }
   .renderer-preflight { grid-template-columns: auto 1fr; }
   .renderer-warm-button { grid-column: 1 / -1; width: 100%; }
 }
+/* Next-page controls stay separate from the currently projected passage. */
+.next-page { margin-top: 1.75rem; padding-top: 1.5rem; border-top: 1px solid #ffffff20; }
+.next-page h3 { margin: .5rem 0; }
+.next-page p { line-height: 1.5; }
+.next-page .live-actions { flex-wrap: wrap; gap: .5rem; margin-top: 1rem; }
+.next-page button:disabled { opacity: .5; cursor: not-allowed; }

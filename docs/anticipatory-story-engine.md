@@ -329,6 +329,73 @@ export BOOKFORGE_ANTICIPATORY_ALLOW_LOOPBACK_HTTP=true
 
 Do not enable loopback HTTP for a non-loopback hostname or IP. The client enforces that rule.
 
+## Workbench next-page rehearsal
+
+Implemented on 2026-09-03: an exact known-next-page path that keeps cloud work off the page-turn
+critical path. The workbench has a separate next-passage field; it does not overwrite the current
+story input until the user chooses **Show prepared scene**.
+
+1. **Prepare next scene** runs the existing local planner once. The coordinator validates the
+   compact visual contract against Nemotron's 1,400-byte input budget before a cloud submission.
+   One candidate reserves $0.012 per render attempt, $0.024 including the optional repair. These
+   are render reservations, not an all-in cap on GKE/NIM infrastructure charges.
+2. Read-only progress polling waits for an accepting critic verdict. The device downloads master
+   and depth concurrently, checks both SHA-256 hashes, decodes both images, validates dimensions,
+   and writes them to the existing local asset cache. It commits the single known branch remotely
+   at this stage, but leaves the current projector session untouched.
+3. **Show prepared scene** validates the cached pack and atomically publishes a completed
+   `master_ready` job into the existing session event stream. No cloud request, local model call,
+   intermediate draft, or page reload is required. The projector retains its existing depth-motion
+   renderer and visual blend. Client image decoding/upload and the blend still take time; this is
+   not a claim of zero visual-onset latency.
+
+The device retains up to eight prepared-page handles for 15 minutes from the initial preparation,
+or until the API restarts. Staged status, activation, and discard work without cloud connectivity.
+Metadata for a page that has not been shown is process-local; this is not yet a durable offline
+library. Activation checks the server epoch and current session revision, and cannot replace an
+in-progress generation. Duplicate activation of the current page is idempotent. Concurrent planning
+of a different page does not hold the activation lock.
+
+Local-only endpoints, also allowlisted through the paired controller:
+
+- `GET /v1/prepared-projections/runtime`: configuration only; no cloud request.
+- `POST /v1/prepared-projections`: prepare `{text, visual_style, session_id, seed?}`.
+- `GET /v1/prepared-projections/{prepared_id}`: inspect progress.
+- `POST /v1/prepared-projections/{prepared_id}/stage`: verify and cache approved assets.
+- `POST /v1/prepared-projections:activate`: select a staged page with expected server epoch/revision.
+- `DELETE /v1/prepared-projections/{prepared_id}`: discard the handle; no projector change.
+- `POST /v1/prepared-projections:prewarm`: explicit billable warmup; never invoked on panel load.
+
+Verification: fixture-backed HTTP integration covers source privacy, asset checksums and decoding,
+rejection, expiry/capacity, stale activation, offline replay, and the paired route allowlist. A real
+browser followed prepare → stage → show → projector asset loads with no console warnings/errors;
+the artwork and timing inputs in that browser check were synthetic test fixtures, not new GPU
+measurements. The existing live GKE v5 benchmark remains the cloud evidence. A combined physical
+Jetson/GKE/projector acceptance run remains a separate gate after connection setup; this test does
+not establish physical frame rate or scene-generation quality.
+
+The new runtime wheel was installed on the Jetson on 2026-09-03. The running API and paired
+controller both passed readiness checks; the served next-page JavaScript and installed playback
+module matched the local SHA-256 hashes. The GKE preparation flag remains disabled there, so this
+release does not create cloud work. The wheel digest is
+`40e2249dec2334df26329606c49ebd55055a52f5d52303deefc84d0f10ae61a0`; the previous application files
+are retained on the device at
+`/home/operator/bookforge-next-page-40e2249dec23/runtime-before.tgz`.
+
+Reproduce without cloud credentials or GPU work:
+
+```bash
+.venv/bin/pytest -q tests/test_anticipatory_playback.py tests/test_anticipatory_workbench.py
+PYTHONPATH=src:tests .venv/bin/python tests/serve_prepared_projection_fixture.py
+# Open http://127.0.0.1:18085/workbench?session=fixture
+# Fixture passage: Mira whispered that the fox had finally found the hidden garden.
+```
+
+For a supervised live rehearsal, use the private bridge and configuration above. The bridge depends
+on the workstation remaining connected; laptop-independent authenticated ingress and automatic
+reading alignment are not enabled by this milestone. Do not expose the local API on a public port
+to bypass that remaining connection work.
+
 ## Immediate shutdown and deletion
 
 Scaling the NIM Deployment to zero stops the declared GKE GPU workload without taking down the CPU

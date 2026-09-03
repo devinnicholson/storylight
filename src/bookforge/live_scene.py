@@ -585,6 +585,10 @@ class LiveSceneCapacityError(LiveSceneRegistryError):
     pass
 
 
+class LiveSceneConflictError(LiveSceneRegistryError):
+    pass
+
+
 class LiveSceneNotFoundError(LiveSceneRegistryError, LookupError):
     pass
 
@@ -793,6 +797,97 @@ class LiveSceneJobRegistry:
             self._tasks[job_id] = task
             task.add_done_callback(lambda _: self._tasks.pop(job_id, None))
             return snapshot
+
+    async def activate_prepared_pack(
+        self,
+        *,
+        activation_id: str,
+        request: LiveSceneCreateRequest,
+        pack: StoryPack,
+        provider: str,
+        expected_server_instance_id: str,
+        expected_session_revision: int,
+    ) -> LiveSceneSessionStatus:
+        """Atomically switch a session to verified local assets, without a provider call."""
+
+        if request.session_id is None or self.completed_pack_validator is None:
+            raise LiveSceneProviderProtocolError(
+                "Prepared playback requires a session and verifier"
+            )
+        if (
+            len(pack.pages) != 1
+            or pack.pages[0].source_text != request.text
+            or pack.visual_style != request.visual_style
+            or any(asset.seed != live_scene_request_seed(request) for asset in pack.assets)
+        ):
+            raise LiveSceneProviderProtocolError("Prepared pack does not match its local request")
+        started = perf_counter()
+        pack = await self.completed_pack_validator(pack)
+        artifacts = _cached_live_scene_artifacts(pack, provider=provider)
+        if {artifact.kind for artifact in artifacts} != {
+            LiveSceneArtifactKind.MASTER,
+            LiveSceneArtifactKind.DEPTH,
+        }:
+            raise LiveSceneProviderProtocolError("Prepared playback requires master and depth only")
+        job_id = (
+            "scene_"
+            + hashlib.sha256(f"{request.session_id}\0{activation_id}".encode()).hexdigest()[:24]
+        )
+        async with self._lock:
+            if self._closed:
+                raise LiveSceneRegistryClosedError("Live-scene job registry is closed")
+            pointer = self._session_jobs.get(request.session_id)
+            if pointer is not None and pointer[1] == job_id:
+                return LiveSceneSessionStatus(
+                    session_id=request.session_id,
+                    server_instance_id=self.server_instance_id,
+                    session_revision=pointer[0],
+                    job=self._jobs[job_id].snapshot,
+                )
+            current_revision = pointer[0] if pointer else 0
+            if (
+                expected_server_instance_id != self.server_instance_id
+                or expected_session_revision != current_revision
+                or (pointer and not self._jobs[pointer[1]].snapshot.terminal)
+                or job_id in self._jobs
+            ):
+                raise LiveSceneConflictError(
+                    "Projection changed; refresh before showing this scene"
+                )
+            self._evict_completed_locked(replacing_session_id=request.session_id)
+            if len(self._jobs) >= self.max_retained_jobs:
+                raise LiveSceneCapacityError("Live-scene retained-job capacity is full")
+            pack = pack.model_copy(update={"story_id": f"{request.session_id}-{job_id[-12:]}"})
+            elapsed = max(0.0, (perf_counter() - started) * 1000)
+            metrics = _cached_live_scene_metrics(
+                pack, artifacts=artifacts, cache_ms=elapsed, include_heavy_models=True
+            )
+            now = datetime.now(UTC)
+            snapshot = LiveSceneJob(
+                job_id=job_id,
+                stage=LiveSceneStage.MASTER_READY,
+                revision=1,
+                progress=1,
+                complete=True,
+                provider=provider,
+                request=request,
+                artifacts=artifacts,
+                story_pack=pack,
+                metrics=metrics,
+                created_at=now,
+                updated_at=now,
+            )
+            await self._persist_completed_pack(pack)
+            self._jobs[job_id] = _JobRecord(snapshot=snapshot, started_monotonic=started)
+            self._session_revision_sequence += 1
+            self._session_jobs[request.session_id] = (self._session_revision_sequence, job_id)
+            self._publish_session_locked(request.session_id)
+            return LiveSceneSessionStatus(
+                session_id=request.session_id,
+                server_instance_id=self.server_instance_id,
+                session_revision=self._session_revision_sequence,
+                job=snapshot,
+            )
 
     async def get(self, job_id: str) -> LiveSceneJob:
         async with self._lock:
@@ -1393,7 +1488,7 @@ class LiveSceneJobRegistry:
         for subscription in tuple(self._session_subscribers.get(session_id, ())):
             self._put_session_event(subscription._queue, event)
 
-    def _evict_completed_locked(self) -> None:
+    def _evict_completed_locked(self, *, replacing_session_id: str | None = None) -> None:
         while len(self._jobs) >= self.max_retained_jobs:
             completed_id = next(
                 (job_id for job_id, record in self._jobs.items() if record.snapshot.terminal),
@@ -1412,7 +1507,8 @@ class LiveSceneJobRegistry:
                 pointer = self._session_jobs.get(session_id)
                 if pointer is not None and pointer[1] == completed_id:
                     self._session_jobs.pop(session_id, None)
-                    self._publish_session_locked(session_id)
+                    if session_id != replacing_session_id:
+                        self._publish_session_locked(session_id)
 
     @staticmethod
     def _put_snapshot(

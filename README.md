@@ -161,6 +161,12 @@ Only its strict visual contract goes to GKE, where a pinned Nemotron Nano VL NIM
 synthetic Cloud Run render and accepts, rejects, or authorizes one repair. The selected master and
 depth assets return through checksum-verified local-only endpoints; losing work is cancelled.
 
+The workbench's **Next-page rehearsal** panel exposes an exact-page workflow: prepare a passage,
+download the Nemotron-approved artwork and depth, then explicitly show it. Preparation never changes
+the current projection. Activation uses the local cache without a cloud request and refuses a stale
+session revision. This is depth-animated artwork, not newly generated video; the next-page panel is
+disabled until the local API has an authenticated GKE connection configured.
+
 The feature, GKE Deployment, and public ingress are all off by default. The first experiment is
 ClusterIP-only, uses a private `kubectl port-forward`, and has a live six-case acceptance harness
 that cannot be confused with the checked-in simulation. See

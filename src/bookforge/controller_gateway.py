@@ -10,6 +10,7 @@ private APIs are deliberately absent from the allowlist.
 from __future__ import annotations
 
 import asyncio
+import re
 import secrets
 import time
 from collections.abc import AsyncIterator
@@ -91,9 +92,12 @@ def _route_allowed(method: str, path: str) -> bool:
             or path.startswith("/v1/live-scenes/")
             or path.startswith("/v1/live-scene-sessions/")
             or path.startswith("/v1/anticipations/")
+            or path.startswith("/v1/prepared-projections/")
             or path == "/v1/live-scene-provider/warm-status"
         )
     if method == "POST":
+        if re.fullmatch(r"/v1/prepared-projections/prepared_[a-f0-9]{24}/stage", path):
+            return True
         return path in {
             "/v1/live-scenes",
             "/v1/live-scene-provider/prewarm",
@@ -101,9 +105,12 @@ def _route_allowed(method: str, path: str) -> bool:
             "/v1/live-scene-planner/warmup",
             "/v1/anticipations:prepare",
             "/v1/anticipations:commit",
+            "/v1/prepared-projections",
+            "/v1/prepared-projections:activate",
+            "/v1/prepared-projections:prewarm",
         }
     if method == "DELETE":
-        return path.startswith("/v1/anticipations/")
+        return path.startswith(("/v1/anticipations/", "/v1/prepared-projections/"))
     return False
 
 
