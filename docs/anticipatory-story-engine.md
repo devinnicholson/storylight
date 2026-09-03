@@ -1,7 +1,8 @@
 # Bookforge anticipatory story engine
 
-Status: bounded private GKE v5 acceptance passed on 2026-09-03; the NVIDIA L4 workload was then
-scaled to zero.
+Status: bounded private GKE v5 acceptance and a real Jetson offline-activation test passed on
+2026-09-03; the NVIDIA L4 workload was then scaled to zero. The combined test exposed an action
+fidelity error despite Nemotron acceptance, so visual fidelity is not a passed gate.
 
 ## The selling story
 
@@ -393,14 +394,14 @@ Verification: fixture-backed HTTP integration covers source privacy, asset check
 rejection, expiry/capacity, stale activation, offline replay, and the paired route allowlist. A real
 browser followed prepare → stage → show → projector asset loads with no console warnings/errors;
 the artwork and timing inputs in that browser check were synthetic test fixtures, not new GPU
-measurements. The existing live GKE v5 benchmark remains the cloud evidence. A combined physical
-Jetson/GKE/projector acceptance run remains a separate gate after connection setup; this test does
-not establish physical frame rate or scene-generation quality.
+measurements. At that checkpoint, the live GKE v5 benchmark was the cloud evidence and the combined
+Jetson/GKE/projector acceptance run remained a separate gate. Those fixture tests do not establish
+physical frame rate or scene-generation quality; the real delivery result is recorded below.
 
 The new runtime wheel was installed on the Jetson on 2026-09-03. The running API and paired
 controller both passed readiness checks; the served next-page JavaScript and installed playback
-module matched the local SHA-256 hashes. The GKE preparation flag remains disabled there, so this
-release does not create cloud work. The wheel digest is
+module matched the local SHA-256 hashes. The GKE preparation flag remained disabled at that initial
+release, which did not create cloud work. The wheel digest is
 `40e2249dec2334df26329606c49ebd55055a52f5d52303deefc84d0f10ae61a0`; the previous application files
 are retained on the device at
 `/home/operator/bookforge-next-page-40e2249dec23/runtime-before.tgz`.
@@ -408,11 +409,47 @@ are retained on the device at
 Follow-up bridge release: wheel
 `4ae7c837a93580e008edc2592a6dc717f31791fa315c4e0dfbf46d9b49d93bfe` adds the pre-render NIM readiness
 guard. The actual GPU-off service denied the check before any render/warmup request. The private
-bridge health contract was also verified from the Jetson. The one-time configuration helper is
-staged at `/home/operator/bookforge-connect-gke-301d14ec6270.py` (SHA-256
-`301d14ec627010c510ed13be557716d9a2aeeac40b29142fecaa3e671f6dd595`); root configuration is still
-pending user authentication. This does not add a new password-free sudo capability. The bridge
+bridge health contract was also verified from the Jetson. The user subsequently ran the one-time
+configuration helper at `/home/operator/bookforge-connect-gke-301d14ec6270.py` (SHA-256
+`301d14ec627010c510ed13be557716d9a2aeeac40b29142fecaa3e671f6dd595`), and the running API confirmed
+the backend enabled. This does not add a new password-free sudo capability. The bridge
 requires the Mac to remain awake for the supervised test; it is not permanent standalone ingress.
+
+### Real Jetson delivery acceptance
+
+`benchmarks/anticipatory-jetson-playback-2026-09-03.json` records one new scene entered through the
+real workbench, planned by local Gemma/TensorRT, rendered on Cloud Run, reviewed by GKE/Nemotron,
+and staged on the Jetson. It is separate from the earlier six-case cloud benchmark and browser
+fixtures. The full suite passed 1,053 tests before the run.
+
+- Local planning took 1,379 ms in a preceding uncached check; preparation reused that plan in
+  0.82 ms. Rendering took 426 ms and Nemotron review took 5,676 ms. These components are not a
+  measured end-to-end click-to-ready time.
+- The scene was downloaded and verified before publication. NIM was scaled to zero and the
+  private cloud bridge disconnected before **Show prepared scene** was clicked. Staged status
+  remained available with the cloud endpoint refusing connections.
+- Local publication took 3.41 ms. Client activation took 126.8 ms in the Mac preview and 233 ms
+  on the Jetson, with a separate configured 320 ms blend. Neither figure measures click-to-photon
+  latency or establishes a distribution from one sample.
+- After closing the Mac preview to isolate telemetry, the Jetson reported approximately 30
+  depth-rendered FPS across three samples. Presentation mode disables display-frame sampling, so
+  this is not evidence of physical display FPS or zero dropped display frames. Observer
+  confirmation of the physical projection was not supplied during this run.
+- Both cached assets retained their expected hashes after disconnect. Repeating activation
+  returned the same job and revision without new generation.
+- Cold startup from Pod creation to readiness took 1,001 seconds; its language-engine build
+  alone took 273.65 seconds. Warmup then reported 23.97 seconds for the renderer and 37.67 seconds
+  for the critic. Startup must be completed before a rehearsal; it is not hidden in warm latency.
+
+Visual review found a genuine failure case: the image showed a silver fox beside an oversized
+lantern, not clearly carrying it. The local contract did preserve “carrying,” but Nemotron accepted
+the image anyway. The next critic evaluation must include this actor-object relationship failure;
+successful delivery and attractive artwork are not proof of exact story fidelity. No additional
+generation was used to replace this result in the record.
+
+The next-page panel itself never automatically warms the cloud. The pre-existing regular-generation
+panel still warms its renderer when the workbench opens; do not describe the entire workbench as
+having no billable startup behavior. The private GKE bridge was closed after this acceptance run.
 
 Reproduce without cloud credentials or GPU work:
 

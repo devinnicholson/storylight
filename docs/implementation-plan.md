@@ -7,16 +7,33 @@ Last updated: 2026-09-03
 The exact-page workbench now prepares a privacy-gated scene through GKE/Nemotron without changing
 the current projection, verifies and caches master/depth assets locally, and switches on an explicit
 user action with no cloud call. Unit, HTTP, and browser-fixture verification cover the new flow.
-The live six-case GKE v5 benchmark remains separate cloud evidence; the combined physical
-Jetson/GKE/projector run and laptop-independent authenticated ingress are the next gates.
+The live six-case GKE v5 benchmark remains separate cloud evidence. The combined real Jetson/GKE
+delivery test now passed offline activation; visual review found an actor-object fidelity gap.
+Laptop-independent authenticated ingress and stronger action review remain open gates.
 See [the current architecture and verification record](anticipatory-story-engine.md).
 
-Connection checkpoint: the supervised Mac → private GKE CPU API → SSH loopback bridge was verified
-from the Jetson at `127.0.0.1:18082`. GPU-off readiness now blocks new rendering and renderer warmup
-before any paid request. The one-time root configuration helper is staged on the device at
-`/home/operator/bookforge-connect-gke-301d14ec6270.py`; enabling it requires the user's `sudo`
-authentication because the restricted administrator intentionally cannot edit configuration.
-The live GPU remains at zero replicas until that step and the supervised acceptance run.
+Connection checkpoint: the user completed the one-time privileged setup. The Jetson reports the
+next-page backend enabled, and the supervised Mac → private GKE CPU API → SSH loopback bridge is
+reachable from the Jetson at `127.0.0.1:18082`. The workbench's separate Mac → Jetson tunnel was
+restored too. A real browser preparation attempt while Nemotron was unavailable failed at the
+readiness gate without submitting a scene. The next-page panel's warmup is explicit; the existing
+regular-generation panel still performs its own renderer warmup on opening the workbench.
+The real next-page test rendered in 426 ms and passed Nemotron review in 5,676 ms. With the GKE
+GPU scaled to zero and the cloud bridge disconnected, the Jetson activated its cached scene in
+233 ms plus a configured 320 ms blend, then reported approximately 30 depth-rendered FPS.
+This is one sample, not p95 or click-to-photon latency. Cold NIM startup took 1,001 seconds.
+See `benchmarks/anticipatory-jetson-playback-2026-09-03.json` for the measured boundaries.
+
+Next optimization gates:
+
+- Treat actor-object actions as explicit acceptance requirements: this run preserved “carrying”
+  in its contract, but Nemotron accepted a fox standing beside an oversized lantern. Add this
+  known false positive to the next critic evaluation before claiming stronger fidelity.
+- Avoid rebuilding the NIM engine for every rehearsal if a supported, reproducible persistence
+  path can be validated. Do not trade an unbounded warm GPU bill for a shorter startup.
+- Provide authenticated, laptop-independent ingress without exposing the Jetson's local API.
+- Obtain observer confirmation of the physical projection. Kiosk telemetry is not a camera or
+  photodiode measurement of the projector output.
 
 The original milestones below are the August 22 snapshot, retained as project history; their
 deployment statuses are not the current cloud/hardware inventory.
