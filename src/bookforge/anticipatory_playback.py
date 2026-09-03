@@ -149,16 +149,23 @@ class AnticipatoryPlayback:
             raise AnticipatoryEdgeError("Prepared page expired; prepare it again")
         return page
 
-    async def status(self, prepared_id: str) -> PreparedProjectionStatus:
+    async def status(
+        self, prepared_id: str, *, wait_seconds: float = 0
+    ) -> PreparedProjectionStatus:
         page = self._get(prepared_id)
         async with page.lock:
             self._get(prepared_id)
             if page.pack is None:
-                await self._refresh(page)
+                await self._refresh(page, wait_seconds=wait_seconds)
             return self._snapshot(prepared_id, page)
 
-    async def _refresh(self, page: _PreparedPage) -> None:
-        status = await self.edge.status(page.response.session_token, page.response.sequence)
+    async def _refresh(self, page: _PreparedPage, *, wait_seconds: float = 0) -> None:
+        status = await self.edge.status(
+            page.response.session_token,
+            page.response.sequence,
+            wait_seconds=wait_seconds,
+            branch_id=page.candidate.spec.branch_id,
+        )
         self._accept_status(page, status)
 
     @staticmethod

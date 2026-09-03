@@ -49,6 +49,27 @@ REQUEST = PrepareProjectionRequest(
 )
 
 
+def test_playback_wait_reaches_cloud_and_keeps_transport_timeout_above_wait(tmp_path):
+    async def scenario():
+        rig = Rig(tmp_path)
+        await rig.initialize()
+        try:
+            page = await rig.playback.prepare(REQUEST)
+            await rig.playback.status(page.prepared_id, wait_seconds=20)
+            request = rig.requests[-1]
+            assert request.url.params["wait_seconds"] == "20"
+            assert request.url.params["branch_id"] == "known_next"
+            assert request.extensions["timeout"]["read"] >= 25
+            await rig.playback.stage(page.prepared_id)
+            calls = len(rig.requests)
+            await rig.playback.status(page.prepared_id, wait_seconds=20)
+            assert len(rig.requests) == calls
+        finally:
+            await rig.close()
+
+    asyncio.run(scenario())
+
+
 class Planner:
     calls = 0
 

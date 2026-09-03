@@ -19,6 +19,14 @@ MAX_CRITIC_IMAGE_BYTES = 8 * 1024 * 1024
 MAX_CRITIC_CONTRACT_UTF8_BYTES = 1_400
 DEFAULT_NEMOTRON_VL_MODEL = "nvidia/llama-3.1-nemotron-nano-vl-8b-v1"
 NEMOTRON_CRITIC_MAX_OUTPUT_TOKENS = 128
+NEMOTRON_CRITIC_SYSTEM_PROMPT = (
+    "Judge the illustration only against the visual brief. Return JSON "
+    "using f=fidelity score, c=composition score, p=projection-legibility score, "
+    "i=identity-consistent, t=unintended-text, d=decision, r=reason, and optional "
+    "x=correction. Scores are 0..1; d is accept, refine, or reject. Keep r under 12 words. "
+    "Include x under 28 words only for refine or reject. Never request "
+    "passage, reader, audio, or camera data."
+)
 NEMOTRON_CRITIC_WIRE_SCHEMA: dict[str, object] = {
     "type": "object",
     "properties": {
@@ -120,6 +128,9 @@ class NemotronCriticEvidence(FrozenStrictModel):
 class NemotronVisionCritic:
     """OpenAI-compatible Nemotron VL client kept off the first-image critical path."""
 
+    system_prompt = NEMOTRON_CRITIC_SYSTEM_PROMPT
+    wire_schema = NEMOTRON_CRITIC_WIRE_SCHEMA
+
     def __init__(
         self,
         *,
@@ -208,17 +219,7 @@ class NemotronVisionCritic:
                     "messages": [
                         {
                             "role": "system",
-                            "content": (
-                                "Judge the illustration only against the visual brief. Return JSON "
-                                "using f=fidelity score, c=composition "
-                                "score, p=projection-legibility score, i=identity-consistent, "
-                                "t=unintended-text, d=decision, r=reason, and optional "
-                                "x=correction. "
-                                "Scores are "
-                                "0..1; d is accept, refine, or reject. Keep r under 12 words. "
-                                "Include x under 28 words only for refine or reject. Never request "
-                                "passage, reader, audio, or camera data."
-                            ),
+                            "content": self.system_prompt,
                         },
                         {
                             "role": "user",
@@ -247,7 +248,7 @@ class NemotronVisionCritic:
                             # outlines backend for enums, ranges, patterns, and nullable
                             # unions. Pydantic still enforces those constraints after the
                             # compact wire object is generated.
-                            "schema": NEMOTRON_CRITIC_WIRE_SCHEMA,
+                            "schema": self.wire_schema,
                         },
                     },
                 },
@@ -282,7 +283,8 @@ class NemotronVisionCritic:
                     limits=httpx.Limits(
                         max_connections=2,
                         max_keepalive_connections=2,
-                        keepalive_expiry=300,
+                        # NIM 1.3.1 closes idle connections after five seconds.
+                        keepalive_expiry=4,
                     ),
                 )
             return self._client

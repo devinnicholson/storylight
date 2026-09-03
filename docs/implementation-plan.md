@@ -2,6 +2,23 @@
 
 Last updated: 2026-09-03
 
+## Latest performance pass
+
+Persistent NIM engine reuse now passes a real restart test without model or vendor-code changes:
+container startup fell from 631 to 229 seconds, and all 12 baseline review verdicts stayed identical.
+The workbench uses bounded event-driven readiness waits, skips an unnecessary cache-hit request,
+and the NIM client avoids reusing sockets beyond the server's five-second idle lifetime. These
+transport changes are deployed to GKE and the Jetson; 1,070 tests pass.
+
+An observation-first review experiment was 19.2% faster and improved count checks, but still missed
+the known carrying and relative-position errors. It is not the production default. The real browser
+test successfully staged a new scene, while exposing a 26.1-second cold renderer call as a remaining
+latency target. See [the measurements and rejected experiments](nemotron-performance.md).
+
+Next: independently measure renderer cold versus warm latency, test persistent CUDA extension
+caches for NIM's first request, and evaluate unbiased observation plus explicit action verification
+before treating Nemotron approval as reliable fidelity evidence. Cached playback stays local-only.
+
 ## Latest increment — next-page rehearsal
 
 The exact-page workbench now prepares a privacy-gated scene through GKE/Nemotron without changing

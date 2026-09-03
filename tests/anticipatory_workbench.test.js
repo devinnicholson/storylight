@@ -6,6 +6,7 @@ function harness(respond, enabled = true) {
   const elements = new Map();
   const requests = [];
   const timers = new Map();
+  const delays = [];
   const shown = [];
   const context = {
     document: {getElementById(id) {
@@ -16,7 +17,7 @@ function harness(respond, enabled = true) {
       return elements.get(id);
     }},
     window: {
-      setTimeout(fn) { const id = Symbol(); timers.set(id, fn); return id; },
+      setTimeout(fn, ms) { const id = Symbol(); timers.set(id, fn); delays.push(ms); return id; },
       clearTimeout(id) { timers.delete(id); }, addEventListener() {},
     },
     fetch: async (path, options) => {
@@ -31,7 +32,7 @@ function harness(respond, enabled = true) {
   };
   vm.runInNewContext(fs.readFileSync("src/bookforge/static/anticipatory-workbench.js", "utf8"), context);
   return {
-    requests, timers, shown,
+    requests, timers, shown, delays,
     element: (name) => elements.get(`nextPage${name}`),
     start: () => context.window.BookforgeAnticipation.init({
       sessionId: "reader", visualStyle: () => "watercolor",
@@ -62,6 +63,8 @@ const snapshot = (state) => ({
   assert.equal(app.element("Show").disabled, true);
   await app.element("Prepare").events.click();
   assert.equal(app.timers.size, 1);
+  assert.deepEqual(app.delays, [100]);
+  assert.ok(app.requests[app.requests.length - 1].path.endsWith("?wait_seconds=20"));
   assert.equal(app.element("Text").disabled, true);
   assert.equal(app.shown.length, 0);
   current = "approved";
@@ -91,5 +94,12 @@ const snapshot = (state) => ({
   assert.equal(conflict.shown.length, 0);
   assert.equal(conflict.element("Status").textContent, "Projection changed");
   assert.equal(conflict.timers.size, 0); // Errors never schedule another billable operation.
+
+  const cached = harness(({path}) => snapshot(path.endsWith("/stage") ? "staged" : "approved"));
+  await cached.start();
+  await cached.element("Prepare").events.click();
+  assert.equal(cached.requests.length, 3); // Runtime, prepare cache hit, and stage; no status round trip.
+  assert.equal(cached.element("Show").disabled, false);
+  assert.equal(cached.timers.size, 0);
   console.log("Next-page workbench: lifecycle, polling, disabled setup, and conflict checks passed.");
 })().catch((error) => { console.error(error); process.exitCode = 1; });

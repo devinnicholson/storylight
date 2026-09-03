@@ -4,6 +4,10 @@ Status: bounded private GKE v5 acceptance and a real Jetson offline-activation t
 2026-09-03; the NVIDIA L4 workload was then scaled to zero. The combined test exposed an action
 fidelity error despite Nemotron acceptance, so visual fidelity is not a passed gate.
 
+The subsequent [performance pass](nemotron-performance.md) verified persistent TensorRT engine
+reuse, deployed event-driven readiness and safer connection reuse, and retained unsuccessful
+review-prompt experiments separately from the production policy.
+
 ## The selling story
 
 Bookforge is not a cloud image generator attached to a microphone. It is a privacy-split reading
@@ -82,9 +86,10 @@ device.
 - `bookforge-anticipatory`: one CPU-only coordinator replica with a private ClusterIP Service.
 - `bookforge-nemotron`: one-L4 NIM Deployment declared at zero replicas, with a private ClusterIP
   Service used by the coordinator at cluster-local DNS.
-- `bookforge-nim-cache`: an 80 GiB `standard-rwo` volume that preserves downloaded model artifacts
-  across NIM Pods. The NIM 1.3.1 low-memory TensorRT engine is still built in temporary storage, so
-  the volume reduces model-download work but does not eliminate every engine rebuild.
+- `bookforge-nim-cache`: an 80 GiB `standard-rwo` volume that now preserves downloaded weights and
+  both built TensorRT engines. The guarded cache configuration selects the original buildable
+  profile plus a named engine cache, avoiding NIM's incomplete auto-selected cached vision profile.
+  The tested same-node restart reused both engines and reached readiness in 234 seconds.
 - NIM memory is intentionally bounded at a 32 GiB request and 41 GiB limit on a `g2-standard-12`;
   smaller 16, 24, and 26 GiB attempts were rejected by measured OOM kills rather than hidden.
 - Three clean-node pulls of the exact NIM image took 233.111-272.844 seconds, and two successful

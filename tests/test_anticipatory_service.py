@@ -5,6 +5,7 @@ import hashlib
 import time
 from datetime import UTC, datetime, timedelta
 
+import pytest
 from fastapi.testclient import TestClient
 
 from bookforge.anticipatory import (
@@ -139,6 +140,63 @@ def test_http_service_accepts_only_scene_contract_and_commits_candidate() -> Non
         )
         assert committed.status_code == 200
         assert committed.json()["candidates"][0]["state"] == "committed"
+
+
+def test_long_poll_wakes_on_completion_and_timeout_does_not_cancel_generation():
+    class SlowCritic(Critic):
+        calls = 0
+
+        async def evaluate(self, spec, scene):
+            self.calls += 1
+            await asyncio.sleep(0.1)
+            return await super().evaluate(spec, scene)
+
+    critic = SlowCritic()
+    orchestrator = AnticipatorySceneOrchestrator(renderer=Renderer(), critic=critic)
+
+    async def probe():
+        return True, "ready"
+
+    app = create_anticipatory_service(
+        lambda: AnticipatoryRuntime(
+            orchestrator,
+            MemorySceneAssetStore(),
+            probe,
+            probe,
+        )
+    )
+    with TestClient(app) as client:
+        assert client.post("/v1/anticipations", json=_payload()).status_code == 202
+        path = f"/v1/anticipations/{SESSION}/1"
+        first = client.get(path, params={"wait_seconds": 0.001})
+        assert first.status_code == 200
+        assert first.json()["candidates"][0]["state"] not in {"cancelled", "failed"}
+        ready = client.get(path, params={"wait_seconds": 1})
+        assert ready.status_code == 200
+        assert ready.json()["candidates"][0]["state"] == "ready"
+        assert critic.calls == 1
+        missing = client.get(path, params={"wait_seconds": 1, "branch_id": "absent"})
+        assert missing.status_code == 404
+
+
+@pytest.mark.parametrize("wait", ["-1", "21", "NaN", "inf"])
+def test_long_poll_rejects_unbounded_wait(wait):
+    async def probe():
+        return True, "ready"
+
+    app = create_anticipatory_service(
+        lambda: AnticipatoryRuntime(
+            AnticipatorySceneOrchestrator(renderer=Renderer(), critic=Critic()),
+            MemorySceneAssetStore(),
+            probe,
+            probe,
+        )
+    )
+    with TestClient(app) as client:
+        assert (
+            client.get(f"/v1/anticipations/{SESSION}/1", params={"wait_seconds": wait}).status_code
+            == 422
+        )
 
 
 def test_asset_endpoint_is_private_cache_content_with_checksum() -> None:

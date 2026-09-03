@@ -826,10 +826,14 @@ async def prepare_projection(payload: PrepareProjectionRequest, request: Request
 
 
 @app.get("/v1/prepared-projections/{prepared_id}", response_model=PreparedProjectionStatus)
-async def prepared_projection_status(prepared_id: PreparedProjectionId, request: Request):
+async def prepared_projection_status(
+    prepared_id: PreparedProjectionId,
+    request: Request,
+    wait_seconds: float = Query(default=0, ge=0, le=20, allow_inf_nan=False),
+):
     playback = _prepared_playback(request)
     try:
-        return await playback.status(prepared_id)
+        return await playback.status(prepared_id, wait_seconds=wait_seconds)
     except AnticipatoryEdgeError as error:
         raise HTTPException(status_code=409, detail=str(error)) from error
 

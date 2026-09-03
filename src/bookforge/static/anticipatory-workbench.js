@@ -51,13 +51,15 @@ window.BookforgeAnticipation = {
     }
 
     async function check() {
-      render(await api(`/${page.prepared_id}`));
+      if (page.state === "preparing") {
+        render(await api(`/${page.prepared_id}?wait_seconds=20`));
+      }
       if (page.state === "approved") {
         status.textContent = "Downloading and verifying the approved artwork and depth…";
         render(await api(`/${page.prepared_id}/stage`, "POST"));
       }
       if (page.state === "preparing" && Date.now() < pollDeadline) {
-        timer = window.setTimeout(() => run(check), 1500);
+        timer = window.setTimeout(() => run(check), 100);
       } else if (page.state === "preparing") {
         status.textContent = "Still preparing. Use Check preparation to resume watching; it will not start another generation.";
       }

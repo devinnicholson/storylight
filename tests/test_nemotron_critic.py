@@ -54,6 +54,22 @@ def _wire_verdict() -> dict[str, object]:
     }
 
 
+def test_connection_reuse_expires_before_nim_five_second_idle_timeout():
+    observed = {}
+
+    def factory(**kwargs):
+        observed.update(kwargs)
+        return httpx.AsyncClient(**kwargs)
+
+    async def scenario():
+        critic = NemotronVisionCritic(base_url="https://example.org", client_factory=factory)
+        await critic._get_client()
+        await critic.aclose()
+
+    asyncio.run(scenario())
+    assert observed["limits"].keepalive_expiry == 4
+
+
 def test_evaluate_sends_only_bounded_visual_contract_and_generated_image() -> None:
     observed: list[httpx.Request] = []
 

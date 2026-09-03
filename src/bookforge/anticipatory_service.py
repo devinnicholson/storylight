@@ -6,12 +6,12 @@ import asyncio
 import math
 import time
 from collections.abc import Awaitable, Callable
-from contextlib import asynccontextmanager
+from contextlib import asynccontextmanager, suppress
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import Annotated
 
-from fastapi import FastAPI, HTTPException, Path, Request, Response, status
+from fastapi import FastAPI, HTTPException, Path, Query, Request, Response, status
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, ConfigDict, StringConstraints
 
@@ -23,6 +23,7 @@ from bookforge.anticipatory import (
     AnticipationStatus,
     AnticipatoryBatchRequest,
     AnticipatorySceneOrchestrator,
+    BranchId,
     CommitRequest,
 )
 from bookforge.anticipatory_gcp import AssetNotFoundError, MemorySceneAssetStore
@@ -172,9 +173,20 @@ def create_anticipatory_service(runtime_factory: RuntimeFactory) -> FastAPI:
         request: Request,
         session_token: str = Path(pattern=r"^anticipate_[a-f0-9]{24}$"),
         sequence: int = Path(ge=0, le=2**31 - 1),
+        wait_seconds: float = Query(default=0, ge=0, le=20, allow_inf_nan=False),
+        branch_id: BranchId = "known_next",
     ) -> AnticipationStatus:
         try:
-            return await _runtime(request).orchestrator.status(session_token, sequence)
+            orchestrator = _runtime(request).orchestrator
+            if wait_seconds:
+                with suppress(TimeoutError):
+                    await orchestrator.wait_terminal(
+                        session_token,
+                        sequence,
+                        branch_id,
+                        timeout_seconds=wait_seconds,
+                    )
+            return await orchestrator.status(session_token, sequence)
         except AnticipationNotFoundError as error:
             raise HTTPException(status_code=404, detail=str(error)) from error
 

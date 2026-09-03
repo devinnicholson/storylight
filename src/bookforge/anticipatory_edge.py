@@ -10,7 +10,7 @@ import secrets
 from collections.abc import Awaitable, Callable
 from datetime import UTC, datetime, timedelta
 from typing import Annotated, Literal, Protocol
-from urllib.parse import urlsplit
+from urllib.parse import urlencode, urlsplit
 
 import httpx
 from pydantic import Field, StringConstraints, model_validator
@@ -201,7 +201,21 @@ class AnticipatoryEdgeCoordinator:
         )
         return response, pages
 
-    async def status(self, session_token: str, sequence: int) -> AnticipationStatus:
+    async def status(
+        self,
+        session_token: str,
+        sequence: int,
+        *,
+        wait_seconds: float = 0,
+        branch_id: str = "known_next",
+    ) -> AnticipationStatus:
+        if wait_seconds:
+            return await self.client.status(
+                session_token,
+                sequence,
+                wait_seconds=wait_seconds,
+                branch_id=branch_id,
+            )
         return await self.client.status(session_token, sequence)
 
     async def commit(self, request: CommitRequest) -> AnticipationStatus:
@@ -378,10 +392,25 @@ class AnticipatoryEdgeClient:
             raise AnticipatoryEdgeError(_bounded(RuntimeError(detail)))
         return payload
 
-    async def status(self, session_token: str, sequence: int) -> AnticipationStatus:
+    async def status(
+        self,
+        session_token: str,
+        sequence: int,
+        *,
+        wait_seconds: float = 0,
+        branch_id: str = "known_next",
+    ) -> AnticipationStatus:
+        if not math.isfinite(wait_seconds) or not 0 <= wait_seconds <= 20:
+            raise ValueError("status wait must be 0-20 seconds")
+        query = (
+            "?" + urlencode({"wait_seconds": wait_seconds, "branch_id": branch_id})
+            if wait_seconds
+            else ""
+        )
         payload = await self._json_request(
             "GET",
-            f"/v1/anticipations/{session_token}/{sequence}",
+            f"/v1/anticipations/{session_token}/{sequence}{query}",
+            timeout_seconds=max(self.timeout_seconds, wait_seconds + 5),
         )
         return AnticipationStatus.model_validate(payload)
 

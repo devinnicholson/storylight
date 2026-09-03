@@ -489,7 +489,10 @@ class AnticipatorySceneOrchestrator:
                 raise AnticipationNotFoundError("anticipation branch was not found")
         await asyncio.wait_for(event.wait(), timeout=timeout_seconds)
         async with self._lock:
-            return self._records[key]
+            record = self._records.get(key)
+            if record is None:
+                raise AnticipationNotFoundError("anticipation branch was evicted while waiting")
+            return record
 
     async def close(self) -> None:
         async with self._lock:
