@@ -96,6 +96,7 @@ class Rig:
         self.offline = False
         self.bad_digest = False
         self.bad_identity = False
+        self.critic_ready = True
         self.state = CandidateState.READY
         self.requests = []
         self.records = {}
@@ -135,6 +136,11 @@ class Rig:
         assert not self.offline, "Offline activation must not contact the cloud"
         self.requests.append(request)
         path = request.url.path
+        if path == "/ready":
+            return httpx.Response(
+                200 if self.critic_ready else 503,
+                json={"ready": self.critic_ready, "critic": {"ready": self.critic_ready}},
+            )
         if path.startswith("/v1/assets/"):
             for content in self.images.values():
                 digest = hashlib.sha256(content).hexdigest()
@@ -240,7 +246,7 @@ def test_prepare_stage_and_offline_activation_preserve_current_projection(tmp_pa
             with pytest.raises(LiveSceneNotFoundError):
                 await rig.registry.get_session(REQUEST.session_id)
             assert rig.planner.calls == 1
-            assert "Mira" not in rig.requests[0].content.decode()
+            assert all("Mira" not in request.content.decode() for request in rig.requests)
             rig.offline = True
             assert (await rig.playback.status(staged.prepared_id)) == staged
             assert (await rig.playback.stage(staged.prepared_id)) == staged
@@ -481,6 +487,29 @@ def test_capacity_replacement_publishes_no_empty_projection_event(tmp_path):
             )
             assert (await subscription.receive()).job == two.job
             assert subscription._queue.empty()
+        finally:
+            await rig.close()
+
+    asyncio.run(run())
+
+
+def test_nim_off_blocks_planning_generation_and_renderer_warmup(tmp_path):
+    async def run():
+        rig = Rig(tmp_path)
+        await rig.initialize()
+        rig.critic_ready = False
+        try:
+            with pytest.raises(RuntimeError, match="not ready"):
+                await rig.playback.prepare(REQUEST)
+            with pytest.raises(RuntimeError, match="not ready"):
+                await rig.client.prewarm_runtime()
+            assert rig.planner.calls == 0
+            assert rig.playback._preparing == 0
+            assert not rig.playback._pages
+            assert [(request.method, request.url.path) for request in rig.requests] == [
+                ("GET", "/ready"),
+                ("GET", "/ready"),
+            ]
         finally:
             await rig.close()
 

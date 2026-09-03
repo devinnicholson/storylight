@@ -11,6 +11,13 @@ The live six-case GKE v5 benchmark remains separate cloud evidence; the combined
 Jetson/GKE/projector run and laptop-independent authenticated ingress are the next gates.
 See [the current architecture and verification record](anticipatory-story-engine.md).
 
+Connection checkpoint: the supervised Mac → private GKE CPU API → SSH loopback bridge was verified
+from the Jetson at `127.0.0.1:18082`. GPU-off readiness now blocks new rendering and renderer warmup
+before any paid request. The one-time root configuration helper is staged on the device at
+`/home/operator/bookforge-connect-gke-301d14ec6270.py`; enabling it requires the user's `sudo`
+authentication because the restricted administrator intentionally cannot edit configuration.
+The live GPU remains at zero replicas until that step and the supervised acceptance run.
+
 The original milestones below are the August 22 snapshot, retained as project history; their
 deployment statuses are not the current cloud/hardware inventory.
 

@@ -344,7 +344,27 @@ class AnticipatoryEdgeClient:
         )
         return AnticipationStatus.model_validate(payload)
 
+    async def ensure_critic_ready(self) -> None:
+        """Inspect the already-running NIM, never probe or wake the renderer."""
+        try:
+            payload = await self._json_request("GET", "/ready", timeout_seconds=5)
+        except AnticipatoryEdgeError as error:
+            raise AnticipatoryEdgeError(
+                "The GKE bridge or Nemotron is not ready. Start the bounded GPU runtime first; "
+                "no new generation or renderer warmup was requested."
+            ) from error
+        critic = payload.get("critic")
+        if (
+            payload.get("ready") is not True
+            or not isinstance(critic, dict)
+            or critic.get("ready") is not True
+        ):
+            raise AnticipatoryEdgeError(
+                "Nemotron readiness was not confirmed; no generation requested"
+            )
+
     async def prewarm_runtime(self) -> dict[str, str | bool]:
+        await self.ensure_critic_ready()
         payload = await self._json_request(
             "POST",
             "/v1/runtime:prewarm",

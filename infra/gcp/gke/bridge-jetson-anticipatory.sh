@@ -2,6 +2,7 @@
 set -euo pipefail
 
 NAMESPACE="${BOOKFORGE_GKE_NAMESPACE:-bookforge}"
+CONTEXT="${BOOKFORGE_GKE_CONTEXT:-gke_your-gcp-project_us-central1_bookforge-anticipatory}"
 SERVICE="${BOOKFORGE_GKE_SERVICE:-bookforge-anticipatory}"
 LOCAL_PORT="${BOOKFORGE_GKE_LOCAL_PORT:-18082}"
 JETSON_PORT="${BOOKFORGE_JETSON_ANTICIPATORY_PORT:-18082}"
@@ -46,7 +47,7 @@ cleanup() {
 }
 trap cleanup EXIT INT TERM
 
-kubectl -n "${NAMESPACE}" port-forward \
+kubectl --context="${CONTEXT}" -n "${NAMESPACE}" port-forward \
   "service/${SERVICE}" "${LOCAL_PORT}:8080" >"${PORT_FORWARD_LOG}" 2>&1 &
 PORT_FORWARD_PID=$!
 
@@ -83,7 +84,7 @@ if [[ -n "${HOST_KEY_ALIAS}" ]]; then
 fi
 
 printf '%s\n' \
-  "Private bridge ready." \
+  "GKE CPU API reachable; opening the private SSH bridge." \
   "  workstation: http://127.0.0.1:${LOCAL_PORT}" \
   "  Jetson:      http://127.0.0.1:${JETSON_PORT}" \
   "Keep this terminal open during the bounded experiment. Ctrl-C removes both tunnels."

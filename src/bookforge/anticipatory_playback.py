@@ -109,6 +109,7 @@ class AnticipatoryPlayback:
                 raise AnticipatoryEdgeError("Prepared-page capacity is full; discard a page first")
             self._preparing += 1
         try:
+            await self.edge.client.ensure_critic_ready()
             response, pages = await self.edge.prepare_with_pages(
                 LocalAnticipationPrepareRequest(
                     sequence=1,

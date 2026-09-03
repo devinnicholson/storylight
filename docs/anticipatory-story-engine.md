@@ -329,6 +329,24 @@ export BOOKFORGE_ANTICIPATORY_ALLOW_LOOPBACK_HTTP=true
 
 Do not enable loopback HTTP for a non-loopback hostname or IP. The client enforces that rule.
 
+For the standalone system service, shell `export` commands do not change its root-owned
+`/etc/bookforge/bookforge.env`. After the bridge is reachable from the Jetson, copy the repository's
+`deploy/jetson/configure-anticipatory.py` to that device and run it there with system Python:
+
+```bash
+sudo /usr/bin/python3 -I ./configure-anticipatory.py --user operator
+# Optional: add --dry-run to validate without changing files or restarting.
+# Roll back this feature later with --disable; no live bridge is required to disable it.
+```
+
+This helper is a one-time privileged configuration change, not a new password-free administration
+capability. It preserves credentials and the accepted local planner, changes only the four bridge
+settings, creates a private rollback copy, and restarts only the API. Failed readiness restores the
+previous configuration. It never scales a GPU, adds a public listener, installs a credential, or
+changes sudoers. The bridge's `/health` identity must match before enabling; a lost bridge fails
+before configuration is changed. The private tunnel is pinned to the Bookforge GKE context rather
+than whichever cluster happens to be selected in the workstation shell.
+
 ## Workbench next-page rehearsal
 
 Implemented on 2026-09-03: an exact known-next-page path that keeps cloud work off the page-turn
@@ -339,6 +357,11 @@ story input until the user chooses **Show prepared scene**.
    compact visual contract against Nemotron's 1,400-byte input budget before a cloud submission.
    One candidate reserves $0.012 per render attempt, $0.024 including the optional repair. These
    are render reservations, not an all-in cap on GKE/NIM infrastructure charges.
+   Before planning or submitting, a five-second read-only `/ready` check confirms that Nemotron is
+   already available. If the bridge or NIM is off, preparation fails without a render request.
+   The explicit warmup button applies the same guard before it can wake the separate renderer;
+   it does not scale the GKE Deployment itself. This readiness check cannot guarantee the GPU will
+   remain available afterward, so normal failures and cost reservations still apply.
 2. Read-only progress polling waits for an accepting critic verdict. The device downloads master
    and depth concurrently, checks both SHA-256 hashes, decodes both images, validates dimensions,
    and writes them to the existing local asset cache. It commits the single known branch remotely
@@ -381,6 +404,15 @@ release does not create cloud work. The wheel digest is
 `40e2249dec2334df26329606c49ebd55055a52f5d52303deefc84d0f10ae61a0`; the previous application files
 are retained on the device at
 `/home/operator/bookforge-next-page-40e2249dec23/runtime-before.tgz`.
+
+Follow-up bridge release: wheel
+`4ae7c837a93580e008edc2592a6dc717f31791fa315c4e0dfbf46d9b49d93bfe` adds the pre-render NIM readiness
+guard. The actual GPU-off service denied the check before any render/warmup request. The private
+bridge health contract was also verified from the Jetson. The one-time configuration helper is
+staged at `/home/operator/bookforge-connect-gke-301d14ec6270.py` (SHA-256
+`301d14ec627010c510ed13be557716d9a2aeeac40b29142fecaa3e671f6dd595`); root configuration is still
+pending user authentication. This does not add a new password-free sudo capability. The bridge
+requires the Mac to remain awake for the supervised test; it is not permanent standalone ingress.
 
 Reproduce without cloud credentials or GPU work:
 

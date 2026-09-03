@@ -159,6 +159,8 @@ def test_edge_client_explicitly_prewarms_the_full_remote_runtime() -> None:
 
     def handler(request: httpx.Request) -> httpx.Response:
         observed.append(request)
+        if request.url.path == "/ready":
+            return httpx.Response(200, json={"ready": True, "critic": {"ready": True}})
         return httpx.Response(200, json={"ready": True, "detail": "both GPUs warm"})
 
     async def scenario() -> None:
@@ -176,8 +178,9 @@ def test_edge_client_explicitly_prewarms_the_full_remote_runtime() -> None:
         await client.aclose()
 
     asyncio.run(scenario())
-    assert observed[0].url.path == "/v1/runtime:prewarm"
-    assert json.loads(observed[0].content) == {
+    assert observed[0].url.path == "/ready"
+    assert observed[1].url.path == "/v1/runtime:prewarm"
+    assert json.loads(observed[1].content) == {
         "authorization": "I_UNDERSTAND_THIS_MAY_WAKE_A_BILLABLE_GPU",
     }
 
