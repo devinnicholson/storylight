@@ -1,8 +1,13 @@
 # Bookforge emergency billing disconnect
 
-This second-generation Cloud Run function listens only to the project-scoped $10 gross-cost
-budget. At or above $10, it unlinks `your-gcp-project` from its billing account. It deliberately
+This second-generation Cloud Run function listens only to the project-scoped $175 gross-cost
+emergency budget. At or above $175, it unlinks `your-gcp-project` from its billing account. It deliberately
 checks the billing account, budget ID, display name, currency, and amount before acting.
+
+A separate project-scoped $150 gross-spend budget provides thresholds at approximately $10, $50,
+$100, $135, and $150. Both budgets exclude credits when calculating gross spend. These values and
+the project-to-billing-account link were verified read-only on 2026-09-03; recheck them before a
+billable experiment because console configuration can change independently of this repository.
 
 The runtime identity has only `roles/billing.projectManager` and `roles/logging.logWriter` on this
 project, plus the Eventarc receiver role and service-specific Cloud Run invoker needed for private

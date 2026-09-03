@@ -90,6 +90,30 @@ worker. Evidence and the exact immutable revision are recorded in
 SANA Sprint uses its native two-step SCM path; the Bookforge GCP adapter rejects any other step
 count locally before a paid request, and the worker validates the same constraint.
 
+## Anticipatory GKE and NVIDIA NIM experiment
+
+GKE is now used for a different, benchmark-gated job: coordinate one known next scene or at most two
+speculative story branches, keep a Nemotron Nano VL NIM warm on one L4, and promote only a
+checksum-verified synthetic scene. It does not replace the Cloud Run renderer. The Jetson removes
+the passage, audio, camera data, learner identity, and stable session identifiers before submitting
+the strict scene contract.
+
+The complete architecture, privacy contract, acceptance gates, deployment commands, and teardown
+procedure are in [`docs/anticipatory-story-engine.md`](../../docs/anticipatory-story-engine.md).
+The default Kubernetes Deployment has zero replicas, its Service is ClusterIP-only, and the guarded
+script requires a separate explicit authorization before it creates billable resources:
+
+```bash
+# Read-only; creates nothing.
+./infra/gcp/gke/preflight-anticipatory.sh
+
+# Dry guard; prints the exact billable scope and exits.
+./infra/gcp/gke/deploy-anticipatory.sh
+```
+
+GKE Inference Gateway is not part of the one-replica experiment. It becomes relevant only if quota
+and measured traffic justify multiple NIM replicas that give cache-aware routing a real choice.
+
 ## Managed Vertex route and Modal fallback
 
 Cloud Run GPU availability is an optimization, not a runtime dependency. Configure
@@ -184,10 +208,10 @@ Then call `http://127.0.0.1:8080/v1/story-packs:compile` using the example reque
 
 ## Cost containment
 
-The contest project also has enforced service caps plus a project-scoped $10 gross-cost emergency
-billing disconnect. Its reviewed source and threat boundary are documented in
+The contest project also has enforced service caps, a project-scoped $150 gross-spend alert budget,
+and a $175 gross-cost emergency billing disconnect. Its reviewed source and threat boundary are documented in
 `infra/gcp/billing-kill-switch/README.md`. Budget notifications are asynchronous, so this guard is
-not a promise of a mathematically exact $10 ceiling.
+not a promise of a mathematically exact ceiling.
 
 Delete the GPU deployment whenever it is not being tested:
 

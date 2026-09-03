@@ -1,0 +1,15 @@
+steps:
+  - name: gcr.io/cloud-builders/docker@sha256:e85f8f20f7b533e74a4b1be279b9ff2b45dcc20ab97de9b302c26715a9d9ffc8
+    args:
+      - build
+      - --file
+      - deploy/gke_anticipatory/Dockerfile
+      - --tag
+      - ${_IMAGE}
+      - .
+images:
+  - ${_IMAGE}
+timeout: 1200s
+options:
+  machineType: E2_HIGHCPU_8
+  diskSizeGb: 50

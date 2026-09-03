@@ -78,12 +78,12 @@ def test_evaluate_sends_only_bounded_visual_contract_and_generated_image() -> No
     assert observed[0].headers["authorization"] == "Bearer signed-gcp-token"
     payload = json.loads(observed[0].content)
     user_content = payload["messages"][1]["content"]
-    assert json.loads(user_content[0]["text"]) == _request().model_dump(mode="json")
-    assert user_content[1]["image_url"]["url"].startswith("data:image/jpeg;base64,")
+    assert user_content[0]["image_url"]["url"].startswith("data:image/jpeg;base64,")
+    assert json.loads(user_content[1]["text"]) == _request().model_dump(mode="json")
     serialized = observed[0].content.decode()
     assert "source_text" not in serialized
-    assert "audio" not in user_content[0]["text"]
-    assert "camera frame" not in user_content[0]["text"]
+    assert "audio" not in user_content[1]["text"]
+    assert "camera frame" not in user_content[1]["text"]
 
 
 def test_request_rejects_raw_passage_field_at_schema_boundary() -> None:
@@ -168,3 +168,54 @@ def test_critic_requires_https_and_single_auth_mechanism() -> None:
             api_key="key",
             token_source=token_source,
         )
+
+
+def test_critic_allows_only_explicit_loopback_http_for_same_pod_nim() -> None:
+    critic = NemotronVisionCritic(
+        base_url="http://127.0.0.1:8000",
+        allow_loopback_http=True,
+    )
+    assert critic.base_url == "http://127.0.0.1:8000"
+
+    with pytest.raises(ValueError, match="HTTPS"):
+        NemotronVisionCritic(
+            base_url="http://nemotron.bookforge.svc.cluster.local:8000",
+            allow_loopback_http=True,
+        )
+
+
+def test_critic_reuses_one_bounded_http2_client_across_probe_and_inference() -> None:
+    clients_created = 0
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.url.path == "/v1/models":
+            return httpx.Response(200, json={"data": [{"id": DEFAULT_NEMOTRON_VL_MODEL}]})
+        return httpx.Response(
+            200,
+            json={
+                "model": DEFAULT_NEMOTRON_VL_MODEL,
+                "choices": [{"message": {"content": json.dumps(_verdict())}}],
+            },
+        )
+
+    def client_factory(**kwargs) -> httpx.AsyncClient:
+        nonlocal clients_created
+        clients_created += 1
+        return httpx.AsyncClient(transport=httpx.MockTransport(handler), **kwargs)
+
+    async def scenario() -> None:
+        critic = NemotronVisionCritic(
+            base_url="http://127.0.0.1:8000",
+            allow_loopback_http=True,
+            client_factory=client_factory,
+        )
+        assert await critic.probe() == (True, "Nemotron multimodal critic is reachable")
+        await critic.evaluate(
+            _request(),
+            image_bytes=b"\xff\xd8\xffsynthetic-jpeg",
+            media_type="image/jpeg",
+        )
+        await critic.aclose()
+
+    asyncio.run(scenario())
+    assert clients_created == 1

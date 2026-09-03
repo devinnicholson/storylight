@@ -131,3 +131,17 @@ def test_resilient_cloud_route_has_bounded_managed_provider_defaults() -> None:
     assert settings.live_scene_routing_failure_cooldown_seconds == 300
     with pytest.raises(ValidationError):
         Settings(_env_file=None, live_scene_vertex_estimated_image_usd=0)
+
+
+def test_anticipatory_gke_settings_are_disabled_and_bounded_by_default() -> None:
+    settings = Settings(_env_file=None)
+
+    assert settings.anticipatory_backend == "disabled"
+    assert settings.anticipatory_url == ""
+    assert settings.anticipatory_allow_loopback_http is False
+    assert settings.anticipatory_timeout_seconds == 30
+    assert settings.anticipatory_edge_gate_revision == "sanitized-scene-spec-v1"
+    with pytest.raises(ValidationError):
+        Settings(_env_file=None, anticipatory_timeout_seconds=0)
+    with pytest.raises(ValidationError):
+        Settings(_env_file=None, anticipatory_edge_gate_revision="")

@@ -107,6 +107,15 @@ class Settings(BaseSettings):
     live_scene_critic_api_key: str = ""
     live_scene_critic_model: str = "nvidia/llama-3.1-nemotron-nano-vl-8b-v1"
     live_scene_critic_timeout_seconds: Annotated[float, Field(gt=0, le=300)] = 90.0
+    anticipatory_backend: Literal["disabled", "gke"] = "disabled"
+    anticipatory_url: str = ""
+    anticipatory_audience: str = ""
+    anticipatory_allow_loopback_http: bool = False
+    anticipatory_timeout_seconds: Annotated[float, Field(ge=1, le=120)] = 30.0
+    anticipatory_edge_gate_revision: Annotated[
+        str,
+        Field(min_length=1, max_length=120),
+    ] = "sanitized-scene-spec-v1"
     live_scene_max_active_jobs: Annotated[int, Field(ge=1, le=16)] = 2
     live_scene_max_retained_jobs: Annotated[int, Field(ge=1, le=256)] = 64
     live_scene_event_queue_size: Annotated[int, Field(ge=1, le=128)] = 8

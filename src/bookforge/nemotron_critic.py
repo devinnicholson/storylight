@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import base64
 import json
 import math
@@ -7,6 +8,7 @@ import time
 from collections.abc import Awaitable, Callable
 from enum import StrEnum
 from typing import Annotated, Literal
+from urllib.parse import urlsplit
 
 import httpx
 from pydantic import Field, StringConstraints, model_validator
@@ -98,10 +100,17 @@ class NemotronVisionCritic:
         timeout_seconds: float = 90,
         api_key: str = "",
         token_source: BearerTokenSource | None = None,
+        allow_loopback_http: bool = False,
         client_factory: Callable[..., httpx.AsyncClient] = httpx.AsyncClient,
     ) -> None:
         normalized_url = base_url.strip().rstrip("/")
-        if not normalized_url.startswith("https://"):
+        parsed_url = urlsplit(normalized_url)
+        loopback_http = (
+            allow_loopback_http
+            and parsed_url.scheme == "http"
+            and parsed_url.hostname in {"127.0.0.1", "::1", "localhost"}
+        )
+        if parsed_url.scheme != "https" and not loopback_http:
             raise ValueError("Nemotron critic URL must use HTTPS")
         normalized_model = model.strip()
         if not normalized_model:
@@ -116,17 +125,16 @@ class NemotronVisionCritic:
         self.api_key = api_key
         self.token_source = token_source
         self.client_factory = client_factory
+        self._client: httpx.AsyncClient | None = None
+        self._client_lock = asyncio.Lock()
 
     async def probe(self) -> tuple[bool, str]:
         try:
             headers = await self._headers()
-            async with self.client_factory(
-                timeout=httpx.Timeout(self.timeout_seconds),
-                follow_redirects=False,
-            ) as client:
-                response = await client.get(f"{self.base_url}/v1/models", headers=headers)
-                response.raise_for_status()
-                payload = response.json()
+            client = await self._get_client()
+            response = await client.get(f"{self.base_url}/v1/models", headers=headers)
+            response.raise_for_status()
+            payload = response.json()
         except (httpx.HTTPError, json.JSONDecodeError, ValueError) as error:
             return False, f"Nemotron critic is unreachable: {error}"
         models = {
@@ -151,31 +159,32 @@ class NemotronVisionCritic:
         schema = NemotronCriticVerdict.model_json_schema()
         started = time.perf_counter()
         try:
-            async with self.client_factory(
-                timeout=httpx.Timeout(self.timeout_seconds),
-                follow_redirects=False,
-            ) as client:
-                response = await client.post(
-                    f"{self.base_url}/v1/chat/completions",
-                    headers=headers,
-                    json={
-                        "model": self.model,
-                        "temperature": 0,
-                        "max_tokens": 500,
-                        "messages": [
-                            {
-                                "role": "system",
-                                "content": (
-                                    "You are a strict visual fidelity critic for projected "
-                                    "storybook illustrations. Inspect the synthetic image against "
-                                    "only the supplied visual brief. Never infer or request the "
-                                    "original passage, reader identity, audio, or camera data. "
-                                    "Return only schema-valid JSON."
-                                ),
-                            },
+            client = await self._get_client()
+            response = await client.post(
+                f"{self.base_url}/v1/chat/completions",
+                headers=headers,
+                json={
+                    "model": self.model,
+                    "temperature": 0,
+                    "max_tokens": 500,
+                    "messages": [
+                        {
+                            "role": "system",
+                            "content": (
+                                "You are a strict visual fidelity critic for projected "
+                                "storybook illustrations. Inspect the synthetic image against "
+                                "only the supplied visual brief. Never infer or request the "
+                                "original passage, reader identity, audio, or camera data. "
+                                "Return only schema-valid JSON."
+                            ),
+                        },
                             {
                                 "role": "user",
                                 "content": [
+                                    {
+                                        "type": "image_url",
+                                        "image_url": {"url": f"data:{media_type};base64,{encoded}"},
+                                    },
                                     {
                                         "type": "text",
                                         "text": json.dumps(
@@ -184,25 +193,21 @@ class NemotronVisionCritic:
                                             ensure_ascii=False,
                                         ),
                                     },
-                                    {
-                                        "type": "image_url",
-                                        "image_url": {"url": f"data:{media_type};base64,{encoded}"},
-                                    },
                                 ],
                             },
-                        ],
-                        "response_format": {
-                            "type": "json_schema",
-                            "json_schema": {
-                                "name": "nemotron_critic_verdict",
-                                "strict": True,
-                                "schema": schema,
-                            },
+                    ],
+                    "response_format": {
+                        "type": "json_schema",
+                        "json_schema": {
+                            "name": "nemotron_critic_verdict",
+                            "strict": True,
+                            "schema": schema,
                         },
                     },
-                )
-                response.raise_for_status()
-                payload = response.json()
+                },
+            )
+            response.raise_for_status()
+            payload = response.json()
             content = payload["choices"][0]["message"]["content"]
             verdict = NemotronCriticVerdict.model_validate_json(content)
         except (httpx.HTTPError, json.JSONDecodeError, KeyError, IndexError, ValueError) as error:
@@ -217,6 +222,30 @@ class NemotronVisionCritic:
             input_tokens=int(usage.get("prompt_tokens") or 0),
             output_tokens=int(usage.get("completion_tokens") or 0),
         )
+
+    async def _get_client(self) -> httpx.AsyncClient:
+        if self._client is not None:
+            return self._client
+        async with self._client_lock:
+            if self._client is None:
+                self._client = self.client_factory(
+                    timeout=httpx.Timeout(self.timeout_seconds),
+                    follow_redirects=False,
+                    http2=True,
+                    limits=httpx.Limits(
+                        max_connections=2,
+                        max_keepalive_connections=2,
+                        keepalive_expiry=300,
+                    ),
+                )
+            return self._client
+
+    async def aclose(self) -> None:
+        async with self._client_lock:
+            client = self._client
+            self._client = None
+        if client is not None:
+            await client.aclose()
 
     async def _headers(self) -> dict[str, str]:
         headers = {"Content-Type": "application/json"}

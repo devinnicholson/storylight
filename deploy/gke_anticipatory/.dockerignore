@@ -1,0 +1,11 @@
+.git
+.venv
+.bookforge
+artifacts
+benchmarks
+output
+post
+post-temp-*
+tmp
+**/__pycache__
+**/*.pyc

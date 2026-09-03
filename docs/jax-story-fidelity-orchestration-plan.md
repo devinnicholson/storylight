@@ -338,7 +338,8 @@ Default first-experiment controls:
 - GCP JAX campaign ceiling: $3.50 gross
 - one TPU v6e chip, one replica, 2,700-second timeout, retries disabled
 - no endpoint, autoscaling service, or persistent accelerator
-- at least $6.50 preserved below the existing $10 gross emergency disconnect
+- declared experiment cost preserved below the verified $150 gross alert budget and $175 emergency
+  disconnect
 - Modal only as an explicitly authorized fallback before a GCP billable start
 - Modal L40S: one container, one finite call, fixed timeout, no web endpoint, no automatic retry,
   and a new September ledger
@@ -373,7 +374,7 @@ cloud credential, or Hugging Face token in the repository.
 - The Jetson candidate is side-by-side and cannot overwrite the accepted checkpoint or engine.
 - Failed promotion restores the exact prior TensorRT engine and cache-contract revision, not merely
   the slower Ollama fallback.
-- If the $10 billing disconnect fires, the run treats billing-disabled as terminal and never
+- If the $175 billing disconnect fires, the run treats billing-disabled as terminal and never
   automatically relinks it.
 
 ## Definition of done

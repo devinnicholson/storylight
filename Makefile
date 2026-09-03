@@ -1,4 +1,4 @@
-.PHONY: install dev test lint model-serve model-pull model-probe asr-model-pull compile-demo
+.PHONY: install dev test lint model-serve model-pull model-probe asr-model-pull compile-demo anticipatory-simulate anticipatory-gke-preflight
 
 install:
 	uv sync --dev
@@ -28,3 +28,10 @@ compile-demo:
 	curl -s -X POST http://127.0.0.1:8080/v1/story-packs:compile \
 		-H 'Content-Type: application/json' \
 		--data @examples/moon-gate.request.json
+
+anticipatory-simulate:
+	@test -n "$(OUT)" || (echo "Set OUT to a new simulation evidence path" >&2; exit 2)
+	uv run python -m bookforge.anticipatory_simulator --output "$(OUT)"
+
+anticipatory-gke-preflight:
+	./infra/gcp/gke/preflight-anticipatory.sh

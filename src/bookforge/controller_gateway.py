@@ -90,6 +90,7 @@ def _route_allowed(method: str, path: str) -> bool:
             or path.startswith("/v1/assets/")
             or path.startswith("/v1/live-scenes/")
             or path.startswith("/v1/live-scene-sessions/")
+            or path.startswith("/v1/anticipations/")
             or path == "/v1/live-scene-provider/warm-status"
         )
     if method == "POST":
@@ -98,7 +99,11 @@ def _route_allowed(method: str, path: str) -> bool:
             "/v1/live-scene-provider/prewarm",
             "/v1/live-scene-planner/prepare",
             "/v1/live-scene-planner/warmup",
+            "/v1/anticipations:prepare",
+            "/v1/anticipations:commit",
         }
+    if method == "DELETE":
+        return path.startswith("/v1/anticipations/")
     return False
 
 

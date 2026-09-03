@@ -30,7 +30,8 @@ This repository now contains working model-facing services rather than only a vi
   Jetson hardware acceptance evidence;
 - strict validation that rejects invented pages, missing visual layers, and trigger words not in
   the source text;
-- a Docker image and guarded GKE/NVIDIA L4 deployment path;
+- a privacy-bounded anticipatory GKE coordinator with a pinned NVIDIA Nemotron VL NIM, one-repair
+  promotion, speculative cancellation, checksum retrieval, and guarded L4 deployment;
 - deterministic tests that run without downloading a model.
 
 The original browser synchronization experiment remains in `index.html`, `styles.css`, and
@@ -151,6 +152,20 @@ privacy-gated scene plan and layer requirements for the post-projection critic i
 that an ungraded plate passed visual verification.
 Cosmos remains outside the primary path because world-model video would cost much more latency than
 the depth-aware local motion that already runs on the Jetson.
+
+### Anticipate the next story beat with GKE
+
+The optional anticipatory path starts preparing a known next scene—or at most two bounded branches
+for an improvised story—while the current scene is still being read. Gemma remains on the Jetson.
+Only its strict visual contract goes to GKE, where a pinned Nemotron Nano VL NIM inspects the
+synthetic Cloud Run render and accepts, rejects, or authorizes one repair. The selected master and
+depth assets return through checksum-verified local-only endpoints; losing work is cancelled.
+
+The feature, GKE Deployment, and public ingress are all off by default. The first experiment is
+ClusterIP-only, uses a private `kubectl port-forward`, and has a live six-case acceptance harness
+that cannot be confused with the checked-in simulation. See
+[`docs/anticipatory-story-engine.md`](docs/anticipatory-story-engine.md) for the selling story,
+privacy boundary, exact gates, billable authorization, and teardown sequence.
 
 ### Resilient edge-to-cloud rendering
 

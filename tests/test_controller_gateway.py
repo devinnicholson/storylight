@@ -7,6 +7,7 @@ from fastapi.testclient import TestClient
 
 from bookforge.controller_gateway import (
     ControllerGatewaySettings,
+    _route_allowed,
     create_controller_gateway,
 )
 
@@ -152,3 +153,11 @@ def test_gateway_configuration_requires_loopback_backend_and_long_token() -> Non
         pass
     else:  # pragma: no cover
         raise AssertionError("short pairing token was accepted")
+
+
+def test_gateway_exposes_only_the_bounded_anticipatory_control_paths() -> None:
+    assert _route_allowed("POST", "/v1/anticipations:prepare") is True
+    assert _route_allowed("POST", "/v1/anticipations:commit") is True
+    assert _route_allowed("GET", "/v1/anticipations/anticipate_abc/1") is True
+    assert _route_allowed("DELETE", "/v1/anticipations/anticipate_abc/1") is True
+    assert _route_allowed("PUT", "/v1/anticipations/anticipate_abc/1") is False

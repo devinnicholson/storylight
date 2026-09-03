@@ -183,10 +183,46 @@ def test_sensitive_api_routes_reject_remote_clients() -> None:
                 ],
             },
         )
+        anticipation = client.post(
+            "/v1/anticipations:prepare",
+            json={
+                "sequence": 1,
+                "candidates": [
+                    {
+                        "branch_id": "known_next",
+                        "text": "A fox entered the garden.",
+                        "source": "exact_lookahead",
+                        "seed": 4,
+                    }
+                ],
+            },
+        )
 
     assert runtime.status_code == 403
     assert audio.status_code == 403
     assert compile_response.status_code == 403
+    assert anticipation.status_code == 403
+
+
+def test_anticipatory_edge_control_is_explicitly_disabled_by_default() -> None:
+    with TestClient(app) as client:
+        response = client.post(
+            "/v1/anticipations:prepare",
+            json={
+                "sequence": 1,
+                "candidates": [
+                    {
+                        "branch_id": "known_next",
+                        "text": "A fox entered the garden.",
+                        "source": "exact_lookahead",
+                        "seed": 4,
+                    }
+                ],
+            },
+        )
+
+    assert response.status_code == 409
+    assert response.json() == {"detail": "BOOKFORGE_ANTICIPATORY_BACKEND is disabled"}
 
 
 def test_cached_asset_route_serves_only_validated_cache_paths() -> None:

@@ -4,7 +4,7 @@ from dataclasses import asdict
 from datetime import UTC, datetime
 from ipaddress import ip_address
 from pathlib import Path
-from typing import Annotated
+from typing import Annotated, Literal
 
 from fastapi import (
     FastAPI,
@@ -21,6 +21,14 @@ from fastapi.responses import FileResponse, JSONResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 
 from bookforge import __version__
+from bookforge.anticipatory import AnticipationStatus, BranchId, CommitRequest, SessionToken
+from bookforge.anticipatory_edge import (
+    AnticipatoryEdgeClient,
+    AnticipatoryEdgeCoordinator,
+    AnticipatoryEdgeError,
+    LocalAnticipationPrepareRequest,
+    LocalAnticipationPrepareResponse,
+)
 from bookforge.asr import TranscriptionError, build_asr_backend
 from bookforge.asr_backend import AsrBackend, AsrBackendError, AsrBackendUnavailableError
 from bookforge.asset_cache import AssetCache, AssetCacheError
@@ -282,6 +290,33 @@ async def lifespan(app: FastAPI):
             _warm_live_scene_planner_at_startup(app.state.live_scenes),
             name="bookforge-live-planner-startup-warmup",
         )
+    app.state.anticipatory = None
+    if settings.anticipatory_backend == "gke":
+        if not settings.anticipatory_url:
+            raise ValueError("BOOKFORGE_ANTICIPATORY_URL is required for the GKE backend")
+        planner = getattr(app.state.live_scenes.provider, "planner", None)
+        if planner is None or not callable(getattr(planner, "plan", None)):
+            raise ValueError(
+                "GKE anticipation requires BOOKFORGE_LIVE_SCENE_PLANNER=model"
+            )
+        token_source = None
+        if settings.anticipatory_audience:
+            audience = settings.anticipatory_audience
+
+            async def anticipation_token_source() -> str:
+                return await google_identity_token(audience)
+
+            token_source = anticipation_token_source
+        app.state.anticipatory = AnticipatoryEdgeCoordinator(
+            planner=planner,
+            client=AnticipatoryEdgeClient(
+                base_url=settings.anticipatory_url,
+                timeout_seconds=settings.anticipatory_timeout_seconds,
+                token_source=token_source,
+                allow_loopback_http=settings.anticipatory_allow_loopback_http,
+            ),
+            edge_gate_revision=settings.anticipatory_edge_gate_revision,
+        )
     yield
     planner_warmup_task = app.state.live_scene_planner_warmup_task
     if planner_warmup_task is not None:
@@ -290,6 +325,8 @@ async def lifespan(app: FastAPI):
         with suppress(asyncio.CancelledError):
             await planner_warmup_task
     await app.state.live_scenes.close()
+    if app.state.anticipatory is not None:
+        await app.state.anticipatory.aclose()
     await app.state.reader_events.close()
     closed_http_clients: set[int] = set()
     for model_client in (planner_client, client):
@@ -322,7 +359,7 @@ app.add_middleware(
     CORSMiddleware,
     allow_origins=settings.allowed_origins,
     allow_credentials=False,
-    allow_methods=["GET", "POST", "PUT"],
+    allow_methods=["GET", "POST", "PUT", "DELETE"],
     allow_headers=["Content-Type", "Authorization"],
 )
 app.mount("/workbench-assets", StaticFiles(directory=static_directory), name="workbench-assets")
@@ -732,6 +769,115 @@ async def warmup_live_scene_planner(request: Request) -> LiveScenePlannerWarmupR
         model=result.metrics.model,
         input_tokens=result.metrics.input_tokens,
         output_tokens=result.metrics.output_tokens,
+    )
+
+
+def _anticipatory_coordinator(request: Request) -> AnticipatoryEdgeCoordinator:
+    coordinator = request.app.state.anticipatory
+    if coordinator is None:
+        raise HTTPException(
+            status_code=409,
+            detail="BOOKFORGE_ANTICIPATORY_BACKEND is disabled",
+        )
+    return coordinator
+
+
+@app.post(
+    "/v1/anticipations:prepare",
+    response_model=LocalAnticipationPrepareResponse,
+    status_code=status.HTTP_202_ACCEPTED,
+)
+async def prepare_anticipation(
+    payload: LocalAnticipationPrepareRequest,
+    request: Request,
+) -> LocalAnticipationPrepareResponse:
+    """Plan private text on the edge and send only the sanitized scene contract."""
+
+    if not _is_local_connection(request):
+        raise HTTPException(status_code=403, detail="Anticipatory planning is local-only")
+    try:
+        return await _anticipatory_coordinator(request).prepare(payload)
+    except (AnticipatoryEdgeError, RuntimeError) as error:
+        raise HTTPException(status_code=503, detail=str(error)) from error
+
+
+@app.get(
+    "/v1/anticipations/{session_token}/{sequence}",
+    response_model=AnticipationStatus,
+)
+async def anticipation_status(
+    request: Request,
+    session_token: SessionToken,
+    sequence: int,
+) -> AnticipationStatus:
+    if not _is_local_connection(request):
+        raise HTTPException(status_code=403, detail="Anticipatory status is local-only")
+    try:
+        return await _anticipatory_coordinator(request).status(session_token, sequence)
+    except AnticipatoryEdgeError as error:
+        raise HTTPException(status_code=503, detail=str(error)) from error
+
+
+@app.post(
+    "/v1/anticipations:commit",
+    response_model=AnticipationStatus,
+)
+async def commit_anticipation(
+    payload: CommitRequest,
+    request: Request,
+) -> AnticipationStatus:
+    if not _is_local_connection(request):
+        raise HTTPException(status_code=403, detail="Anticipatory commit is local-only")
+    try:
+        return await _anticipatory_coordinator(request).commit(payload)
+    except AnticipatoryEdgeError as error:
+        raise HTTPException(status_code=503, detail=str(error)) from error
+
+
+@app.delete(
+    "/v1/anticipations/{session_token}/{sequence}",
+    response_model=AnticipationStatus,
+)
+async def cancel_anticipation(
+    request: Request,
+    session_token: SessionToken,
+    sequence: int,
+) -> AnticipationStatus:
+    if not _is_local_connection(request):
+        raise HTTPException(status_code=403, detail="Anticipatory cancellation is local-only")
+    try:
+        return await _anticipatory_coordinator(request).cancel(session_token, sequence)
+    except AnticipatoryEdgeError as error:
+        raise HTTPException(status_code=503, detail=str(error)) from error
+
+
+@app.get("/v1/anticipations/{session_token}/{sequence}/{branch_id}/{kind}")
+async def anticipation_asset(
+    request: Request,
+    session_token: SessionToken,
+    sequence: int,
+    branch_id: BranchId,
+    kind: Literal["master", "depth"],
+) -> Response:
+    if not _is_local_connection(request):
+        raise HTTPException(status_code=403, detail="Anticipatory assets are local-only")
+    try:
+        content, media_type, digest = await _anticipatory_coordinator(request).asset(
+            session_token=session_token,
+            sequence=sequence,
+            branch_id=branch_id,
+            kind=kind,
+        )
+    except AnticipatoryEdgeError as error:
+        raise HTTPException(status_code=409, detail=str(error)) from error
+    return Response(
+        content=content,
+        media_type=media_type,
+        headers={
+            "Cache-Control": "private, no-store",
+            "X-Content-SHA256": digest,
+            "X-Content-Type-Options": "nosniff",
+        },
     )
 
 

@@ -1,6 +1,6 @@
 # Bookforge full-stack optimization program
 
-Status: active, updated 2026-09-01
+Status: active, updated 2026-09-03
 
 Implementation checkpoint: the privacy-safe Cloud Monitoring dashboard is deployed as
 `projects/your-gcp-project/dashboards/YOUR_DASHBOARD_ID`; the strict renderer digest
@@ -59,7 +59,8 @@ Jetson Orin Nano
 private IAM-authenticated Cloud Run GPU
   NVIDIA RTX PRO 6000 -> SANA-Sprint -> Depth Anything -> checksums
        |
-       +-> optional asynchronous Nemotron visual critic
+       +-> optional GKE anticipatory coordinator
+              NVIDIA L4 -> pinned Nemotron Nano VL NIM -> accept/repair/reject
        v
 Jetson cache -> NVIDIA WebGL depth renderer -> projector
 ```
@@ -84,6 +85,8 @@ Run receives only the locally validated visual brief, style, seed, and fixed ren
 | IAM service identities and impersonated ID tokens | keyless private renderer access | No browser credentials and no committed service-account key. |
 | Cloud Logging, Monitoring, and Trace | latency and availability evidence | Cloud Run request traces correlate with prompt-free structured stage logs; built-in metrics separate startup, request latency, GPU load, instances, and billable time. No story content is logged. |
 | NVIDIA Grounding DINO | in-container subject/object gate | A failed first candidate gets at most one bounded retry; fidelity failures never silently become the master. |
+| GKE Autopilot with one NVIDIA L4 | bounded anticipatory coordinator and warm Nemotron NIM experiment | Hides scene work inside reading time, cancels losing branches, and makes visual promotion measurable without moving source media off the Jetson. Deployment remains zero replicas until explicitly authorized. |
+| NVIDIA NIM for Nemotron Nano VL | structured multimodal scene promotion | A pinned, co-located model judges only the generated plate and sanitized visual contract, with one repair maximum. |
 
 ### Experiment behind a gate
 
@@ -92,7 +95,7 @@ Run receives only the locally validated visual brief, style, seed, and fixed ren
 | TensorRT Edge-LLM Gemma 4 E2B INT4-AWQ | 5/5 normal plus adversarial schema, semantics, privacy, memory, and latency | Any OOM, privacy regression, schema miss, or no material end-to-end win. |
 | NVIDIA nvImageCodec/nvJPEG | byte-identical dimensions, master SSIM >= 0.995, depth SSIM >= 0.994, lower packaging p95 | Less than 20 ms p95 end-to-end gain or added cold-start cost larger than the gain. |
 | PyTorch 2.8 compile or CUDA Graph capture on Blackwell | same pixels or accepted visual A/B; lower repeated inference p95 | Compilation/capture increases cold readiness, memory, or failure rate more than warm savings. |
-| Vertex AI-hosted NVIDIA NIM for Nemotron VL | asynchronous critic under 5 s warm with better retry selection than deterministic gates | Never block first projection; reject if source-image identity cannot be retained or NGC/GPU cost is disproportionate. |
+| GKE-hosted NVIDIA NIM for Nemotron VL | six-case live harness passes acceptance, checksum, replay-cache, p95, and cost gates on one L4 | Never block the current projection; scale to zero and delete the cluster if startup, VRAM, quality, or cost misses its gate. |
 | Cloud Run Rapid Cache or concurrent GCS model loading | five cold starts beat the immutable image by at least 20% | Do not add Direct VPC, cache, or storage complexity for a marginal win. |
 
 ### Do not add to the critical path
@@ -100,7 +103,7 @@ Run receives only the locally validated visual brief, style, seed, and fixed ren
 - Cosmos/world-model video: local depth motion is immediate and stable; video generation is a later,
   optional showcase upgrade.
 - GKE for the renderer: Cloud Run already supplies the needed single-GPU private endpoint with much
-  less operational and idle-cost overhead.
+  less operational and idle-cost overhead. GKE is limited to anticipation and Nemotron promotion.
 - Triton solely for branding: the current single-request diffusion pipeline would gain another
   server boundary without a demonstrated batching or throughput benefit.
 - Cloud CDN, Pub/Sub, Cloud Tasks, BigQuery, Firestore, or Vertex Pipelines until a concrete measured
@@ -178,10 +181,13 @@ in a finite canary job. A candidate must improve p95, not merely a single best s
 
 ### 5. Add reasoning where it improves quality without delaying delight
 
-Deploy Nemotron VL through NVIDIA NIM on Vertex AI only after the renderer path is reliable. It
-receives the synthetic master and privacy-safe visual contract after `master_ready`, returns a
-structured score, and may authorize one background refinement. The first image remains visible and
-moving throughout. Use NVIDIA GenAI-Perf for the NIM latency report if this path is deployed.
+Run the bounded GKE path described in `docs/anticipatory-story-engine.md`. The Jetson produces the
+privacy-safe visual contract before any cloud call. GKE queues one known next scene or at most two
+predicted branches, calls the private renderer, and supplies the synthetic master plus contract to
+the pinned Nemotron NIM. Nemotron returns a structured decision and may authorize one repair. The
+current image remains visible and moving throughout. The measured harness must pass before this
+path is enabled for the projector, and the GKE Deployment is scaled to zero and cluster deleted
+after the finite experiment.
 
 ### 6. Close with physical evidence
 
@@ -198,7 +204,8 @@ The final acceptance is not a laptop screenshot. It includes:
 ## Guardrails
 
 - One cloud GPU maximum; no automatic retry for paid generation or export.
-- The $10 gross-cost emergency disconnect is a last-resort containment layer, not a target.
+- The verified $150 gross-spend alerts and $175 emergency billing disconnect are last-resort
+  containment layers, not spending targets or exact real-time caps.
 - Every paid experiment declares a worst-case ceiling before launch.
 - No raw passage, learner identity, audio, camera frame, or credential in Cloud Logging, Trace,
   benchmark prompts, or committed artifacts.
