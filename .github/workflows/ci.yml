@@ -29,7 +29,7 @@ jobs:
           enable-cache: false
 
       - name: Install locked development environment
-        run: uv sync --locked --dev --extra modal-authoring
+        run: uv sync --locked --dev --extra modal-authoring --extra jax-analysis
 
       - name: Lint tracked Python files
         run: git ls-files -z '*.py' | xargs -0 uv run ruff check
