@@ -336,18 +336,18 @@ def validate_config(document: Mapping[str, Any]) -> None:
             "minimum_nonzero_gradient_fraction",
             "rolling_loss_window_steps",
             "minimum_rolling_loss_relative_reduction",
-            "minimum_parameter_norm_relative_change",
+            "minimum_checkpoint_lora_relative_delta",
         }:
             raise ConfigError(
                 "recovery.learnability_acceptance has unexpected fields"
             )
         for name, expected in (
-            ("schema_version", "bookforge-jax-v3-learnability-acceptance-v1"),
+            ("schema_version", "bookforge-jax-v3-learnability-acceptance-v2"),
             ("nonzero_gradient_epsilon", 1e-12),
             ("minimum_nonzero_gradient_fraction", 0.9),
             ("rolling_loss_window_steps", 20),
             ("minimum_rolling_loss_relative_reduction", 0.1),
-            ("minimum_parameter_norm_relative_change", 1e-6),
+            ("minimum_checkpoint_lora_relative_delta", 1e-6),
         ):
             _exact(
                 learnability.get(name),

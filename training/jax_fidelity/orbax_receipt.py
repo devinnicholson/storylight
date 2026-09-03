@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import ast
 import json
+import math
 import os
 from collections.abc import Mapping
 from pathlib import Path
@@ -199,6 +200,16 @@ def _validate_restored_lora_arrays(
             )
         restored_shapes[path] = restored_shape
     return restored_shapes
+
+
+def _restored_model_lora_arrays(restored_tree: object) -> dict[tuple[str | int, ...], object]:
+    """Select the model-side LoRA arrays from one already validated Orbax tree."""
+
+    return {
+        path: value
+        for path, value in _flatten_restored_tree(restored_tree).items()
+        if _is_model_parameter_path(path) and _lora_side(path) is not None
+    }
 
 
 def _lora_checkpoint_evidence(
@@ -443,6 +454,124 @@ def lora_checkpoint_evidence(
         approved_maxtext_patch_sha256=approved_maxtext_patch_sha256,
         restored_tree=restored_tree,
     )
+
+
+def lora_checkpoint_progression_evidence(
+    initial_items: Path | str,
+    terminal_items: Path | str,
+    *,
+    expected_rank: int,
+    expected_pair_count: int,
+    initial_step: int,
+    terminal_step: int,
+    minimum_relative_delta: float,
+    approved_maxtext_patch_sha256: str,
+    initial_restored_tree: object | None = None,
+    terminal_restored_tree: object | None = None,
+) -> dict[str, Any]:
+    """Prove that restored model-side LoRA tensors changed across checkpoints.
+
+    A global parameter norm is not a valid movement test: finite updates can rotate
+    a parameter vector without changing its norm, and BF16 scalar logging can round
+    small changes away. This gate compares every restored adapter value in FP32 and
+    binds the result to both checkpoint metadata receipts.
+    """
+
+    if (
+        type(initial_step) is not int
+        or type(terminal_step) is not int
+        or initial_step < 0
+        or terminal_step <= initial_step
+    ):
+        raise OrbaxReceiptError("LoRA checkpoint progression steps are invalid")
+    if (
+        type(minimum_relative_delta) not in (int, float)
+        or not math.isfinite(float(minimum_relative_delta))
+        or float(minimum_relative_delta) <= 0
+    ):
+        raise OrbaxReceiptError("minimum LoRA checkpoint relative delta is invalid")
+
+    initial_root = _safe_directory(Path(initial_items), label="initial Orbax items leaf")
+    terminal_root = _safe_directory(Path(terminal_items), label="terminal Orbax items leaf")
+    if initial_root == terminal_root:
+        raise OrbaxReceiptError("LoRA checkpoint progression requires two checkpoints")
+    if initial_restored_tree is None:
+        initial_restored_tree = _restore_orbax_tree(initial_root)
+    if terminal_restored_tree is None:
+        terminal_restored_tree = _restore_orbax_tree(terminal_root)
+
+    initial_adapter = _lora_checkpoint_evidence(
+        initial_root,
+        expected_rank=expected_rank,
+        expected_pair_count=expected_pair_count,
+        expected_step=initial_step,
+        approved_maxtext_patch_sha256=approved_maxtext_patch_sha256,
+        restored_tree=initial_restored_tree,
+    )
+    terminal_adapter = _lora_checkpoint_evidence(
+        terminal_root,
+        expected_rank=expected_rank,
+        expected_pair_count=expected_pair_count,
+        expected_step=terminal_step,
+        approved_maxtext_patch_sha256=approved_maxtext_patch_sha256,
+        restored_tree=terminal_restored_tree,
+    )
+
+    initial_arrays = _restored_model_lora_arrays(initial_restored_tree)
+    terminal_arrays = _restored_model_lora_arrays(terminal_restored_tree)
+    if set(initial_arrays) != set(terminal_arrays):
+        raise OrbaxReceiptError("LoRA model tensor paths changed between checkpoints")
+
+    import numpy as np
+
+    initial_squared_norm = 0.0
+    delta_squared_norm = 0.0
+    changed_arrays = 0
+    changed_elements = 0
+    total_elements = 0
+    for path in sorted(initial_arrays, key=lambda value: tuple(str(part) for part in value)):
+        initial = np.asarray(initial_arrays[path]).astype(np.float32, copy=False)
+        terminal = np.asarray(terminal_arrays[path]).astype(np.float32, copy=False)
+        if initial.shape != terminal.shape:
+            raise OrbaxReceiptError(
+                f"LoRA tensor shape changed between checkpoints: path={path!r}"
+            )
+        delta = terminal - initial
+        changed = int(np.count_nonzero(delta))
+        changed_arrays += int(changed > 0)
+        changed_elements += changed
+        total_elements += int(initial.size)
+        initial64 = initial.astype(np.float64, copy=False)
+        delta64 = delta.astype(np.float64, copy=False)
+        initial_squared_norm += float(np.vdot(initial64, initial64))
+        delta_squared_norm += float(np.vdot(delta64, delta64))
+
+    initial_norm = math.sqrt(initial_squared_norm)
+    delta_norm = math.sqrt(delta_squared_norm)
+    relative_delta = delta_norm / max(initial_norm, float(np.finfo(np.float64).tiny))
+    if changed_arrays < 1 or changed_elements < 1 or not math.isfinite(relative_delta):
+        raise OrbaxReceiptError("restored LoRA parameters did not change")
+    if relative_delta < float(minimum_relative_delta):
+        raise OrbaxReceiptError("restored LoRA parameter delta is below the acceptance threshold")
+
+    return {
+        "schema_version": "bookforge-jax-lora-checkpoint-progression-v1",
+        "status": "passed",
+        "comparison_dtype": "float32",
+        "accumulation_dtype": "float64",
+        "initial_step": initial_step,
+        "terminal_step": terminal_step,
+        "model_lora_array_count": len(initial_arrays),
+        "model_lora_element_count": total_elements,
+        "changed_model_lora_array_count": changed_arrays,
+        "changed_model_lora_element_count": changed_elements,
+        "initial_model_lora_l2_norm": initial_norm,
+        "checkpoint_delta_l2_norm": delta_norm,
+        "checkpoint_relative_delta": relative_delta,
+        "minimum_checkpoint_relative_delta": float(minimum_relative_delta),
+        "initial_adapter": initial_adapter,
+        "terminal_adapter": terminal_adapter,
+    }
 
 
 def lora_checkpoint_storage_evidence(

@@ -5,7 +5,7 @@ from __future__ import annotations
 from collections.abc import Sequence
 from pathlib import Path
 
-from .configuration import ExperimentConfig
+from .configuration import RECOVERY_EXPERIMENT_ID, ExperimentConfig
 
 MAXTEXT_BASE_CONFIG = "src/maxtext/configs/base.yml"
 MAXTEXT_SFT_CONFIG = "src/maxtext/configs/post_train/sft.yml"
@@ -115,7 +115,12 @@ def build_train_command(
         value = training[name]
         rendered = _bool(value) if isinstance(value, bool) else str(value)
         command.append(f"{name}={rendered}")
-    checkpoint_period = 160 if config.experiment_id.endswith("-v2") else 5
+    if config.experiment_id.endswith("-v2"):
+        checkpoint_period = 160
+    elif config.experiment_id == RECOVERY_EXPERIMENT_ID:
+        checkpoint_period = max(1, steps - 1)
+    else:
+        checkpoint_period = 5
     command.append(f"checkpoint_period={checkpoint_period}")
     return command
 

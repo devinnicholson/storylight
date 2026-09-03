@@ -16,6 +16,7 @@ from training.jax_fidelity.configuration import ConfigError, load_config, valida
 from training.jax_fidelity.orbax_receipt import (
     OrbaxReceiptError,
     lora_checkpoint_evidence,
+    lora_checkpoint_progression_evidence,
     lora_checkpoint_storage_evidence,
 )
 
@@ -338,6 +339,105 @@ def test_lora_evidence_binds_exact_topology_step_and_patch(tmp_path: Path) -> No
         _evidence(items, expected_rank=16, expected_pair_count=205)
     with pytest.raises(OrbaxReceiptError, match="terminal step"):
         _evidence(items, expected_rank=16, expected_step=98)
+
+
+def test_lora_checkpoint_progression_proves_restored_parameter_delta(
+    tmp_path: Path,
+) -> None:
+    prefix = ("params", "params", "decoder", "layers_0", "self_attention", "query")
+    paths = _paired_lora_tree(
+        prefix,
+        a_shape=[2, 16],
+        b_shape=[16, 2],
+        a_leaf="kernel_lora_a",
+        b_leaf="kernel_lora_b",
+    )
+    initial = _items(tmp_path / "checkpoints/0", paths)
+    terminal = _items(tmp_path / "checkpoints/99", paths)
+    terminal_model = _RESTORED[terminal]["params"]["params"]["decoder"][  # type: ignore[index]
+        "layers_0"
+    ]["self_attention"]["query"]
+    terminal_model["kernel_lora_a"][0, 0] = 0.5
+    terminal_model["kernel_lora_b"][1, 1] = -0.25
+
+    evidence = lora_checkpoint_progression_evidence(
+        initial,
+        terminal,
+        expected_rank=16,
+        expected_pair_count=1,
+        initial_step=0,
+        terminal_step=99,
+        minimum_relative_delta=1e-6,
+        approved_maxtext_patch_sha256="a" * 64,
+        initial_restored_tree=_RESTORED[initial],
+        terminal_restored_tree=_RESTORED[terminal],
+    )
+
+    assert evidence["status"] == "passed"
+    assert evidence["model_lora_array_count"] == 2
+    assert evidence["changed_model_lora_array_count"] == 2
+    assert evidence["changed_model_lora_element_count"] == 2
+    assert evidence["checkpoint_delta_l2_norm"] == pytest.approx(0.559016994)
+    assert evidence["terminal_adapter"]["checkpoint_step"] == 99
+
+
+def test_lora_checkpoint_progression_rejects_identical_checkpoints(tmp_path: Path) -> None:
+    prefix = ("params", "params", "decoder", "layers_0", "self_attention", "query")
+    paths = _paired_lora_tree(prefix)
+    initial = _items(tmp_path / "checkpoints/0", paths)
+    terminal = _items(tmp_path / "checkpoints/99", paths)
+
+    with pytest.raises(OrbaxReceiptError, match="did not change"):
+        lora_checkpoint_progression_evidence(
+            initial,
+            terminal,
+            expected_rank=16,
+            expected_pair_count=1,
+            initial_step=0,
+            terminal_step=99,
+            minimum_relative_delta=1e-6,
+            approved_maxtext_patch_sha256="a" * 64,
+            initial_restored_tree=_RESTORED[initial],
+            terminal_restored_tree=_RESTORED[terminal],
+        )
+
+
+def test_lora_checkpoint_progression_enforces_relative_delta_threshold(
+    tmp_path: Path,
+) -> None:
+    prefix = ("params", "params", "decoder", "layers_0", "self_attention", "query")
+    paths = _paired_lora_tree(
+        prefix,
+        a_shape=[2, 16],
+        b_shape=[16, 2],
+        a_leaf="kernel_lora_a",
+        b_leaf="kernel_lora_b",
+    )
+    initial = _items(tmp_path / "checkpoints/0", paths)
+    terminal = _items(tmp_path / "checkpoints/99", paths)
+    initial_model = _RESTORED[initial]["params"]["params"]["decoder"][  # type: ignore[index]
+        "layers_0"
+    ]["self_attention"]["query"]
+    terminal_model = _RESTORED[terminal]["params"]["params"]["decoder"][  # type: ignore[index]
+        "layers_0"
+    ]["self_attention"]["query"]
+    initial_model["kernel_lora_a"].fill(1.0)
+    terminal_model["kernel_lora_a"].fill(1.0)
+    terminal_model["kernel_lora_a"][0, 0] += 1e-5
+
+    with pytest.raises(OrbaxReceiptError, match="below the acceptance threshold"):
+        lora_checkpoint_progression_evidence(
+            initial,
+            terminal,
+            expected_rank=16,
+            expected_pair_count=1,
+            initial_step=0,
+            terminal_step=99,
+            minimum_relative_delta=1e-4,
+            approved_maxtext_patch_sha256="a" * 64,
+            initial_restored_tree=_RESTORED[initial],
+            terminal_restored_tree=_RESTORED[terminal],
+        )
 
 
 def test_v3_config_binds_exact_gemma4_topology_and_maxtext_patch() -> None:

@@ -402,6 +402,19 @@ def test_v3_train_command_uses_l4_safe_attention() -> None:
     )
 
     assert "attention=dot_product" in command
+    assert "checkpoint_period=1" in command
+
+    full_command = build_train_command(
+        config,
+        maxtext_checkpoint="/checkpoints/base/items",
+        hf_tokenizer_checkpoint="/hf/base",
+        prepared_train_jsonl="/data/train.jsonl",
+        output_directory="/output",
+        run_name="recovery-full",
+        hardware="gpu",
+        smoke=False,
+    )
+    assert "checkpoint_period=99" in full_command
 
 
 def test_pinned_native_maxtext_patch_materializes_lora_before_optimizer() -> None:

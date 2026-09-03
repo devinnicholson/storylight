@@ -1556,6 +1556,7 @@ def _verify_training_completion_acceptance(
     from training.jax_fidelity.orbax_receipt import (
         discover_orbax_items,
         lora_checkpoint_evidence,
+        lora_checkpoint_progression_evidence,
     )
 
     evidence = training_completion.get("evidence")
@@ -1563,6 +1564,7 @@ def _verify_training_completion_acceptance(
         raise RuntimeError("training completion has no evidence object")
     learning = evidence.get("learning")
     adapter = evidence.get("terminal_adapter")
+    checkpoint_progression = evidence.get("checkpoint_progression")
     if not isinstance(learning, dict) or not isinstance(adapter, dict):
         if experiment_id.endswith("-v3-canary"):
             raise RuntimeError("v3 training completion lacks terminal learning evidence")
@@ -1580,17 +1582,39 @@ def _verify_training_completion_acceptance(
             output_directory,
             expected_step=expected_steps - 1,
         )
-        actual_adapter = lora_checkpoint_evidence(
-            terminal_adapter,
-            expected_rank=expected_rank,
-            expected_pair_count=expected_lora_pair_count,
-            expected_step=expected_steps - 1,
-            approved_maxtext_patch_sha256=approved_maxtext_patch_sha256,
-        )
-        if learning != actual_learning or adapter != actual_adapter:
+        if smoke:
+            actual_progression = None
+            actual_adapter = lora_checkpoint_evidence(
+                terminal_adapter,
+                expected_rank=expected_rank,
+                expected_pair_count=expected_lora_pair_count,
+                expected_step=expected_steps - 1,
+                approved_maxtext_patch_sha256=approved_maxtext_patch_sha256,
+            )
+        else:
+            initial_adapter = discover_orbax_items(output_directory, expected_step=0)
+            actual_progression = lora_checkpoint_progression_evidence(
+                initial_adapter,
+                terminal_adapter,
+                expected_rank=expected_rank,
+                expected_pair_count=expected_lora_pair_count,
+                initial_step=0,
+                terminal_step=expected_steps - 1,
+                minimum_relative_delta=v3_acceptance[
+                    "minimum_checkpoint_lora_relative_delta"
+                ],
+                approved_maxtext_patch_sha256=approved_maxtext_patch_sha256,
+            )
+            actual_adapter = actual_progression["terminal_adapter"]
+        if (
+            learning != actual_learning
+            or adapter != actual_adapter
+            or checkpoint_progression != actual_progression
+        ):
             raise RuntimeError("v3 terminal evidence differs from durable training bytes")
         learning = actual_learning
         adapter = actual_adapter
+        checkpoint_progression = actual_progression
     accepted = verify_v3_terminal_acceptance(
         experiment_id=experiment_id,
         smoke=smoke,
@@ -1600,6 +1624,9 @@ def _verify_training_completion_acceptance(
         approved_maxtext_patch_sha256=approved_maxtext_patch_sha256,
         learning_evidence=learning,
         adapter_evidence=adapter,
+        checkpoint_progression_evidence=(
+            checkpoint_progression if isinstance(checkpoint_progression, dict) else None
+        ),
     )
     if accepted is not None and evidence.get("learnability_acceptance") != accepted:
         raise RuntimeError("v3 terminal acceptance receipt changed before publication")

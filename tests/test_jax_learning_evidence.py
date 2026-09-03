@@ -30,9 +30,6 @@ def _v3_series(steps: int = 100) -> dict[str, list[tuple[int, float]]]:
     series["learning/loss"] = [(step, 2.0 - (0.8 * step / (steps - 1))) for step in range(steps)]
     series["learning/raw_grad_norm"] = [(step, 0.7) for step in range(steps)]
     series["learning/grad_norm"] = [(step, 0.7) for step in range(steps)]
-    series["learning/param_norm"] = [
-        (step, 10.0 + (0.5 * step / (steps - 1))) for step in range(steps)
-    ]
     series["learning/update_norm"] = [(step, 0.01) for step in range(steps)]
     series["learning/changed_trainable_leaves"] = [(step, 205.0) for step in range(steps)]
     return series
@@ -45,6 +42,30 @@ def _series(steps: int = 5) -> dict[str, list[tuple[int, float]]]:
         (step, 0.0 if step == 0 else 1e-4) for step in range(steps)
     ]
     return values
+
+
+def _checkpoint_progression(adapter: dict[str, object]) -> dict[str, object]:
+    pair_count = int(adapter["lora_pair_count"])
+    initial_adapter = dict(adapter)
+    initial_adapter["checkpoint_step"] = 0
+    return {
+        "schema_version": "bookforge-jax-lora-checkpoint-progression-v1",
+        "status": "passed",
+        "comparison_dtype": "float32",
+        "accumulation_dtype": "float64",
+        "initial_step": 0,
+        "terminal_step": 99,
+        "model_lora_array_count": pair_count * 2,
+        "model_lora_element_count": 1_000_000,
+        "changed_model_lora_array_count": pair_count * 2,
+        "changed_model_lora_element_count": 500_000,
+        "initial_model_lora_l2_norm": 81.0,
+        "checkpoint_delta_l2_norm": 2.5,
+        "checkpoint_relative_delta": 2.5 / 81.0,
+        "minimum_checkpoint_relative_delta": 1e-6,
+        "initial_adapter": initial_adapter,
+        "terminal_adapter": adapter,
+    }
 
 
 def test_learning_evidence_accepts_complete_nonzero_optimization_trace() -> None:
@@ -94,7 +115,7 @@ def test_learning_evidence_rejects_missing_steps_and_empty_supervision() -> None
         summarize_scalar_series(empty, expected_steps=5)
 
 
-def test_v3_full_gate_accepts_persistent_learning_and_parameter_movement() -> None:
+def test_v3_full_gate_accepts_persistent_learning() -> None:
     evidence = summarize_scalar_series(
         _v3_series(),
         expected_steps=100,
@@ -106,7 +127,6 @@ def test_v3_full_gate_accepts_persistent_learning_and_parameter_movement() -> No
     assert gate["mode"] == "full-canary"
     assert gate["nonzero_raw_gradient_steps"] == 100
     assert gate["rolling_loss_relative_reduction"] >= 0.1
-    assert gate["parameter_norm_relative_change"] > 0
 
 
 def test_v3_full_gate_rejects_constant_loss() -> None:
@@ -136,17 +156,18 @@ def test_v3_full_gate_rejects_one_isolated_nonzero_gradient() -> None:
         )
 
 
-def test_v3_full_gate_rejects_unchanged_parameter_norm() -> None:
+def test_v3_full_gate_does_not_confuse_global_norm_with_parameter_identity() -> None:
     series = _v3_series()
     series["learning/param_norm"] = [(step, 10.0) for step in range(100)]
 
-    with pytest.raises(LearningEvidenceError, match="parameter norm did not move"):
-        summarize_scalar_series(
-            series,
-            expected_steps=100,
-            v3_acceptance=_thresholds(),
-            require_full_v3=True,
-        )
+    evidence = summarize_scalar_series(
+        series,
+        expected_steps=100,
+        v3_acceptance=_thresholds(),
+        require_full_v3=True,
+    )
+
+    assert evidence["v3_acceptance"]["mode"] == "full-canary"
 
 
 def test_v3_smoke_requires_optimizer_tokens_and_adapter_checkpoint_proof() -> None:
@@ -266,11 +287,24 @@ def test_modal_publication_rechecks_the_terminal_v3_acceptance_receipt() -> None
         approved_maxtext_patch_sha256=patch_sha,
         learning_evidence=learning,
         adapter_evidence=adapter,
+        checkpoint_progression_evidence=_checkpoint_progression(adapter),
     )
+    with pytest.raises(LearningEvidenceError, match="checkpoint progression proof"):
+        verify_v3_terminal_acceptance(
+            experiment_id="bookforge-gemma4-e2b-lora-r16-v3-canary",
+            smoke=False,
+            expected_steps=100,
+            expected_rank=16,
+            expected_lora_pair_count=pair_count,
+            approved_maxtext_patch_sha256=patch_sha,
+            learning_evidence=learning,
+            adapter_evidence=adapter,
+        )
     completion = {
         "evidence": {
             "learning": learning,
             "terminal_adapter": adapter,
+            "checkpoint_progression": _checkpoint_progression(adapter),
             "learnability_acceptance": acceptance,
         }
     }

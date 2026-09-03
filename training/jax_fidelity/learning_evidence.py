@@ -23,17 +23,16 @@ REQUIRED_SCALARS = (
     "learning/current_learning_rate",
     "learning/total_weights",
 )
-V3_PARAMETER_NORM_SCALAR = "learning/param_norm"
 V3_UPDATE_NORM_SCALAR = "learning/update_norm"
 V3_CHANGED_LEAVES_SCALAR = "learning/changed_trainable_leaves"
-V3_ACCEPTANCE_SCHEMA = "bookforge-jax-v3-learnability-acceptance-v1"
+V3_ACCEPTANCE_SCHEMA = "bookforge-jax-v3-learnability-acceptance-v2"
 V3_THRESHOLD_FIELDS = {
     "schema_version",
     "nonzero_gradient_epsilon",
     "minimum_nonzero_gradient_fraction",
     "rolling_loss_window_steps",
     "minimum_rolling_loss_relative_reduction",
-    "minimum_parameter_norm_relative_change",
+    "minimum_checkpoint_lora_relative_delta",
 }
 _SHA256 = re.compile(r"[0-9a-f]{64}\Z")
 
@@ -45,7 +44,7 @@ def _v3_thresholds(raw: Mapping[str, Any]) -> dict[str, float | int | str]:
     fraction = raw.get("minimum_nonzero_gradient_fraction")
     window = raw.get("rolling_loss_window_steps")
     loss_reduction = raw.get("minimum_rolling_loss_relative_reduction")
-    norm_change = raw.get("minimum_parameter_norm_relative_change")
+    checkpoint_delta = raw.get("minimum_checkpoint_lora_relative_delta")
     if (
         type(epsilon) not in (int, float)
         or not math.isfinite(float(epsilon))
@@ -58,9 +57,9 @@ def _v3_thresholds(raw: Mapping[str, Any]) -> dict[str, float | int | str]:
         or type(loss_reduction) not in (int, float)
         or not math.isfinite(float(loss_reduction))
         or not 0 < float(loss_reduction) < 1
-        or type(norm_change) not in (int, float)
-        or not math.isfinite(float(norm_change))
-        or float(norm_change) <= 0
+        or type(checkpoint_delta) not in (int, float)
+        or not math.isfinite(float(checkpoint_delta))
+        or float(checkpoint_delta) <= 0
     ):
         raise LearningEvidenceError("v3 learnability thresholds are invalid")
     return {
@@ -69,7 +68,7 @@ def _v3_thresholds(raw: Mapping[str, Any]) -> dict[str, float | int | str]:
         "minimum_nonzero_gradient_fraction": float(fraction),
         "rolling_loss_window_steps": window,
         "minimum_rolling_loss_relative_reduction": float(loss_reduction),
-        "minimum_parameter_norm_relative_change": float(norm_change),
+        "minimum_checkpoint_lora_relative_delta": float(checkpoint_delta),
     }
 
 
@@ -90,10 +89,8 @@ def summarize_scalar_series(
     required_scalars = list(REQUIRED_SCALARS)
     if thresholds is not None:
         required_scalars.extend((V3_UPDATE_NORM_SCALAR, V3_CHANGED_LEAVES_SCALAR))
-    if require_full_v3:
-        if v3_acceptance is None:
-            raise LearningEvidenceError("full v3 training requires immutable thresholds")
-        required_scalars.append(V3_PARAMETER_NORM_SCALAR)
+    if require_full_v3 and v3_acceptance is None:
+        raise LearningEvidenceError("full v3 training requires immutable thresholds")
     values_by_name: dict[str, list[float]] = {}
     for name in required_scalars:
         points = list(series.get(name, ()))
@@ -180,10 +177,6 @@ def summarize_scalar_series(
                     "full v3 rolling loss reduction is below the acceptance threshold"
                 )
 
-            norms = values_by_name[V3_PARAMETER_NORM_SCALAR]
-            norm_change = abs(norms[-1] - norms[0]) / max(abs(norms[0]), epsilon)
-            if norm_change < float(thresholds["minimum_parameter_norm_relative_change"]):
-                raise LearningEvidenceError("full v3 parameter norm did not move")
             acceptance.update(
                 {
                     "mode": "full-canary",
@@ -193,9 +186,6 @@ def summarize_scalar_series(
                     "initial_rolling_loss": initial_loss,
                     "terminal_rolling_loss": terminal_loss,
                     "rolling_loss_relative_reduction": loss_reduction,
-                    "initial_parameter_norm": norms[0],
-                    "terminal_parameter_norm": norms[-1],
-                    "parameter_norm_relative_change": norm_change,
                 }
             )
         evidence["v3_acceptance"] = acceptance
@@ -229,8 +219,6 @@ def verify_tensorboard_learning(
     required = set(REQUIRED_SCALARS)
     if v3_acceptance is not None:
         required.update((V3_UPDATE_NORM_SCALAR, V3_CHANGED_LEAVES_SCALAR))
-    if require_full_v3:
-        required.add(V3_PARAMETER_NORM_SCALAR)
     missing = sorted(required - available)
     if missing:
         raise LearningEvidenceError(f"TensorBoard is missing required scalars: {missing}")
@@ -262,6 +250,7 @@ def verify_v3_terminal_acceptance(
     approved_maxtext_patch_sha256: str,
     learning_evidence: Mapping[str, Any],
     adapter_evidence: Mapping[str, Any],
+    checkpoint_progression_evidence: Mapping[str, Any] | None = None,
 ) -> dict[str, Any] | None:
     """Bind optimization metrics to the terminal trainable adapter checkpoint."""
 
@@ -316,6 +305,67 @@ def verify_v3_terminal_acceptance(
         or len(adapter_evidence["pairs"]) != expected_lora_pair_count
     ):
         raise LearningEvidenceError("v3 terminal adapter checkpoint proof is incomplete")
+    if not smoke:
+        progression = checkpoint_progression_evidence
+        initial_adapter = (
+            progression.get("initial_adapter") if isinstance(progression, Mapping) else None
+        )
+        if (
+            not isinstance(progression, Mapping)
+            or progression.get("schema_version")
+            != "bookforge-jax-lora-checkpoint-progression-v1"
+            or progression.get("status") != "passed"
+            or progression.get("comparison_dtype") != "float32"
+            or progression.get("accumulation_dtype") != "float64"
+            or progression.get("initial_step") != 0
+            or progression.get("terminal_step") != expected_steps - 1
+            or progression.get("model_lora_array_count") != expected_lora_pair_count * 2
+            or type(progression.get("model_lora_element_count")) is not int
+            or progression["model_lora_element_count"] < expected_lora_pair_count * 2
+            or type(progression.get("changed_model_lora_array_count")) is not int
+            or progression["changed_model_lora_array_count"] < 1
+            or progression["changed_model_lora_array_count"]
+            > progression["model_lora_array_count"]
+            or type(progression.get("changed_model_lora_element_count")) is not int
+            or progression["changed_model_lora_element_count"] < 1
+            or progression["changed_model_lora_element_count"]
+            > progression["model_lora_element_count"]
+            or type(progression.get("initial_model_lora_l2_norm")) not in (int, float)
+            or not math.isfinite(float(progression["initial_model_lora_l2_norm"]))
+            or float(progression["initial_model_lora_l2_norm"]) < 0
+            or type(progression.get("checkpoint_delta_l2_norm")) not in (int, float)
+            or not math.isfinite(float(progression["checkpoint_delta_l2_norm"]))
+            or float(progression["checkpoint_delta_l2_norm"]) <= 0
+            or type(progression.get("checkpoint_relative_delta")) not in (int, float)
+            or not math.isfinite(float(progression["checkpoint_relative_delta"]))
+            or float(progression["checkpoint_relative_delta"])
+            < float(acceptance["thresholds"]["minimum_checkpoint_lora_relative_delta"])
+            or progression.get("minimum_checkpoint_relative_delta")
+            != acceptance["thresholds"]["minimum_checkpoint_lora_relative_delta"]
+            or not isinstance(initial_adapter, Mapping)
+            or initial_adapter.get("schema_version") != "1.0"
+            or initial_adapter.get("format") != "maxtext-orbax-lora-tree"
+            or initial_adapter.get("rank") != expected_rank
+            or initial_adapter.get("lora_pair_count") != expected_lora_pair_count
+            or initial_adapter.get("lora_tensor_count") != expected_lora_pair_count * 2
+            or initial_adapter.get("optimizer_lora_tensor_count")
+            != expected_lora_pair_count * 4
+            or initial_adapter.get("payload_arrays_restored") is not True
+            or initial_adapter.get("restored_lora_array_count")
+            != expected_lora_pair_count * 6
+            or initial_adapter.get("expected_lora_pair_count") != expected_lora_pair_count
+            or initial_adapter.get("checkpoint_step") != 0
+            or initial_adapter.get("checkpoint_step_binding")
+            != "directory-name-plus-root-step-leaf"
+            or initial_adapter.get("approved_maxtext_patch_sha256")
+            != approved_maxtext_patch_sha256
+            or not isinstance(initial_adapter.get("metadata_sha256"), str)
+            or _SHA256.fullmatch(initial_adapter["metadata_sha256"]) is None
+            or not isinstance(initial_adapter.get("pairs"), list)
+            or len(initial_adapter["pairs"]) != expected_lora_pair_count
+            or progression.get("terminal_adapter") != adapter_evidence
+        ):
+            raise LearningEvidenceError("v3 checkpoint progression proof is incomplete")
     return {
         "schema_version": V3_ACCEPTANCE_SCHEMA,
         "status": "passed",
@@ -326,4 +376,28 @@ def verify_v3_terminal_acceptance(
         "approved_maxtext_patch_sha256": approved_maxtext_patch_sha256,
         "adapter_metadata_sha256": adapter_evidence["metadata_sha256"],
         "learning_evidence": acceptance,
+        "checkpoint_progression": (
+            None
+            if smoke
+            else {
+                "schema_version": checkpoint_progression_evidence["schema_version"],
+                "initial_step": checkpoint_progression_evidence["initial_step"],
+                "terminal_step": checkpoint_progression_evidence["terminal_step"],
+                "model_lora_array_count": checkpoint_progression_evidence[
+                    "model_lora_array_count"
+                ],
+                "changed_model_lora_array_count": checkpoint_progression_evidence[
+                    "changed_model_lora_array_count"
+                ],
+                "changed_model_lora_element_count": checkpoint_progression_evidence[
+                    "changed_model_lora_element_count"
+                ],
+                "checkpoint_delta_l2_norm": checkpoint_progression_evidence[
+                    "checkpoint_delta_l2_norm"
+                ],
+                "checkpoint_relative_delta": checkpoint_progression_evidence[
+                    "checkpoint_relative_delta"
+                ],
+            }
+        ),
     }

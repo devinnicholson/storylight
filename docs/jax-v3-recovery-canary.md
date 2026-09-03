@@ -102,11 +102,16 @@ The 100-step canary adds three requirements:
 - at least 90% of raw and clipped gradient samples exceed `1e-12`;
 - mean loss across the final 20 steps is at least 10% below mean loss across
   the first 20 steps;
-- the LoRA-filtered `learning/param_norm` changes by at least `1e-6` relative
-  to its first recorded value.
+- the restored model-side LoRA tensors at step 99 differ from the restored
+  step-0 tensors by at least `1e-6` in relative FP32 L2 distance.
 
-The first and final loss windows are disjoint. Constant loss, a single isolated
-nonzero gradient, or an unchanged selected-parameter norm therefore cannot pass.
+The first and final loss windows are disjoint. The checkpoint comparison verifies
+all 410 model-side LoRA arrays and accumulates their distance in FP64; this avoids
+both BF16 metric rounding and the false assumption that a parameter vector must
+change its global norm when its values change. Constant loss, a single isolated
+nonzero gradient, or byte-for-byte unchanged adapter parameters therefore cannot
+pass. The canary writes only the boundary checkpoints needed for this proof,
+instead of serializing the 138 MiB adapter state every five steps.
 The training command writes a successful completion only after this gate and
 the terminal checkpoint proof pass. The Modal finalizer recomputes the same
 terminal acceptance receipt before publishing, including finalize-only recovery.

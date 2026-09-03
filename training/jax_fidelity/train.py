@@ -18,6 +18,7 @@ from .manifests import complete_run, stable_run_id, start_run
 from .orbax_receipt import (
     discover_orbax_items,
     lora_checkpoint_evidence,
+    lora_checkpoint_progression_evidence,
     terminal_checkpoint_step,
 )
 from .runtime import (
@@ -176,17 +177,35 @@ def main() -> None:
             v3_acceptance=v3_thresholds,
             require_full_v3=is_v3_recovery and not args.smoke,
         )
+        terminal_step = terminal_checkpoint_step(completed_steps)
         terminal_adapter = discover_orbax_items(
             args.output_directory,
-            expected_step=terminal_checkpoint_step(completed_steps),
+            expected_step=terminal_step,
         )
-        adapter_evidence = lora_checkpoint_evidence(
-            terminal_adapter,
-            expected_rank=config.training["rank"],
-            expected_pair_count=config.training.get("expected_lora_pair_count"),
-            expected_step=terminal_checkpoint_step(completed_steps),
-            approved_maxtext_patch_sha256=maxtext_patch_sha256,
-        )
+        checkpoint_progression_evidence = None
+        if is_v3_recovery and not args.smoke:
+            initial_adapter = discover_orbax_items(args.output_directory, expected_step=0)
+            checkpoint_progression_evidence = lora_checkpoint_progression_evidence(
+                initial_adapter,
+                terminal_adapter,
+                expected_rank=config.training["rank"],
+                expected_pair_count=config.training["expected_lora_pair_count"],
+                initial_step=0,
+                terminal_step=terminal_step,
+                minimum_relative_delta=v3_thresholds[
+                    "minimum_checkpoint_lora_relative_delta"
+                ],
+                approved_maxtext_patch_sha256=maxtext_patch_sha256,
+            )
+            adapter_evidence = checkpoint_progression_evidence["terminal_adapter"]
+        else:
+            adapter_evidence = lora_checkpoint_evidence(
+                terminal_adapter,
+                expected_rank=config.training["rank"],
+                expected_pair_count=config.training.get("expected_lora_pair_count"),
+                expected_step=terminal_step,
+                approved_maxtext_patch_sha256=maxtext_patch_sha256,
+            )
         acceptance_evidence = verify_v3_terminal_acceptance(
             experiment_id=config.experiment_id,
             smoke=args.smoke,
@@ -198,6 +217,7 @@ def main() -> None:
             approved_maxtext_patch_sha256=maxtext_patch_sha256,
             learning_evidence=learning_evidence,
             adapter_evidence=adapter_evidence,
+            checkpoint_progression_evidence=checkpoint_progression_evidence,
         )
     except Exception as error:
         complete_run(
@@ -224,6 +244,8 @@ def main() -> None:
         "learning": learning_evidence,
         "terminal_adapter": adapter_evidence,
     }
+    if checkpoint_progression_evidence is not None:
+        terminal_evidence["checkpoint_progression"] = checkpoint_progression_evidence
     if acceptance_evidence is not None:
         terminal_evidence["learnability_acceptance"] = acceptance_evidence
     complete_run(
