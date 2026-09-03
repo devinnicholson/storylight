@@ -94,7 +94,9 @@ def _verify_portable_package(root: Path) -> None:
         ):
             raise ValueError(f"portable package artifact failed verification: {relative}")
         declared.add(relative.as_posix())
-    package_actual = actual - {"package.manifest.json"}
+    package_actual = {
+        path for path in actual if not path.startswith("provider/")
+    } - {"package.manifest.json"}
     if package_actual != declared:
         raise ValueError("portable package contains undeclared or missing files")
 

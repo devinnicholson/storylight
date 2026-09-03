@@ -15,7 +15,7 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
 from training.jax_fidelity.configuration import load_config
-from training.jax_fidelity.integrity import sha256_file
+from training.jax_fidelity.integrity import artifact_manifest, sha256_file
 from training.jax_fidelity.manifests import complete_run, start_run
 from training.jax_fidelity.remote_release import package_training_release
 
@@ -1160,6 +1160,81 @@ def test_modal_release_fetch_rejects_checksum_mismatch(monkeypatch, tmp_path: Pa
             "files": [{"path": "model.bin", "bytes": 3, "sha256": "0" * 64}],
         }
         completion_sha = hashlib.sha256(json.dumps(completion).encode()).hexdigest()
+        fetch_modal_jax_release.fetch_release(
+            run_id, completion_sha, tmp_path / "release"
+        )
+
+
+def _install_release_fetch_fixture(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    *,
+    run_id: str,
+    extra_path: str,
+) -> str:
+    package = tmp_path / "package"
+    (package / "adapter").mkdir(parents=True)
+    (package / "training").mkdir()
+    (package / "adapter/model.bin").write_bytes(b"checkpoint")
+    (package / "adapter.manifest.json").write_text("{}\n")
+    (package / "runtime.lock.json").write_text("{}\n")
+    (package / "training/run.json").write_text("{}\n")
+    (package / "training/completion.json").write_text("{}\n")
+    package_manifest = artifact_manifest(package)
+    (package / "package.manifest.json").write_text(
+        json.dumps(package_manifest, sort_keys=True) + "\n"
+    )
+    extra = package / extra_path
+    extra.parent.mkdir(parents=True, exist_ok=True)
+    extra.write_bytes(b"unexpected")
+    rows = [
+        {
+            "path": path.relative_to(package).as_posix(),
+            "bytes": path.stat().st_size,
+            "sha256": sha256_file(path),
+        }
+        for path in sorted(item for item in package.rglob("*") if item.is_file())
+    ]
+    outer = {"run_id": run_id, "status": "succeeded", "files": rows}
+
+    def fake_get(remote_path: str, destination: Path) -> None:
+        if remote_path.endswith("completion.json"):
+            destination.write_text(json.dumps(outer))
+            return
+        shutil.copytree(package, destination / run_id)
+
+    monkeypatch.setattr(fetch_modal_jax_release, "_modal_get", fake_get)
+    return hashlib.sha256(json.dumps(outer).encode()).hexdigest()
+
+
+def test_modal_release_fetch_allows_outer_provider_evidence(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    run_id = "bookforge-modal-provider-evidence"
+    completion_sha = _install_release_fetch_fixture(
+        monkeypatch,
+        tmp_path,
+        run_id=run_id,
+        extra_path="provider/attempt.json",
+    )
+
+    fetch_modal_jax_release.fetch_release(
+        run_id, completion_sha, tmp_path / "release"
+    )
+
+
+def test_modal_release_fetch_rejects_undeclared_portable_artifact(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    run_id = "bookforge-modal-undeclared-adapter"
+    completion_sha = _install_release_fetch_fixture(
+        monkeypatch,
+        tmp_path,
+        run_id=run_id,
+        extra_path="adapter/undeclared.bin",
+    )
+
+    with pytest.raises(ValueError, match="undeclared or missing"):
         fetch_modal_jax_release.fetch_release(
             run_id, completion_sha, tmp_path / "release"
         )
