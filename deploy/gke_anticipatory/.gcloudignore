@@ -1,20 +1,13 @@
-.git
-.gitignore
-.env
-.venv
-.bookforge
-.pytest_cache
-.ruff_cache
-**/__pycache__
-**/*.pyc
-artifacts
-benchmarks
-docs
-experiments
-infra/gcp/billing-kill-switch/node_modules
-node_modules
-output
-post
-post-temp-*
-tests
-tmp
+# The anticipatory API image needs only its locked Python project and entrypoint.
+# Keep this as an allowlist so local models, datasets, evidence, and generated
+# media can never inflate or leak into the remote Cloud Build context.
+**
+!pyproject.toml
+!uv.lock
+!README.md
+!src/
+!src/**
+!deploy/
+!deploy/gke_anticipatory/
+!deploy/gke_anticipatory/Dockerfile
+!deploy/gke_anticipatory/app.py

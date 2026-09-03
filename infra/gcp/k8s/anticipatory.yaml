@@ -6,34 +6,135 @@ metadata:
   labels:
     app.kubernetes.io/name: bookforge-anticipatory
 ---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: bookforge-gpu-watchdog
+  namespace: bookforge
+  labels:
+    app.kubernetes.io/name: bookforge-nemotron
+automountServiceAccountToken: false
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: bookforge-gpu-watchdog
+  namespace: bookforge
+  labels:
+    app.kubernetes.io/name: bookforge-nemotron
+rules:
+  - apiGroups: ["apps"]
+    resources: ["deployments/scale"]
+    resourceNames: ["bookforge-nemotron"]
+    verbs: ["get", "patch"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: bookforge-gpu-watchdog
+  namespace: bookforge
+  labels:
+    app.kubernetes.io/name: bookforge-nemotron
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: bookforge-gpu-watchdog
+subjects:
+  - kind: ServiceAccount
+    name: bookforge-gpu-watchdog
+    namespace: bookforge
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: bookforge-gpu-watchdog
+  namespace: bookforge
+  labels:
+    app.kubernetes.io/name: bookforge-nemotron
+data:
+  watchdog.py: |
+    import json
+    import os
+    import ssl
+    import time
+    import urllib.request
+
+    time.sleep(int(os.environ["BOOKFORGE_GPU_MAX_RUNTIME_SECONDS"]))
+    namespace = os.environ["BOOKFORGE_NAMESPACE"]
+    deployment = os.environ["BOOKFORGE_GPU_DEPLOYMENT"]
+    identity_root = "/var/run/secrets/bookforge"
+    with open(f"{identity_root}/token", encoding="utf-8") as token_file:
+        token = token_file.read().strip()
+    context = ssl.create_default_context(cafile=f"{identity_root}/ca.crt")
+    url = (
+        "https://kubernetes.default.svc/apis/apps/v1/namespaces/"
+        f"{namespace}/deployments/{deployment}/scale"
+    )
+    body = json.dumps({"spec": {"replicas": 0}}).encode()
+    while True:
+        request = urllib.request.Request(
+            url,
+            data=body,
+            method="PATCH",
+            headers={
+                "Authorization": f"Bearer {token}",
+                "Content-Type": "application/merge-patch+json",
+            },
+        )
+        try:
+            with urllib.request.urlopen(request, context=context, timeout=10) as response:
+                if response.status == 200:
+                    break
+        except Exception as error:
+            print(f"GPU watchdog scale-to-zero retry: {error}", flush=True)
+        time.sleep(30)
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: bookforge-nim-cache
+  namespace: bookforge
+  labels:
+    app.kubernetes.io/name: bookforge-nemotron
+    app.kubernetes.io/component: nim-cache
+spec:
+  accessModes: ["ReadWriteOnce"]
+  storageClassName: standard-rwo
+  resources:
+    requests:
+      storage: 80Gi
+---
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: bookforge-anticipatory
+  name: bookforge-nemotron
   namespace: bookforge
   labels:
-    app.kubernetes.io/name: bookforge-anticipatory
-    app.kubernetes.io/component: anticipatory-story-engine
+    app.kubernetes.io/name: bookforge-nemotron
+    app.kubernetes.io/component: visual-critic
 spec:
-  # The guarded deployment script installs the object at zero and scales it only
-  # after the image, identity, secret, quota, and rollback path are validated.
+  # The guarded deployment script is the only path that scales this billable
+  # GPU workload above zero.
   replicas: 0
   strategy:
     type: Recreate
   selector:
     matchLabels:
-      app.kubernetes.io/name: bookforge-anticipatory
+      app.kubernetes.io/name: bookforge-nemotron
   template:
     metadata:
       labels:
-        app.kubernetes.io/name: bookforge-anticipatory
-        app.kubernetes.io/component: anticipatory-story-engine
+        app.kubernetes.io/name: bookforge-nemotron
+        app.kubernetes.io/component: visual-critic
         ai.gke.io/model: llama-3-1-nemotron-nano-vl-8b-v1
         ai.gke.io/inference-server: nvidia-nim
     spec:
-      serviceAccountName: bookforge-anticipator
+      serviceAccountName: bookforge-gpu-watchdog
+      automountServiceAccountToken: false
       terminationGracePeriodSeconds: 30
       securityContext:
+        fsGroup: 1000
+        fsGroupChangePolicy: OnRootMismatch
         seccompProfile:
           type: RuntimeDefault
       containers:
@@ -49,19 +150,28 @@ spec:
             - name: NIM_CACHE_PATH
               value: /opt/nim/.cache
             - name: NIM_MAX_MODEL_LEN
-              value: "4096"
+              value: "2048"
+            - name: NIM_MAX_BATCH_SIZE
+              value: "1"
+            - name: NIM_LOW_MEMORY_MODE
+              value: "1"
+            - name: MALLOC_ARENA_MAX
+              value: "2"
           ports:
             - name: nim-http
               containerPort: 8000
           resources:
             requests:
               cpu: "6"
-              memory: 16Gi
+              # g2-standard-8 leaves only ~27.6 GiB allocatable. The measured
+              # BF16 TensorRT build peaked at 42.50 GB, so this request forces
+              # one g2-standard-12 (48 GB host) while retaining exactly one L4.
+              memory: 32Gi
               ephemeral-storage: 40Gi
               nvidia.com/gpu: "1"
             limits:
               cpu: "6"
-              memory: 16Gi
+              memory: 41Gi
               ephemeral-storage: 40Gi
               nvidia.com/gpu: "1"
           startupProbe:
@@ -94,6 +204,114 @@ spec:
             allowPrivilegeEscalation: false
             capabilities:
               drop: ["ALL"]
+        - name: gpu-watchdog
+          image: python:3.12-slim-bookworm@sha256:782412e85d0f0984994c290652577d4018aff08145c85b262bb63dc0c7522254
+          imagePullPolicy: IfNotPresent
+          command: ["python", "/opt/bookforge/watchdog.py"]
+          env:
+            - name: BOOKFORGE_GPU_MAX_RUNTIME_SECONDS
+              value: "3600"
+            - name: BOOKFORGE_GPU_DEPLOYMENT
+              value: bookforge-nemotron
+            - name: BOOKFORGE_NAMESPACE
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.namespace
+          resources:
+            requests:
+              cpu: 10m
+              memory: 32Mi
+            limits:
+              cpu: 50m
+              memory: 64Mi
+          volumeMounts:
+            - name: gpu-watchdog-script
+              mountPath: /opt/bookforge
+              readOnly: true
+            - name: gpu-watchdog-identity
+              mountPath: /var/run/secrets/bookforge
+              readOnly: true
+          securityContext:
+            runAsNonRoot: true
+            runAsUser: 65532
+            runAsGroup: 65532
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]
+      imagePullSecrets:
+        - name: ngc-secret
+      nodeSelector:
+        cloud.google.com/gke-accelerator: nvidia-l4
+        cloud.google.com/gke-gpu-driver-version: latest
+      volumes:
+        - name: nim-cache
+          persistentVolumeClaim:
+            claimName: bookforge-nim-cache
+        - name: dshm
+          emptyDir:
+            medium: Memory
+            sizeLimit: 8Gi
+        - name: gpu-watchdog-script
+          configMap:
+            name: bookforge-gpu-watchdog
+            defaultMode: 0555
+        - name: gpu-watchdog-identity
+          projected:
+            defaultMode: 0440
+            sources:
+              - serviceAccountToken:
+                  path: token
+                  expirationSeconds: 7200
+              - configMap:
+                  name: kube-root-ca.crt
+                  items:
+                    - key: ca.crt
+                      path: ca.crt
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: bookforge-nemotron
+  namespace: bookforge
+  labels:
+    app.kubernetes.io/name: bookforge-nemotron
+spec:
+  selector:
+    app.kubernetes.io/name: bookforge-nemotron
+  ports:
+    - name: nim-http
+      port: 8000
+      targetPort: nim-http
+  type: ClusterIP
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: bookforge-anticipatory
+  namespace: bookforge
+  labels:
+    app.kubernetes.io/name: bookforge-anticipatory
+    app.kubernetes.io/component: anticipatory-api
+spec:
+  # The CPU control plane stays independently deployable; changing it never
+  # restarts the expensive TensorRT/NIM process.
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: bookforge-anticipatory
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: bookforge-anticipatory
+        app.kubernetes.io/component: anticipatory-api
+    spec:
+      serviceAccountName: bookforge-anticipator
+      terminationGracePeriodSeconds: 10
+      securityContext:
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
         - name: anticipatory-api
           image: bookforge-anticipatory-placeholder
           imagePullPolicy: IfNotPresent
@@ -107,13 +325,15 @@ spec:
             - name: BOOKFORGE_ANTICIPATORY_RENDER_TIMEOUT_SECONDS
               value: "30"
             - name: BOOKFORGE_ANTICIPATORY_MAX_RENDERS
-              value: "2"
+              value: "1"
             - name: BOOKFORGE_ANTICIPATORY_MAX_CANDIDATES
               value: "64"
             - name: BOOKFORGE_ANTICIPATORY_CACHE_ENTRIES
               value: "32"
             - name: BOOKFORGE_ANTICIPATORY_ASSET_BYTES
               value: "67108864"
+            - name: BOOKFORGE_NEMOTRON_BASE_URL
+              value: http://bookforge-nemotron.bookforge.svc.cluster.local:8000
             - name: BOOKFORGE_NEMOTRON_TIMEOUT_SECONDS
               value: "30"
           ports:
@@ -135,7 +355,9 @@ spec:
             failureThreshold: 30
           readinessProbe:
             httpGet:
-              path: /ready
+              # Keep API lifecycle independent from the optional GPU critic.
+              # /ready remains available for dependency-aware diagnostics.
+              path: /health
               port: http
             timeoutSeconds: 10
             periodSeconds: 10
@@ -155,19 +377,6 @@ spec:
             readOnlyRootFilesystem: true
             capabilities:
               drop: ["ALL"]
-      imagePullSecrets:
-        - name: ngc-secret
-      nodeSelector:
-        cloud.google.com/gke-accelerator: nvidia-l4
-        cloud.google.com/gke-gpu-driver-version: latest
-      volumes:
-        - name: nim-cache
-          emptyDir:
-            sizeLimit: 40Gi
-        - name: dshm
-          emptyDir:
-            medium: Memory
-            sizeLimit: 8Gi
 ---
 apiVersion: v1
 kind: Service
@@ -183,8 +392,8 @@ spec:
     - name: http
       port: 8080
       targetPort: http
-  # There is deliberately no public load balancer. The first bounded experiment
-  # uses kubectl port-forward; production ingress requires a separate auth gate.
+  # There is deliberately no public load balancer. Experiments use a localhost
+  # port-forward; production ingress requires a separate authentication gate.
   type: ClusterIP
 ---
 apiVersion: networking.k8s.io/v1
@@ -205,6 +414,58 @@ spec:
       ports:
         - protocol: TCP
           port: 8080
+  egress:
+    - ports:
+        - protocol: UDP
+          port: 53
+        - protocol: TCP
+          port: 53
+    - to:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/name: bookforge-nemotron
+      ports:
+        - protocol: TCP
+          port: 8000
+    # GKE Workload Identity Federation retrieves short-lived credentials from
+    # a link-local metadata server. Dataplane V2 uses :80; :988 keeps the
+    # policy portable to clusters using the earlier metadata-server path.
+    - to:
+        - ipBlock:
+            cidr: 169.254.169.254/32
+      ports:
+        - protocol: TCP
+          port: 80
+    - to:
+        - ipBlock:
+            cidr: 169.254.169.252/32
+      ports:
+        - protocol: TCP
+          port: 988
+    - ports:
+        - protocol: TCP
+          port: 443
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: bookforge-nemotron
+  namespace: bookforge
+  labels:
+    app.kubernetes.io/name: bookforge-nemotron
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: bookforge-nemotron
+  policyTypes: ["Ingress", "Egress"]
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/name: bookforge-anticipatory
+      ports:
+        - protocol: TCP
+          port: 8000
   egress:
     - ports:
         - protocol: UDP

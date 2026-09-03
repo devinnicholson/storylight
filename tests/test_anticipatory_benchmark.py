@@ -117,7 +117,13 @@ def test_benchmark_contracts_are_sanitized_and_measured_run_passes() -> None:
     report = asyncio.run(run_live_benchmark(_AcceptedClient()))  # type: ignore[arg-type]
 
     assert report.evidence_kind == "measured_gke_cloud_run_nemotron_acceptance"
+    assert report.cost_scope == "incremental_renderer_requests_only"
     assert report.summary.cases == 6
     assert report.summary.cache_hits == 3
     assert report.summary.total_estimated_gpu_usd == 0.003
+    replay = [result for result in report.results if result.cache_hit]
+    assert all(result.render_ms == 0 for result in replay)
+    assert all(result.critic_ms == 0 for result in replay)
+    assert all(result.critic_input_tokens == 0 for result in replay)
+    assert all(result.critic_output_tokens == 0 for result in replay)
     assert report.gates.passed is True

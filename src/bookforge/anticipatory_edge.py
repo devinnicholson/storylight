@@ -31,6 +31,7 @@ from bookforge.live_scene import SceneText, VisualStyle
 from bookforge.live_scene_planner import LiveScenePlan, LiveScenePlanningResult
 
 MAX_ASSET_BYTES = 8 * 1024 * 1024
+RUNTIME_PREWARM_TIMEOUT_SECONDS = 240
 EdgeTokenSource = Callable[[], Awaitable[str]]
 
 
@@ -56,10 +57,13 @@ class LocalAnticipationCandidate(FrozenStrictModel):
 
 
 class LocalAnticipationPrepareRequest(FrozenStrictModel):
-    session_token: Annotated[
-        str,
-        StringConstraints(pattern=r"^anticipate_[a-f0-9]{24}$"),
-    ] | None = None
+    session_token: (
+        Annotated[
+            str,
+            StringConstraints(pattern=r"^anticipate_[a-f0-9]{24}$"),
+        ]
+        | None
+    ) = None
     sequence: Annotated[int, Field(ge=0, le=2**31 - 1)]
     candidates: list[LocalAnticipationCandidate] = Field(min_length=1, max_length=2)
     visual_style: VisualStyle = "luminous watercolor paper theater"
@@ -70,8 +74,7 @@ class LocalAnticipationPrepareRequest(FrozenStrictModel):
     @model_validator(mode="after")
     def require_bounded_branching(self) -> LocalAnticipationPrepareRequest:
         exact = sum(
-            candidate.source is AnticipationSource.EXACT_LOOKAHEAD
-            for candidate in self.candidates
+            candidate.source is AnticipationSource.EXACT_LOOKAHEAD for candidate in self.candidates
         )
         if exact and len(self.candidates) != 1:
             raise ValueError("exact lookahead accepts one known candidate")
@@ -304,6 +307,20 @@ class AnticipatoryEdgeClient:
         )
         return AnticipationStatus.model_validate(payload)
 
+    async def prewarm_runtime(self) -> dict[str, str | bool]:
+        payload = await self._json_request(
+            "POST",
+            "/v1/runtime:prewarm",
+            json_body={
+                "authorization": "I_UNDERSTAND_THIS_MAY_WAKE_A_BILLABLE_GPU",
+            },
+            timeout_seconds=RUNTIME_PREWARM_TIMEOUT_SECONDS,
+        )
+        if payload.get("ready") is not True:
+            detail = str(payload.get("detail") or "runtime prewarm failed")
+            raise AnticipatoryEdgeError(_bounded(RuntimeError(detail)))
+        return payload
+
     async def status(self, session_token: str, sequence: int) -> AnticipationStatus:
         payload = await self._json_request(
             "GET",
@@ -339,6 +356,7 @@ class AnticipatoryEdgeClient:
         path: str,
         *,
         json_body: dict | None = None,
+        timeout_seconds: float | None = None,
     ) -> dict:
         client = await self._get_client()
         try:
@@ -347,6 +365,7 @@ class AnticipatoryEdgeClient:
                 f"{self.base_url}{path}",
                 headers=await self._headers(),
                 json=json_body,
+                timeout=self.timeout_seconds if timeout_seconds is None else timeout_seconds,
             )
             response.raise_for_status()
             payload = response.json()

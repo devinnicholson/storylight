@@ -3,11 +3,13 @@ from __future__ import annotations
 import asyncio
 import base64
 import hashlib
+import io
 import json
 from datetime import UTC, datetime, timedelta
 
 import httpx
 import pytest
+from PIL import Image
 
 from bookforge.anticipatory import (
     AnticipationSource,
@@ -70,6 +72,12 @@ def _render_payload(*, master: bytes = JPEG, depth: bytes = JPEG + b"-depth") ->
         "depth_height": 576,
         "depth_media_type": "image/jpeg",
     }
+
+
+def _valid_jpeg(*, width: int = 1024, height: int = 576) -> bytes:
+    output = io.BytesIO()
+    Image.new("RGB", (width, height), (25, 35, 70)).save(output, format="JPEG", quality=90)
+    return output.getvalue()
 
 
 def test_memory_asset_store_is_content_addressed_bounded_and_expiring() -> None:
@@ -199,6 +207,38 @@ def test_renderer_cost_reservation_fails_before_identity_or_network() -> None:
     assert called is False
 
 
+def test_explicit_renderer_prewarm_loads_and_exercises_the_private_worker() -> None:
+    observed: list[httpx.Request] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        observed.append(request)
+        return httpx.Response(200, json={**_render_payload(), "ready": True})
+
+    async def token_source(audience: str) -> str:
+        assert audience == "https://renderer.example.run.app"
+        return "workload-identity-token"
+
+    async def scenario() -> None:
+        renderer = CloudRunAnticipatoryRenderer(
+            base_url="https://renderer.example.run.app",
+            audience="https://renderer.example.run.app",
+            asset_store=MemorySceneAssetStore(),
+            token_source=token_source,
+            client_factory=lambda **kwargs: httpx.AsyncClient(
+                transport=httpx.MockTransport(handler), **kwargs
+            ),
+        )
+        ready, detail = await renderer.prewarm()
+        assert ready is True
+        assert "prewarmed" in detail
+        await renderer.aclose()
+
+    asyncio.run(scenario())
+    assert len(observed) == 1
+    assert observed[0].url.path == "/v1/prewarm"
+    assert json.loads(observed[0].content)["prewarm_id"].startswith("anticipatory-")
+
+
 def test_renderer_rejects_checksum_and_media_mismatch() -> None:
     payload = _render_payload()
     payload["master_sha256"] = "0" * 64
@@ -249,7 +289,12 @@ def test_nemotron_adapter_reads_only_the_synthetic_master() -> None:
 
     async def scenario() -> None:
         store = MemorySceneAssetStore()
-        ref = await store.put(JPEG, media_type="image/jpeg", expires_at=NOW + timedelta(minutes=1))
+        master = _valid_jpeg()
+        ref = await store.put(
+            master,
+            media_type="image/jpeg",
+            expires_at=NOW + timedelta(minutes=1),
+        )
         adapter = StoredAssetNemotronCritic(
             critic=FakeNemotron(),  # type: ignore[arg-type]
             asset_store=store,
@@ -272,5 +317,50 @@ def test_nemotron_adapter_reads_only_the_synthetic_master() -> None:
     asyncio.run(scenario())
     request, content, media_type = observed[0]
     assert request.visual_brief == _spec().visual_brief
-    assert content == JPEG
+    assert content.startswith(b"\xff\xd8\xff")
+
+
+def test_nemotron_adapter_prewarm_exercises_a_bounded_synthetic_review() -> None:
+    observed: list[tuple[NemotronCriticRequest, bytes, str, float | None]] = []
+
+    class FakeNemotron:
+        async def evaluate(
+            self,
+            request,
+            *,
+            image_bytes: bytes,
+            media_type: str,
+            timeout_seconds: float | None = None,
+        ):
+            observed.append((request, image_bytes, media_type, timeout_seconds))
+            from bookforge.nemotron_critic import NemotronCriticEvidence
+
+            return NemotronCriticEvidence(
+                verdict=NemotronCriticVerdict(
+                    fidelity_score=0.95,
+                    composition_score=0.9,
+                    projection_legibility_score=0.9,
+                    identity_consistent=True,
+                    unintended_text=False,
+                    decision=NemotronCriticDecision.ACCEPT,
+                    reason="The deterministic warmup image matches its bounded contract.",
+                ),
+                model="nemotron-test",
+                latency_ms=3,
+            )
+
+    adapter = StoredAssetNemotronCritic(
+        critic=FakeNemotron(),  # type: ignore[arg-type]
+        asset_store=MemorySceneAssetStore(),
+        now=lambda: NOW,
+    )
+    ready, detail = asyncio.run(adapter.prewarm())
+    assert ready is True
+    assert "prewarmed" in detail
+    request, content, media_type, timeout = observed[0]
+    assert "gold circle" in request.visual_brief
+    assert content.startswith(b"\xff\xd8\xff")
     assert media_type == "image/jpeg"
+    assert timeout == 90
+    with Image.open(io.BytesIO(content)) as review:
+        assert max(review.size) == 512

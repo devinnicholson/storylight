@@ -53,6 +53,8 @@ class LiveBenchmarkResult(FrozenStrictModel):
     commit_and_fetch_ms: Annotated[float, Field(ge=0)]
     render_ms: Annotated[float, Field(ge=0)]
     critic_ms: Annotated[float, Field(ge=0)]
+    critic_input_tokens: Annotated[int, Field(ge=0)] = 0
+    critic_output_tokens: Annotated[int, Field(ge=0)] = 0
     render_attempts: Annotated[int, Field(ge=0, le=2)]
     repair_attempts: Annotated[int, Field(ge=0, le=1)]
     estimated_gpu_usd: Annotated[float, Field(ge=0, le=0.5)]
@@ -80,6 +82,12 @@ class LiveBenchmarkGates(FrozenStrictModel):
     passed: bool
 
 
+class LiveBenchmarkPrewarm(FrozenStrictModel):
+    ready: Literal[True] = True
+    wall_ms: Annotated[float, Field(ge=0)]
+    detail: Annotated[str, Field(min_length=1, max_length=600)]
+
+
 class AnticipatoryLiveBenchmarkReport(FrozenStrictModel):
     schema_version: Literal["1.0"] = "1.0"
     evidence_kind: Literal["measured_gke_cloud_run_nemotron_acceptance"] = (
@@ -89,6 +97,8 @@ class AnticipatoryLiveBenchmarkReport(FrozenStrictModel):
     endpoint: str
     privacy_boundary: Literal["sanitized_scene_spec_v1"] = "sanitized_scene_spec_v1"
     source_media_sent: Literal[False] = False
+    cost_scope: Literal["incremental_renderer_requests_only"] = "incremental_renderer_requests_only"
+    prewarm: LiveBenchmarkPrewarm | None = None
     results: list[LiveBenchmarkResult]
     summary: LiveBenchmarkSummary
     gates: LiveBenchmarkGates
@@ -144,6 +154,7 @@ async def run_live_benchmark(
     poll_seconds: float = 0.1,
     ready_timeout_seconds: float = 120,
     total_cost_ceiling_usd: float = 0.15,
+    prewarm: LiveBenchmarkPrewarm | None = None,
 ) -> AnticipatoryLiveBenchmarkReport:
     if not math.isfinite(poll_seconds) or not 0.05 <= poll_seconds <= 5:
         raise ValueError("poll_seconds must be between 0.05 and 5")
@@ -248,10 +259,14 @@ async def run_live_benchmark(
         total_estimated_gpu_usd=sum(result.estimated_gpu_usd for result in results),
     )
     replay_cache_gate = bool(replay) and all(result.cache_hit for result in replay)
-    replay_latency_gate = bool(replay) and _percentile(
-        [result.ready_ms for result in replay],
-        0.95,
-    ) < 250
+    replay_latency_gate = (
+        bool(replay)
+        and _percentile(
+            [result.ready_ms for result in replay],
+            0.95,
+        )
+        < 250
+    )
     gate_values = {
         "all_candidates_accepted": summary.accepted == summary.cases,
         "all_assets_verified": summary.assets_verified == summary.cases,
@@ -265,6 +280,7 @@ async def run_live_benchmark(
     return AnticipatoryLiveBenchmarkReport(
         created_at=datetime.now(UTC),
         endpoint=client.base_url,
+        prewarm=prewarm,
         results=results,
         summary=summary,
         gates=LiveBenchmarkGates(**gate_values, passed=all(gate_values.values())),
@@ -281,7 +297,11 @@ def _result_from_terminal(
     commit_and_fetch_ms: float = 0,
     assets_verified: bool = False,
 ) -> LiveBenchmarkResult:
-    critic_ms = sum(evidence.latency_ms for evidence in candidate.critic_history)
+    critic_ms = (
+        0
+        if candidate.cache_hit
+        else sum(evidence.latency_ms for evidence in candidate.critic_history)
+    )
     return LiveBenchmarkResult(
         case_id=case_id,
         pass_index=pass_index,
@@ -291,8 +311,22 @@ def _result_from_terminal(
         submit_ms=submit_ms,
         ready_ms=ready_ms,
         commit_and_fetch_ms=commit_and_fetch_ms,
-        render_ms=candidate.rendered.render_latency_ms if candidate.rendered else 0,
+        render_ms=(
+            0
+            if candidate.cache_hit or candidate.rendered is None
+            else candidate.rendered.render_latency_ms
+        ),
         critic_ms=critic_ms,
+        critic_input_tokens=(
+            0
+            if candidate.cache_hit
+            else sum(evidence.input_tokens for evidence in candidate.critic_history)
+        ),
+        critic_output_tokens=(
+            0
+            if candidate.cache_hit
+            else sum(evidence.output_tokens for evidence in candidate.critic_history)
+        ),
         render_attempts=candidate.render_attempts,
         repair_attempts=candidate.repair_attempts,
         estimated_gpu_usd=candidate.render_cost_usd,
@@ -319,6 +353,8 @@ def _failed_result(
         commit_and_fetch_ms=0,
         render_ms=0,
         critic_ms=0,
+        critic_input_tokens=0,
+        critic_output_tokens=0,
         render_attempts=0,
         repair_attempts=0,
         estimated_gpu_usd=0,
@@ -356,9 +392,16 @@ def main() -> None:
             allow_loopback_http=True,
         )
         try:
+            prewarm_started = time.perf_counter()
+            prewarm_result = await client.prewarm_runtime()
+            prewarm = LiveBenchmarkPrewarm(
+                wall_ms=(time.perf_counter() - prewarm_started) * 1_000,
+                detail=str(prewarm_result["detail"]),
+            )
             return await run_live_benchmark(
                 client,
                 ready_timeout_seconds=args.ready_timeout_seconds,
+                prewarm=prewarm,
             )
         finally:
             await client.aclose()
@@ -372,6 +415,7 @@ def main() -> None:
                 "output": str(args.output),
                 "evidence_kind": report.evidence_kind,
                 "gates_passed": report.gates.passed,
+                "prewarm_ms": report.prewarm.wall_ms if report.prewarm else None,
                 "p95_ready_ms": report.summary.p95_ready_ms,
                 "p95_commit_and_fetch_ms": report.summary.p95_commit_and_fetch_ms,
                 "total_estimated_gpu_usd": report.summary.total_estimated_gpu_usd,

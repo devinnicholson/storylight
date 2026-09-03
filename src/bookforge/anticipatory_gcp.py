@@ -11,8 +11,10 @@ from __future__ import annotations
 import asyncio
 import base64
 import hashlib
+import io
 import json
 import math
+import secrets
 import time
 from collections import OrderedDict
 from collections.abc import Awaitable, Callable, Mapping
@@ -38,6 +40,11 @@ from bookforge.nemotron_critic import (
 
 MAX_REMOTE_ASSET_BYTES = 8 * 1024 * 1024
 EXPECTED_PROVIDER = "gcp-cloud-run"
+NEMOTRON_REVIEW_MAX_EDGE = 512
+NEMOTRON_REVIEW_JPEG_QUALITY = 82
+NEMOTRON_REVIEW_MAX_SOURCE_PIXELS = 1_536 * 1_536
+RENDERER_PREWARM_TIMEOUT_SECONDS = 180
+NEMOTRON_PREWARM_TIMEOUT_SECONDS = 90
 
 IdentityTokenSource = Callable[[str], Awaitable[str]]
 
@@ -181,6 +188,22 @@ class CloudRunAnticipatoryRenderer:
             return False, f"Cloud Run renderer is unreachable: {_bounded_error(error)}"
         return True, "private Cloud Run renderer is reachable"
 
+    async def prewarm(self) -> tuple[bool, str]:
+        """Load and exercise the remote renderer only behind explicit authorization."""
+
+        try:
+            payload, wall_seconds = await self._request(
+                "POST",
+                "/v1/prewarm",
+                json_body={"prewarm_id": f"anticipatory-{secrets.token_hex(8)}"},
+                timeout_seconds=RENDERER_PREWARM_TIMEOUT_SECONDS,
+            )
+            _validate_identity(payload, expected_gpu=self.expected_gpu)
+            _require_equal(payload, "ready", True)
+        except Exception as error:
+            return False, f"Cloud Run renderer prewarm failed: {_bounded_error(error)}"
+        return True, f"private Cloud Run renderer is prewarmed ({wall_seconds:.2f}s)"
+
     async def cached_result_available(self, scene: RenderedScene) -> bool:
         """Reject a metadata cache hit after either bounded asset was evicted."""
 
@@ -251,6 +274,7 @@ class CloudRunAnticipatoryRenderer:
         path: str,
         *,
         json_body: Mapping[str, Any] | None = None,
+        timeout_seconds: float | None = None,
     ) -> tuple[dict[str, Any], float]:
         token = await self.token_source(self.audience)
         if not token:
@@ -263,6 +287,7 @@ class CloudRunAnticipatoryRenderer:
                 f"{self.base_url}{path}",
                 headers={"Authorization": f"Bearer {token}"},
                 json=dict(json_body) if json_body is not None else None,
+                timeout=self.timeout_seconds if timeout_seconds is None else timeout_seconds,
             )
             response.raise_for_status()
             payload = response.json()
@@ -316,12 +341,39 @@ class StoredAssetNemotronCritic:
     async def probe(self) -> tuple[bool, str]:
         return await self.critic.probe()
 
+    async def prewarm(self) -> tuple[bool, str]:
+        """Compile and exercise the bounded VLM path before live scene timing."""
+
+        request = NemotronCriticRequest(
+            visual_brief=(
+                "A single gold circle floats above a dark indigo field with a clear, "
+                "centered, high-contrast composition."
+            ),
+            expected_subjects=["one gold circle", "dark indigo field"],
+            forbidden_content=["readable text", "duplicate circle"],
+        )
+        started = time.perf_counter()
+        try:
+            await self.critic.evaluate(
+                request,
+                image_bytes=_nemotron_prewarm_image(),
+                media_type="image/jpeg",
+                timeout_seconds=NEMOTRON_PREWARM_TIMEOUT_SECONDS,
+            )
+        except Exception as error:
+            return False, f"Nemotron critic prewarm failed: {_bounded_error(error)}"
+        return (
+            True,
+            f"Nemotron multimodal critic is prewarmed ({time.perf_counter() - started:.2f}s)",
+        )
+
     async def evaluate(
         self,
         spec: AnticipatorySceneSpec,
         scene: RenderedScene,
     ) -> NemotronCriticEvidence:
         master = await self.asset_store.get(scene.master_ref, now=self.now())
+        review_image = await asyncio.to_thread(_nemotron_review_copy, master.content)
         request = NemotronCriticRequest(
             visual_brief=spec.visual_brief,
             expected_subjects=spec.expected_subjects,
@@ -329,8 +381,8 @@ class StoredAssetNemotronCritic:
         )
         return await self.critic.evaluate(
             request,
-            image_bytes=master.content,
-            media_type=master.media_type,
+            image_bytes=review_image,
+            media_type="image/jpeg",
         )
 
     async def aclose(self) -> None:
@@ -342,6 +394,61 @@ class _DecodedAsset:
     content: bytes
     media_type: Literal["image/jpeg", "image/png"]
     sha256: str
+
+
+def _nemotron_review_copy(content: bytes) -> bytes:
+    """Bound VLM image tokens without altering the projection-quality master."""
+
+    from PIL import Image, ImageOps, UnidentifiedImageError
+
+    try:
+        with Image.open(io.BytesIO(content)) as source:
+            if (
+                source.width <= 0
+                or source.height <= 0
+                or source.width * source.height > NEMOTRON_REVIEW_MAX_SOURCE_PIXELS
+            ):
+                raise ValueError("scene image exceeds the decoded pixel budget")
+            source.load()
+            review = ImageOps.exif_transpose(source).convert("RGB")
+            review.thumbnail(
+                (NEMOTRON_REVIEW_MAX_EDGE, NEMOTRON_REVIEW_MAX_EDGE),
+                Image.Resampling.LANCZOS,
+                reducing_gap=3.0,
+            )
+            output = io.BytesIO()
+            review.save(
+                output,
+                format="JPEG",
+                quality=NEMOTRON_REVIEW_JPEG_QUALITY,
+                optimize=False,
+                progressive=False,
+            )
+    except (OSError, UnidentifiedImageError, ValueError) as error:
+        raise AnticipatoryGcpError("could not create the bounded Nemotron review copy") from error
+    result = output.getvalue()
+    if not result or len(result) > MAX_REMOTE_ASSET_BYTES:
+        raise AnticipatoryGcpError("bounded Nemotron review copy has an invalid byte length")
+    return result
+
+
+def _nemotron_prewarm_image() -> bytes:
+    """Return a deterministic low-token image that exercises the full VLM path."""
+
+    from PIL import Image, ImageDraw
+
+    image = Image.new("RGB", (512, 288), (10, 14, 45))
+    draw = ImageDraw.Draw(image)
+    draw.ellipse((196, 84, 316, 204), fill=(244, 194, 68))
+    output = io.BytesIO()
+    image.save(
+        output,
+        format="JPEG",
+        quality=NEMOTRON_REVIEW_JPEG_QUALITY,
+        optimize=False,
+        progressive=False,
+    )
+    return output.getvalue()
 
 
 def _decode_asset(

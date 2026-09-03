@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import os
 from datetime import UTC, datetime
 from typing import Literal, cast
@@ -12,7 +13,11 @@ from bookforge.anticipatory_gcp import (
     MemorySceneAssetStore,
     StoredAssetNemotronCritic,
 )
-from bookforge.anticipatory_service import AnticipatoryRuntime, create_anticipatory_service
+from bookforge.anticipatory_service import (
+    AnticipatoryRuntime,
+    SingleFlightPrewarm,
+    create_anticipatory_service,
+)
 from bookforge.nemotron_critic import DEFAULT_NEMOTRON_VL_MODEL, NemotronVisionCritic
 
 
@@ -76,8 +81,12 @@ def build_runtime() -> AnticipatoryRuntime:
         ),
         now=now,
     )
+    nim_base_url = os.environ.get(
+        "BOOKFORGE_NEMOTRON_BASE_URL",
+        "http://127.0.0.1:8000",
+    ).strip()
     nim = NemotronVisionCritic(
-        base_url="http://127.0.0.1:8000",
+        base_url=nim_base_url,
         model=os.environ.get("BOOKFORGE_NEMOTRON_MODEL", DEFAULT_NEMOTRON_VL_MODEL),
         timeout_seconds=_number(
             "BOOKFORGE_NEMOTRON_TIMEOUT_SECONDS",
@@ -86,8 +95,18 @@ def build_runtime() -> AnticipatoryRuntime:
             maximum=120,
         ),
         allow_loopback_http=True,
+        allow_cluster_http=True,
     )
     critic = StoredAssetNemotronCritic(critic=nim, asset_store=store, now=now)
+
+    async def prewarm() -> tuple[bool, str]:
+        renderer_result, critic_result = await asyncio.gather(
+            renderer.prewarm(),
+            critic.prewarm(),
+        )
+        ready = renderer_result[0] and critic_result[0]
+        return ready, f"{renderer_result[1]}; {critic_result[1]}"
+
     orchestrator = AnticipatorySceneOrchestrator(
         renderer=renderer,
         critic=critic,
@@ -114,8 +133,9 @@ def build_runtime() -> AnticipatoryRuntime:
     return AnticipatoryRuntime(
         orchestrator=orchestrator,
         asset_store=store,
-        renderer_probe=renderer.probe,
+        renderer_probe=renderer.prewarm,
         critic_probe=critic.probe,
+        runtime_prewarm=SingleFlightPrewarm(prewarm),
     )
 
 

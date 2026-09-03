@@ -4,8 +4,10 @@ Status: active, updated 2026-09-03
 
 Implementation checkpoint: the privacy-safe Cloud Monitoring dashboard is deployed as
 `projects/your-gcp-project/dashboards/YOUR_DASHBOARD_ID`; the strict renderer digest
-is staged at zero traffic; and `bookforge.gcp_scene_benchmark` now provides bounded probe/prepared
-experiments with no automatic retry and prompt hashes instead of prompt text.
+is staged at zero traffic; and `bookforge.gcp_scene_benchmark` provides bounded probe/prepared
+experiments with no automatic retry and prompt hashes instead of prompt text. The bounded GKE v5
+acceptance also passed all six requests, after which its separate Nemotron GPU Deployment was
+scaled to zero.
 
 The finite GCP export path is no longer blocked: one Flex-start G4 instance produced the pinned
 Gemma 4 E2B INT4-AWQ checkpoint, uploaded it to private Cloud Storage, and deleted the VM and boot
@@ -32,6 +34,9 @@ quality, reliability, privacy, cost, or presentation gate. Product count is not 
 | Exact replay | 4-5 ms | p95 under 10 ms; zero provider work |
 | Cold renderer readiness | 19-52 s accepted history | p95 under 60 s; no failed starts |
 | Physical moving projection | 30 Hz accepted | p95 frame interval under 40 ms; zero software WebGL |
+| GKE anticipatory uncached candidate | 6.82-7.87 s after explicit prewarm | p95 under 8 s; every candidate accepted and checksum-verified |
+| GKE anticipatory replay | 67.0-69.5 ms ready; 141.2-146.9 ms commit plus fetch | p95 ready under 250 ms; zero renderer or critic work |
+| GKE warm dependency check | 6.24 s wall, renderer and critic concurrent | p95 under 10 s when models are resident; explicit authorization; no readiness-triggered wake |
 
 Quality gates are not negotiable for speed:
 
@@ -39,7 +44,8 @@ Quality gates are not negotiable for speed:
 - required setting, actor, object, action, and transformation present;
 - no unintended readable text, logos, watermarks, or duplicate subjects;
 - projection-bright luminance and a useful depth separation;
-- raw passage, audio, camera frames, names, and learner telemetry remain local;
+- raw passage, audio, camera frames, actual reader identity, and learner telemetry remain local;
+- sanitized visual direction can retain fictional character and place names needed for rendering;
 - every promoted artifact passes media, dimension, checksum, provenance, and cost validation.
 
 All latency claims report cold and warm paths separately and include p50, p95, maximum, failure
@@ -60,7 +66,10 @@ private IAM-authenticated Cloud Run GPU
   NVIDIA RTX PRO 6000 -> SANA-Sprint -> Depth Anything -> checksums
        |
        +-> optional GKE anticipatory coordinator
-              NVIDIA L4 -> pinned Nemotron Nano VL NIM -> accept/repair/reject
+              CPU API Deployment -> private ClusterIP
+                    |
+                    +-> separately scaled NVIDIA L4 Deployment
+                          pinned Nemotron Nano VL NIM -> accept/repair/reject
        v
 Jetson cache -> NVIDIA WebGL depth renderer -> projector
 ```
@@ -85,8 +94,9 @@ Run receives only the locally validated visual brief, style, seed, and fixed ren
 | IAM service identities and impersonated ID tokens | keyless private renderer access | No browser credentials and no committed service-account key. |
 | Cloud Logging, Monitoring, and Trace | latency and availability evidence | Cloud Run request traces correlate with prompt-free structured stage logs; built-in metrics separate startup, request latency, GPU load, instances, and billable time. No story content is logged. |
 | NVIDIA Grounding DINO | in-container subject/object gate | A failed first candidate gets at most one bounded retry; fidelity failures never silently become the master. |
-| GKE Autopilot with one NVIDIA L4 | bounded anticipatory coordinator and warm Nemotron NIM experiment | Hides scene work inside reading time, cancels losing branches, and makes visual promotion measurable without moving source media off the Jetson. Deployment remains zero replicas until explicitly authorized. |
-| NVIDIA NIM for Nemotron Nano VL | structured multimodal scene promotion | A pinned, co-located model judges only the generated plate and sanitized visual contract, with one repair maximum. |
+| GKE Autopilot CPU API plus one separately scaled NVIDIA L4 | bounded anticipation and visual promotion | CPU releases no longer restart NIM; the L4 Deployment starts at zero and scales only for an authorized window. The v5 six-request gate passed. |
+| NVIDIA NIM for Nemotron Nano VL | structured multimodal scene promotion | A pinned model judges a temporary 512-pixel review copy and sanitized visual contract, with one repair maximum and Pydantic validation after compact xgrammar decoding. |
+| 80 GiB GKE persistent volume | NIM model-artifact cache | Avoids downloading the full model on every Pod replacement; it does not falsely claim to persist NIM 1.3.1's temporary low-memory TensorRT engine. |
 
 ### Experiment behind a gate
 
@@ -95,7 +105,7 @@ Run receives only the locally validated visual brief, style, seed, and fixed ren
 | TensorRT Edge-LLM Gemma 4 E2B INT4-AWQ | 5/5 normal plus adversarial schema, semantics, privacy, memory, and latency | Any OOM, privacy regression, schema miss, or no material end-to-end win. |
 | NVIDIA nvImageCodec/nvJPEG | byte-identical dimensions, master SSIM >= 0.995, depth SSIM >= 0.994, lower packaging p95 | Less than 20 ms p95 end-to-end gain or added cold-start cost larger than the gain. |
 | PyTorch 2.8 compile or CUDA Graph capture on Blackwell | same pixels or accepted visual A/B; lower repeated inference p95 | Compilation/capture increases cold readiness, memory, or failure rate more than warm savings. |
-| GKE-hosted NVIDIA NIM for Nemotron VL | six-case live harness passes acceptance, checksum, replay-cache, p95, and cost gates on one L4 | Never block the current projection; scale to zero and delete the cluster if startup, VRAM, quality, or cost misses its gate. |
+| A second NIM replica or GKE Inference Gateway | two or more approved GPUs plus a measured prefix/cache-aware routing win | Do not add routing machinery while there is only one L4 and no routing choice. |
 | Cloud Run Rapid Cache or concurrent GCS model loading | five cold starts beat the immutable image by at least 20% | Do not add Direct VPC, cache, or storage complexity for a marginal win. |
 
 ### Do not add to the critical path
@@ -182,12 +192,27 @@ in a finite canary job. A candidate must improve p95, not merely a single best s
 ### 5. Add reasoning where it improves quality without delaying delight
 
 Run the bounded GKE path described in `docs/anticipatory-story-engine.md`. The Jetson produces the
-privacy-safe visual contract before any cloud call. GKE queues one known next scene or at most two
-predicted branches, calls the private renderer, and supplies the synthetic master plus contract to
-the pinned Nemotron NIM. Nemotron returns a structured decision and may authorize one repair. The
-current image remains visible and moving throughout. The measured harness must pass before this
-path is enabled for the projector, and the GKE Deployment is scaled to zero and cluster deleted
-after the finite experiment.
+privacy-safe visual contract before any cloud call. A CPU-only coordinator queues one known next
+scene or at most two predicted branches and calls the private renderer through Workload Identity.
+A separate one-L4 Deployment supplies a maximum-512-pixel review copy and compact primitive-only
+schema to the pinned Nemotron NIM. Nemotron returns a Pydantic-validated decision and may authorize
+one repair. The full-resolution master and depth map never pass through that review resize.
+
+The 2026-09-03 v5 harness passed all gates: six of six accepted and verified, uncached candidates
+ready in 6.82-7.87 seconds, and three exact replays ready in 67.0-69.5 ms with zero provider work.
+That is a 32.6% uncached p95 improvement over v3. First-pass rendering itself took 0.396-0.477
+seconds; Nemotron review took 6.241-7.295 seconds. The compact critic responses used 91-108 output
+tokens beneath a 128-token ceiling. Estimated incremental renderer request cost for the three new
+scenes was $0.0003141211; it is explicitly not a complete GCP/NVIDIA bill estimate.
+
+Startup evidence is kept separate from request evidence. Three clean-node pulls of the exact NIM
+image took 233.111-272.844 seconds, and two successful TensorRT engine builds took 243.53-252.68
+seconds. An 80 GiB volume persists model artifacts. The coordinator and NIM are separate
+Deployments, and the CPU-only release script asserts that NIM replicas are unchanged, so routine
+API releases do not repeat that startup. The suspend guard scales only NIM to zero after the finite
+experiment. A least-privilege in-cluster watchdog provides a second scale-to-zero path after one
+hour even if the controlling laptop is lost; its projected Kubernetes token is unavailable to the
+model container and completed an authenticated zero-to-zero scale patch in the live cluster.
 
 ### 6. Close with physical evidence
 
@@ -210,8 +235,9 @@ The final acceptance is not a laptop screenshot. It includes:
 - No raw passage, learner identity, audio, camera frame, or credential in Cloud Logging, Trace,
   benchmark prompts, or committed artifacts.
 - Canaries receive zero traffic until they pass. The previous ready revision remains the rollback.
-- Minimum instances, NIM endpoints, GKE nodes, and export jobs are explicitly stopped or deleted
-  after their bounded window.
+- Minimum instances, NIM endpoints, GKE GPU Deployments, and export jobs are explicitly stopped or
+  deleted after their bounded window. The CPU coordinator may remain for inspection only after the
+  NIM Deployment has been verified at zero replicas.
 - A faster candidate that misses semantics is a failed experiment.
 
 ## Primary references

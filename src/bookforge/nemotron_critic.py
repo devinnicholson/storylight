@@ -16,7 +16,24 @@ from pydantic import Field, StringConstraints, model_validator
 from bookforge.domain import FrozenStrictModel
 
 MAX_CRITIC_IMAGE_BYTES = 8 * 1024 * 1024
+MAX_CRITIC_CONTRACT_UTF8_BYTES = 1_400
 DEFAULT_NEMOTRON_VL_MODEL = "nvidia/llama-3.1-nemotron-nano-vl-8b-v1"
+NEMOTRON_CRITIC_MAX_OUTPUT_TOKENS = 128
+NEMOTRON_CRITIC_WIRE_SCHEMA: dict[str, object] = {
+    "type": "object",
+    "properties": {
+        "f": {"type": "number"},
+        "c": {"type": "number"},
+        "p": {"type": "number"},
+        "i": {"type": "boolean"},
+        "t": {"type": "boolean"},
+        "d": {"type": "string"},
+        "r": {"type": "string"},
+        "x": {"type": "string"},
+    },
+    "required": ["f", "c", "p", "i", "t", "d", "r"],
+    "additionalProperties": False,
+}
 
 BearerTokenSource = Callable[[], Awaitable[str]]
 
@@ -50,6 +67,17 @@ class NemotronCriticRequest(FrozenStrictModel):
     ]
     expected_subjects: list[CriticPhrase] = Field(default_factory=list, max_length=8)
     forbidden_content: list[CriticPhrase] = Field(default_factory=list, max_length=8)
+
+    @model_validator(mode="after")
+    def bound_total_text_context(self) -> NemotronCriticRequest:
+        encoded = json.dumps(
+            self.model_dump(mode="json"),
+            separators=(",", ":"),
+            ensure_ascii=False,
+        ).encode("utf-8")
+        if len(encoded) > MAX_CRITIC_CONTRACT_UTF8_BYTES:
+            raise ValueError("critic visual contract exceeds the 1400-byte NIM context budget")
+        return self
 
 
 class NemotronCriticVerdict(FrozenStrictModel):
@@ -101,6 +129,7 @@ class NemotronVisionCritic:
         api_key: str = "",
         token_source: BearerTokenSource | None = None,
         allow_loopback_http: bool = False,
+        allow_cluster_http: bool = False,
         client_factory: Callable[..., httpx.AsyncClient] = httpx.AsyncClient,
     ) -> None:
         normalized_url = base_url.strip().rstrip("/")
@@ -110,7 +139,13 @@ class NemotronVisionCritic:
             and parsed_url.scheme == "http"
             and parsed_url.hostname in {"127.0.0.1", "::1", "localhost"}
         )
-        if parsed_url.scheme != "https" and not loopback_http:
+        cluster_http = (
+            allow_cluster_http
+            and parsed_url.scheme == "http"
+            and parsed_url.hostname is not None
+            and parsed_url.hostname.endswith(".svc.cluster.local")
+        )
+        if parsed_url.scheme != "https" and not loopback_http and not cluster_http:
             raise ValueError("Nemotron critic URL must use HTTPS")
         normalized_model = model.strip()
         if not normalized_model:
@@ -152,11 +187,14 @@ class NemotronVisionCritic:
         *,
         image_bytes: bytes,
         media_type: Literal["image/jpeg", "image/png"],
+        timeout_seconds: float | None = None,
     ) -> NemotronCriticEvidence:
         _validate_image(image_bytes, media_type)
+        request_timeout = self.timeout_seconds if timeout_seconds is None else timeout_seconds
+        if not math.isfinite(request_timeout) or not 1 <= request_timeout <= 300:
+            raise ValueError("Nemotron request timeout must be 1-300 seconds")
         headers = await self._headers()
         encoded = base64.b64encode(image_bytes).decode("ascii")
-        schema = NemotronCriticVerdict.model_json_schema()
         started = time.perf_counter()
         try:
             client = await self._get_client()
@@ -166,50 +204,59 @@ class NemotronVisionCritic:
                 json={
                     "model": self.model,
                     "temperature": 0,
-                    "max_tokens": 500,
+                    "max_tokens": NEMOTRON_CRITIC_MAX_OUTPUT_TOKENS,
                     "messages": [
                         {
                             "role": "system",
                             "content": (
-                                "You are a strict visual fidelity critic for projected "
-                                "storybook illustrations. Inspect the synthetic image against "
-                                "only the supplied visual brief. Never infer or request the "
-                                "original passage, reader identity, audio, or camera data. "
-                                "Return only schema-valid JSON."
+                                "Judge the illustration only against the visual brief. Return JSON "
+                                "using f=fidelity score, c=composition "
+                                "score, p=projection-legibility score, i=identity-consistent, "
+                                "t=unintended-text, d=decision, r=reason, and optional "
+                                "x=correction. "
+                                "Scores are "
+                                "0..1; d is accept, refine, or reject. Keep r under 12 words. "
+                                "Include x under 28 words only for refine or reject. Never request "
+                                "passage, reader, audio, or camera data."
                             ),
                         },
-                            {
-                                "role": "user",
-                                "content": [
-                                    {
-                                        "type": "image_url",
-                                        "image_url": {"url": f"data:{media_type};base64,{encoded}"},
-                                    },
-                                    {
-                                        "type": "text",
-                                        "text": json.dumps(
-                                            request.model_dump(mode="json"),
-                                            separators=(",", ":"),
-                                            ensure_ascii=False,
-                                        ),
-                                    },
-                                ],
-                            },
+                        {
+                            "role": "user",
+                            "content": [
+                                {
+                                    "type": "image_url",
+                                    "image_url": {"url": f"data:{media_type};base64,{encoded}"},
+                                },
+                                {
+                                    "type": "text",
+                                    "text": json.dumps(
+                                        request.model_dump(mode="json"),
+                                        separators=(",", ":"),
+                                        ensure_ascii=False,
+                                    ),
+                                },
+                            ],
+                        },
                     ],
                     "response_format": {
                         "type": "json_schema",
                         "json_schema": {
                             "name": "nemotron_critic_verdict",
                             "strict": True,
-                            "schema": schema,
+                            # NIM 1.3.1 falls back from xgrammar to the much slower
+                            # outlines backend for enums, ranges, patterns, and nullable
+                            # unions. Pydantic still enforces those constraints after the
+                            # compact wire object is generated.
+                            "schema": NEMOTRON_CRITIC_WIRE_SCHEMA,
                         },
                     },
                 },
+                timeout=request_timeout,
             )
             response.raise_for_status()
             payload = response.json()
             content = payload["choices"][0]["message"]["content"]
-            verdict = NemotronCriticVerdict.model_validate_json(content)
+            verdict = _verdict_from_wire(content)
         except (httpx.HTTPError, json.JSONDecodeError, KeyError, IndexError, ValueError) as error:
             raise NemotronCriticUnavailableError(
                 f"Nemotron critic request failed: {error}"
@@ -270,3 +317,25 @@ def _validate_image(image_bytes: bytes, media_type: str) -> None:
     }
     if not any(image_bytes.startswith(signature) for signature in signatures[media_type]):
         raise ValueError(f"critic image bytes do not match {media_type}")
+
+
+def _verdict_from_wire(content: str) -> NemotronCriticVerdict:
+    wire = json.loads(content)
+    if not isinstance(wire, dict):
+        raise ValueError("Nemotron critic verdict must be an object")
+    decision = wire.get("d")
+    return NemotronCriticVerdict.model_validate(
+        {
+            "fidelity_score": wire.get("f"),
+            "composition_score": wire.get("c"),
+            "projection_legibility_score": wire.get("p"),
+            "identity_consistent": wire.get("i"),
+            "unintended_text": wire.get("t"),
+            "decision": decision,
+            "reason": wire.get("r"),
+            # Some constrained decoders materialize an optional string as an
+            # empty/"None" sentinel. An accepted scene has no correction by
+            # definition; refine/reject still fail closed on a missing brief.
+            "correction_visual_brief": None if decision == "accept" else wire.get("x"),
+        }
+    )

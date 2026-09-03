@@ -10,6 +10,8 @@ IMAGE="${REGION}-docker.pkg.dev/${PROJECT_ID}/${REPOSITORY}/anticipatory:${IMAGE
 GSA="bookforge-anticipator@${PROJECT_ID}.iam.gserviceaccount.com"
 KSA="bookforge-anticipator"
 NAMESPACE="bookforge"
+GPU_DEPLOYMENT="bookforge-nemotron"
+API_DEPLOYMENT="bookforge-anticipatory"
 RENDERER_REGION="${BOOKFORGE_RENDERER_REGION:-us-central1}"
 RENDERER_SERVICE="${BOOKFORGE_RENDERER_SERVICE:-bookforge-scene-rtx}"
 MANIFEST="infra/gcp/k8s/anticipatory.yaml"
@@ -38,6 +40,17 @@ for command in gcloud jq kubectl; do
   fi
 done
 
+if ! command -v gke-gcloud-auth-plugin >/dev/null 2>&1; then
+  GCLOUD_SDK_ROOT="$(gcloud info --format='value(installation.sdk_root)')"
+  if [[ -x "${GCLOUD_SDK_ROOT}/bin/gke-gcloud-auth-plugin" ]]; then
+    export PATH="${GCLOUD_SDK_ROOT}/bin:${PATH}"
+  else
+    echo "Required command is missing: gke-gcloud-auth-plugin" >&2
+    echo "Install it with: gcloud components install gke-gcloud-auth-plugin" >&2
+    exit 1
+  fi
+fi
+
 ./infra/gcp/gke/preflight-anticipatory.sh
 
 GPU_SCALED=0
@@ -47,7 +60,7 @@ cleanup() {
   exit_code=$?
   if (( exit_code != 0 && GPU_SCALED == 1 )); then
     echo "Deployment failed; scaling the GKE GPU workload to zero." >&2
-    kubectl -n "${NAMESPACE}" scale deployment/bookforge-anticipatory --replicas=0 >/dev/null 2>&1 || true
+    kubectl -n "${NAMESPACE}" scale "deployment/${GPU_DEPLOYMENT}" --replicas=0 >/dev/null 2>&1 || true
   fi
   if (( exit_code != 0 && CLUSTER_CREATED == 1 )); then
     echo "Deployment failed; deleting the cluster created by this run." >&2
@@ -104,12 +117,27 @@ gcloud iam service-accounts create bookforge-anticipator \
   --project "${PROJECT_ID}" \
   --display-name "Bookforge GKE anticipatory story engine"
 
-gcloud run services add-iam-policy-binding "${RENDERER_SERVICE}" \
-  --project "${PROJECT_ID}" \
-  --region "${RENDERER_REGION}" \
-  --member "serviceAccount:${GSA}" \
-  --role roles/run.invoker \
-  --quiet
+grant_renderer_invoker() {
+  local attempt
+  for attempt in {1..12}; do
+    if gcloud run services add-iam-policy-binding "${RENDERER_SERVICE}" \
+      --project "${PROJECT_ID}" \
+      --region "${RENDERER_REGION}" \
+      --member "serviceAccount:${GSA}" \
+      --role roles/run.invoker \
+      --quiet; then
+      return 0
+    fi
+    if (( attempt == 12 )); then
+      echo "Service-account propagation did not finish after 12 attempts." >&2
+      return 1
+    fi
+    echo "Waiting for the new service account to propagate (${attempt}/12)." >&2
+    sleep 5
+  done
+}
+
+grant_renderer_invoker
 
 if ! gcloud container clusters describe "${CLUSTER}" \
   --project "${PROJECT_ID}" \
@@ -159,20 +187,22 @@ RENDERER_URL="$(
     --region "${RENDERER_REGION}" \
     --format 'value(status.url)'
 )"
-kubectl -n "${NAMESPACE}" set image deployment/bookforge-anticipatory \
+kubectl -n "${NAMESPACE}" set image "deployment/${API_DEPLOYMENT}" \
   "anticipatory-api=${IMMUTABLE_IMAGE}"
-kubectl -n "${NAMESPACE}" set env deployment/bookforge-anticipatory \
+kubectl -n "${NAMESPACE}" set env "deployment/${API_DEPLOYMENT}" \
   "BOOKFORGE_RENDERER_URL=${RENDERER_URL}" \
   "BOOKFORGE_RENDERER_AUDIENCE=${RENDERER_URL}"
 
 GPU_SCALED=1
-kubectl -n "${NAMESPACE}" scale deployment/bookforge-anticipatory --replicas=1
-kubectl -n "${NAMESPACE}" rollout status deployment/bookforge-anticipatory --timeout=30m
+kubectl -n "${NAMESPACE}" scale "deployment/${GPU_DEPLOYMENT}" --replicas=1
+kubectl -n "${NAMESPACE}" rollout status "deployment/${GPU_DEPLOYMENT}" --timeout=30m
+kubectl -n "${NAMESPACE}" rollout status "deployment/${API_DEPLOYMENT}" --timeout=5m
 GPU_SCALED=0
 
 printf '%s\n' \
   "Bookforge anticipatory GKE workload is ready." \
   "Image: ${IMMUTABLE_IMAGE}" \
+  "For later CPU-only releases, use infra/gcp/gke/deploy-anticipatory-api.sh." \
   "Open a private local tunnel with:" \
   "  kubectl -n ${NAMESPACE} port-forward service/bookforge-anticipatory 18082:8080" \
   "Suspend the billable GPU immediately after the experiment with:" \

@@ -2,6 +2,9 @@
 
 from __future__ import annotations
 
+import asyncio
+import math
+import time
 from collections.abc import Awaitable, Callable
 from contextlib import asynccontextmanager
 from dataclasses import dataclass
@@ -28,12 +31,45 @@ AssetId = Annotated[str, StringConstraints(pattern=r"^asset_[a-f0-9]{64}$")]
 Probe = Callable[[], Awaitable[tuple[bool, str]]]
 
 
+class SingleFlightPrewarm:
+    """Coalesce concurrent paid warmups and reuse a recent result."""
+
+    def __init__(
+        self,
+        operation: Probe,
+        *,
+        cooldown_seconds: float = 60,
+        clock: Callable[[], float] = time.monotonic,
+    ) -> None:
+        if not math.isfinite(cooldown_seconds) or not 1 <= cooldown_seconds <= 900:
+            raise ValueError("prewarm cooldown must be 1-900 seconds")
+        self.operation = operation
+        self.cooldown_seconds = cooldown_seconds
+        self.clock = clock
+        self._lock = asyncio.Lock()
+        self._completed_at = float("-inf")
+        self._result: tuple[bool, str] | None = None
+
+    async def __call__(self) -> tuple[bool, str]:
+        async with self._lock:
+            if (
+                self._result is not None
+                and self.clock() - self._completed_at < self.cooldown_seconds
+            ):
+                return self._result[0], f"{self._result[1]} (recent result reused)"
+            result = await self.operation()
+            self._completed_at = self.clock()
+            self._result = result
+            return result
+
+
 @dataclass(frozen=True, slots=True)
 class AnticipatoryRuntime:
     orchestrator: AnticipatorySceneOrchestrator
     asset_store: MemorySceneAssetStore
     renderer_probe: Probe
     critic_probe: Probe
+    runtime_prewarm: Probe | None = None
 
 
 RuntimeFactory = Callable[[], AnticipatoryRuntime]
@@ -98,6 +134,17 @@ def create_anticipatory_service(runtime_factory: RuntimeFactory) -> FastAPI:
     ) -> dict[str, str | bool]:
         renderer = await _runtime(request).renderer_probe()
         return {"ready": renderer[0], "detail": renderer[1]}
+
+    @app.post("/v1/runtime:prewarm")
+    async def prewarm_runtime(
+        _payload: RendererProbeAuthorization,
+        request: Request,
+    ) -> dict[str, str | bool]:
+        prewarm = _runtime(request).runtime_prewarm
+        if prewarm is None:
+            raise HTTPException(status_code=501, detail="runtime prewarm is not configured")
+        ready = await prewarm()
+        return {"ready": ready[0], "detail": ready[1]}
 
     @app.post(
         "/v1/anticipations",

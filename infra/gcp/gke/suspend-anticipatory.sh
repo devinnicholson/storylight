@@ -7,7 +7,7 @@ CLUSTER="${BOOKFORGE_GKE_CLUSTER:-bookforge-anticipatory}"
 
 if [[ "${BOOKFORGE_GKE_SUSPEND:-}" != "I_UNDERSTAND_THIS_STOPS_THE_GKE_GPU" ]]; then
   printf '%s\n' \
-    "Dry guard active. This would scale bookforge-anticipatory to zero in:" \
+    "Dry guard active. This would scale bookforge-nemotron to zero in:" \
     "  project: ${PROJECT_ID}" \
     "  cluster: ${CLUSTER} (${REGION})" \
     "" \
@@ -18,6 +18,6 @@ fi
 gcloud container clusters get-credentials "${CLUSTER}" \
   --project "${PROJECT_ID}" \
   --region "${REGION}"
-kubectl -n bookforge scale deployment/bookforge-anticipatory --replicas=0
-kubectl -n bookforge rollout status deployment/bookforge-anticipatory --timeout=10m
+kubectl -n bookforge scale deployment/bookforge-nemotron --replicas=0
+kubectl -n bookforge rollout status deployment/bookforge-nemotron --timeout=10m
 echo "Bookforge anticipatory GPU workload is scaled to zero."

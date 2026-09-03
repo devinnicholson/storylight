@@ -203,6 +203,7 @@ source = { editable = "." }
 dependencies = [
     { name = "fastapi" },
     { name = "httpx", extra = ["http2"] },
+    { name = "pillow" },
     { name = "pydantic" },
     { name = "pydantic-settings" },
     { name = "uvicorn", extra = ["standard"] },
@@ -235,6 +236,7 @@ requires-dist = [
     { name = "httpx", extras = ["http2"], specifier = ">=0.28,<1" },
     { name = "mlx-whisper", marker = "extra == 'mac-asr'", specifier = ">=0.4.3" },
     { name = "modal", marker = "extra == 'modal-authoring'", specifier = ">=1.4,<2" },
+    { name = "pillow", specifier = ">=11,<13" },
     { name = "pydantic", specifier = ">=2.10,<3" },
     { name = "pydantic-settings", specifier = ">=2.7,<3" },
     { name = "tensorboard", marker = "extra == 'jax-analysis'", specifier = ">=2.20,<3" },

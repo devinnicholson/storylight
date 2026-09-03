@@ -13,7 +13,11 @@ from bookforge.anticipatory import (
     RenderedScene,
 )
 from bookforge.anticipatory_gcp import MemorySceneAssetStore
-from bookforge.anticipatory_service import AnticipatoryRuntime, create_anticipatory_service
+from bookforge.anticipatory_service import (
+    AnticipatoryRuntime,
+    SingleFlightPrewarm,
+    create_anticipatory_service,
+)
 from bookforge.nemotron_critic import (
     NemotronCriticDecision,
     NemotronCriticEvidence,
@@ -96,7 +100,7 @@ def test_http_service_accepts_only_scene_contract_and_commits_candidate() -> Non
         return True, "ready"
 
     app = create_anticipatory_service(
-        lambda: AnticipatoryRuntime(orchestrator, store, probe, probe)
+        lambda: AnticipatoryRuntime(orchestrator, store, probe, probe, probe)
     )
     with TestClient(app) as client:
         health = client.get("/health")
@@ -110,6 +114,12 @@ def test_http_service_accepts_only_scene_contract_and_commits_candidate() -> Non
             json={"authorization": "I_UNDERSTAND_THIS_MAY_WAKE_A_BILLABLE_GPU"},
         )
         assert renderer_probe.status_code == 200
+        runtime_prewarm = client.post(
+            "/v1/runtime:prewarm",
+            json={"authorization": "I_UNDERSTAND_THIS_MAY_WAKE_A_BILLABLE_GPU"},
+        )
+        assert runtime_prewarm.status_code == 200
+        assert runtime_prewarm.json() == {"ready": True, "detail": "ready"}
 
         unsafe = _payload()
         unsafe["candidates"][0]["source_text"] = "private passage"
@@ -179,3 +189,54 @@ def test_readiness_fails_when_either_gpu_dependency_is_unavailable() -> None:
         assert response.status_code == 503
         assert response.json()["critic"] == {"ready": False, "detail": "critic loading"}
         assert renderer_calls == 0
+
+
+def test_runtime_prewarm_requires_explicit_authorization_and_configuration() -> None:
+    store = MemorySceneAssetStore()
+    orchestrator = AnticipatorySceneOrchestrator(renderer=Renderer(), critic=Critic())
+
+    async def probe() -> tuple[bool, str]:
+        return True, "ready"
+
+    app = create_anticipatory_service(
+        lambda: AnticipatoryRuntime(orchestrator, store, probe, probe)
+    )
+    with TestClient(app) as client:
+        assert client.post("/v1/runtime:prewarm", json={}).status_code == 422
+        response = client.post(
+            "/v1/runtime:prewarm",
+            json={"authorization": "I_UNDERSTAND_THIS_MAY_WAKE_A_BILLABLE_GPU"},
+        )
+        assert response.status_code == 501
+
+
+def test_paid_runtime_prewarm_is_single_flight_and_cooldown_bounded() -> None:
+    async def scenario() -> None:
+        calls = 0
+        started = asyncio.Event()
+        release = asyncio.Event()
+        now = 10.0
+
+        async def operation() -> tuple[bool, str]:
+            nonlocal calls
+            calls += 1
+            started.set()
+            await release.wait()
+            return True, "both GPU paths warm"
+
+        gate = SingleFlightPrewarm(
+            operation,
+            cooldown_seconds=60,
+            clock=lambda: now,
+        )
+        first = asyncio.create_task(gate())
+        await started.wait()
+        second = asyncio.create_task(gate())
+        release.set()
+        results = await asyncio.gather(first, second)
+        assert calls == 1
+        assert results[0] == (True, "both GPU paths warm")
+        assert results[1][0] is True
+        assert "recent result reused" in results[1][1]
+
+    asyncio.run(scenario())

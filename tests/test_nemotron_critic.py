@@ -7,6 +7,8 @@ from pydantic import ValidationError
 
 from bookforge.nemotron_critic import (
     DEFAULT_NEMOTRON_VL_MODEL,
+    NEMOTRON_CRITIC_MAX_OUTPUT_TOKENS,
+    NEMOTRON_CRITIC_WIRE_SCHEMA,
     NemotronCriticDecision,
     NemotronCriticRequest,
     NemotronCriticUnavailableError,
@@ -39,6 +41,19 @@ def _verdict() -> dict[str, object]:
     }
 
 
+def _wire_verdict() -> dict[str, object]:
+    verdict = _verdict()
+    return {
+        "f": verdict["fidelity_score"],
+        "c": verdict["composition_score"],
+        "p": verdict["projection_legibility_score"],
+        "i": verdict["identity_consistent"],
+        "t": verdict["unintended_text"],
+        "d": verdict["decision"],
+        "r": verdict["reason"],
+    }
+
+
 def test_evaluate_sends_only_bounded_visual_contract_and_generated_image() -> None:
     observed: list[httpx.Request] = []
 
@@ -48,7 +63,7 @@ def test_evaluate_sends_only_bounded_visual_contract_and_generated_image() -> No
             200,
             json={
                 "model": DEFAULT_NEMOTRON_VL_MODEL,
-                "choices": [{"message": {"content": json.dumps(_verdict())}}],
+                "choices": [{"message": {"content": json.dumps(_wire_verdict())}}],
                 "usage": {"prompt_tokens": 50, "completion_tokens": 24},
             },
         )
@@ -77,6 +92,12 @@ def test_evaluate_sends_only_bounded_visual_contract_and_generated_image() -> No
     assert len(observed) == 1
     assert observed[0].headers["authorization"] == "Bearer signed-gcp-token"
     payload = json.loads(observed[0].content)
+    assert payload["max_tokens"] == NEMOTRON_CRITIC_MAX_OUTPUT_TOKENS
+    assert payload["response_format"]["json_schema"]["schema"] == (NEMOTRON_CRITIC_WIRE_SCHEMA)
+    serialized_schema = json.dumps(NEMOTRON_CRITIC_WIRE_SCHEMA)
+    assert '"enum"' not in serialized_schema
+    assert '"minimum"' not in serialized_schema
+    assert '"anyOf"' not in serialized_schema
     user_content = payload["messages"][1]["content"]
     assert user_content[0]["image_url"]["url"].startswith("data:image/jpeg;base64,")
     assert json.loads(user_content[1]["text"]) == _request().model_dump(mode="json")
@@ -84,6 +105,37 @@ def test_evaluate_sends_only_bounded_visual_contract_and_generated_image() -> No
     assert "source_text" not in serialized
     assert "audio" not in user_content[1]["text"]
     assert "camera frame" not in user_content[1]["text"]
+
+
+def test_evaluate_accepts_a_bounded_one_call_timeout_override() -> None:
+    observed: list[httpx.Request] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        observed.append(request)
+        return httpx.Response(
+            200,
+            json={"choices": [{"message": {"content": json.dumps(_wire_verdict())}}]},
+        )
+
+    async def scenario() -> None:
+        critic = NemotronVisionCritic(
+            base_url="http://127.0.0.1:8000",
+            allow_loopback_http=True,
+            timeout_seconds=30,
+            client_factory=lambda **kwargs: httpx.AsyncClient(
+                transport=httpx.MockTransport(handler), **kwargs
+            ),
+        )
+        await critic.evaluate(
+            _request(),
+            image_bytes=b"\xff\xd8\xffsynthetic-jpeg",
+            media_type="image/jpeg",
+            timeout_seconds=90,
+        )
+        await critic.aclose()
+
+    asyncio.run(scenario())
+    assert len(observed) == 1
 
 
 def test_request_rejects_raw_passage_field_at_schema_boundary() -> None:
@@ -94,6 +146,62 @@ def test_request_rejects_raw_passage_field_at_schema_boundary() -> None:
                 "source_text": "Mira whispered the private sentence.",
             }
         )
+
+
+def test_request_rejects_an_aggregate_contract_that_can_overrun_nim_context() -> None:
+    with pytest.raises(ValidationError, match="1400-byte NIM context budget"):
+        NemotronCriticRequest(
+            visual_brief="A" * 1_200,
+            expected_subjects=["B" * 300],
+            forbidden_content=["readable text"],
+        )
+
+
+@pytest.mark.parametrize(
+    ("decision", "correction", "wire_correction"),
+    [
+        ("accept", None, "None"),
+        (
+            "refine",
+            "Show only one fox and make the moon gate clearly visible.",
+            "Show only one fox and make the moon gate clearly visible.",
+        ),
+        (
+            "reject",
+            "Replace the scene with one fox entering one moon gate.",
+            "Replace the scene with one fox entering one moon gate.",
+        ),
+    ],
+)
+def test_compact_wire_protocol_supports_every_critic_decision(
+    decision: str,
+    correction: str | None,
+    wire_correction: str,
+) -> None:
+    wire = {**_wire_verdict(), "d": decision, "x": wire_correction}
+
+    critic = NemotronVisionCritic(
+        base_url="http://127.0.0.1:8000",
+        allow_loopback_http=True,
+        client_factory=lambda **kwargs: httpx.AsyncClient(
+            transport=httpx.MockTransport(
+                lambda request: httpx.Response(
+                    200,
+                    json={"choices": [{"message": {"content": json.dumps(wire)}}]},
+                )
+            ),
+            **kwargs,
+        ),
+    )
+    evidence = asyncio.run(
+        critic.evaluate(
+            _request(),
+            image_bytes=b"\xff\xd8\xffsynthetic-jpeg",
+            media_type="image/jpeg",
+        )
+    )
+    assert evidence.verdict.decision.value == decision
+    assert evidence.verdict.correction_visual_brief == correction
 
 
 def test_refinement_requires_actionable_visual_correction() -> None:
@@ -184,6 +292,20 @@ def test_critic_allows_only_explicit_loopback_http_for_same_pod_nim() -> None:
         )
 
 
+def test_critic_allows_only_explicit_kubernetes_service_http() -> None:
+    critic = NemotronVisionCritic(
+        base_url="http://bookforge-nemotron.bookforge.svc.cluster.local:8000",
+        allow_cluster_http=True,
+    )
+    assert critic.base_url.endswith(".svc.cluster.local:8000")
+
+    with pytest.raises(ValueError, match="HTTPS"):
+        NemotronVisionCritic(
+            base_url="http://nemotron.example:8000",
+            allow_cluster_http=True,
+        )
+
+
 def test_critic_reuses_one_bounded_http2_client_across_probe_and_inference() -> None:
     clients_created = 0
 
@@ -194,7 +316,7 @@ def test_critic_reuses_one_bounded_http2_client_across_probe_and_inference() -> 
             200,
             json={
                 "model": DEFAULT_NEMOTRON_VL_MODEL,
-                "choices": [{"message": {"content": json.dumps(_verdict())}}],
+                "choices": [{"message": {"content": json.dumps(_wire_verdict())}}],
             },
         )
 
