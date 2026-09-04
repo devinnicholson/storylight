@@ -67,8 +67,9 @@ _LEADING_ARTICLE = re.compile(r"^(?:a|an|the)\s+", re.IGNORECASE)
 _SEMANTIC_WORD = re.compile(r"[A-Za-z][A-Za-z'-]*")
 _PLACEMENT_MARGIN = 0.04
 _PLAN_CACHE_SCHEMA_VERSION = "1"
-_PLAN_CACHE_CONTRACT_REVISION = "semantic-v19-preserve-negation"
-LIVE_SCENE_RENDER_CONTRACT_REVISION = "subject-counts-constraints-v4"
+_PLAN_CACHE_CONTRACT_REVISION = "semantic-v20-retain-bounded-action"
+LIVE_SCENE_RENDER_CONTRACT_REVISION = "subject-counts-constraints-v5-action"
+CONCISE_RENDER_CONTRACT_REVISION = "klein-concise-v1"
 _EMAIL = re.compile(r"\b[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}\b", re.IGNORECASE)
 _PHONE = re.compile(r"(?<!\w)(?:\+?\d[\d\s()./-]{6,}\d)(?!\w)")
 _URL = re.compile(r"\b(?:https?://|www\.)\S+", re.IGNORECASE)
@@ -546,6 +547,7 @@ class LiveScenePlan(FrozenStrictModel):
         visual_style: str,
         seed: int,
         page_id: str = "page-01",
+        render_contract: Literal["full", "concise"] = "full",
     ) -> GeneratedPagePlan:
         validate_live_scene_plan_privacy(self, source_text=source_text)
         duration_ms = 8_000 + seed % 4_001
@@ -619,6 +621,28 @@ class LiveScenePlan(FrozenStrictModel):
             "Full-bleed cinematic 16:9 storybook projection with clear foreground/background "
             "depth, clean silhouettes, and no readable text, captions, logos, borders, or UI."
         )
+        if render_contract == "concise":
+            # The source stays local. Only already-sanitized semantic fields enter this contract.
+            from bookforge.tensorrt_slot_client import _semantic_privacy_separator
+
+            subject = re.sub(r"^a complete visible\s+", "", self.focus.prompt)
+            subject = re.sub(r",\s*shown\s+", ", ", subject)
+            detail_label = "Constraint" if accent_is_constraint else "Detail"
+            detail = (
+                f"{detail_label}: {_prompt_fragment(self.accent.prompt)}. "
+                if not _covered_visual_detail(self.accent.prompt, subject, self.background_prompt)
+                else ""
+            )
+            master_prompt = (
+                f"{_prompt_fragment(visual_style)}. "
+                f"Setting: {_prompt_fragment(self.background_prompt)}. "
+                f"Subject: {_prompt_fragment(subject)}. {detail}"
+                "One continuous scene, full-bleed, no text."
+            )
+            master_prompt = _semantic_privacy_separator(master_prompt, source_text=source_text)
+            validate_live_scene_plan_privacy(
+                self.model_copy(update={"art_direction": master_prompt}), source_text=source_text
+            )
         scene_spec = SceneSpecV2(
             master_prompt=master_prompt,
             negative_prompt=(
@@ -817,9 +841,8 @@ def _open_setting_guard(background_prompt: str) -> str:
 
 def _normalized_wire_focus(layer: LiveSceneWireFocus) -> str:
     subject = _bounded_words(layer.subject, 8)
-    # Model output is still capped at six words. Local source-grounded repair
-    # may add one concurrent action and needs room to retain both objects.
-    action = _normalized_action(_bounded_words(layer.action, 10))
+    # The wire schema already caps action length; a second word cap lost relations.
+    action = _normalized_action(layer.action)
     if layer.kind != "character":
         return f"{subject}, {action}".strip(" ,")
     # Gemma 1B occasionally describes a character through one body fragment.
@@ -1912,6 +1935,10 @@ def _proper_name_candidates(source_text: str) -> set[tuple[str, ...]]:
     for match in _CAPITALIZED_WORD.finditer(source_text):
         word = match.group(0)
         if word.casefold() in _NON_NAME_CAPITALIZED or word.casefold() in _COUNT_WORDS:
+            continue
+        if word.casefold() == "nothing" and re.match(
+            r"\s+(?:glows|floats|moves|happens|appears)\b", source_text[match.end() :], re.I
+        ):
             continue
         if word.casefold() == "exactly":
             following = _privacy_tokens(source_text[match.end() :])

@@ -304,6 +304,9 @@ def _semantic_privacy_separator(value: str, *, source_text: str) -> str:
 
     value = re.sub(r"\binstead\s+of\b", "rather than", value, flags=re.IGNORECASE)
     value = re.sub(r"\bno\s+other\b", "no additional", value, flags=re.IGNORECASE)
+    value = re.sub(r"\bside\s+by\s+side\b", "next to each other", value, flags=re.IGNORECASE)
+    if re.match(r"(?i)^(?:no|not|nothing|without)\b", value):
+        value = re.sub(r"\bor\b", "nor", value, flags=re.IGNORECASE)
     words = re.findall(r"[^\W_]+", value, flags=re.UNICODE)
     source_tokens = _privacy_tokens(source_text)
     source_phrases = {
@@ -446,7 +449,7 @@ class TensorRTSlotModelClient(StructuredModelClient):
                 {
                     "messages": _slot_messages(""),
                     "max_tokens": max_output_tokens,
-                    "postprocessor": "slot-privacy-v2",
+                    "postprocessor": "slot-privacy-v3-relations",
                 },
                 sort_keys=True,
                 separators=(",", ":"),

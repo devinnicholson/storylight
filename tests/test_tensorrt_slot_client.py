@@ -60,6 +60,23 @@ def test_tensorrt_slot_client_requires_loopback() -> None:
         )
 
 
+def test_privacy_separator_keeps_relations_and_negative_coordination():
+    separate = tensorrt_slot_client._semantic_privacy_separator
+    assert "next to each other" in separate(
+        "two boats side by side", source_text="Two boats side by side."
+    )
+    negative = separate("nothing glows or floats", source_text="Nothing glows or floats.")
+    assert "nor" in negative
+    assert "alternatively" not in negative
+
+
+def test_generic_nothing_is_not_a_name_but_explicit_name_stays_protected():
+    from bookforge.live_scene_planner import _proper_name_candidates
+
+    assert ("nothing",) not in _proper_name_candidates("Nothing glows.")
+    assert ("nothing",) in _proper_name_candidates("A rabbit named Nothing rests.")
+
+
 def test_tensorrt_cache_identity_tracks_instruction_and_output_budget(monkeypatch) -> None:
     async def run() -> None:
         clients = []

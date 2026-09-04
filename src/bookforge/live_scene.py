@@ -1858,6 +1858,35 @@ def build_live_scene_provider(
             fidelity_mode=fidelity_mode,
             auto_prewarm_on_submit=auto_prewarm_on_submit,
         )
+    if selected == "modal_klein":
+        if cache is None or planner is None:
+            raise ValueError("Klein candidate requires an AssetCache and private model planner")
+        if enable_motion:
+            raise ValueError("Klein candidate currently generates artwork/depth, not video")
+        from bookforge.finite_modal_provider import FiniteModalLiveSceneProvider
+        from bookforge.klein_scene_provider import KleinSceneProvider
+
+        return FiniteModalLiveSceneProvider(
+            KleinSceneProvider(
+                modal_executable=modal_executable,
+                session_gpu_cap_usd=modal_session_gpu_cap_usd,
+                plan_file=modal_plan_file,
+                ledger_path=modal_ledger_path,
+            ),
+            cache=cache,
+            output_root=output_root,
+            planner=planner,
+            enable_preview=False,
+            enable_motion=False,
+            master_width=1024,
+            master_height=576,
+            master_steps=4,
+            master_guidance_scale=1.0,
+            fidelity_mode="deferred",
+            auto_prewarm_on_submit=False,
+            provider_name="modal-klein-candidate",
+            render_contract="concise",
+        )
     if selected == "modal_warm":
         if cache is None:
             raise ValueError("The warm Modal live-scene provider requires an AssetCache")

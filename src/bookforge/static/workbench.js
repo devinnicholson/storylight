@@ -62,7 +62,6 @@ const workbenchQuery = new URLSearchParams(window.location.search);
 const readerSessionId = workbenchQuery.get("session") || "bookforge-live";
 const restoreLatestScene = !workbenchQuery.has("session")
   || workbenchQuery.get("restore") === "latest";
-const rehearsalMode = workbenchQuery.get("rehearsal") === "1";
 let liveSessionEventSource = null;
 let liveSessionStreamHealthy = false;
 let livePollTimer = null;
@@ -176,49 +175,6 @@ async function inspectRendererReadiness() {
   }
 }
 
-async function prepareRendererOnWorkbenchOpen() {
-  if (rendererPrewarming || Date.now() < rendererWarmUntil) return;
-  rendererPrewarming = true;
-  elements.prewarmButton.textContent = "Warming renderer…";
-  setRendererReadiness(
-    "warming",
-    "Waking the renderer while you write…",
-    "This text-free preparation is moved outside Generate and stays warm for ten minutes.",
-    {buttonDisabled: true},
-  );
-  try {
-    const response = await fetch("/v1/live-scene-provider/prewarm", {
-      method: "POST",
-      headers: {"Content-Type": "application/json"},
-      body: JSON.stringify({
-        prewarm_id: `workbench-${readerSessionId}-${Date.now().toString(36)}`,
-        include_motion: false,
-        scaledown_window_seconds: 600,
-      }),
-    });
-    const payload = await response.json().catch(() => ({}));
-    if (!response.ok) throw new Error(payload.detail || `Preparation failed (${response.status})`);
-    markRendererReady(payload.expires_in_seconds);
-  } catch (error) {
-    const recovered = await inspectRendererReadiness();
-    if (recovered !== "ready") {
-      elements.prewarmButton.textContent = "Retry renderer";
-      setRendererReadiness(
-        "error",
-        "Renderer background preparation failed",
-        error.message,
-      );
-    }
-  } finally {
-    rendererPrewarming = false;
-  }
-}
-
-async function initializeRendererPreparation() {
-  const state = await inspectRendererReadiness();
-  if (state === "idle") await prepareRendererOnWorkbenchOpen();
-}
-
 async function warmEdgePlanner() {
   try {
     // Fixed synthetic input only. This can load the private Jetson model while
@@ -320,7 +276,7 @@ async function prewarmRenderer() {
       : post("/v1/live-scene-provider/prewarm", {
           prewarm_id: `rehearsal-${Date.now().toString(36)}`,
           include_motion: false,
-          scaledown_window_seconds: 600,
+          scaledown_window_seconds: 90,
         });
     const [rendererResult, plannerResult] = await Promise.allSettled([
       rendererPreparation,
@@ -1269,9 +1225,7 @@ document.addEventListener("visibilitychange", () => {
     void warmEdgePlanner();
   }
 });
-void initializeRendererPreparation().then(() => {
-  if (rehearsalMode && currentPlanKey().length >= 3) void prewarmRenderer();
-});
+void inspectRendererReadiness();
 window.addEventListener("beforeunload", () => {
   window.clearInterval(edgePlannerKeepWarmTimer);
   window.clearTimeout(rendererWarmExpiryTimer);

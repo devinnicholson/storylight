@@ -773,6 +773,24 @@ def test_master_prompt_does_not_require_a_person_or_override_subject_count(subje
     assert "Honor specified positions, scale, and physical contact" in prompt
 
 
+def test_bounded_action_retains_relation_after_ten_words_and_concise_assembly():
+    action = "holds a small cup in the left paw while sitting below a tree"
+    plan = LiveSceneWirePlan(
+        background_prompt="quiet meadow",
+        focus=LiveSceneWireFocus(kind="character", subject="mouse", action=action),
+        magic=LiveSceneWireMagic(kind="effect", prompt="none"),
+    ).to_live_scene_plan()
+    assert "below a tree" in plan.focus.prompt
+    page = plan.to_page(
+        source_text="A peaceful evening.",
+        visual_style="watercolor",
+        seed=17,
+        render_contract="concise",
+    )
+    assert "below a tree" in page.scene_spec.master_prompt
+    assert "complete visible" not in page.scene_spec.master_prompt
+
+
 @pytest.mark.parametrize(
     ("accent", "duplicate"),
     [

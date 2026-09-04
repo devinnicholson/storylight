@@ -8,7 +8,10 @@ import pytest
 
 
 @pytest.mark.parametrize("failing_window", [False, True])
-def test_nsight_failure_restores_planner_and_kiosk(tmp_path, monkeypatch, failing_window):
+@pytest.mark.parametrize("graph_detail", ["graph", "node"])
+def test_nsight_failure_restores_planner_and_kiosk(
+    tmp_path, monkeypatch, failing_window, graph_detail
+):
     spec = importlib.util.spec_from_file_location(
         "nsight_check", "deploy/jetson/profile-planner-nsight.py"
     )
@@ -27,14 +30,18 @@ def test_nsight_failure_restores_planner_and_kiosk(tmp_path, monkeypatch, failin
     monkeypatch.setattr(
         socket, "socket", lambda: nullcontext(SimpleNamespace(bind=lambda addr: None))
     )
-    monkeypatch.setattr(sys, "argv", ["profile", "--output", str(tmp_path / "report")])
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        ["profile", "--output", str(tmp_path / "report"), "--graph-detail", graph_detail],
+    )
     calls = []
 
     def systemctl(*args, **kwargs):
         calls.append(args)
         return SimpleNamespace(returncode=0)
 
-    def window(output, profile):
+    def window(output, profile, graph_detail="graph"):
         if profile == failing_window:
             raise RuntimeError("synthetic capture failure")
         return {"requests": []}

@@ -91,6 +91,25 @@ def test_model_planner_rejects_completed_deterministic_fallback_cache() -> None:
     )
 
 
+def test_candidate_and_full_render_contract_caches_are_not_interchangeable() -> None:
+    from bookforge.live_scene_planner import (
+        CONCISE_RENDER_CONTRACT_REVISION,
+        LIVE_SCENE_RENDER_CONTRACT_REVISION,
+    )
+
+    pack = SimpleNamespace(
+        compiler_model="llm", compiler_contract_revision=CONCISE_RENDER_CONTRACT_REVISION
+    )
+    assert not _completed_pack_matches_planner_mode(pack, planner_mode="model")
+    assert _completed_pack_matches_planner_mode(
+        pack, planner_mode="model", render_revision=CONCISE_RENDER_CONTRACT_REVISION
+    )
+    pack.compiler_contract_revision = LIVE_SCENE_RENDER_CONTRACT_REVISION
+    assert not _completed_pack_matches_planner_mode(
+        pack, planner_mode="model", render_revision=CONCISE_RENDER_CONTRACT_REVISION
+    )
+
+
 def test_live_scene_api_progresses_to_resolvable_motion_scene() -> None:
     with TestClient(app) as client:
         created = client.post("/v1/live-scenes", json=_payload())

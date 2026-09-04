@@ -60,6 +60,7 @@ def request(passage: str) -> dict:
         "messages": [{"role": "system", "content": SYSTEM}, {"role": "user", "content": passage}],
     }
     started = time.perf_counter()
+    start_epoch_ns = time.time_ns()
     req = urllib.request.Request(
         f"http://127.0.0.1:{PORT}/v1/chat/completions",
         data=json.dumps(body).encode(),
@@ -67,7 +68,12 @@ def request(passage: str) -> dict:
     )
     with urllib.request.urlopen(req, timeout=25) as response:
         result = json.load(response)
-    return {"http_ms": (time.perf_counter() - started) * 1000, "response": result}
+    return {
+        "http_ms": (time.perf_counter() - started) * 1000,
+        "response": result,
+        "start_epoch_ns": start_epoch_ns,
+        "end_epoch_ns": time.time_ns(),
+    }
 
 
 def terminate(process: subprocess.Popen, profile: bool = False) -> None:
@@ -84,7 +90,7 @@ def terminate(process: subprocess.Popen, profile: bool = False) -> None:
         process.wait(timeout=10)
 
 
-def run_window(output: Path, profile: bool) -> dict:
+def run_window(output: Path, profile: bool, graph_detail: str = "graph") -> dict:
     label = "profiled" if profile else "baseline"
     env = {
         key: os.environ[key]
@@ -100,7 +106,7 @@ def run_window(output: Path, profile: bool) -> dict:
             "--trace=cuda,nvtx,osrt",
             "--sample=none",
             "--cpuctxsw=none",
-            "--cuda-graph-trace=graph",
+            f"--cuda-graph-trace={graph_detail}",
             "--duration=100",
             "--kill=sigterm",
             "--force-overwrite=false",
@@ -125,6 +131,7 @@ def run_window(output: Path, profile: bool) -> dict:
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--output", type=Path, required=True)
+    parser.add_argument("--graph-detail", choices=("graph", "node"), default="graph")
     args = parser.parse_args()
     if os.geteuid() == 0:
         raise SystemExit("Run as the Jetson user, not root")
@@ -143,6 +150,7 @@ def main() -> None:
     report = {
         "boundary": "synthetic direct HTTP, not production prompt or end-to-end scene latency",
         "passages": PASSAGES,
+        "graph_detail": args.graph_detail,
     }
 
     def interrupted(*_):
@@ -155,7 +163,7 @@ def main() -> None:
         systemctl("stop", PLANNER)
         systemctl("stop", FALLBACK)
         report["baseline"] = run_window(args.output, False)
-        report["profiled"] = run_window(args.output, True)
+        report["profiled"] = run_window(args.output, True, graph_detail=args.graph_detail)
     finally:
         (args.output / "measurements.json").write_text(json.dumps(report, indent=2) + "\n")
         try:

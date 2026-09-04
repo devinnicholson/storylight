@@ -42,6 +42,7 @@ class Settings(BaseSettings):
         "fake",
         "modal",
         "modal_warm",
+        "modal_klein",
         "gcp_cloud_run",
         "gcp_resilient",
     ] = "auto"

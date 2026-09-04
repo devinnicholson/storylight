@@ -1,0 +1,8 @@
+{
+  "monthly_credit_usd": 30.0,
+  "workspace_usage_before_live_scenes_usd": 13.13786456,
+  "billing_delay_reserve_usd": 2.0,
+  "hard_stop_workspace_total_usd": 28.0,
+  "maximum_new_spend_usd": 10.0,
+  "note": "User-approved overnight allowance September 4. Conservative reservations are not a provider-enforced cap. Include separate finite qualification/build usage in handoff."
+}

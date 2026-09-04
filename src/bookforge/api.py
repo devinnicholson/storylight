@@ -88,7 +88,10 @@ from bookforge.live_scene import (
     build_live_scene_provider,
     live_scene_request_seed,
 )
-from bookforge.live_scene_planner import LIVE_SCENE_RENDER_CONTRACT_REVISION
+from bookforge.live_scene_planner import (
+    CONCISE_RENDER_CONTRACT_REVISION,
+    LIVE_SCENE_RENDER_CONTRACT_REVISION,
+)
 from bookforge.model_client import (
     ModelUnavailableError,
     StructuredModelClient,
@@ -121,13 +124,14 @@ def _completed_pack_matches_planner_mode(
     pack: StoryPack,
     *,
     planner_mode: str,
+    render_revision: str = LIVE_SCENE_RENDER_CONTRACT_REVISION,
 ) -> bool:
     """Prevent an old generic fallback from shadowing a real model-planned retry."""
 
     compiler = pack.compiler_model.casefold()
     if planner_mode == "model":
         return (
-            pack.compiler_contract_revision == LIVE_SCENE_RENDER_CONTRACT_REVISION
+            pack.compiler_contract_revision == render_revision
             and not any(marker in compiler for marker in ("deterministic", "fallback", "fixture"))
         )
     if compiler.startswith("deterministic-live-scene-planner-"):
@@ -226,6 +230,11 @@ async def lifespan(app: FastAPI):
         if pack is not None and not _completed_pack_matches_planner_mode(
             pack,
             planner_mode=settings.live_scene_planner,
+            render_revision=(
+                CONCISE_RENDER_CONTRACT_REVISION
+                if settings.live_scene_backend == "modal_klein"
+                else LIVE_SCENE_RENDER_CONTRACT_REVISION
+            ),
         ):
             return None
         return pack

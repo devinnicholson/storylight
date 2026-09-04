@@ -5,7 +5,7 @@
 
   function validCorners(points) {
     if (!Array.isArray(points) || points.length !== 4) return false;
-    if (points.some(p => !Number.isFinite(p.x) || !Number.isFinite(p.y) || p.x < 0 || p.x > 1 || p.y < 0 || p.y > 1)) return false;
+    if (points.some(p => !p || !Number.isFinite(p.x) || !Number.isFinite(p.y) || p.x < 0 || p.x > 1 || p.y < 0 || p.y > 1)) return false;
     const crosses = points.map((a, i) => {
       const b = points[(i + 1) % 4], c = points[(i + 2) % 4];
       return (b.x - a.x) * (c.y - b.y) - (b.y - a.y) * (c.x - b.x);
@@ -84,7 +84,7 @@
         if (now - sampleStart >= 5000) {
           const fps = sampleFrames * 1000 / (now - sampleStart);
           const renderer = rendererTelemetry();
-          const renderFps = renderer && previousRenderCount !== null
+          const renderFps = renderer && previousRenderCount !== null && renderer.renderedFrames >= previousRenderCount
             ? (renderer.renderedFrames - previousRenderCount) * 1000 / (now - sampleStart) : null;
           previousRenderCount = renderer?.renderedFrames ?? null;
           if ((baselineFps && fps < baselineFps * .8) || (renderFps !== null && renderFps < renderer.targetFps * .8)) slowWindows += 1;
@@ -123,8 +123,14 @@
     }
     async function capture(activeEpoch) {
       if (activeEpoch !== epoch || metrics.mode !== "camera") return;
+      const settings = stream.getVideoTracks()[0].getSettings();
+      const currentIdentity = JSON.stringify([settings.deviceId, settings.width, settings.height]);
+      if (currentIdentity !== identity) {
+        identity = currentIdentity; mapping = null; point = null;
+        report("Camera or resolution changed. Calibrate the camera again.");
+      }
       if (projectionIdentity() !== calibration?.projection && mapping) {
-        mapping = null; report("Projection alignment changed. Calibrate the camera again.");
+        mapping = null; point = null; report("Projection alignment changed. Calibrate the camera again.");
       }
       if (!busy && !blocked() && video.readyState >= 2) {
         busy = true; sentAt = performance.now();
@@ -188,7 +194,7 @@
             sampleStart = performance.now(); sampleFrames = slowWindows = slowInference = 0; previousRenderCount = null;
             report(mapping ? "Local tracking ready. Move one hand over the calibrated surface." : "Camera ready. Calibrate its view before interacting.");
             raf = requestAnimationFrame(frame); void capture(activeEpoch);
-          } else if (data.type === "result" && data.id === frameId) {
+          } else if (data.type === "result" && busy && data.id === frameId) {
             clearTimeout(watchdog); busy = false; metrics.frames += 1;
             metrics.inferenceMs = data.inferenceMs; metrics.roundTripMs = performance.now() - sentAt;
             if (!panel.hidden && performance.now() - lastTimingUpdate >= 1000) {

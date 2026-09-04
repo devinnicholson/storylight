@@ -36,6 +36,7 @@ from bookforge.live_scene import (
     live_scene_request_seed,
 )
 from bookforge.live_scene_planner import (
+    CONCISE_RENDER_CONTRACT_REVISION,
     LIVE_SCENE_RENDER_CONTRACT_REVISION,
     LiveScenePlanner,
     LiveScenePlannerError,
@@ -1540,6 +1541,7 @@ class FiniteModalLiveSceneProvider:
         fidelity_mode: Literal["inline", "deferred"] = "inline",
         auto_prewarm_on_submit: bool = False,
         provider_name: str = PROVIDER_NAME,
+        render_contract: Literal["full", "concise"] = "full",
     ) -> None:
         self.provider = provider
         self.cache = cache
@@ -1554,6 +1556,7 @@ class FiniteModalLiveSceneProvider:
         self.fidelity_mode = fidelity_mode
         self.auto_prewarm_on_submit = auto_prewarm_on_submit
         self.provider_name = provider_name
+        self.render_contract = render_contract
         # Validate the complete render profile once at construction time.
         profile = FastSceneRequest(
             scene_id="render-profile",
@@ -1721,7 +1724,9 @@ class FiniteModalLiveSceneProvider:
                 page.scene_spec.master_prompt,
                 "Full-bleed luminous storybook projection, strong foreground/background depth, "
                 "clean silhouettes, no border, no interface.",
-            ),
+            )
+            if self.render_contract == "full"
+            else page.scene_spec.master_prompt,
             negative_prompt=(
                 f"{page.scene_spec.negative_prompt}, words, letters, captions, interface, border, "
                 "split screen, collage, photorealism, duplicate character"
@@ -2062,6 +2067,7 @@ class FiniteModalLiveSceneProvider:
                 source_text=request.text,
                 visual_style=request.visual_style,
                 seed=seed,
+                render_contract=self.render_contract,
             )
         except LiveScenePlannerError as error:
             # A generic privacy-safe prompt is useful for deterministic fixtures,
@@ -2079,7 +2085,15 @@ class FiniteModalLiveSceneProvider:
             page=planned_page,
             assets=[],
             compiler_model=result.metrics.model,
-        ).model_copy(update={"compiler_contract_revision": LIVE_SCENE_RENDER_CONTRACT_REVISION})
+        ).model_copy(
+            update={
+                "compiler_contract_revision": (
+                    CONCISE_RENDER_CONTRACT_REVISION
+                    if self.render_contract == "concise"
+                    else LIVE_SCENE_RENDER_CONTRACT_REVISION
+                )
+            }
+        )
         return _ResolvedLiveScenePlan(
             pack=pack,
             planning_ms=result.wall_ms,
