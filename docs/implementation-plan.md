@@ -2,6 +2,17 @@
 
 Last updated: 2026-09-03
 
+## Latest increment — warmup-independent cache and regional compilation
+
+The Jetson now returns validated memory/disk semantic-cache hits without waiting for model warmup;
+cache-miss inference still waits safely. Cache timing now includes disk lookup. All 1,115 tests
+pass. The compiled GPU-snapshot probe timed out at 480 seconds without a scene and was stopped.
+Regional compilation with CUDA graphs also failed; standard regional compilation completed,
+reducing warm image/depth/encoding median from 2.007 s to 1.638 s across six synthetic cases.
+Its first compiled warmup was 21.940 s, with a separate 84.643 s model download/load. This remains
+experimental, not a live provider switch or a fast cold-start claim. All test apps are stopped.
+See [measurements, failures, and next gate](cache-snapshot-optimization-2026-09-03.md).
+
 ## Latest increment — planner integrity and compiled renderer
 
 The second September 3 pass deployed count/name, open-book state, negation, unfinished-response,

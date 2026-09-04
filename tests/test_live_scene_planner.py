@@ -1326,6 +1326,79 @@ def test_structured_planner_reuses_privacy_gated_semantics_for_new_seed_and_styl
     assert second.metrics.output_tokens == 0
 
 
+@pytest.mark.parametrize("from_disk", [False, True])
+def test_cached_plans_do_not_wait_for_model_warmup(tmp_path: Path, from_disk: bool) -> None:
+    async def run() -> None:
+        warmup_started = asyncio.Event()
+        release_warmup = asyncio.Event()
+
+        class PausedWarmupStub(_ModelStub):
+            async def generate(self, *, system, prompt, output_type):
+                if output_type.__name__ == "_LiveScenePlannerWarmupOutput":
+                    warmup_started.set()
+                    await release_warmup.wait()
+                return await super().generate(system=system, prompt=prompt, output_type=output_type)
+
+        stub = PausedWarmupStub()
+        planner = StructuredLiveScenePlanner(
+            stub,
+            timeout_seconds=2,
+            persistent_cache_dir=tmp_path / "plans",
+        )
+        request = {
+            "text": "A child opens a quiet book while paper birds rise.",
+            "visual_style": "paper theater",
+            "seed": 23,
+        }
+        original = await planner.plan(**request)
+        if from_disk:
+            planner = StructuredLiveScenePlanner(
+                stub,
+                timeout_seconds=2,
+                persistent_cache_dir=tmp_path / "plans",
+            )
+        warmup = asyncio.create_task(planner.warmup())
+        await asyncio.wait_for(warmup_started.wait(), timeout=1)
+        try:
+            cached = await asyncio.wait_for(planner.plan(**request), timeout=0.5)
+            assert not warmup.done()
+            assert cached.cache_hit
+            assert cached.plan == original.plan
+            assert cached.metrics.input_tokens == cached.metrics.output_tokens == 0
+            assert len(stub.calls) == 1
+        finally:
+            release_warmup.set()
+            await warmup
+
+    asyncio.run(run())
+
+
+def test_persistent_cache_timing_includes_disk_lookup(tmp_path: Path, monkeypatch) -> None:
+    clock = [0.0]
+    monkeypatch.setattr("bookforge.live_scene_planner.perf_counter", lambda: clock[0])
+    planner = StructuredLiveScenePlanner(
+        _ModelStub(),
+        timeout_seconds=1,
+        persistent_cache_dir=tmp_path / "plans",
+    )
+    request = {
+        "text": "A child opens a quiet book while paper birds rise.",
+        "visual_style": "paper theater",
+        "seed": 23,
+    }
+    original = asyncio.run(planner.plan(**request))
+    planner._cache.clear()
+
+    def load_cache(_key):
+        clock[0] += 0.025
+        return original.plan, original.metrics
+
+    monkeypatch.setattr(planner, "_load_persistent_cache", load_cache)
+    cached = asyncio.run(planner.plan(**request))
+    assert cached.cache_hit
+    assert cached.wall_ms == pytest.approx(25)
+
+
 def test_structured_planner_cache_is_bounded_by_passage_and_reuses_new_styles() -> None:
     stub = _ModelStub()
     planner = StructuredLiveScenePlanner(

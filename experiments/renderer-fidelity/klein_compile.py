@@ -31,7 +31,7 @@ DEPTH_REVISION = "b4769fd619394250528294b658587285526fab1c"
     cpu=8,
     memory=65536,
 )
-def compare():
+def compare(regional: bool = False, mode: str = "reduce-overhead"):
     import diffusers
     import torch
     from transformers import pipeline
@@ -44,7 +44,12 @@ def compare():
         "width": 1024,
         "height": 576,
         "max_sequence_length": 128,
-        "compile": {"mode": "reduce-overhead", "fullgraph": True},
+        "compile": {
+            "mode": mode,
+            "fullgraph": True,
+            "scope": "repeated_blocks" if regional else "full_transformer",
+        },
+        "sample_order": "eager_then_compiled" if regional else "alternating",
         "depth_model": DEPTH_MODEL,
         "depth_revision": DEPTH_REVISION,
         "samples": [],
@@ -70,7 +75,7 @@ def compare():
     torch.cuda.synchronize()
     report["download_and_load_seconds"] = time.perf_counter() - started
     eager = pipe.transformer
-    compiled = torch.compile(eager, mode="reduce-overhead", fullgraph=True)
+    compiled = eager if regional else torch.compile(eager, mode=mode, fullgraph=True)
 
     def render(profile, prompt, seed):
         pipe.transformer = eager if profile == "eager" else compiled
@@ -126,23 +131,35 @@ def compare():
             depth_bytes,
         )
 
+    def collect(profile, index):
+        row, master_bytes, depth_bytes = render(
+            profile, STYLE + PROMPTS[index] + SUFFIX, 20260903 + index
+        )
+        stem = f"{profile}-{index}"
+        assets[f"{stem}.jpg"] = master_bytes
+        assets[f"{stem}-depth.jpg"] = depth_bytes
+        row.update(case=index, master_file=f"{stem}.jpg", depth_file=f"{stem}-depth.jpg")
+        report["samples"].append(row)
+        print(json.dumps(row), flush=True)
+
     try:
         for profile in ("eager", "compiled"):
+            if regional and profile == "compiled":
+                report["repeated_blocks"] = list(eager._repeated_blocks)
+                eager.compile_repeated_blocks(mode=mode, fullgraph=True)
             row, _, _ = render(profile, "A small amber lantern beside a quiet river.", 17)
             report["warmups"].append(row)
             print(json.dumps({"warmup": row}), flush=True)
-        for index, brief in enumerate(PROMPTS):
-            profiles = ("eager", "compiled") if index % 2 == 0 else ("compiled", "eager")
-            for profile in profiles:
-                row, master_bytes, depth_bytes = render(
-                    profile, STYLE + brief + SUFFIX, 20260903 + index
-                )
-                stem = f"{profile}-{index}"
-                assets[f"{stem}.jpg"] = master_bytes
-                assets[f"{stem}-depth.jpg"] = depth_bytes
-                row.update(case=index, master_file=f"{stem}.jpg", depth_file=f"{stem}-depth.jpg")
-                report["samples"].append(row)
-                print(json.dumps(row), flush=True)
+            if regional:
+                # Regional compilation mutates the blocks in place, so collect
+                # every eager result before enabling it. Record this order bias.
+                for index in range(len(PROMPTS)):
+                    collect(profile, index)
+        if not regional:
+            for index in range(len(PROMPTS)):
+                profiles = ("eager", "compiled") if index % 2 == 0 else ("compiled", "eager")
+                for profile in profiles:
+                    collect(profile, index)
     except Exception as error:
         report["failure"] = {"type": type(error).__name__, "detail": str(error)[:2000]}
         print(json.dumps(report["failure"]), flush=True)
@@ -150,11 +167,13 @@ def compare():
 
 
 @app.local_entrypoint()
-def main(output_dir: str):
+def main(output_dir: str, regional: bool = False, mode: str = "reduce-overhead"):
+    if mode not in {"default", "reduce-overhead"}:
+        raise ValueError("compile mode must be default or reduce-overhead")
     destination = Path(output_dir)
     destination.mkdir(parents=True, exist_ok=False)
     started = time.perf_counter()
-    call = compare.spawn()
+    call = compare.spawn(regional, mode)
     print(f"Recoverable function call: {call.object_id}", flush=True)
     report, assets = call.get()
     report.update(

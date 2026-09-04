@@ -2190,23 +2190,16 @@ class StructuredLiveScenePlanner:
         visual_style: str,
         seed: int,
     ) -> LiveScenePlanningResult:
-        warmup_task = self._warmup_task
-        if warmup_task is not None:
-            # The browser may submit while its text-free warmup is still
-            # loading the one-slot Ollama runtime. Let that bounded task finish
-            # before starting the plan's independent timeout budget.
-            with suppress(LiveScenePlannerError):
-                await asyncio.shield(warmup_task)
         text = _PLAN_TEXT_ADAPTER.validate_python(text)
         visual_style = _PLAN_STYLE_ADAPTER.validate_python(visual_style)
         if not 0 <= seed <= 2**32 - 1:
             raise ValueError("live-scene seed is outside uint32 range")
+        started = perf_counter()
         cache_key = self._cache_key(text=text)
         cached = self._cache.pop(cache_key, None)
         if cached is None and self.cache_entries and self.persistent_cache_dir is not None:
             cached = await asyncio.to_thread(self._load_persistent_cache, cache_key)
         if cached is not None:
-            started = perf_counter()
             plan, source_metrics = cached
             self._remember(cache_key, cached)
             validate_live_scene_plan_privacy(plan, source_text=text)
@@ -2225,6 +2218,12 @@ class StructuredLiveScenePlanner:
                 cache_hit=True,
             )
 
+        warmup_task = self._warmup_task
+        if warmup_task is not None:
+            # Only cache misses need the one-slot model. Keep warmup outside
+            # their independent inference timeout budget.
+            with suppress(LiveScenePlannerError):
+                await asyncio.shield(warmup_task)
         task = self._inflight.get(cache_key)
         if task is None:
             task = asyncio.create_task(
