@@ -2240,6 +2240,7 @@ document.addEventListener("keydown", (event) => {
   else if (key === "c") toggleCalibration();
   else if (key === "b") document.body.classList.toggle("blackout");
   else if (key === "h") document.body.classList.toggle("hud-hidden");
+  else if (key === "i") document.getElementById("handOpen").click();
 });
 
 window.addEventListener("resize", updateProjection);
@@ -2269,6 +2270,17 @@ elements.sessionLabel.textContent = SESSION_ID;
 loadCalibration();
 bindCalibrationHandles();
 updateProjection();
+window.bookforgeHands = window.BookforgeHands.init({
+  stage: elements.stage,
+  solve: homography,
+  projectionIdentity: () => JSON.stringify(state.corners),
+  rendererTelemetry: () => state.depthRenderer?.telemetry(),
+  blocked: () => state.livePlannerActive || document.hidden || document.body.classList.contains("blackout") || document.body.classList.contains("calibrating"),
+  screenToStage: (x, y) => window.BookforgeHands.project(
+    homography(state.corners, [{x: 0, y: 0}, {x: 1, y: 0}, {x: 1, y: 1}, {x: 0, y: 1}]),
+    {x: x / window.innerWidth, y: y / window.innerHeight},
+  ),
+});
 setupProjectorWakeLock();
 startProjectorTelemetry();
 void startProjector();

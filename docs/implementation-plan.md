@@ -2,6 +2,17 @@
 
 Last updated: 2026-09-03
 
+## Latest increment — optional local hand interaction and Nsight
+
+MediaPipe fingertip-driven fireflies are implemented behind explicit camera activation, with
+local pinned assets, worker isolation, single-frame backpressure, planar calibration, and
+performance stops. The actual CPU worker passed 20 repeated official-fixture frames on the Mac
+at a 14.5 ms warm median; physical Jetson camera/30 FPS acceptance remains open.
+A real Nsight Systems capture of the Jetson TensorRT planner completed and restored the planner
+and kiosk. It confirms 91 CUDA Graph executions; the synthetic baseline/profile medians were
+746.8/815.0 ms, not a production-speed improvement. No cloud service or live model route changed.
+See [implementation, measurements, and hardware gate](hand-interaction-and-nsight.md).
+
 ## Latest increment — offline renderer loading and restartable compilation
 
 Pinned Klein/DepthAnything weights now build on CPU and load offline in an isolated, portable

@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <meta name="theme-color" content="#02040d" />
     <title>Bookforge projection stage</title>
-    <link rel="stylesheet" href="/workbench-assets/projector.css?v=0.2.0-live17" />
+    <link rel="stylesheet" href="/workbench-assets/projector.css?v=0.2.0-live18" />
   </head>
   <body>
     <main id="projectionStage" aria-label="Bookforge projection stage">
@@ -40,6 +40,7 @@
         </div>
         <div class="generated-scene" id="generatedScene"></div>
       </section>
+      <canvas id="handFireflies" width="960" height="540" hidden aria-hidden="true"></canvas>
       <div class="calibration-grid" id="calibrationGrid">
         <div class="page-bounds"><span>book / active surface</span></div>
       </div>
@@ -94,6 +95,7 @@
         <button id="fullscreenButton" title="Fullscreen (F)">Fullscreen</button>
         <button id="calibrateButton" title="Calibration (C)">Calibrate</button>
         <button id="blackoutButton" title="Blackout (B)">Blackout</button>
+        <button id="handOpen" title="Local hand interaction (I)">Hand interaction</button>
       </div>
       <div class="calibration-actions" id="calibrationActions">
         <p>Drag the four corners to fit the projected surface.</p>
@@ -101,6 +103,21 @@
         <button id="resetCalibrationButton">Reset corners</button>
       </div>
       <p class="shortcut"><strong id="pageLabel">Page 1 of 1</strong> · [ ] changes page · Space advances · ← rewinds · H hides controls · live session <span id="sessionLabel"></span></p>
+    </aside>
+
+    <aside id="handPanel" hidden aria-label="Local hand interaction controls">
+      <div class="hand-panel-heading"><strong>Fireflies at your fingertips</strong><button id="handClose" aria-label="Close hand controls">×</button></div>
+      <p>Optional local camera tracking. No audio, camera upload, or new scene generation.</p>
+      <div class="hand-panel-actions">
+        <button id="handStart">Start camera</button>
+        <button id="handCalibrate">Align camera</button>
+        <button id="handDemo">Pointer preview</button>
+        <button id="handStop">Stop & release camera</button>
+      </div>
+      <p id="handStatus" role="status">Off. Start on the device with the webcam, or preview with your pointer.</p>
+      <small id="handTiming"></small>
+      <video id="handVideo" muted playsinline hidden aria-label="Unmirrored camera preview; click calibration targets here"></video>
+      <small>Keep the camera fixed. Calibration assumes your fingertip is near the projection surface. I opens these controls.</small>
     </aside>
 
     <div class="corner-handles" id="cornerHandles" aria-label="Projection calibration handles">
@@ -112,6 +129,7 @@
 
     <footer class="reader-line" id="readerLine" aria-label="Manual word alignment timeline"></footer>
     <div class="startup-error hidden" id="startupError"></div>
-    <script src="/workbench-assets/projector.js?v=0.2.0-live29"></script>
+    <script src="/workbench-assets/hand-interaction.js?v=1"></script>
+    <script src="/workbench-assets/projector.js?v=0.2.0-live30"></script>
   </body>
 </html>

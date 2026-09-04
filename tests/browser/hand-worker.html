@@ -1,0 +1,43 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>Bookforge local hand-worker acceptance</title>
+<h1>Local MediaPipe worker acceptance</h1>
+<p>Official test image only. No camera, audio, or scene-generation requests.</p>
+<button id="run">Run real worker test</button>
+<pre id="result">Not started</pre>
+<script>
+document.getElementById("run").onclick = async () => {
+  const button = document.getElementById("run"), output = document.getElementById("result");
+  button.disabled = true;
+  const rows = [], started = performance.now();
+  let worker, blob, id = 0, deadline;
+  function finish(result) {
+    clearTimeout(deadline); worker?.terminate();
+    output.textContent = JSON.stringify(result, null, 2); button.disabled = false;
+  }
+  try {
+    blob = await (await fetch("/fixture.jpg")).blob();
+    worker = new Worker("/workbench-assets/hand-tracking-worker.js?v=1");
+    deadline = setTimeout(() => finish({error: "Worker timed out"}), 45000);
+    const send = async () => {
+      const bitmap = await createImageBitmap(blob, {resizeWidth: 320});
+      worker.postMessage({type: "frame", id: ++id, bitmap, timestamp: performance.now()}, [bitmap]);
+    };
+    worker.onerror = event => finish({error: event.message});
+    worker.onmessage = async ({data}) => {
+      if (data.type === "error") { finish(data); return; }
+      if (data.type === "ready") { await send(); return; }
+      rows.push({inference_ms: data.inferenceMs, hand_detected: !!data.point});
+      if (rows.length < 20) { await send(); return; }
+      const sorted = rows.slice(1).map(row => row.inference_ms).sort((a, b) => a - b);
+      finish({
+        real_model: "MediaPipe Hand Landmarker float16/1", runtime: "0.10.32", delegate: "CPU worker",
+        fixture: "Google mediapipe-assets/right_hands.jpg", camera_used: false,
+        total_ms: performance.now() - started, warm_median_ms: sorted[9],
+        rows, resources: performance.getEntriesByType("resource").map(entry => entry.name),
+      });
+    };
+    worker.postMessage({type: "init"});
+  } catch (error) { finish({error: error.message}); }
+};
+</script>
