@@ -1095,6 +1095,49 @@ def test_privacy_gate_rejects_obvious_contact_data(unsafe_prompt: str) -> None:
         )
 
 
+@pytest.mark.parametrize(
+    ("source", "payload"),
+    (
+        ("In a room, a page reads orchid delta. A fox waits.", "orchid delta"),
+        ("In a room, a sign says password. A fox waits.", "password"),
+        ("In a room, a page reads secret code. A fox waits.", "secret code"),
+        ("In a room, a placard shows account details. A fox waits.", "account details"),
+        ("In a room, a private family note reads lark seven. A fox waits.", "lark seven"),
+        ("In a room, a poster reads orchid delta. A fox waits.", "orchid delta"),
+        ("In a room, a chalkboard reads orchid delta. A fox waits.", "orchid delta"),
+        ("In a room, a book reads orchid delta. A fox waits.", "orchid delta"),
+        ("In a room, a document reads orchid delta. A fox waits.", "orchid delta"),
+        ("In a room, a banner reads orchid delta. A fox waits.", "orchid delta"),
+        ("In a room, a tablet is engraved with orchid delta. A fox waits.", "orchid delta"),
+        ("In a room, a wall is inscribed with orchid delta. A fox waits.", "orchid delta"),
+        ("In a room, a shirt bears the words orchid delta. A fox waits.", "orchid delta"),
+        ("In a room, a sign spells out orchid delta. A fox waits.", "orchid delta"),
+        ("In a room, a poster contains the words orchid delta. A fox waits.", "orchid delta"),
+        ("In a room, a chalkboard features orchid delta. A fox waits.", "orchid delta"),
+        ("In a room, a door has orchid delta. A fox waits.", "orchid delta"),
+        ("In a room, a tattoo depicts the words orchid delta. A fox waits.", "orchid delta"),
+        ("In a room, a poster includes the words orchid delta. A fox waits.", "orchid delta"),
+        ("In a room, a poster had the words orchid delta. A fox waits.", "orchid delta"),
+        ("In a room, a poster with the words orchid delta hangs. A fox waits.", "orchid delta"),
+        ("In a room, on a poster are the words orchid delta. A fox waits.", "orchid delta"),
+        ("In a room, the words orchid delta appear on a poster. A fox waits.", "orchid delta"),
+        ("In a room, a poster carries the message orchid delta. A fox waits.", "orchid delta"),
+        ("In a room, a poster titled orchid delta hangs. A fox waits.", "orchid delta"),
+        ("In a room, a poster captioned orchid delta hangs. A fox waits.", "orchid delta"),
+        ("In a room, orchid delta is written on a poster. A fox waits.", "orchid delta"),
+    ),
+)
+def test_privacy_gate_rejects_printed_source_payload(source: str, payload: str) -> None:
+    plan_payload = _plan().model_dump()
+    plan_payload["accent"]["prompt"] = payload
+
+    with pytest.raises(LiveScenePlannerPrivacyError, match="printed source payload"):
+        validate_live_scene_plan_privacy(
+            LiveScenePlan.model_validate(plan_payload),
+            source_text=source,
+        )
+
+
 def test_privacy_gate_rejects_source_proper_name_candidate() -> None:
     source = "A child named Quenlora opens a glowing book beneath the moon."
     payload = _plan().model_dump()
@@ -1105,6 +1148,62 @@ def test_privacy_gate_rejects_source_proper_name_candidate() -> None:
             LiveScenePlan.model_validate(payload),
             source_text=source,
         )
+
+
+@pytest.mark.parametrize(
+    "name",
+    ("Li", "Bo", "Xi", "Élodie", "li", "élodie", "张伟"),
+)
+def test_privacy_gate_rejects_short_unicode_and_uncased_names(name: str) -> None:
+    plan_payload = _plan().model_dump()
+    plan_payload["accent"]["prompt"] = f"{name} beside a silver constellation"
+
+    with pytest.raises(LiveScenePlannerPrivacyError, match="proper-name candidate"):
+        validate_live_scene_plan_privacy(
+            LiveScenePlan.model_validate(plan_payload),
+            source_text=f"{name} enters the room. A fox waits.",
+        )
+
+
+@pytest.mark.parametrize("name", ("mary", "élodie", "li", "devin", "james", "chris", "iris"))
+def test_privacy_gate_rejects_lowercase_unmarked_actor_names(name: str) -> None:
+    payload = _plan().model_dump()
+    payload["accent"]["prompt"] = f"{name} beside a silver constellation"
+
+    with pytest.raises(LiveScenePlannerPrivacyError, match="proper-name candidate"):
+        validate_live_scene_plan_privacy(
+            LiveScenePlan.model_validate(payload),
+            source_text=f"{name} walks into the room. A fox waits.",
+        )
+
+
+@pytest.mark.parametrize(
+    "name",
+    ("mary jane", "james smith", "élodie martin", "li wei"),
+)
+def test_privacy_gate_rejects_lowercase_multiword_unmarked_actor_names(name: str) -> None:
+    payload = _plan().model_dump()
+    payload["accent"]["prompt"] = f"{name} beside a silver constellation"
+
+    with pytest.raises(LiveScenePlannerPrivacyError, match="proper-name candidate"):
+        validate_live_scene_plan_privacy(
+            LiveScenePlan.model_validate(payload),
+            source_text=f"{name} walks into the room. A fox waits.",
+        )
+
+
+@pytest.mark.parametrize(
+    "source",
+    (
+        "A magician shows a fox a lantern.",
+        "A window displays colorful toys.",
+        "A fox says fireflies are beautiful.",
+        "Each syllable a child reads aloud becomes a firefly.",
+        "A child reads a book beneath the moon.",
+    ),
+)
+def test_privacy_gate_allows_narrative_read_show_say_and_display_verbs(source: str) -> None:
+    validate_live_scene_plan_privacy(_plan(), source_text=source)
 
 
 @pytest.mark.parametrize(

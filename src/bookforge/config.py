@@ -47,7 +47,11 @@ class Settings(BaseSettings):
         "gcp_resilient",
     ] = "auto"
     live_scene_planner: Literal["deterministic", "model"] = "deterministic"
-    live_scene_planner_backend: Literal["configured", "tensorrt_slots"] = "configured"
+    live_scene_planner_backend: Literal[
+        "configured",
+        "tensorrt_slots",
+        "tensorrt_hybrid",
+    ] = "configured"
     live_scene_planner_base_url: str = "http://127.0.0.1:11435"
     live_scene_planner_model_name: str = "llm"
     live_scene_planner_max_output_tokens: Annotated[int, Field(ge=1, le=128)] = 64

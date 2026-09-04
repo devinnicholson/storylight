@@ -82,6 +82,22 @@ def test_planner_benchmark_can_target_tensorrt_slot_server() -> None:
     assert args.contract == "standard"
 
 
+def test_planner_benchmark_can_target_tensorrt_hybrid_candidate() -> None:
+    args = _parser().parse_args(
+        [
+            "--backend",
+            "tensorrt_hybrid",
+            "--base-url",
+            "http://127.0.0.1:11435",
+            "--contract",
+            "standard",
+        ]
+    )
+
+    assert args.backend == "tensorrt_hybrid"
+    assert args.contract == "standard"
+
+
 def test_contest_suite_has_twenty_unique_synthetic_cases() -> None:
     assert len(CONTEST_CASES) == 20
     assert len({case.case_id for case in CONTEST_CASES}) == 20

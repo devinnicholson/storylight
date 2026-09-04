@@ -8,7 +8,6 @@ import json
 import os
 import re
 import tempfile
-import unicodedata
 from collections import OrderedDict
 from contextlib import suppress
 from pathlib import Path
@@ -17,6 +16,7 @@ from typing import Annotated, Literal, Protocol
 
 from pydantic import ConfigDict, Field, StringConstraints, TypeAdapter
 
+from bookforge import privacy_policy
 from bookforge.domain import (
     AmbientEffect,
     AmbientMotion,
@@ -29,6 +29,20 @@ from bookforge.domain import (
     VisualLayer,
 )
 from bookforge.model_client import StructuredModelClient
+
+_COLOR_WORDS = privacy_policy.COLOR_WORDS
+_COUNT_WORDS = privacy_policy.COUNT_WORDS
+_EMAIL = privacy_policy.EMAIL_PATTERN
+_PHONE = privacy_policy.PHONE_PATTERN
+_PHRASE_STOPWORDS = privacy_policy.PHRASE_STOPWORDS
+_URL = privacy_policy.URL_PATTERN
+_VISIBLE_VERBS = privacy_policy.VISIBLE_VERBS
+_contains_distinctive_source_phrase = privacy_policy.contains_distinctive_source_phrase
+_contains_token_sequence = privacy_policy.contains_token_sequence
+_distinctive_phrase = privacy_policy.distinctive_phrase
+_printed_source_payload_candidates = privacy_policy.printed_source_payload_candidates
+_privacy_tokens = privacy_policy.privacy_tokens
+_proper_name_candidates = privacy_policy.proper_name_candidates
 
 PlanText = Annotated[
     str,
@@ -70,164 +84,6 @@ _PLAN_CACHE_SCHEMA_VERSION = "1"
 _PLAN_CACHE_CONTRACT_REVISION = "semantic-v20-retain-bounded-action"
 LIVE_SCENE_RENDER_CONTRACT_REVISION = "subject-counts-constraints-v5-action"
 CONCISE_RENDER_CONTRACT_REVISION = "klein-concise-v1"
-_EMAIL = re.compile(r"\b[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}\b", re.IGNORECASE)
-_PHONE = re.compile(r"(?<!\w)(?:\+?\d[\d\s()./-]{6,}\d)(?!\w)")
-_URL = re.compile(r"\b(?:https?://|www\.)\S+", re.IGNORECASE)
-_NAME_AFTER_MARKER = re.compile(
-    r"\b(?:named|called|mr|mrs|ms|miss|dr|professor)\.?\s+"
-    r"([^\W\d_][\w'’\-]*)",
-    re.IGNORECASE,
-)
-_CAPITALIZED_WORD = re.compile(r"\b[A-Z][A-Za-z'’\-]{2,}\b")
-_NON_NAME_CAPITALIZED = frozenset(
-    {
-        "a",
-        "after",
-        "an",
-        "and",
-        "as",
-        "at",
-        "before",
-        "beneath",
-        "beside",
-        "but",
-        "each",
-        "every",
-        "from",
-        "he",
-        "her",
-        "his",
-        "i",
-        "if",
-        "in",
-        "inside",
-        "it",
-        "its",
-        "later",
-        "meanwhile",
-        "on",
-        "once",
-        "or",
-        "she",
-        "suddenly",
-        "that",
-        "the",
-        "their",
-        "they",
-        "this",
-        "through",
-        "to",
-        "toward",
-        "towards",
-        "under",
-        "we",
-        "when",
-        "while",
-        "with",
-        "without",
-        "you",
-    }
-)
-_PHRASE_STOPWORDS = frozenset(
-    {
-        "a",
-        "an",
-        "and",
-        "at",
-        "by",
-        "for",
-        "from",
-        "in",
-        "into",
-        "of",
-        "on",
-        "or",
-        "the",
-        "to",
-        "with",
-    }
-)
-_COUNT_WORDS = {
-    "one": "1",
-    "two": "2",
-    "three": "3",
-    "four": "4",
-    "five": "5",
-    "six": "6",
-    "seven": "7",
-    "eight": "8",
-    "nine": "9",
-    "ten": "10",
-}
-_COLOR_WORDS = frozenset(
-    {
-        "amber",
-        "black",
-        "blue",
-        "bronze",
-        "brown",
-        "copper",
-        "crimson",
-        "gold",
-        "golden",
-        "green",
-        "grey",
-        "indigo",
-        "orange",
-        "pink",
-        "purple",
-        "red",
-        "silver",
-        "teal",
-        "violet",
-        "white",
-        "yellow",
-    }
-)
-_VISIBLE_VERBS = frozenset(
-    {
-        "arc",
-        "arcs",
-        "carry",
-        "carries",
-        "circle",
-        "circles",
-        "climb",
-        "climbs",
-        "drift",
-        "drifts",
-        "float",
-        "floats",
-        "fold",
-        "folds",
-        "hold",
-        "holds",
-        "lift",
-        "lifts",
-        "open",
-        "opens",
-        "point",
-        "points",
-        "push",
-        "pushes",
-        "sail",
-        "sails",
-        "rise",
-        "rises",
-        "run",
-        "runs",
-        "spiral",
-        "spirals",
-        "swim",
-        "swims",
-        "tumble",
-        "tumbles",
-        "unfold",
-        "unfolds",
-        "wait",
-        "waits",
-    }
-)
 
 
 AnchorValue = Annotated[float, Field(ge=0, le=1)]
@@ -1894,6 +1750,7 @@ def validate_live_scene_plan_privacy(
 
     source_tokens = _privacy_tokens(source_text)
     proper_names = _proper_name_candidates(source_text)
+    printed_payloads = _printed_source_payload_candidates(source_text)
     fields = {
         "scene_summary": plan.scene_summary,
         "art_direction": plan.art_direction,
@@ -1907,6 +1764,10 @@ def validate_live_scene_plan_privacy(
                 f"local privacy gate rejected {field_name}: possible contact data"
             )
         output_tokens = _privacy_tokens(value)
+        if any(_contains_token_sequence(output_tokens, payload) for payload in printed_payloads):
+            raise LiveScenePlannerPrivacyError(
+                f"local privacy gate rejected {field_name}: printed source payload"
+            )
         if source_tokens and _contains_token_sequence(output_tokens, source_tokens):
             raise LiveScenePlannerPrivacyError(
                 f"local privacy gate rejected {field_name}: source passage echo"
@@ -1919,60 +1780,6 @@ def validate_live_scene_plan_privacy(
             raise LiveScenePlannerPrivacyError(
                 f"local privacy gate rejected {field_name}: proper-name candidate"
             )
-
-
-def _privacy_tokens(value: str) -> tuple[str, ...]:
-    normalized = unicodedata.normalize("NFKC", value).casefold()
-    normalized = re.sub(r"([^\W_]+)[’']s\b", r"\1", normalized)
-    normalized = normalized.replace("-", " ").replace("–", " ").replace("—", " ")
-    return tuple(re.findall(r"[^\W_]+", normalized, flags=re.UNICODE))
-
-
-def _proper_name_candidates(source_text: str) -> set[tuple[str, ...]]:
-    candidates = {
-        _privacy_tokens(match.group(1)) for match in _NAME_AFTER_MARKER.finditer(source_text)
-    }
-    for match in _CAPITALIZED_WORD.finditer(source_text):
-        word = match.group(0)
-        if word.casefold() in _NON_NAME_CAPITALIZED or word.casefold() in _COUNT_WORDS:
-            continue
-        if word.casefold() == "nothing" and re.match(
-            r"\s+(?:glows|floats|moves|happens|appears)\b", source_text[match.end() :], re.I
-        ):
-            continue
-        if word.casefold() == "exactly":
-            following = _privacy_tokens(source_text[match.end() :])
-            if following and (following[0] in _COUNT_WORDS or following[0].isdigit()):
-                continue
-        candidates.add(_privacy_tokens(word))
-    return {candidate for candidate in candidates if candidate}
-
-
-def _contains_token_sequence(
-    tokens: tuple[str, ...],
-    candidate: tuple[str, ...],
-) -> bool:
-    width = len(candidate)
-    return width > 0 and any(
-        tokens[index : index + width] == candidate for index in range(len(tokens) - width + 1)
-    )
-
-
-def _contains_distinctive_source_phrase(
-    output_tokens: tuple[str, ...],
-    source_tokens: tuple[str, ...],
-) -> bool:
-    if len(source_tokens) < 3 or len(output_tokens) < 3:
-        return False
-    source_phrases = {
-        source_tokens[index : index + 3]
-        for index in range(len(source_tokens) - 2)
-        if _distinctive_phrase(source_tokens[index : index + 3])
-    }
-    return any(
-        output_tokens[index : index + 3] in source_phrases
-        for index in range(len(output_tokens) - 2)
-    )
 
 
 def _remove_distinctive_source_overlap(
@@ -2043,11 +1850,6 @@ def _remove_distinctive_source_overlap(
         del output_tokens[deletion_index]
         changed = True
     return (" ".join(output_tokens) if changed else value) or value
-
-
-def _distinctive_phrase(tokens: tuple[str, ...]) -> bool:
-    content = [token for token in tokens if token not in _PHRASE_STOPWORDS]
-    return len(content) >= 2 and any(len(token) >= 4 for token in content)
 
 
 class LiveScenePlanner(Protocol):

@@ -179,6 +179,9 @@ def _build_live_scene_planner_client(
         max_output_tokens=settings.live_scene_planner_max_output_tokens,
         fallback=fallback,
         fallback_ready_seconds=settings.live_scene_planner_fallback_ready_seconds,
+        protocol=(
+            "hybrid" if settings.live_scene_planner_backend == "tensorrt_hybrid" else "slots"
+        ),
     )
 
 

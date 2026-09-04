@@ -10,7 +10,18 @@ from dataclasses import dataclass
 from enum import StrEnum
 from typing import Literal, cast
 
+from bookforge.fidelity_graph_targets import derive_fidelity_graph_target
+from bookforge.fidelity_schema import DatasetSplit, FidelityRecord
+from bookforge.scene_facts import (
+    SceneFactsV2,
+    SceneObjectFact,
+    SceneRelationKind,
+    SceneSubjectFact,
+)
+from bookforge.semantic_text import semantic_lemma
+
 SurfaceName = Literal["raw", "postprocessed", "renderer"]
+SceneEntity = SceneSubjectFact | SceneObjectFact
 
 
 class ExpectationKind(StrEnum):
@@ -66,6 +77,7 @@ _RAW_GRAMMAR_TOKENS = frozenset(
         "across",
         "around",
         "be",
+        "becomes",
         "below",
         "beneath",
         "beside",
@@ -123,6 +135,7 @@ class SurfaceContent:
     semantic_text: str
     privacy_text: str
     slots: Mapping[str, str]
+    scene_facts: SceneFactsV2 | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -208,15 +221,7 @@ def _normalize(value: str) -> str:
 
 
 def _stem(token: str) -> str:
-    if len(token) > 5 and token.endswith("ing"):
-        return token[:-3]
-    if len(token) > 4 and token.endswith("ies"):
-        return f"{token[:-3]}y"
-    if len(token) > 4 and token.endswith("es"):
-        return token[:-2]
-    if len(token) > 3 and token.endswith("s"):
-        return token[:-1]
-    return token
+    return semantic_lemma(token)
 
 
 def _token_matches(actual: str, expected: str) -> bool:
@@ -382,8 +387,417 @@ def _structured_slots(output: object) -> Mapping[str, str]:
     }
 
 
+def _scene_facts_candidate(output: object) -> tuple[SceneFactsV2 | None, bool]:
+    if isinstance(output, SceneFactsV2):
+        try:
+            return SceneFactsV2.model_validate(output.model_dump()), True
+        except (TypeError, ValueError):
+            return None, True
+    if not isinstance(output, Mapping):
+        dumper = getattr(output, "model_dump", None)
+        if not callable(dumper):
+            return None, False
+        output = dumper()
+    if not isinstance(output, Mapping):
+        return None, False
+
+    candidate: object = output
+    recognized = False
+    for key in ("semantic_facts", "scene_facts"):
+        if key in output:
+            candidate = output[key]
+            recognized = True
+            break
+    if not recognized:
+        recognized = (
+            output.get("version") == "2.0"
+            and "setting" in output
+            and ("subjects" in output or "objects" in output)
+        )
+    if not recognized:
+        return None, False
+    try:
+        return SceneFactsV2.model_validate(candidate), True
+    except (TypeError, ValueError):
+        return None, True
+
+
+def _scene_graph_signature(facts: SceneFactsV2) -> tuple[object, ...]:
+    entities = _scene_entities(facts)
+
+    def entity_ref(ref: str | None) -> str:
+        return _normalize(entities[ref].label) if ref is not None else ""
+
+    event_signatures = {
+        event.ref: (
+            entity_ref(event.source),
+            _normalize(event.action),
+            entity_ref(event.object),
+        )
+        for event in facts.events
+    }
+    return (
+        (_normalize(facts.setting.label), tuple(sorted(map(_normalize, facts.setting.attributes)))),
+        tuple(
+            sorted(
+                (
+                    _normalize(subject.label),
+                    subject.count,
+                    _normalize(subject.color or ""),
+                    tuple(sorted(map(_normalize, subject.attributes))),
+                    tuple(sorted(map(_normalize, subject.actions))),
+                )
+                for subject in facts.subjects
+            )
+        ),
+        tuple(
+            sorted(
+                (
+                    _normalize(item.label),
+                    item.count,
+                    _normalize(item.color or ""),
+                    tuple(sorted(map(_normalize, item.states))),
+                    tuple(sorted(map(_normalize, item.attributes))),
+                )
+                for item in facts.objects
+            )
+        ),
+        tuple(
+            sorted(
+                (
+                    entity_ref(relation.source),
+                    relation.relation.value,
+                    entity_ref(relation.target),
+                    entity_ref(relation.secondary_target),
+                )
+                for relation in facts.relationships
+            )
+        ),
+        tuple(
+            sorted(
+                (
+                    entity_ref(motion.source),
+                    motion.direction.value if motion.direction is not None else "",
+                    entity_ref(motion.destination),
+                )
+                for motion in facts.motions
+            )
+        ),
+        tuple(
+            sorted(
+                (entity_ref(salience.source), salience.layer.value)
+                for salience in facts.salience
+            )
+        ),
+        tuple(sorted(event_signatures.values())),
+        tuple(
+            sorted(
+                (event_signatures[order.before], event_signatures[order.after])
+                for order in facts.temporal_order
+            )
+        ),
+        tuple(
+            sorted(
+                (
+                    negative.kind.value,
+                    entity_ref(negative.target),
+                    _normalize(negative.value),
+                )
+                for negative in facts.negatives
+            )
+        ),
+        (
+            (
+                entity_ref(facts.transformation.source),
+                _normalize(facts.transformation.result_label),
+                _normalize(facts.transformation.result_color or ""),
+                tuple(sorted(map(_normalize, facts.transformation.result_attributes))),
+            )
+            if facts.transformation is not None
+            else None
+        ),
+    )
+
+
+def _public_graph_contract_matches(
+    record: Mapping[str, object],
+    facts: SceneFactsV2,
+) -> bool:
+    if record.get("split") not in {DatasetSplit.TRAIN, DatasetSplit.DEVELOPMENT}:
+        return True
+    try:
+        typed_record = FidelityRecord.model_validate(record)
+        target = derive_fidelity_graph_target(typed_record)
+    except (TypeError, ValueError):
+        return True
+    if target.facts is None:
+        return True
+    return _scene_graph_signature(facts) == _scene_graph_signature(target.facts)
+
+
+def _scene_entity_text(entity: SceneEntity) -> str:
+    states = entity.states if isinstance(entity, SceneObjectFact) else ()
+    explicit_count = entity.count if entity.count != 1 else None
+    return " ".join(
+        str(value)
+        for value in (explicit_count, entity.color, *states, *entity.attributes, entity.label)
+        if value is not None
+    )
+
+
+def _scene_facts_slots(facts: SceneFactsV2) -> Mapping[str, str]:
+    entities = {entity.ref: entity for entity in (*facts.subjects, *facts.objects)}
+    setting = " ".join((*facts.setting.attributes, facts.setting.label))
+    actors = " ".join(_scene_entity_text(subject) for subject in facts.subjects)
+    actions = [
+        f"{subject.label} {action}" for subject in facts.subjects for action in subject.actions
+    ]
+    actions.extend(
+        " ".join(
+            value
+            for value in (
+                entities[relation.source].label,
+                relation.relation.value.replace("_", " "),
+                entities[relation.target].label,
+                (
+                    entities[relation.secondary_target].label
+                    if relation.secondary_target is not None
+                    else ""
+                ),
+            )
+            if value
+        )
+        for relation in facts.relationships
+    )
+    for motion in facts.motions:
+        source = entities[motion.source]
+        if motion.direction is not None:
+            actions.append(f"{source.label} {motion.direction.value}")
+        if motion.destination is not None:
+            actions.append(f"{source.label} travels toward {entities[motion.destination].label}")
+    actions.extend(
+        " ".join(
+            value
+            for value in (
+                entities[event.source].label,
+                event.action,
+                f"the {entities[event.object].label}" if event.object is not None else "",
+            )
+            if value
+        )
+        for event in facts.events
+    )
+    if facts.transformation is not None:
+        actions.append(
+            f"{entities[facts.transformation.source].label} becomes "
+            f"{facts.transformation.result_label}"
+        )
+    direction_by_ref = {
+        motion.source: motion.direction.value
+        for motion in facts.motions
+        if motion.direction is not None
+    }
+    magic = [
+        " ".join(
+            value
+            for value in (_scene_entity_text(item), direction_by_ref.get(item.ref, ""))
+            if value
+        )
+        for item in facts.objects
+    ]
+    if facts.transformation is not None:
+        magic.append(
+            " ".join(
+                value
+                for value in (
+                    facts.transformation.result_color,
+                    *facts.transformation.result_attributes,
+                    facts.transformation.result_label,
+                )
+                if value is not None
+            )
+        )
+    magic.extend(f"without {negative.value}" for negative in facts.negatives)
+    return {
+        key: value
+        for key, value in zip(
+            _SLOT_NAMES,
+            (setting, actors, " ".join(actions), " ".join(magic)),
+            strict=True,
+        )
+        if value
+    }
+
+
+def _scene_slot_atoms(facts: SceneFactsV2, slot: str) -> tuple[str, ...]:
+    entities = _scene_entities(facts)
+    if slot == "SETTING":
+        return (" ".join((*facts.setting.attributes, facts.setting.label)),)
+    if slot == "ACTOR":
+        atoms = [_scene_entity_text(subject) for subject in facts.subjects]
+        subject_refs = {subject.ref for subject in facts.subjects}
+        atoms.extend(
+            f"{entities[salience.source].label} {salience.layer.value}"
+            for salience in facts.salience
+            if salience.source in subject_refs
+        )
+        return tuple(atoms)
+    if slot == "ACTION":
+        atoms = [
+            value
+            for subject in facts.subjects
+            for action in subject.actions
+            for value in (action, f"{subject.label} {action}")
+        ]
+        atoms.extend(
+            " ".join(
+                value
+                for value in (
+                    entities[relation.source].label,
+                    relation.relation.value.replace("_", " "),
+                    entities[relation.target].label,
+                    (
+                        entities[relation.secondary_target].label
+                        if relation.secondary_target is not None
+                        else ""
+                    ),
+                )
+                if value
+            )
+            for relation in facts.relationships
+        )
+        atoms.extend(
+            " ".join(
+                value
+                for value in (
+                    entities[event.source].label,
+                    event.action,
+                    entities[event.object].label if event.object is not None else "",
+                )
+                if value
+            )
+            for event in facts.events
+        )
+        atoms.extend(
+            f"travels toward {entities[motion.destination].label}"
+            for motion in facts.motions
+            if motion.destination is not None
+        )
+        atoms.extend(f"stands in the {salience.layer.value}" for salience in facts.salience)
+        events = {event.ref: event for event in facts.events}
+        atoms.extend(
+            " ".join(
+                value
+                for value in (
+                    "first",
+                    events[order.before].action,
+                    (
+                        f"the {entities[events[order.before].object].label}"
+                        if events[order.before].object is not None
+                        else ""
+                    ),
+                )
+                if value
+            )
+            for order in facts.temporal_order
+        )
+        return tuple(atoms)
+    if slot == "MAGIC":
+        atoms = [_scene_entity_text(item) for item in facts.objects]
+        atoms.extend(
+            f"{entities[motion.source].label} {motion.direction.value}"
+            for motion in facts.motions
+            if motion.direction is not None
+        )
+        if facts.transformation is not None:
+            atoms.append(
+                " ".join(
+                    value
+                    for value in (
+                        facts.transformation.result_color,
+                        *facts.transformation.result_attributes,
+                        facts.transformation.result_label,
+                    )
+                    if value is not None
+                )
+            )
+        atoms.extend(negative.value for negative in facts.negatives)
+        return tuple(atoms)
+    return ()
+
+
+def _scene_slot_result(
+    facts: SceneFactsV2,
+    *,
+    slot: str,
+    alternatives: Sequence[str],
+) -> tuple[bool, str | None]:
+    for atom in _scene_slot_atoms(facts, slot):
+        matched = _first_match(atom, alternatives)
+        if matched is not None:
+            return True, matched
+    if slot == "ACTION":
+        for salience in facts.salience:
+            matched = next(
+                (
+                    alternative
+                    for alternative in alternatives
+                    if _contains(alternative, salience.layer.value)
+                ),
+                None,
+            )
+            if matched is not None:
+                return True, matched
+    if slot != "ACTION" or not any(
+        _contains(action, "watch") for subject in facts.subjects for action in subject.actions
+    ):
+        return False, None
+    entities = _scene_entities(facts)
+    for alternative in alternatives:
+        for relation in facts.relationships:
+            aliases = _RELATION_ALIASES.get(
+                relation.relation,
+                (relation.relation.value.replace("_", " "),),
+            )
+            source = entities[relation.source]
+            target = entities[relation.target]
+            target_tokens = _normalize(target.label).split()
+            if (
+                any(_contains(alternative, alias) for alias in aliases)
+                and _contains(alternative, source.label)
+                and target_tokens
+                and (
+                    _contains(alternative, target.label)
+                    or _contains(alternative, target_tokens[-1])
+                )
+            ):
+                return True, alternative
+    return False, None
+
+
 def extract_surface(output: object, *, surface: SurfaceName) -> SurfaceContent:
     """Extract comparable text and slots without depending on production model classes."""
+
+    scene_facts, recognized_scene_facts = _scene_facts_candidate(output)
+    if recognized_scene_facts:
+        privacy_text = " ".join(_collect_strings(output, semantic=False))
+        if scene_facts is None:
+            return SurfaceContent(
+                surface=surface,
+                schema_valid=False,
+                semantic_text=" ".join(_collect_strings(output, semantic=True)),
+                privacy_text=privacy_text,
+                slots={},
+            )
+        slots = _scene_facts_slots(scene_facts)
+        return SurfaceContent(
+            surface=surface,
+            schema_valid=True,
+            semantic_text=" ".join(slots.values()),
+            privacy_text=privacy_text,
+            slots=slots,
+            scene_facts=scene_facts,
+        )
 
     if surface == "raw":
         slots, valid = _parse_raw_slots(output)
@@ -436,6 +850,299 @@ def _first_match(text: str, alternatives: Sequence[str]) -> str | None:
     return next((alternative for alternative in alternatives if _contains(text, alternative)), None)
 
 
+_RELATION_ALIASES: Mapping[SceneRelationKind, tuple[str, ...]] = {
+    SceneRelationKind.ABOVE: ("above", "over"),
+    SceneRelationKind.BELOW: ("below", "beneath", "under"),
+    SceneRelationKind.BESIDE: ("beside", "alongside", "next to"),
+    SceneRelationKind.CONTAINS: ("contains", "has inside"),
+    SceneRelationKind.INSIDE: ("inside", "within"),
+    SceneRelationKind.NEXT_TO: ("next to", "beside", "alongside"),
+    SceneRelationKind.UNDER: ("under", "beneath", "below"),
+}
+
+
+def _scene_entities(facts: SceneFactsV2) -> Mapping[str, SceneEntity]:
+    return {entity.ref: entity for entity in (*facts.subjects, *facts.objects)}
+
+
+def _scene_entity_matches(entity: SceneEntity, phrase: str) -> bool:
+    return bool(phrase) and _contains(entity.label, phrase)
+
+
+def _scene_relation_matches(relation: SceneRelationKind, predicate: str) -> bool:
+    if not predicate:
+        return False
+    candidates = _RELATION_ALIASES.get(relation, (relation.value.replace("_", " "),))
+    return any(
+        _contains(candidate, predicate) or _contains(predicate, candidate)
+        for candidate in candidates
+    )
+
+
+def _scene_relationship_result(
+    facts: SceneFactsV2,
+    *,
+    subject: str,
+    predicate: str,
+    object_value: str,
+    alternatives: Sequence[str],
+) -> tuple[bool, str | None]:
+    entities = _scene_entities(facts)
+    for relationship in facts.relationships:
+        source = entities[relationship.source]
+        target = entities[relationship.target]
+        secondary = (
+            entities[relationship.secondary_target]
+            if relationship.secondary_target is not None
+            else None
+        )
+        edge_text = " ".join(
+            value
+            for value in (
+                source.label,
+                relationship.relation.value.replace("_", " "),
+                target.label,
+                secondary.label if secondary is not None else "",
+            )
+            if value
+        )
+        matched = _first_match(edge_text, alternatives)
+        targets_match = _scene_entity_matches(target, object_value) or (
+            secondary is not None and _scene_entity_matches(secondary, object_value)
+        )
+        if subject and predicate and object_value:
+            if (
+                _scene_entity_matches(source, subject)
+                and _scene_relation_matches(relationship.relation, predicate)
+                and targets_match
+            ):
+                return True, matched
+        elif matched is not None:
+            return True, matched
+    for motion in facts.motions:
+        source = entities[motion.source]
+        if not _scene_entity_matches(source, subject):
+            continue
+        if motion.destination is not None:
+            destination = entities[motion.destination]
+            if _contains("toward", predicate) and _scene_entity_matches(destination, object_value):
+                return True, _first_match(f"toward {destination.label}", alternatives)
+        if (
+            motion.direction is not None
+            and _contains("moves", predicate)
+            and _contains(motion.direction.value, object_value)
+        ):
+            return True, _first_match(motion.direction.value, alternatives)
+
+    for first_edge in facts.relationships:
+        if first_edge.relation not in {SceneRelationKind.CARRIES, SceneRelationKind.HOLDS}:
+            continue
+        if not _scene_entity_matches(entities[first_edge.source], subject):
+            continue
+        for second_edge in facts.relationships:
+            if first_edge.target != second_edge.source:
+                continue
+            if not (
+                _scene_relation_matches(second_edge.relation, predicate)
+                and _scene_entity_matches(entities[second_edge.target], object_value)
+            ):
+                continue
+            path_text = " ".join(
+                (
+                    entities[first_edge.source].label,
+                    first_edge.relation.value,
+                    entities[first_edge.target].label,
+                    second_edge.relation.value.replace("_", " "),
+                    entities[second_edge.target].label,
+                )
+            )
+            return True, _first_match(path_text, alternatives)
+    return False, None
+
+
+def _scene_role_result(
+    facts: SceneFactsV2,
+    *,
+    subject: str,
+    predicate: str,
+    object_value: str,
+    alternatives: Sequence[str],
+) -> tuple[bool, str | None]:
+    relationship_passed, matched = _scene_relationship_result(
+        facts,
+        subject=subject,
+        predicate=predicate,
+        object_value=object_value,
+        alternatives=alternatives,
+    )
+    if relationship_passed:
+        return True, matched
+
+    for actor in facts.subjects:
+        if not _scene_entity_matches(actor, subject):
+            continue
+        for action in actor.actions:
+            action_text = f"{actor.label} {action}"
+            matched = _first_match(action_text, alternatives)
+            if matched is not None or (
+                _contains(action, predicate) and _contains(action, object_value)
+            ):
+                return True, matched
+
+    transformation = facts.transformation
+    if transformation is not None:
+        entities = _scene_entities(facts)
+        source = entities[transformation.source]
+        transformation_text = f"{source.label} changes into {transformation.result_label}"
+        matched = _first_match(transformation_text, alternatives)
+        if _scene_entity_matches(source, subject) and (
+            (
+                _contains("changes into", predicate)
+                and _contains(transformation.result_label, object_value)
+            )
+            or matched is not None
+        ):
+            return True, matched
+    return False, None
+
+
+def _scene_attribute_result(
+    facts: SceneFactsV2,
+    *,
+    subject: str,
+    predicate: str,
+    object_value: str,
+    alternatives: Sequence[str],
+) -> tuple[bool, str | None]:
+    if _contains("salience", predicate):
+        entities = _scene_entities(facts)
+        for salience in facts.salience:
+            source = entities[salience.source]
+            if _scene_entity_matches(source, subject) and _contains(
+                salience.layer.value, object_value
+            ):
+                return True, _first_match(source.label, alternatives)
+        return False, None
+
+    candidates = tuple(alternatives) or ((object_value,) if object_value else ())
+    predicate_tokens = set(_normalize(predicate).split())
+    for entity in _scene_entities(facts).values():
+        if not _scene_entity_matches(entity, subject):
+            continue
+        states = entity.states if isinstance(entity, SceneObjectFact) else ()
+        if predicate_tokens & {"color", "colour", "hue"}:
+            typed_values = (entity.color,) if entity.color is not None else ()
+        elif predicate_tokens & {"state", "status", "open", "closed"}:
+            typed_values = states
+        elif predicate_tokens & {"material", "made"}:
+            typed_values = entity.attributes
+        else:
+            typed_values = tuple(
+                value for value in (entity.color, *states, *entity.attributes) if value is not None
+            )
+        descriptor = " ".join(str(value) for value in (*typed_values, entity.label))
+        matched = _first_match(descriptor, candidates)
+        if matched is not None:
+            return True, matched if matched in alternatives else None
+
+    transformation = facts.transformation
+    if transformation is not None and _contains(transformation.result_label, subject):
+        descriptor = " ".join(
+            value
+            for value in (
+                transformation.result_color,
+                *transformation.result_attributes,
+                transformation.result_label,
+            )
+            if value is not None
+        )
+        matched = _first_match(descriptor, candidates)
+        if matched is not None:
+            return True, matched if matched in alternatives else None
+    return False, None
+
+
+def _scene_transformation_result(
+    facts: SceneFactsV2,
+    *,
+    subject: str,
+    predicate: str,
+    object_value: str,
+    alternatives: Sequence[str],
+) -> tuple[bool, str | None]:
+    transformation = facts.transformation
+    if transformation is None:
+        return False, None
+    source = _scene_entities(facts)[transformation.source]
+    if not (
+        _scene_entity_matches(source, subject)
+        and _contains(transformation.result_label, object_value)
+    ):
+        return False, None
+    edge_text = f"{source.label} changes into {transformation.result_label}"
+    matched = _first_match(edge_text, alternatives)
+    change_predicates = ("become", "turn into", "transform into", "change into")
+    predicate_matches = not predicate or any(
+        _contains(candidate, predicate) or _contains(predicate, candidate)
+        for candidate in change_predicates
+    )
+    return predicate_matches, matched
+
+
+def _scene_count_result(
+    facts: SceneFactsV2,
+    *,
+    counted_object: str,
+    count: object,
+    alternatives: Sequence[str],
+) -> tuple[bool, str | None]:
+    if not isinstance(count, int | str) or not str(count).isdigit():
+        return False, None
+    expected_count = int(count)
+    for entity in _scene_entities(facts).values():
+        if not _scene_entity_matches(entity, counted_object):
+            continue
+        if entity.count == expected_count:
+            descriptor = _scene_entity_text(entity)
+            return True, _first_match(descriptor, alternatives)
+    return False, None
+
+
+def _scene_order_result(
+    facts: SceneFactsV2,
+    *,
+    subject: str,
+    predicate: str,
+    object_value: str,
+    alternatives: Sequence[str],
+) -> tuple[bool, str | None]:
+    if not _contains("before", predicate):
+        return False, None
+    entities = _scene_entities(facts)
+    events = {event.ref: event for event in facts.events}
+    for order in facts.temporal_order:
+        before = events[order.before]
+        after = events[order.after]
+        if not _scene_entity_matches(entities[before.source], subject):
+            continue
+        after_object = entities[after.object] if after.object is not None else None
+        if after_object is None or not _scene_entity_matches(after_object, object_value):
+            continue
+        before_text = " ".join(
+            value
+            for value in (
+                "first",
+                before.action,
+                f"the {entities[before.object].label}" if before.object is not None else "",
+            )
+            if value
+        )
+        matched = _first_match(before_text, alternatives)
+        if matched is not None:
+            return True, matched
+    return False, None
+
+
 def _evaluate_expectation(
     expectation: Mapping[str, object], content: SurfaceContent
 ) -> ExpectationResult:
@@ -450,24 +1157,57 @@ def _evaluate_expectation(
     count = expectation.get("count")
     count_value = str(count) if isinstance(count, int | str) else ""
     text = _expectation_text(content, slot_value)
-    matched = _first_match(text, alternatives)
+    matched: str | None = None
 
-    if kind == ExpectationKind.FORBIDDEN_CONCEPT:
+    if kind == ExpectationKind.SLOT and content.scene_facts is not None:
+        passed, matched = _scene_slot_result(
+            content.scene_facts,
+            slot=(slot_value or "").upper(),
+            alternatives=alternatives,
+        )
+    elif kind == ExpectationKind.FORBIDDEN_CONCEPT:
+        matched = _first_match(text, alternatives)
         candidates = alternatives or tuple(
             value for value in (subject, predicate, object_value) if value
         )
         passed = not any(_contains_unnegated(content.privacy_text, value) for value in candidates)
+    elif kind == ExpectationKind.RELATION and content.scene_facts is not None:
+        passed, matched = _scene_relationship_result(
+            content.scene_facts,
+            subject=subject,
+            predicate=predicate,
+            object_value=object_value,
+            alternatives=alternatives,
+        )
     elif kind == ExpectationKind.RELATION:
+        matched = _first_match(text, alternatives)
         parts = tuple(value for value in (subject, predicate, object_value) if value)
         passed = bool(parts) and all(_contains(text, value) for value in parts)
         passed = passed or matched is not None
+    elif kind == ExpectationKind.ATTRIBUTE and content.scene_facts is not None:
+        passed, matched = _scene_attribute_result(
+            content.scene_facts,
+            subject=subject,
+            predicate=predicate,
+            object_value=object_value,
+            alternatives=alternatives,
+        )
     elif kind == ExpectationKind.ATTRIBUTE:
+        matched = _first_match(text, alternatives)
         passed = (
             bool(subject)
             and _contains(text, subject)
             and (matched is not None or (bool(object_value) and _contains(text, object_value)))
         )
+    elif kind == ExpectationKind.COUNT and content.scene_facts is not None:
+        passed, matched = _scene_count_result(
+            content.scene_facts,
+            counted_object=object_value or subject,
+            count=count,
+            alternatives=alternatives,
+        )
     elif kind == ExpectationKind.COUNT:
+        matched = _first_match(text, alternatives)
         counted_object = object_value or subject
         passed = (
             bool(count_value and counted_object)
@@ -475,7 +1215,16 @@ def _evaluate_expectation(
             and _contains(text, counted_object)
         )
         passed = passed or matched is not None
+    elif kind == ExpectationKind.ROLE and content.scene_facts is not None:
+        passed, matched = _scene_role_result(
+            content.scene_facts,
+            subject=subject,
+            predicate=predicate,
+            object_value=object_value,
+            alternatives=alternatives,
+        )
     elif kind == ExpectationKind.ROLE:
+        matched = _first_match(text, alternatives)
         actor_text = content.slots.get("ACTOR", content.semantic_text)
         action_text = content.slots.get("ACTION", content.semantic_text)
         passed = bool(subject) and _contains(actor_text, subject)
@@ -485,7 +1234,16 @@ def _evaluate_expectation(
                 _contains(action_text, predicate) and _contains(action_text, object_value)
             )
         passed = passed and action_passed
+    elif kind == ExpectationKind.TRANSFORMATION and content.scene_facts is not None:
+        passed, matched = _scene_transformation_result(
+            content.scene_facts,
+            subject=subject,
+            predicate=predicate,
+            object_value=object_value,
+            alternatives=alternatives,
+        )
     elif kind == ExpectationKind.TRANSFORMATION:
+        matched = _first_match(text, alternatives)
         transformation_text = (
             " ".join((content.slots.get("ACTION", ""), content.slots.get("MAGIC", ""))).strip()
             or content.semantic_text
@@ -498,11 +1256,21 @@ def _evaluate_expectation(
         if predicate:
             relation_passed = relation_passed or _contains(transformation_text, predicate)
         passed = endpoints_passed and relation_passed
+    elif kind == ExpectationKind.ORDER and content.scene_facts is not None:
+        passed, matched = _scene_order_result(
+            content.scene_facts,
+            subject=subject,
+            predicate=predicate,
+            object_value=object_value,
+            alternatives=alternatives,
+        )
     elif kind == ExpectationKind.ORDER:
+        matched = _first_match(text, alternatives)
         parts = tuple(value for value in (subject, predicate, object_value) if value)
         passed = bool(parts) and _contains_in_order(text, parts)
         passed = passed or matched is not None
     else:
+        matched = _first_match(text, alternatives)
         passed = matched is not None
         if not alternatives:
             parts = tuple(value for value in (subject, predicate, object_value) if value)
@@ -649,7 +1417,7 @@ def evaluate_surface(
         allowed=allowed_concepts,
         vocabulary=concept_vocabulary,
     )
-    if surface == "raw":
+    if surface == "raw" or content.scene_facts is not None:
         novel_tokens = _raw_novel_tokens(record_map, content)
         known_unsupported_tokens = {
             token for concept in unsupported for token in _normalize(concept).split()
@@ -661,6 +1429,11 @@ def evaluate_surface(
         )
         unsupported = tuple(sorted((*unsupported, *novel_tokens)))
         mentioned += len(novel_tokens)
+    if content.scene_facts is not None and not _public_graph_contract_matches(
+        record_map,
+        content.scene_facts,
+    ):
+        unsupported = (*unsupported, "graph:contract-mismatch")
     exact_pass = (
         content.schema_valid
         and privacy.passed

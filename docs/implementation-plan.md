@@ -1,6 +1,33 @@
 # Bookforge living implementation plan
 
-Last updated: 2026-09-03
+Last updated: 2026-09-04
+
+## Latest increment — Story Fidelity V2 fact graph
+
+A strict, source-grounded SceneFacts V2 contract now represents entity-bound counts, attributes,
+actions, motion, salience, ordered events, relations, negations, and transformations on the
+private edge. The existing fidelity
+evaluator now checks graph associations rather than allowing unrelated nodes to satisfy a relation
+through bag-of-words overlap. Public-corpus exactness also rejects source-mentioned distractor
+nodes and contradictory graph facts. The existing 4,096/512/512 corpus and hidden-split custody
+remain the canonical evaluation foundation.
+
+The deterministic public target adapter produces evaluator-exact graphs for 4,096/4,096 train
+records and 509/512 development records within the 64-token estimate. The three refusals are
+deliberate ambiguous same-label containment cases; no hidden record was read. Adversarial gates
+reject negated positive facts, cross-entity binding, printed source payloads, prompt injection,
+contact data, and conservative marked, Unicode, or lowercase clause-head name candidates. The
+aggregate, value-free evidence is in
+[`benchmarks/story-fidelity-v2-graph-coverage-2026-09-04.json`](../benchmarks/story-fidelity-v2-graph-coverage-2026-09-04.json).
+
+Direct five- and six-line graph decoding was rejected on the real Jetson Gemma/TensorRT engine.
+A backward-compatible four-line hybrid candidate achieved 12/12 outer-schema adherence and a
+1.375-second median on 12 public development probes. In a separate five-case integrated screen it
+improved automatic semantic passes from 2/5 to 3/5, while median planning rose from 1.035 to
+1.399 seconds. It remains opt-in because secondary-detail accuracy is below the promotion gate.
+No paid renderer or cloud service was called. The graph adapter is public evaluation/training
+tooling, not yet the live kiosk parser. See
+[implementation and evidence](story-fidelity-v2-runtime-2026-09-04.md).
 
 ## Latest increment — optional local hand interaction and Nsight
 

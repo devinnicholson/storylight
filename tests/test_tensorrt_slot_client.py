@@ -70,6 +70,170 @@ def test_privacy_separator_keeps_relations_and_negative_coordination():
     assert "alternatively" not in negative
 
 
+def test_privacy_separator_refuses_to_reorder_protected_source_facts() -> None:
+    with pytest.raises(ValueError, match="protected"):
+        tensorrt_slot_client._semantic_privacy_separator(
+            "secret account number",
+            source_text="The secret account number is written on the page.",
+        )
+
+
+@pytest.mark.parametrize("protocol", ("slots", "hybrid"))
+@pytest.mark.parametrize(
+    ("source", "payload"),
+    (
+        ("In a room, a page reads orchid delta. A fox waits.", "orchid delta"),
+        ("In a room, a private family note reads lark seven. A fox waits.", "lark seven"),
+        ("In a room, a tablet is engraved with orchid delta. A fox waits.", "orchid delta"),
+        ("In a room, a wall is inscribed with orchid delta. A fox waits.", "orchid delta"),
+        ("In a room, a shirt bears the words orchid delta. A fox waits.", "orchid delta"),
+        ("In a room, a sign spells out orchid delta. A fox waits.", "orchid delta"),
+        ("In a room, a poster contains the words orchid delta. A fox waits.", "orchid delta"),
+        ("In a room, a chalkboard features orchid delta. A fox waits.", "orchid delta"),
+        ("In a room, a door has orchid delta. A fox waits.", "orchid delta"),
+        ("In a room, a tattoo depicts the words orchid delta. A fox waits.", "orchid delta"),
+        ("In a room, on a poster are the words orchid delta. A fox waits.", "orchid delta"),
+        ("In a room, a poster carries the message orchid delta. A fox waits.", "orchid delta"),
+        ("In a room, a poster captioned orchid delta hangs. A fox waits.", "orchid delta"),
+        ("In a room, orchid delta is written on a poster. A fox waits.", "orchid delta"),
+    ),
+)
+def test_slot_protocols_reject_printed_source_payloads(
+    protocol: str,
+    source: str,
+    payload: str,
+) -> None:
+    with pytest.raises(ValueError, match="printed source payload"):
+        tensor_slot_wire_plan(
+            f"SETTING: room\nACTOR: fox\nACTION: waits\nMAGIC: {payload}",
+            source_text=source,
+            protocol=protocol,  # type: ignore[arg-type]
+        )
+
+
+@pytest.mark.parametrize("protocol", ("slots", "hybrid"))
+@pytest.mark.parametrize("name", ("Li", "Élodie", "li", "élodie", "张伟"))
+def test_slot_protocols_reject_short_unicode_and_uncased_names(
+    protocol: str,
+    name: str,
+) -> None:
+    with pytest.raises(ValueError, match="proper-name candidate"):
+        tensor_slot_wire_plan(
+            f"SETTING: room\nACTOR: {name}\nACTION: waits\nMAGIC: fireflies",
+            source_text=f"{name} enters the room. A fox waits as fireflies appear.",
+            protocol=protocol,  # type: ignore[arg-type]
+        )
+
+
+@pytest.mark.parametrize("protocol", ("slots", "hybrid"))
+@pytest.mark.parametrize("name", ("mary jane", "james smith", "élodie martin", "li wei"))
+def test_slot_protocols_reject_lowercase_multiword_unmarked_names(
+    protocol: str,
+    name: str,
+) -> None:
+    with pytest.raises(ValueError, match="proper-name candidate"):
+        tensor_slot_wire_plan(
+            f"SETTING: room\nACTOR: {name}\nACTION: waits\nMAGIC: fireflies",
+            source_text=f"{name} walks into the room. A fox waits as fireflies appear.",
+            protocol=protocol,  # type: ignore[arg-type]
+        )
+
+
+@pytest.mark.parametrize(
+    "protected_phrase",
+    ("five opal compasses", "amber velvet minnows", "clockwork paper birds"),
+)
+def test_privacy_separator_refuses_to_delete_semantic_modifiers(
+    protected_phrase: str,
+) -> None:
+    with pytest.raises(ValueError, match="protected source phrase"):
+        tensorrt_slot_client._semantic_privacy_separator(
+            protected_phrase,
+            source_text=f"A fox watches {protected_phrase}.",
+        )
+
+
+def test_hybrid_wire_plan_preserves_bound_relation_without_id_artifacts() -> None:
+    source = "In the coral reading room, a porcelain lynx holds a green parasol above a stone arch."
+    plan = tensor_slot_wire_plan(
+        """SETTING: coral reading room
+ACTOR: a=porcelain lynx
+ACTION: a|holds|o=green parasol; o|above|x=stone arch
+MAGIC: green parasol above stone arch""",
+        source_text=source,
+        protocol="hybrid",
+    )
+
+    assert "porcelain lynx" in plan.focus.subject
+    assert "green parasol" in plan.focus.action
+    assert "green parasol over stone arch" in plan.focus.action
+    assert "over stone arch" in plan.focus.action
+    assert not re.search(r"\b[orx]\b", plan.focus.action)
+
+
+def test_hybrid_wire_plan_does_not_rebalance_relation_into_magic() -> None:
+    source = (
+        "In a coral reading room, a porcelain lynx holds a green parasol above a stone arch "
+        "while carrying a long silver telescope. A ring of silver stars appears."
+    )
+    plan = tensor_slot_wire_plan(
+        """SETTING: coral reading room
+ACTOR: a=porcelain lynx
+ACTION: a|holds|o=green parasol while carrying a long silver telescope; o|above|x=stone arch
+MAGIC: ring of silver stars""",
+        source_text=source,
+        protocol="hybrid",
+    )
+
+    assert "above" in plan.focus.action or "over" in plan.focus.action
+    assert "ring" in plan.magic.prompt
+    assert "silver stars" in plan.magic.prompt
+
+
+def test_hybrid_wire_plan_rejects_undefined_short_references() -> None:
+    with pytest.raises(ValueError, match="undefined entity reference"):
+        tensor_slot_wire_plan(
+            """SETTING: room
+ACTOR: keeper
+ACTION: a|holds|o=lantern
+MAGIC: lantern glows""",
+            source_text="In a room, a keeper holds a lantern. The lantern glows.",
+            protocol="hybrid",
+        )
+
+
+@pytest.mark.parametrize(
+    "actor, action",
+    (
+        ("o=keeper", "o|holds|a=lantern"),
+        ("a=keeper", "a|holds|o="),
+        ("a=keeper", "a|watches|o=basket; o=meadow"),
+    ),
+)
+def test_hybrid_wire_plan_rejects_wrong_empty_or_rebound_ids(
+    actor: str,
+    action: str,
+) -> None:
+    with pytest.raises(ValueError, match="hybrid"):
+        tensor_slot_wire_plan(
+            f"SETTING: room\nACTOR: {actor}\nACTION: {action}\nMAGIC: lantern glows",
+            source_text="In a room, a keeper holds a lantern as a meadow appears.",
+            protocol="hybrid",
+        )
+
+
+def test_hybrid_wire_plan_rejects_unknown_short_references() -> None:
+    with pytest.raises(ValueError, match="unknown entity reference"):
+        tensor_slot_wire_plan(
+            """SETTING: room
+ACTOR: keeper
+ACTION: z|holds|o=lantern
+MAGIC: lantern glows""",
+            source_text="In a room, a keeper holds a lantern. The lantern glows.",
+            protocol="hybrid",
+        )
+
+
 def test_generic_nothing_is_not_a_name_but_explicit_name_stays_protected():
     from bookforge.live_scene_planner import _proper_name_candidates
 
@@ -127,6 +291,14 @@ def test_api_planner_client_keeps_default_or_builds_tensorrt_candidate() -> None
     )
     assert isinstance(candidate, TensorRTSlotModelClient)
     asyncio.run(candidate.client.aclose())
+
+    hybrid = _build_live_scene_planner_client(
+        Settings(_env_file=None, live_scene_planner_backend="tensorrt_hybrid"),
+        fallback=fallback,
+    )
+    assert isinstance(hybrid, TensorRTSlotModelClient)
+    assert hybrid.protocol == "hybrid"
+    asyncio.run(hybrid.client.aclose())
 
     with pytest.raises(ValueError, match="standard wire contract"):
         _build_live_scene_planner_client(

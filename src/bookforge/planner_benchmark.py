@@ -611,11 +611,12 @@ async def _run_case(
 async def benchmark(args: argparse.Namespace) -> dict[str, object]:
     base_url = _require_loopback(args.base_url)
     cases = _select_cases(args.suite, args.case_id)
-    if args.backend == "tensorrt_slots" and args.contract != "standard":
-        raise ValueError("TensorRT slots require the accepted standard wire contract")
+    tensorrt_backends = {"tensorrt_slots", "tensorrt_hybrid"}
+    if args.backend in tensorrt_backends and args.contract != "standard":
+        raise ValueError("TensorRT slot protocols require the standard wire contract")
     settings = Settings(
         _env_file=None,
-        model_backend=("openai" if args.backend == "tensorrt_slots" else args.backend),
+        model_backend=("openai" if args.backend in tensorrt_backends else args.backend),
         model_name=args.model,
         model_base_url=base_url,
         model_timeout_seconds=args.model_timeout_seconds,
@@ -625,12 +626,13 @@ async def benchmark(args: argparse.Namespace) -> dict[str, object]:
     )
     if args.backend == "ollama":
         client = OllamaClient(settings)
-    elif args.backend == "tensorrt_slots":
+    elif args.backend in tensorrt_backends:
         client = TensorRTSlotModelClient(
             base_url=base_url,
             model=args.model,
             timeout_seconds=args.model_timeout_seconds,
             max_output_tokens=min(args.max_output_tokens, 128),
+            protocol="hybrid" if args.backend == "tensorrt_hybrid" else "slots",
         )
     else:
         client = OpenAICompatibleClient(settings)
@@ -749,7 +751,7 @@ def _parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
         "--backend",
-        choices=("ollama", "openai", "tensorrt_slots"),
+        choices=("ollama", "openai", "tensorrt_slots", "tensorrt_hybrid"),
         default="ollama",
     )
     parser.add_argument("--base-url", default="http://127.0.0.1:11434")
