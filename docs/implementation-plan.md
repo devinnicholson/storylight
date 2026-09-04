@@ -2,6 +2,30 @@
 
 Last updated: 2026-09-04
 
+## Latest increment — live SceneFacts adapter and matched Jetson gate
+
+An opt-in `tensorrt_graph` path now converts the existing four-line hybrid response and local
+source into a validated graph. The finite parser refuses unsupported or ambiguous binding;
+graphs survive the local cache and compile through the existing renderer interface. A refused
+graph uses a separately measured accepted-protocol fallback. Independent adversarial review
+closed additional name, credential, printed-payload, motion, event, negation, and temporal-order
+bypasses. The accepted appliance remains unchanged.
+
+The 512-record development comparison uses an isolated candidate checkout on the resident
+Jetson engine. Its journal retains hashes, scores, refusal codes, per-case timings/tokens, and
+sampled memory/thermal evidence without source passages or raw model payloads. The installed
+wheel and candidate code have separate provenance. See
+[adapter, benchmark, and decision](live-scene-facts-gate-2026-09-04.md).
+
+The completed 512-pair run rejects promotion: zero valid graphs, no final-contract improvement,
+and a 2.449-second reconstructed median fallback path against the 1.5-second gate. Ten raw
+hybrid privacy failures were contained; 346 final contracts passed the nonempty schema screen,
+166 were empty/refused, and none failed the final privacy screen. No paid rendering was run.
+All 1,509 Python tests, both JavaScript suites, scoped lint, and aggregate reproduction pass.
+The read-only Jetson check still fails camera presence/enumeration; it does not block the typed
+text benchmark and was not repaired in this scope. The next hypothesis is a separately gated
+accepted-prompt-first adapter that preserves its original accepted output on refusal.
+
 ## Latest increment — Story Fidelity V2 fact graph
 
 A strict, source-grounded SceneFacts V2 contract now represents entity-bound counts, attributes,
