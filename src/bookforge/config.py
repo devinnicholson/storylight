@@ -52,6 +52,7 @@ class Settings(BaseSettings):
         "tensorrt_slots",
         "tensorrt_hybrid",
         "tensorrt_graph",
+        "tensorrt_accepted_graph",
     ] = "configured"
     live_scene_planner_base_url: str = "http://127.0.0.1:11435"
     live_scene_planner_model_name: str = "llm"

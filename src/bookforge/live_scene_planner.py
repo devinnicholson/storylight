@@ -29,7 +29,7 @@ from bookforge.domain import (
     VisualLayer,
 )
 from bookforge.model_client import StructuredModelClient
-from bookforge.scene_facts import SceneFactsV2
+from bookforge.scene_facts import SceneFactsPrivacyError, SceneFactsV2, _validate_style_privacy
 
 _COLOR_WORDS = privacy_policy.COLOR_WORDS
 _COUNT_WORDS = privacy_policy.COUNT_WORDS
@@ -613,6 +613,15 @@ class LiveSceneGraphPlan(LiveScenePlan):
             page_id=page_id,
             render_contract=render_contract,
         )
+        style = " ".join(visual_style.split())
+        if len(style) > 120:
+            _validate_style_privacy(style, source_text=source_text)
+            if privacy_policy.SENSITIVE_CONTENT_PATTERN.search(" ".join(_privacy_tokens(style))):
+                raise SceneFactsPrivacyError("visual style contains protected sensitive content")
+            validate_live_scene_plan_privacy(
+                self.model_copy(update={"art_direction": style}), source_text=source_text
+            )
+            return page
         prompt = self.scene_facts.to_renderer_prompt(
             source_text=source_text, visual_style=visual_style
         )

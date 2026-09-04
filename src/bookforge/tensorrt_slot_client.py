@@ -17,11 +17,13 @@ from bookforge.domain import ModelMetrics
 from bookforge.live_scene_planner import (
     _SEMANTIC_WORD,
     LiveSceneGraphWirePlan,
+    LiveScenePlannerPrivacyError,
     LiveSceneWirePlan,
     _bounded_words,
     _normalized_action,
     _recover_action_material,
     _recover_containment_and_scale,
+    validate_live_scene_plan_privacy,
 )
 from bookforge.model_client import ModelUnavailableError, StructuredModelClient
 
@@ -580,6 +582,33 @@ def tensor_graph_wire_plan(
     return LiveSceneGraphWirePlan(**wire.model_dump(), scene_facts=result.facts)
 
 
+def tensor_accepted_graph_wire_plan(
+    output_text: str, *, source_text: str
+) -> LiveSceneGraphWirePlan:
+    """Enrich one accepted response, preserving its validated wire on refusal."""
+
+    from bookforge.live_scene_facts import adapt_live_scene_facts
+
+    accepted = tensor_slot_wire_plan(output_text, source_text=source_text)
+    fallback = LiveSceneGraphWirePlan(**accepted.model_dump())
+    try:
+        slots = parse_tensor_graph_slots(output_text)
+        if any("|" in value or "=" in value for value in slots.values()):
+            return fallback
+        result = adapt_live_scene_facts(slots, source_text=source_text)
+        if result.facts is None:
+            return fallback
+        candidate = LiveSceneGraphWirePlan(**accepted.model_dump(), scene_facts=result.facts)
+        plan = candidate.to_live_scene_plan(context_text=source_text)
+        validate_live_scene_plan_privacy(plan, source_text=source_text)
+        plan.to_page(
+            source_text=source_text, visual_style="luminous storybook illustration", seed=0
+        )
+        return candidate
+    except (ValueError, LiveScenePlannerPrivacyError):
+        return fallback
+
+
 class TensorRTSlotModelClient(StructuredModelClient):
     """Use Gemma's accepted slot prompt through a loopback TensorRT server."""
 
@@ -612,8 +641,6 @@ class TensorRTSlotModelClient(StructuredModelClient):
         self.model = model
         self.max_output_tokens = max_output_tokens
         self.protocol = protocol
-        if scene_facts_enabled and protocol != "hybrid":
-            raise ValueError("scene facts require the opt-in hybrid protocol")
         self.scene_facts_enabled = scene_facts_enabled
         self.cache_identity = hashlib.sha256(
             json.dumps(
@@ -627,8 +654,11 @@ class TensorRTSlotModelClient(StructuredModelClient):
             ).encode()
         ).hexdigest()
         if scene_facts_enabled:
+            graph_revision = (
+                "accepted-scene-facts-v1" if protocol == "slots" else "live-scene-facts-v1"
+            )
             self.cache_identity = hashlib.sha256(
-                f"{self.cache_identity}:live-scene-facts-v1".encode()
+                f"{self.cache_identity}:{graph_revision}".encode()
             ).hexdigest()
         self.fallback = fallback
         self.fallback_ready_seconds = fallback_ready_seconds
@@ -752,7 +782,9 @@ class TensorRTSlotModelClient(StructuredModelClient):
             if not isinstance(content, str):
                 raise TypeError("message content is not text")
             usage = payload.get("usage", {})
-            if self.scene_facts_enabled:
+            if self.scene_facts_enabled and self.protocol == "slots":
+                wire_plan = tensor_accepted_graph_wire_plan(content, source_text=source_text)
+            elif self.scene_facts_enabled:
                 try:
                     wire_plan = tensor_graph_wire_plan(content, source_text=source_text)
                 except ValueError:
@@ -777,7 +809,14 @@ class TensorRTSlotModelClient(StructuredModelClient):
                 input_tokens=int(usage.get("prompt_tokens", 0)),
                 output_tokens=int(usage.get("completion_tokens", 0)),
             )
-        except (AttributeError, KeyError, IndexError, TypeError, ValueError) as error:
+        except (
+            AttributeError,
+            KeyError,
+            IndexError,
+            TypeError,
+            ValueError,
+            LiveScenePlannerPrivacyError,
+        ) as error:
             if self.scene_facts_enabled:
                 raise ModelUnavailableError("TensorRT graph response failed validation") from None
             raise ModelUnavailableError(

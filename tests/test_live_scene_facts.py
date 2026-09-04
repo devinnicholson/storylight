@@ -285,3 +285,117 @@ def test_hypothetical_results_fail_closed(result_clause: str) -> None:
 def test_physical_result_remains_supported() -> None:
     facts = _facts(_slots(), "In a cave, a fox holds a lantern. A ribbon appears.")
     assert any(item.label == "ribbon" for item in facts.objects)
+
+
+@pytest.mark.parametrize(
+    ("actor", "action", "magic", "source", "expected"),
+    [
+        pytest.param(
+            "fox",
+            "holds lantern",
+            "ribbon",
+            "In a cave, two orange foxes hold one blue lantern. A ribbon appears.",
+            "S|n0|2|foxes|orange|-|hold lantern",
+            id="counts-colors",
+        ),
+        pytest.param(
+            "fox",
+            "holds lantern",
+            "ribbon",
+            "In a cave, a fox holds a lantern above a box. A ribbon appears.",
+            "R|n1|above|n2|-",
+            id="bound-spatial-object",
+        ),
+        pytest.param(
+            "fox",
+            "holds lantern",
+            "ribbon",
+            "In a cave, a fox holds a lantern. The lantern is closed. A ribbon appears.",
+            "O|n1|-|lantern|-|closed|-",
+            id="state",
+        ),
+        pytest.param(
+            "fox",
+            "lifts lantern",
+            "ribbon",
+            "In a cave, a fox lifts a lantern. The lantern belongs to the fox. A ribbon appears.",
+            "R|n0|owns|n1|-",
+            id="ownership",
+        ),
+        pytest.param(
+            "fox",
+            "runs toward tower",
+            "ribbon",
+            "In a cave, a fox runs toward a tower. A ribbon appears.",
+            "M|n0|-|n1",
+            id="destination",
+        ),
+        pytest.param(
+            "keeper",
+            "opens drum",
+            "river of glowing buttons",
+            "In a cave, a keeper opens a ceramic drum. "
+            "The drum becomes a river of glowing buttons.",
+            "T|n1|river of glowing buttons|-|-",
+            id="plain-transformation",
+        ),
+        pytest.param(
+            "fox",
+            "holds lantern",
+            "ribbon",
+            "In a cave, a fox holds a lantern. A ribbon rises.",
+            "M|n2|rises|-",
+            id="result-motion",
+        ),
+        pytest.param(
+            "fox",
+            "holds lantern",
+            "ribbon",
+            "In a cave, a fox holds a lantern as a ribbon appears.",
+            "O|n2|-|ribbon|-|-|-",
+            id="simultaneous-result",
+        ),
+    ],
+)
+def test_bounded_plain_slot_diagnostic(
+    actor: str,
+    action: str,
+    magic: str,
+    source: str,
+    expected: str,
+) -> None:
+    facts = _facts(_slots(ACTOR=actor, ACTION=action, MAGIC=magic), source)
+    assert expected in facts.to_wire().splitlines()
+
+
+@pytest.mark.parametrize(
+    "source",
+    [
+        "In a cave, a fox holds a lantern as a ribbon does not appear.",
+        "In a cave, a fox holds a lantern while no ribbon appears.",
+        "In a cave, a fox does not hold a lantern as a ribbon appears.",
+        "In a cave, an owl holds a lantern as a fox waits. A ribbon appears.",
+        "In a cave, a keeper dressed as a fox holds a lantern. A ribbon appears.",
+        "In a cave, if a fox holds a lantern, a ribbon appears.",
+        "In a cave, a fox holds a lantern as an owl imagines a ribbon appears.",
+        "In a cave, a fox holds a lantern. An owl dreams a ribbon appears.",
+        "In a cave, a fox holds a lantern. An owl says a ribbon appears.",
+        "In a cave, a fox holds a lantern. A ribbon never rises.",
+    ],
+)
+def test_plain_slot_result_binding_rejects_unrealized_or_wrong_subject(source: str) -> None:
+    assert adapt_live_scene_facts(_slots(), source_text=source).facts is None
+
+
+def test_simultaneous_result_does_not_add_causality_or_unrelated_actor() -> None:
+    facts = _facts(
+        _slots(),
+        "In a cave, a fox holds a lantern while a ribbon appears. An owl lifts a key.",
+    )
+    assert {node.label for node in (*facts.subjects, *facts.objects)} == {
+        "fox",
+        "lantern",
+        "ribbon",
+    }
+    assert len(facts.relationships) == 1
+    assert facts.relationships[0].relation.value == "holds"

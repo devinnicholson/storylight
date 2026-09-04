@@ -26,7 +26,10 @@ from pydantic import BaseModel, ConfigDict, Field, StringConstraints
 from bookforge.fidelity_dataset import DATASET_ID, generate_split
 from bookforge.fidelity_evaluation import evaluate_surface
 from bookforge.fidelity_schema import DatasetSplit, FidelityRecord
-from bookforge.live_scene_planner import validate_live_scene_plan_privacy
+from bookforge.live_scene_planner import (
+    LiveScenePlannerPrivacyError,
+    validate_live_scene_plan_privacy,
+)
 from bookforge.tensorrt_slot_client import _slot_messages, tensor_slot_wire_plan
 
 Digest = Annotated[str, StringConstraints(pattern=r"^[0-9a-f]{64}$")]
@@ -34,6 +37,11 @@ Revision = Annotated[str, StringConstraints(pattern=r"^[0-9a-f]{40}$")]
 Nonnegative = Annotated[float, Field(ge=0, allow_inf_nan=False)]
 Temperature = Annotated[int, Field(ge=-100_000, le=200_000)]
 SURFACES = ("accepted_raw", "hybrid_raw", "accepted_renderer", "graph_candidate", "final_renderer")
+Mode = Literal["hybrid", "accepted_first"]
+
+
+def surfaces_for(mode: str) -> tuple[str, ...]:
+    return tuple(name for name in SURFACES if mode != "accepted_first" or name != "hybrid_raw")
 
 
 class StrictModel(BaseModel):
@@ -63,6 +71,7 @@ class Score(StrictModel):
     latency_ms: Nonnegative
     output_tokens: Annotated[int, Field(ge=0)] | None
     generation_complete: bool = True
+    required_atom_passes: list[bool] = Field(default_factory=list)
 
 
 class CaseEvidence(StrictModel):
@@ -91,6 +100,8 @@ class CaseEvidence(StrictModel):
     thermal_min_millicelsius: Temperature | None = None
     thermal_max_millicelsius: Temperature | None = None
     thermal_samples: Annotated[int, Field(ge=0)] = 0
+    learned_inference_ms: Nonnegative | None = None
+    graph_construction_ms: Nonnegative | None = None
 
 
 class MemorySampler:
@@ -203,6 +214,7 @@ def context(
     endpoint: str,
     timeout: float,
     memory_pid: int | None = None,
+    mode: Mode = "hybrid",
 ) -> dict[str, Any]:
     root = Path(__file__).resolve().parents[1]
     paths = [Path(__file__), *sorted((root / "src/bookforge").glob("*.py"))]
@@ -222,9 +234,10 @@ def context(
         "endpoint_sha256": digest(endpoint),
         "limit": limit,
         "timeout_seconds": timeout,
+        "mode": mode,
         "requests": {
             protocol: digest(request_payload("", protocol, model, max_output_tokens))
-            for protocol in ("slots", "hybrid")
+            for protocol in (("slots",) if mode == "accepted_first" else ("slots", "hybrid"))
         },
         "max_output_tokens": max_output_tokens,
         "temperature": 0,
@@ -272,7 +285,9 @@ def load_evidence(
                 or not set(result.surfaces) <= set(SURFACES)
             ):
                 raise ValueError
-            if result.status == "ok" and set(result.surfaces) != set(SURFACES):
+            if result.status == "ok" and set(result.surfaces) != set(
+                surfaces_for(expected.get("mode", "hybrid"))
+            ):
                 raise ValueError
             completed.add(index)
             results.append(result)
@@ -315,6 +330,7 @@ def score(
         latency_ms=elapsed_ms,
         output_tokens=output_tokens,
         generation_complete=generation_complete,
+        required_atom_passes=[atom.passed for atom in result.expectation_results if atom.required],
     )
 
 
@@ -361,8 +377,18 @@ def renderer_contract(plan: Any, source: str) -> str:
 
 
 def run_case(
-    client: httpx.Client, record: FidelityRecord, index: int, *, model: str, max_output_tokens: int
+    client: httpx.Client,
+    record: FidelityRecord,
+    index: int,
+    *,
+    model: str,
+    max_output_tokens: int,
+    mode: Mode = "hybrid",
 ) -> CaseEvidence:
+    if mode == "accepted_first":
+        return run_accepted_first_case(
+            client, record, index, model=model, max_output_tokens=max_output_tokens
+        )
     from bookforge.live_scene_facts import adapt_live_scene_facts
     from bookforge.tensorrt_slot_client import parse_tensor_graph_slots
 
@@ -477,6 +503,83 @@ def run_case(
     )
 
 
+def run_accepted_first_case(
+    client: httpx.Client, record: FidelityRecord, index: int, *, model: str, max_output_tokens: int
+) -> CaseEvidence:
+    from bookforge.tensorrt_slot_client import tensor_accepted_graph_wire_plan
+
+    try:
+        raw, learned_ms, tokens, complete = infer(client, record, "slots", model, max_output_tokens)
+    except (httpx.HTTPError, ValueError, TypeError, KeyError, IndexError):
+        return CaseEvidence(
+            index=index, status="request_failed", refusal="none", fallback=False, surfaces={}
+        )
+    start = time.perf_counter()
+    try:
+        if not complete:
+            raise ValueError
+        accepted = safe_slots(raw, record.passage, "slots")
+    except (ValueError, LiveScenePlannerPrivacyError):
+        accepted = {}
+    accepted_processing_ms = (time.perf_counter() - start) * 1000
+    facts = None
+    final = accepted
+    refusal = "none"
+    fallback = True
+    start = time.perf_counter()
+    try:
+        if not complete:
+            raise ValueError
+        wire = tensor_accepted_graph_wire_plan(raw, source_text=record.passage)
+        facts = wire.scene_facts
+        refusal = "adapter_refused" if facts is None else "none"
+    except (ValueError, LiveScenePlannerPrivacyError):
+        refusal = "parse_refused"
+    graph_ms = (time.perf_counter() - start) * 1000
+    start = time.perf_counter()
+    if refusal != "parse_refused":
+        try:
+            plan = wire.to_live_scene_plan(context_text=record.passage)
+            validate_live_scene_plan_privacy(plan, source_text=record.passage)
+            final = renderer_contract(plan, record.passage)
+            fallback = facts is None
+        except (ValueError, LiveScenePlannerPrivacyError):
+            refusal = "renderer_refused"
+    final_processing_ms = graph_ms + (time.perf_counter() - start) * 1000
+    if refusal in {"parse_refused", "renderer_refused"}:
+        final_processing_ms += accepted_processing_ms
+    # All evaluator calls follow measured production construction and compilation.
+    outputs = {
+        "accepted_raw": (raw, "raw", learned_ms),
+        "accepted_renderer": (accepted, "renderer", learned_ms + accepted_processing_ms),
+        "graph_candidate": (
+            facts if facts is not None else {},
+            "postprocessed",
+            learned_ms + graph_ms,
+        ),
+        "final_renderer": (final, "renderer", learned_ms + final_processing_ms),
+    }
+    return CaseEvidence(
+        index=index,
+        status="ok",
+        refusal=refusal,
+        fallback=fallback,
+        learned_inference_ms=learned_ms,
+        graph_construction_ms=graph_ms,
+        surfaces={
+            name: score(
+                record,
+                output,
+                surface=surface,
+                elapsed_ms=elapsed,
+                output_tokens=tokens,
+                generation_complete=complete,
+            )
+            for name, (output, surface, elapsed) in outputs.items()
+        },
+    )
+
+
 def distribution(values: Sequence[float | int]) -> dict[str, float | int | None]:
     ordered = sorted(values)
     return {
@@ -487,6 +590,53 @@ def distribution(values: Sequence[float | int]) -> dict[str, float | int | None]
     }
 
 
+def compare_renderer_cases(
+    results: Sequence[CaseEvidence], records: Sequence[FidelityRecord]
+) -> dict[str, Any]:
+    total: Counter[str] = Counter()
+    categories: dict[str, Counter[str]] = {}
+    for row in results:
+        if not {"accepted_renderer", "final_renderer"} <= row.surfaces.keys():
+            continue
+        accepted = row.surfaces["accepted_renderer"]
+        final = row.surfaces["final_renderer"]
+        comparable = (
+            len(accepted.required_atom_passes) == accepted.required_atoms
+            and len(final.required_atom_passes) == final.required_atoms
+            and accepted.required_atoms == final.required_atoms
+        )
+        lost = gained = 0
+        if comparable:
+            lost = sum(
+                a and not b
+                for a, b in zip(
+                    accepted.required_atom_passes, final.required_atom_passes, strict=True
+                )
+            )
+            gained = sum(
+                b and not a
+                for a, b in zip(
+                    accepted.required_atom_passes, final.required_atom_passes, strict=True
+                )
+            )
+        counts = Counter(
+            cases=1,
+            exact_regressions=int(accepted.exact_pass and not final.exact_pass),
+            exact_improvements=int(final.exact_pass and not accepted.exact_pass),
+            schema_regressions=int(accepted.schema_valid and not final.schema_valid),
+            privacy_regressions=int(accepted.privacy_pass and not final.privacy_pass),
+            atom_comparable_cases=int(comparable),
+            atoms_lost=lost,
+            atoms_gained=gained,
+            cases_with_atom_loss=int(lost > 0),
+            cases_with_atom_gain=int(gained > 0),
+        )
+        total.update(counts)
+        for category in records[row.index].categories:
+            categories.setdefault(category, Counter()).update(counts)
+    return {"overall": dict(total), "categories": dict(sorted(categories.items()))}
+
+
 def aggregate(
     header: Mapping[str, Any],
     started: set[int],
@@ -494,7 +644,7 @@ def aggregate(
     records: Sequence[FidelityRecord],
 ) -> dict[str, Any]:
     surfaces = {}
-    for name in SURFACES:
+    for name in surfaces_for(header.get("mode", "hybrid")):
         rows = [
             (records[result.index], result.surfaces[name])
             for result in results
@@ -504,19 +654,43 @@ def aggregate(
         for record, value in rows:
             for category in record.categories:
                 counts = categories.setdefault(
-                    category, Counter(total=0, exact=0, privacy_failures=0)
+                    category,
+                    Counter(
+                        total=0,
+                        exact=0,
+                        privacy_failures=0,
+                        schema_valid=0,
+                        required_atoms=0,
+                        passed_atoms=0,
+                    ),
                 )
                 counts.update(
                     total=1,
                     exact=int(value.exact_pass),
                     privacy_failures=int(not value.privacy_pass),
+                    schema_valid=int(value.schema_valid),
+                    required_atoms=value.required_atoms,
+                    passed_atoms=value.passed_atoms,
                 )
+        required_atoms = sum(row.required_atoms for _, row in rows)
+        passed_atoms = sum(row.passed_atoms for _, row in rows)
         surfaces[name] = {
             "count": len(rows),
             "schema_valid": sum(row.schema_valid for _, row in rows),
             "exact_pass": sum(row.exact_pass for _, row in rows),
             "privacy_failures": sum(not row.privacy_pass for _, row in rows),
-            "categories": dict(sorted(categories.items())),
+            "required_atoms": required_atoms,
+            "passed_atoms": passed_atoms,
+            "semantic_atom_recall": passed_atoms / required_atoms if required_atoms else None,
+            "categories": {
+                category: {
+                    **counts,
+                    "semantic_atom_recall": counts["passed_atoms"] / counts["required_atoms"]
+                    if counts["required_atoms"]
+                    else None,
+                }
+                for category, counts in sorted(categories.items())
+            },
             "latency_ms": distribution([row.latency_ms for _, row in rows]),
             "output_tokens": distribution(
                 [row.output_tokens for _, row in rows if row.output_tokens is not None]
@@ -555,6 +729,14 @@ def aggregate(
         ),
         "fallback_cases": sum(result.fallback for result in results),
         "surfaces": surfaces,
+        "final_vs_accepted": compare_renderer_cases(results, records),
+        "learned_inference_ms": distribution(
+            [row.learned_inference_ms for row in results if row.learned_inference_ms is not None]
+        ),
+        "graph_construction_ms": distribution(
+            [row.graph_construction_ms for row in results if row.graph_construction_ms is not None]
+        ),
+        "graph_construction_scope": "accepted normalization and graph helper; excludes grading",
         "peak_memory_bytes": header["provenance"]["peak_memory_bytes"],
         "process_rss_peak_bytes": max(
             (
@@ -600,7 +782,9 @@ def aggregate(
         "paid_services_used": False,
         "latency_scope": "HTTP inference plus local surface construction; nearest-rank p95",
         "semantic_scope": "raw slots, typed graph, and compiled renderer text scored separately",
-        "fallback_scope": "captured accepted response; summed accepted and hybrid planning latency",
+        "fallback_scope": "same accepted response; one inference and measured local construction"
+        if header.get("mode") == "accepted_first"
+        else "captured accepted response; summed accepted and hybrid planning latency",
         "deterministic_recovery_is_model_improvement": False,
     }
 
@@ -617,6 +801,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     parser.add_argument("--timeout", type=float, default=30)
     parser.add_argument("--aggregate-only", action="store_true")
     parser.add_argument("--memory-pid", type=int)
+    parser.add_argument("--mode", choices=("hybrid", "accepted_first"), default="hybrid")
     args = parser.parse_args(argv)
     try:
         endpoint = validate_endpoint(args.endpoint)
@@ -637,6 +822,7 @@ def main(argv: Sequence[str] | None = None) -> int:
             endpoint=endpoint,
             timeout=args.timeout,
             memory_pid=args.memory_pid,
+            mode=args.mode,
         )
         started, results = load_evidence(args.evidence, header)
         if not args.aggregate_only:
@@ -659,6 +845,7 @@ def main(argv: Sequence[str] | None = None) -> int:
                             index,
                             model=args.model,
                             max_output_tokens=args.max_output_tokens,
+                            mode=args.mode,
                         )
                     result = result.model_copy(
                         update={

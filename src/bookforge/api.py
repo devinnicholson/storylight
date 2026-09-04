@@ -184,7 +184,8 @@ def _build_live_scene_planner_client(
             if settings.live_scene_planner_backend in {"tensorrt_hybrid", "tensorrt_graph"}
             else "slots"
         ),
-        scene_facts_enabled=settings.live_scene_planner_backend == "tensorrt_graph",
+        scene_facts_enabled=settings.live_scene_planner_backend
+        in {"tensorrt_graph", "tensorrt_accepted_graph"},
     )
 
 

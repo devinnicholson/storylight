@@ -115,9 +115,30 @@ _OWNERSHIP = {
     "contain": "contains",
     "touch": "touches",
 }
+_RESULT_VERBS = frozenset(
+    {
+        "appear",
+        "appears",
+        "appeared",
+        "emerge",
+        "emerges",
+        "emerged",
+        "form",
+        "forms",
+        "formed",
+        "bloom",
+        "blooms",
+        "bloomed",
+        "rise",
+        "rises",
+        "fall",
+        "falls",
+    }
+)
 _VERBS = frozenset(
     {
         *VISIBLE_VERBS,
+        *_RESULT_VERBS,
         "raise",
         "raises",
         "raised",
@@ -179,7 +200,8 @@ _RELATION = re.compile(
     r"\b(?:" + "|".join(sorted(_RELATIONS, key=len, reverse=True)) + r"|toward|towards)\b"
 )
 _BOUNDARY = re.compile(
-    r"\b(?:and|or|but|while|when|although|because|if|unless|after|before|then|named|called|who|which|that)\b"
+    r"\b(?:and|or|but|as|while|when|although|because|if|unless|after|before|then|"
+    r"named|called|who|which|that)\b"
 )
 _SCOPED_SOURCE = re.compile(
     r"\b(?:if|unless|would|could|might|neither|either|imagine|imagines|imagined|in a dream)\b"
@@ -321,7 +343,19 @@ def _source_clauses(source: str) -> tuple[_Clause, ...]:
             [part] if " between " in part else re.split(r"\band(?=\s+(?:a|an|the)\s)", part)
         )
     ]
+    expanded = []
     for part in parts:
+        simultaneous = re.split(r"\b(?:as|while)\b", part)
+        if len(simultaneous) == 2:
+            try:
+                _clause(simultaneous[0].strip())
+            except _Refuse:
+                pass
+            else:
+                expanded.extend(simultaneous)
+                continue
+        expanded.append(part)
+    for part in expanded:
         part = re.sub(r"^(?:first\s+)", "", part.strip())
         try:
             clause = _clause(part)
@@ -480,20 +514,20 @@ def _build(slots: dict[str, str], source: str) -> SceneFactsV2:
     if transforms:
         transformation = transforms[0]
     else:
-        # A result must occur affirmatively as a noun phrase, never solely in a
-        # negation, quotation, or a counterfactual alternative.
-        result_pattern = re.compile(
-            r"\b(?:a |an |the )?"
-            + re.escape(magic_value)
-            + r"\s+(?:appears?|appeared|emerges?|emerged|forms?|formed|blooms?|bloomed)\b"
-        )
-        if not any(
-            result_pattern.search(part)
-            and not re.search(r"\b(?:no|not|never|if|would|could|instead|without)\b", part)
-            for part in re.split(r"[.!?;]", source)
-        ):
+        # Match an affirmative result subject, not a phrase embedded in a
+        # report, comparison, or imagined event.
+        results = [
+            clause
+            for clause in clauses
+            if clause.verb in _RESULT_VERBS
+            and not clause.negative
+            and clause.object is None
+            and _compatible(magic, clause.subject)
+        ]
+        if not results:
             raise _Refuse(LiveSceneFactsRefusal.UNGROUNDED)
-        add(magic)
+        for result in results:
+            add(result.subject)
 
     # Recover explicit attributes/edges of selected entities. New source-only
     # actors or unrelated objects are never pulled into the focal graph.
@@ -509,6 +543,7 @@ def _build(slots: dict[str, str], source: str) -> SceneFactsV2:
             or clause.relation
             or clause.negative
             or _key(clause.verb)[0] in _OWNERSHIP
+            or _key(clause.verb)[0] in {"rise", "ris", "fall"}
         ):
             selected.append(clause)
             add(clause.subject)

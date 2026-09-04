@@ -357,3 +357,204 @@ def test_fallback_sums_measured_planning_latency_and_tokens(monkeypatch, records
     assert result.surfaces["final_renderer"].latency_ms >= 200
     assert result.surfaces["final_renderer"].output_tokens == 20
     assert result.surfaces["final_renderer"].output_sha256 == benchmark.digest("safe contract")
+
+
+@pytest.mark.parametrize("late_failure", [False, True])
+def test_accepted_first_one_request_reuses_exact_fallback(monkeypatch, records, late_failure):
+    requests = []
+    constructed = []
+    raw = records[0].target.as_wire()
+
+    def respond(request):
+        requests.append(json.loads(request.content))
+        return httpx.Response(
+            200,
+            json={
+                "choices": [{"message": {"content": raw}, "finish_reason": "stop"}],
+                "usage": {"completion_tokens": 31},
+            },
+        )
+
+    def helper(output, *, source_text):
+        constructed.append(output)
+        return SimpleNamespace(
+            scene_facts={} if late_failure else None, to_live_scene_plan=lambda **kwargs: object()
+        )
+
+    def render(*args):
+        if late_failure:
+            raise ValueError("private compilation detail")
+        return "accepted safe contract"
+
+    monkeypatch.setattr(
+        "bookforge.tensorrt_slot_client.tensor_accepted_graph_wire_plan", helper, raising=False
+    )
+    monkeypatch.setattr(benchmark, "safe_slots", lambda *args: "accepted safe contract")
+    monkeypatch.setattr(benchmark, "validate_live_scene_plan_privacy", lambda *a, **k: None)
+    monkeypatch.setattr(benchmark, "renderer_contract", render)
+    with httpx.Client(
+        base_url="http://localhost", transport=httpx.MockTransport(respond)
+    ) as client:
+        result = benchmark.run_case(
+            client, records[0], 0, model="resident", max_output_tokens=64, mode="accepted_first"
+        )
+    assert requests == [benchmark.request_payload(records[0].passage, "slots", "resident", 64)]
+    assert constructed == [raw]
+    assert set(result.surfaces) == set(benchmark.surfaces_for("accepted_first"))
+    assert "hybrid_raw" not in result.surfaces
+    assert result.fallback is True
+    accepted = result.surfaces["accepted_renderer"]
+    final = result.surfaces["final_renderer"]
+    assert accepted.output_sha256 == final.output_sha256
+    assert accepted.output_tokens == final.output_tokens == 31
+    assert result.learned_inference_ms == result.surfaces["accepted_raw"].latency_ms
+    assert result.graph_construction_ms is not None
+    assert result.refusal == ("renderer_refused" if late_failure else "adapter_refused")
+    assert "private compilation detail" not in result.model_dump_json()
+
+
+def test_accepted_first_context_and_journal_are_mode_bound(tmp_path, records):
+    expected = benchmark.context(
+        records,
+        provenance(),
+        model="resident",
+        max_output_tokens=64,
+        limit=1,
+        endpoint="http://127.0.0.1:11435",
+        timeout=30,
+        mode="accepted_first",
+    )
+    assert set(expected["requests"]) == {"slots"}
+    assert expected["mode"] == "accepted_first"
+    path = tmp_path / "single.jsonl"
+    benchmark.load_evidence(path, expected)
+    with pytest.raises(ValueError):
+        benchmark.load_evidence(path, {**expected, "mode": "hybrid"})
+    benchmark.append_event(path, {"kind": "start", "index": 0})
+    value = benchmark.score(records[0], {}, surface="postprocessed", elapsed_ms=1, output_tokens=7)
+    row = benchmark.CaseEvidence(
+        index=0,
+        status="ok",
+        refusal="adapter_refused",
+        fallback=True,
+        surfaces={name: value for name in benchmark.surfaces_for("accepted_first")},
+    )
+    benchmark.append_event(path, row.model_dump())
+    assert benchmark.load_evidence(path, expected) == ({0}, [row])
+
+
+def test_casewise_atom_comparison_detects_swaps_despite_equal_recall(records):
+    value = benchmark.score(records[0], {}, surface="postprocessed", elapsed_ms=1, output_tokens=7)
+    accepted = value.model_copy(
+        update={"required_atoms": 2, "passed_atoms": 1, "required_atom_passes": [True, False]}
+    )
+    final = accepted.model_copy(update={"required_atom_passes": [False, True]})
+    row = benchmark.CaseEvidence(
+        index=0,
+        status="ok",
+        refusal="none",
+        fallback=False,
+        surfaces={
+            "accepted_raw": accepted,
+            "accepted_renderer": accepted,
+            "graph_candidate": final,
+            "final_renderer": final,
+        },
+    )
+    report = benchmark.aggregate({**header(records), "mode": "accepted_first"}, {0}, [row], records)
+    comparison = report["final_vs_accepted"]["overall"]
+    assert comparison["atoms_lost"] == comparison["atoms_gained"] == 1
+    assert comparison["cases_with_atom_loss"] == comparison["cases_with_atom_gain"] == 1
+    assert comparison["exact_regressions"] == 0
+    surface = report["surfaces"]["final_renderer"]
+    assert surface["required_atoms"] == 2
+    assert surface["passed_atoms"] == 1
+    assert surface["semantic_atom_recall"] == 0.5
+    assert surface["categories"][records[0].categories[0]]["semantic_atom_recall"] == 0.5
+
+
+def test_accepted_first_timing_excludes_evaluator_work(monkeypatch, records):
+    clock = [0.0]
+    monkeypatch.setattr(benchmark.time, "perf_counter", lambda: clock[0])
+    monkeypatch.setattr(
+        benchmark, "infer", lambda *a: (records[0].target.as_wire(), 100.0, 31, True)
+    )
+
+    def baseline(*args):
+        clock[0] += 0.01
+        return "safe"
+
+    def helper(*args, **kwargs):
+        clock[0] += 0.02
+        return SimpleNamespace(scene_facts=None, to_live_scene_plan=lambda **k: object())
+
+    def renderer(*args):
+        clock[0] += 0.03
+        return "safe"
+
+    real_score = benchmark.score
+
+    def slow_score(*args, **kwargs):
+        clock[0] += 1000
+        return real_score(*args, **kwargs)
+
+    monkeypatch.setattr(benchmark, "safe_slots", baseline)
+    monkeypatch.setattr(
+        "bookforge.tensorrt_slot_client.tensor_accepted_graph_wire_plan", helper, raising=False
+    )
+    monkeypatch.setattr(benchmark, "validate_live_scene_plan_privacy", lambda *a, **k: None)
+    monkeypatch.setattr(benchmark, "renderer_contract", renderer)
+    monkeypatch.setattr(benchmark, "score", slow_score)
+    result = benchmark.run_case(
+        None, records[0], 0, model="resident", max_output_tokens=64, mode="accepted_first"
+    )
+    assert result.graph_construction_ms == pytest.approx(20)
+    assert result.surfaces["accepted_renderer"].latency_ms == pytest.approx(110)
+    assert result.surfaces["final_renderer"].latency_ms == pytest.approx(150)
+
+
+@pytest.mark.parametrize("stage", ["baseline", "helper", "renderer"])
+def test_accepted_first_privacy_refusal_retains_raw_without_retry(monkeypatch, records, stage):
+    calls = []
+    raw = records[0].target.as_wire()
+
+    def infer(*args):
+        calls.append(args[2])
+        return raw, 100.0, 31, True
+
+    def refuse():
+        raise benchmark.LiveScenePlannerPrivacyError("private refusal value")
+
+    def baseline(*args):
+        if stage == "baseline":
+            refuse()
+        return "safe"
+
+    def helper(*args, **kwargs):
+        if stage == "helper":
+            refuse()
+        return SimpleNamespace(scene_facts=None, to_live_scene_plan=lambda **k: object())
+
+    def renderer(*args):
+        if stage in {"baseline", "renderer"}:
+            refuse()
+        return "safe"
+
+    monkeypatch.setattr(benchmark, "infer", infer)
+    monkeypatch.setattr(benchmark, "safe_slots", baseline)
+    monkeypatch.setattr("bookforge.tensorrt_slot_client.tensor_accepted_graph_wire_plan", helper)
+    monkeypatch.setattr(benchmark, "validate_live_scene_plan_privacy", lambda *a, **k: None)
+    monkeypatch.setattr(benchmark, "renderer_contract", renderer)
+    result = benchmark.run_case(
+        None, records[0], 0, model="resident", max_output_tokens=64, mode="accepted_first"
+    )
+    assert calls == ["slots"]
+    assert result.status == "ok"
+    assert result.surfaces["accepted_raw"].output_sha256 == benchmark.digest(raw)
+    assert result.surfaces["accepted_raw"].exact_pass is True
+    assert (
+        result.surfaces["accepted_renderer"].output_sha256
+        == result.surfaces["final_renderer"].output_sha256
+    )
+    assert result.surfaces["accepted_renderer"].schema_valid is (stage != "baseline")
+    assert "private refusal value" not in result.model_dump_json()
