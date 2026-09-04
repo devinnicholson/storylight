@@ -68,7 +68,7 @@ _SEMANTIC_WORD = re.compile(r"[A-Za-z][A-Za-z'-]*")
 _PLACEMENT_MARGIN = 0.04
 _PLAN_CACHE_SCHEMA_VERSION = "1"
 _PLAN_CACHE_CONTRACT_REVISION = "semantic-v18-tensorrt-slot-privacy"
-LIVE_SCENE_RENDER_CONTRACT_REVISION = "subject-counts-deduplicated-v1"
+LIVE_SCENE_RENDER_CONTRACT_REVISION = "subject-counts-constraints-v3"
 _EMAIL = re.compile(r"\b[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}\b", re.IGNORECASE)
 _PHONE = re.compile(r"(?<!\w)(?:\+?\d[\d\s()./-]{6,}\d)(?!\w)")
 _URL = re.compile(r"\b(?:https?://|www\.)\S+", re.IGNORECASE)
@@ -581,12 +581,17 @@ class LiveScenePlan(FrozenStrictModel):
         setting_guard = _open_setting_guard(
             " ".join((background_prompt, focus_prompt, accent_prompt))
         )
-        distinct_accent = not _covered_visual_detail(accent_prompt, focus_prompt, background_prompt)
-        supporting_clause = (
-            f"Required supporting visual: {_prompt_fragment(accent_prompt)}. "
-            if distinct_accent
-            else ""
+        accent_is_constraint = (
+            re.match(r"(?i)^(?:no|not|none|nothing|without|absent)\b", accent_prompt) is not None
         )
+        distinct_accent = not accent_is_constraint and not _covered_visual_detail(
+            accent_prompt, focus_prompt, background_prompt
+        )
+        supporting_clause = ""
+        if accent_is_constraint:
+            supporting_clause = f"Scene constraint: {_prompt_fragment(accent_prompt)}. "
+        elif distinct_accent:
+            supporting_clause = f"Required supporting visual: {_prompt_fragment(accent_prompt)}. "
         supporting_placement = (
             f"; place the supporting detail {_placement_label(accent_placement)}, smaller "
             "and separated"
@@ -1906,7 +1911,7 @@ def _proper_name_candidates(source_text: str) -> set[tuple[str, ...]]:
     }
     for match in _CAPITALIZED_WORD.finditer(source_text):
         word = match.group(0)
-        if word.casefold() in _NON_NAME_CAPITALIZED:
+        if word.casefold() in _NON_NAME_CAPITALIZED or word.casefold() in _COUNT_WORDS:
             continue
         candidates.add(_privacy_tokens(word))
     return {candidate for candidate in candidates if candidate}
@@ -2323,13 +2328,16 @@ class StructuredLiveScenePlanner:
             self._inflight.pop(cache_key, None)
 
     def _cache_key(self, *, text: str) -> str:
+        identity = {
+            "text": text,
+            "model_revision": self.model_revision,
+            "compact_wire": self.compact_wire,
+            "contract_revision": _PLAN_CACHE_CONTRACT_REVISION,
+        }
+        if client_identity := getattr(self.client, "cache_identity", None):
+            identity["client_identity"] = client_identity
         payload = json.dumps(
-            {
-                "text": text,
-                "model_revision": self.model_revision,
-                "compact_wire": self.compact_wire,
-                "contract_revision": _PLAN_CACHE_CONTRACT_REVISION,
-            },
+            identity,
             ensure_ascii=False,
             sort_keys=True,
             separators=(",", ":"),

@@ -25,6 +25,11 @@ training and evaluation technology, never a dependency of the Jetson runtime.
 
 ## Frozen baseline
 
+Historical evidence below used the benchmark's `repair` prompt. September 3 revalidation found
+the deployed slot instruction differs and scores 16/20 on the existing lexical screen; replaying
+the old outputs is not live-model acceptance. Keep these frozen numbers as historical evidence,
+not today's production accuracy. See [the corrected baseline and rejected prompt experiments](planner-renderer-optimization-2026-09-03.md).
+
 - Repository baseline: `d857327`
 - Model: `google/gemma-4-E2B-it`
 - Hugging Face revision: `3e22461f65e89153144f8adb70e3b8c2cc9845a7`

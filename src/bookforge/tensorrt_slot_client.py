@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import hashlib
 import json
 import re
 import time
@@ -302,6 +303,7 @@ def _semantic_privacy_separator(value: str, *, source_text: str) -> str:
     """Break source trigrams with visual-preserving grammar changes, not marker tokens."""
 
     value = re.sub(r"\binstead\s+of\b", "rather than", value, flags=re.IGNORECASE)
+    value = re.sub(r"\bno\s+other\b", "no additional", value, flags=re.IGNORECASE)
     words = re.findall(r"[^\W_]+", value, flags=re.UNICODE)
     source_tokens = _privacy_tokens(source_text)
     source_phrases = {
@@ -368,7 +370,7 @@ def _semantic_privacy_separator(value: str, *, source_text: str) -> str:
             index
             for index in window
             if normalized[index] in _SEMANTIC_GERUNDS
-            or normalized[index] in _VISIBLE_VERBS
+            or (normalized[index] in _VISIBLE_VERBS and normalized[index] != "open")
         ]
         if verb_candidates:
             selected = verb_candidates[-1]
@@ -439,6 +441,17 @@ class TensorRTSlotModelClient(StructuredModelClient):
         self.base_url = base_url.rstrip("/")
         self.model = model
         self.max_output_tokens = max_output_tokens
+        self.cache_identity = hashlib.sha256(
+            json.dumps(
+                {
+                    "messages": _slot_messages(""),
+                    "max_tokens": max_output_tokens,
+                    "postprocessor": "slot-privacy-v2",
+                },
+                sort_keys=True,
+                separators=(",", ":"),
+            ).encode()
+        ).hexdigest()
         self.fallback = fallback
         self.fallback_ready_seconds = fallback_ready_seconds
         self.client = httpx.AsyncClient(
@@ -543,7 +556,10 @@ class TensorRTSlotModelClient(StructuredModelClient):
 
         try:
             payload = response.json()
-            content = payload["choices"][0]["message"]["content"]
+            choice = payload["choices"][0]
+            if choice.get("finish_reason") not in {None, "stop"}:
+                raise ValueError("slot generation did not finish normally")
+            content = choice["message"]["content"]
             if not isinstance(content, str):
                 raise TypeError("message content is not text")
             wire_plan = tensor_slot_wire_plan(content, source_text=source_text)

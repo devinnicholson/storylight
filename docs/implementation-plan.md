@@ -2,6 +2,17 @@
 
 Last updated: 2026-09-03
 
+## Latest increment — planner integrity and compiled renderer
+
+The second September 3 pass deployed count/name, open-book state, negation, unfinished-response,
+and cache-identity fixes on the Jetson. Absence constraints no longer become required objects.
+The full suite passes 1,112 tests. A bounded L4 comparison reduced warm Klein image/depth/encoding
+median from 2.070 s to 1.651 s; compilation adds 42 s to initial warmup, so snapshot restoration
+remains a promotion gate. Current Vertex routing is unchanged. The live planner baseline is
+16/20 on the existing lexical screen; historical 20/20 used a different prompt. Experimental
+prompt changes were rejected because actor/relationship errors persisted.
+See [results, limits, and remaining work](planner-renderer-optimization-2026-09-03.md).
+
 ## Latest performance pass
 
 The September 3 follow-up fixed a real uint32-to-int32 seed mismatch that unnecessarily sent

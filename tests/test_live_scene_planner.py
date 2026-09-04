@@ -911,6 +911,32 @@ def test_plan_preserves_projector_overscan_margin_for_animated_layers() -> None:
     assert accent.center_y + accent.height / 2 == pytest.approx(0.96)
 
 
+@pytest.mark.parametrize("constraint", ["no additional people", "without smoke", "none"])
+def test_absence_constraint_is_not_placed_as_a_visible_object(constraint: str) -> None:
+    payload = _plan().model_dump()
+    payload["accent"]["prompt"] = constraint
+    page = LiveScenePlan.model_validate(payload).to_page(
+        source_text="A reader quietly studies.",
+        visual_style="watercolor",
+        seed=1,
+    )
+    prompt = page.scene_spec.master_prompt
+    assert f"Scene constraint: {constraint}." in prompt
+    assert "Required supporting visual:" not in prompt
+    assert "place the supporting detail" not in prompt
+
+
+def test_visible_object_with_negative_attribute_is_still_a_supporting_visual() -> None:
+    payload = _plan().model_dump()
+    payload["accent"]["prompt"] = "two moths without wings"
+    page = LiveScenePlan.model_validate(payload).to_page(
+        source_text="A reader quietly studies.",
+        visual_style="watercolor",
+        seed=1,
+    )
+    assert "Required supporting visual: two moths without wings." in page.scene_spec.master_prompt
+
+
 def test_plan_repairs_duplicate_placements_and_coordinate_background_as_model_output() -> None:
     payload = _plan().model_dump()
     payload["background_prompt"] = "[0.5, 0.5, 0.8, 0.8], cobalt sky over luminous clouds"
@@ -1070,6 +1096,9 @@ def test_privacy_gate_rejects_source_proper_name_candidate() -> None:
         ("Toward a distant library, fireflies form a path.", "toward library, warm window light"),
         ("Each syllable becomes a firefly.", "each syllable, warm firefly glow"),
         ("Every page becomes a garden.", "every page, layered paper garden"),
+        ("Two wooden turtles sit below a glass sphere.", "two turtles beneath sphere"),
+        ("Three boats float on blue water.", "three boats, moonlit water"),
+        ("One owl perches on a branch.", "one owl beside sea"),
     ],
 )
 def test_privacy_gate_does_not_treat_sentence_initial_relations_as_names(
@@ -1090,6 +1119,16 @@ def test_privacy_gate_accepts_visual_semantic_paraphrase() -> None:
         _plan(),
         source_text=("A child named Quenlora opens a silent volume; folded shapes glow above it."),
     )
+
+
+def test_privacy_gate_still_rejects_count_word_explicitly_used_as_name() -> None:
+    payload = _plan().model_dump()
+    payload["accent"]["prompt"] = "Two beside a silver constellation"
+    with pytest.raises(LiveScenePlannerPrivacyError, match="proper-name candidate"):
+        validate_live_scene_plan_privacy(
+            LiveScenePlan.model_validate(payload),
+            source_text="A child named Two lifts a green lantern.",
+        )
 
 
 class _ModelStub:
@@ -1413,6 +1452,24 @@ def test_planner_coalesces_inflight_requests_and_survives_waiter_cancel() -> Non
     assert result.plan.focus.prompt
     assert len(stub.calls) == 1
     assert planner._inflight == {}  # noqa: SLF001
+
+
+def test_persistent_planner_cache_tracks_client_instructions(tmp_path: Path) -> None:
+    text = "A child opens a quiet book while paper birds rise above a floating school."
+    cached = []
+    for identity in ("instruction-a", "instruction-a", "instruction-b"):
+        stub = _ModelStub()
+        stub.cache_identity = identity
+        planner = StructuredLiveScenePlanner(
+            stub,
+            timeout_seconds=1,
+            model_revision="same-weights",
+            persistent_cache_dir=tmp_path / "plans",
+        )
+        cached.append(
+            asyncio.run(planner.plan(text=text, visual_style="watercolor", seed=1)).cache_hit
+        )
+    assert cached == [False, True, False]
 
 
 def test_structured_planner_turns_timeout_and_model_failure_into_recoverable_errors() -> None:

@@ -8,6 +8,7 @@ from pathlib import Path
 import httpx
 import pytest
 
+from bookforge import tensorrt_slot_client
 from bookforge.api import _build_live_scene_planner_client
 from bookforge.config import Settings
 from bookforge.domain import ModelMetrics
@@ -57,6 +58,40 @@ def test_tensorrt_slot_client_requires_loopback() -> None:
             model="llm",
             timeout_seconds=5,
         )
+
+
+def test_tensorrt_cache_identity_tracks_instruction_and_output_budget(monkeypatch) -> None:
+    async def run() -> None:
+        clients = []
+        try:
+            for tokens in (64, 64, 96):
+                clients.append(
+                    TensorRTSlotModelClient(
+                        base_url="http://127.0.0.1:11435",
+                        model="llm",
+                        timeout_seconds=5,
+                        max_output_tokens=tokens,
+                    )
+                )
+            monkeypatch.setattr(
+                tensorrt_slot_client,
+                "TENSORRT_SLOT_SYSTEM_PROMPT",
+                tensorrt_slot_client.TENSORRT_SLOT_SYSTEM_PROMPT + " Test revision.",
+            )
+            clients.append(
+                TensorRTSlotModelClient(
+                    base_url="http://127.0.0.1:11435",
+                    model="llm",
+                    timeout_seconds=5,
+                )
+            )
+            assert clients[0].cache_identity == clients[1].cache_identity
+            assert len({client.cache_identity for client in clients}) == 3
+        finally:
+            for client in clients:
+                await client.client.aclose()
+
+    asyncio.run(run())
 
 
 def test_api_planner_client_keeps_default_or_builds_tensorrt_candidate() -> None:
@@ -231,6 +266,59 @@ def test_tensorrt_slot_client_sends_accepted_prompt_and_returns_wire_plan() -> N
     assert metrics.output_tokens == 44
 
 
+@pytest.mark.parametrize("finish_reason", ["length", "content_filter", "tool_calls", "error"])
+def test_tensorrt_slot_client_rejects_incomplete_generation_without_fallback(
+    finish_reason: str,
+) -> None:
+    fallback = StubFallback()
+
+    async def run() -> None:
+        client = TensorRTSlotModelClient(
+            base_url="http://127.0.0.1:11435",
+            model="llm",
+            timeout_seconds=5,
+            fallback=fallback,
+        )
+        await client.client.aclose()
+        client.client = httpx.AsyncClient(
+            base_url=client.base_url,
+            transport=httpx.MockTransport(
+                lambda _: httpx.Response(
+                    200,
+                    json={
+                        "choices": [
+                            {
+                                "finish_reason": finish_reason,
+                                "message": {
+                                    "content": "SETTING: cave\nACTOR: child\n"
+                                    "ACTION: lifts lantern\nMAGIC: silver birds"
+                                },
+                            }
+                        ],
+                    },
+                )
+            ),
+        )
+        case = CONTEST_CASES[0]
+        try:
+            with pytest.raises(ModelUnavailableError, match="did not finish normally"):
+                await client.generate(
+                    system="ignored",
+                    prompt=live_scene_plan_prompt(
+                        text=case.text,
+                        visual_style=case.visual_style,
+                        seed=case.seed,
+                    ),
+                    output_type=LiveSceneWirePlan,
+                )
+        finally:
+            await client.client.aclose()
+
+    asyncio.run(run())
+    assert fallback.generations == 0
+    assert fallback.probes == 0
+
+
 def test_production_slot_postprocessor_accepts_all_hardware_outputs_cleanly() -> None:
     evidence = json.loads(EVIDENCE.read_text())
 
@@ -251,9 +339,9 @@ def test_production_slot_postprocessor_accepts_all_hardware_outputs_cleanly() ->
             )
         )
         assert re.search(r"\bv(?=[A-Z])", generated_text) is None
-        assert _semantic_evidence(case, generated_text=generated_text)[
-            "automatic_semantic_pass"
-        ], case.case_id
+        assert _semantic_evidence(case, generated_text=generated_text)["automatic_semantic_pass"], (
+            case.case_id
+        )
 
 
 def test_tensorrt_slot_postprocessor_restores_passive_agent_and_destination() -> None:
@@ -282,3 +370,18 @@ def test_tensorrt_slot_postprocessor_preserves_explicit_negation() -> None:
     )
 
     assert "rather than smoke" in wire_plan.magic.prompt
+
+
+def test_tensorrt_slot_postprocessor_keeps_static_book_state_and_absence() -> None:
+    source = "One child stands on a wooden bridge holding an open green book. No other people."
+    wire = tensor_slot_wire_plan(
+        "SETTING: wooden bridge\nACTOR: child\nACTION: stands holding open green book\n"
+        "MAGIC: No other people",
+        source_text=source,
+    )
+    assert "opening" not in wire.focus.action
+    assert "open" in wire.focus.action
+    assert wire.magic.prompt == "no additional people"
+    validate_live_scene_plan_privacy(
+        wire.to_live_scene_plan(context_text=source), source_text=source
+    )
