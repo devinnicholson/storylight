@@ -2,6 +2,27 @@
 
 Last updated: 2026-09-04
 
+## Latest increment — accepted-first single-request gate
+
+The opt-in `tensorrt_accepted_graph` backend attempts graph binding on the unchanged accepted
+response and reuses that same response on refusal. It preserves cache behavior and safe long
+visual styles, with graph/source/style privacy validation. The finite grammar gained bounded
+explicit simultaneous clauses and directly stated result motion after synthetic diagnostics.
+
+The separate frozen 512-record Jetson run completed without request failures but produced zero
+accepted graphs. All final hashes match the accepted renderer: 346 nonempty contracts, 166
+empty/refused results, zero exact cases and zero final privacy-screen failures. Median final
+planning is 1.046 seconds, with p95 1.237 seconds and maximum 1.378 seconds. This meets latency
+but fails semantic improvement, so promotion is rejected and no paid image comparison ran.
+
+Scoring positive controls expose article/modifier and separate-clause representation penalties;
+they do not excuse construction refusals or revise this gate. The original hybrid evidence remains
+unchanged and reproducible. All 1,560 Python tests, both JavaScript suites, scoped lint, public
+target coverage and retained aggregates pass. See the
+[accepted-first contract, controls, results and decision](accepted-first-scene-facts-2026-09-04.md).
+The next diagnostic work belongs on synthetic/public training fixtures and frozen evaluator
+controls before another inference experiment. The accepted appliance remains unchanged.
+
 ## Latest increment — live SceneFacts adapter and matched Jetson gate
 
 An opt-in `tensorrt_graph` path now converts the existing four-line hybrid response and local

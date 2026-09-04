@@ -37,11 +37,11 @@ This repository now contains working model-facing services rather than only a vi
 The original browser synchronization experiment remains in `index.html`, `styles.css`, and
 `app.js`. It is no longer the architecture.
 
-The opt-in `tensorrt_graph` planner connects four-line local model output to a bounded,
-source-grounded SceneFacts graph. This candidate failed the development gate; the accepted
-appliance remains on `tensorrt_slots`.
-See the [adapter contract and matched development gate](docs/live-scene-facts-gate-2026-09-04.md)
-for evidence, limitations, and the promotion decision.
+The opt-in graph planners connect four-line local model output to bounded, source-grounded
+SceneFacts. Both the [hybrid-first candidate](docs/live-scene-facts-gate-2026-09-04.md) and the
+[single-request accepted-first candidate](docs/accepted-first-scene-facts-2026-09-04.md) failed
+the semantic development gate. Accepted-first meets the latency gate, but neither produced
+an accepted graph in its 512-record run. The appliance remains on `tensorrt_slots`.
 
 ## Local setup
 
