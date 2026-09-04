@@ -88,6 +88,7 @@ from bookforge.live_scene import (
     build_live_scene_provider,
     live_scene_request_seed,
 )
+from bookforge.live_scene_planner import LIVE_SCENE_RENDER_CONTRACT_REVISION
 from bookforge.model_client import (
     ModelUnavailableError,
     StructuredModelClient,
@@ -125,7 +126,10 @@ def _completed_pack_matches_planner_mode(
 
     compiler = pack.compiler_model.casefold()
     if planner_mode == "model":
-        return not any(marker in compiler for marker in ("deterministic", "fallback", "fixture"))
+        return (
+            pack.compiler_contract_revision == LIVE_SCENE_RENDER_CONTRACT_REVISION
+            and not any(marker in compiler for marker in ("deterministic", "fallback", "fixture"))
+        )
     if compiler.startswith("deterministic-live-scene-planner-"):
         return compiler == DETERMINISTIC_LIVE_SCENE_COMPILER_MODEL
     return True

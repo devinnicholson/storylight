@@ -36,6 +36,7 @@ from bookforge.live_scene import (
     live_scene_request_seed,
 )
 from bookforge.live_scene_planner import (
+    LIVE_SCENE_RENDER_CONTRACT_REVISION,
     LiveScenePlanner,
     LiveScenePlannerError,
 )
@@ -2078,7 +2079,7 @@ class FiniteModalLiveSceneProvider:
             page=planned_page,
             assets=[],
             compiler_model=result.metrics.model,
-        )
+        ).model_copy(update={"compiler_contract_revision": LIVE_SCENE_RENDER_CONTRACT_REVISION})
         return _ResolvedLiveScenePlan(
             pack=pack,
             planning_ms=result.wall_ms,

@@ -68,6 +68,7 @@ _SEMANTIC_WORD = re.compile(r"[A-Za-z][A-Za-z'-]*")
 _PLACEMENT_MARGIN = 0.04
 _PLAN_CACHE_SCHEMA_VERSION = "1"
 _PLAN_CACHE_CONTRACT_REVISION = "semantic-v18-tensorrt-slot-privacy"
+LIVE_SCENE_RENDER_CONTRACT_REVISION = "subject-counts-deduplicated-v1"
 _EMAIL = re.compile(r"\b[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}\b", re.IGNORECASE)
 _PHONE = re.compile(r"(?<!\w)(?:\+?\d[\d\s()./-]{6,}\d)(?!\w)")
 _URL = re.compile(r"\b(?:https?://|www\.)\S+", re.IGNORECASE)
@@ -580,22 +581,34 @@ class LiveScenePlan(FrozenStrictModel):
         setting_guard = _open_setting_guard(
             " ".join((background_prompt, focus_prompt, accent_prompt))
         )
+        distinct_accent = not _covered_visual_detail(accent_prompt, focus_prompt, background_prompt)
+        supporting_clause = (
+            f"Required supporting visual: {_prompt_fragment(accent_prompt)}. "
+            if distinct_accent
+            else ""
+        )
+        supporting_placement = (
+            f"; place the supporting detail {_placement_label(accent_placement)}, smaller "
+            "and separated"
+            if distinct_accent
+            else ""
+        )
         composition_clause = (
-            "Composition: place the main subject "
-            f"{_placement_label(focus_placement)}, clearly larger and nearer; place the "
-            f"supporting detail {_placement_label(accent_placement)}, smaller and separated "
-            "within the same continuous scene. Never use an inset, panel, cutaway, collage, "
+            "Honor specified positions, scale, and physical contact. Only for unspecified "
+            "placement: place the main subject "
+            f"{_placement_label(focus_placement)}, clearly larger and nearer"
+            f"{supporting_placement} within the same continuous scene. "
+            "Never use an inset, panel, cutaway, collage, "
             "or split screen."
         )
         master_prompt = (
             f"{_prompt_fragment(visual_style)}. {_prompt_fragment(art_direction)}. "
             f"{background_clause.lstrip()} "
             f"Required foreground subject: {_prompt_fragment(render_focus_prompt)}. "
-            f"Required supporting visual: {_prompt_fragment(accent_prompt)}. "
-            "Render exactly one main actor, shown once, performing every required action; do not "
-            "duplicate the actor or its tools. "
-            "Make the main actor the visually dominant single subject. "
-            "Show the background, subject, and supporting visual simultaneously. "
+            f"{supporting_clause}"
+            "Preserve the stated subject counts and actions; depict each subject once. "
+            "Do not add unrequested characters or duplicate objects. "
+            "Show all required visuals simultaneously. "
             f"{setting_guard}"
             f"{composition_clause} "
             "Full-bleed cinematic 16:9 storybook projection with clear foreground/background "
@@ -1622,6 +1635,26 @@ def _semantically_redundant(value: str, reference: str) -> bool:
     words = {word.casefold() for word in _SEMANTIC_WORD.findall(value)}
     reference_words = {word.casefold() for word in _SEMANTIC_WORD.findall(reference)}
     return len(words) >= 4 and len(words & reference_words) / len(words) >= 0.8
+
+
+def _covered_visual_detail(detail: str, *references: str) -> bool:
+    """Avoid drawing a second copy of a detail already in the visual contract."""
+    scaffold = _PHRASE_STOPWORDS | {"complete", "visible", "shown"}
+
+    def tokens(value: str) -> tuple[str, ...]:
+        return tuple(word for word in _privacy_tokens(value) if word not in scaffold)
+
+    detail_tokens = tokens(detail)
+    if not detail_tokens:
+        return False
+    for reference in references:
+        words = tokens(reference)
+        if any(
+            words[index : index + len(detail_tokens)] == detail_tokens
+            for index in range(len(words) - len(detail_tokens) + 1)
+        ):
+            return True
+    return False
 
 
 def _normalized_placements(

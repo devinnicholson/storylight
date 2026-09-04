@@ -4,6 +4,28 @@ Last updated: 2026-09-03
 
 ## Latest performance pass
 
+The September 3 follow-up fixed a real uint32-to-int32 seed mismatch that unnecessarily sent
+Vertex requests into a cold Modal fallback. The failing browser path took 60.4 seconds; a new
+high-seed scene completed on Vertex in 5.3 seconds after the fix. The passages match, but styles
+differ, so this is routing-recovery evidence, not a controlled model speedup. Repair review now
+retains the original visual contract and rejects contradictory/truncated verdicts. The tested
+Cloud Run worker uses direct CUDA loading with byte-identical outputs; one cold comparison fell
+from 75.9 to 65.1 seconds, while warm HTTP medians remained about 0.32 seconds.
+
+Accuracy remains an open release gate: the existing critic missed five of eight holdout contracts;
+the proposed two-stage critic rejected every image and was not promoted. An isolated same-L4
+comparison found Klein matched six of six tested requirements versus SANA's two of six, at about
+2.37 seconds per warm image; non-truncating shorter encoding brought that to 2.02 seconds in a
+12-scene diagnostic with unchanged core-requirement pass counts. It remains a candidate.
+Duplicate-detail assembly and forced-single-actor wording are now fixed: a same-seed real UI
+retest generated exactly two boats without the prior duplicate inset in 3.49 seconds. Artifact
+reuse took 54 ms with no provider inference. Older compiler-contract caches cannot mask the fix.
+The edge planner still loses some secondary objects, including the moon; its alternate instruction
+failed the expanded test and was not promoted. Full suite: 1,097 passing tests.
+See [current results, limitations, and release identities](performance-accuracy-2026-09-03.md).
+
+### Earlier September 3 checkpoint
+
 Persistent NIM engine reuse now passes a real restart test without model or vendor-code changes:
 container startup fell from 631 to 229 seconds, and all 12 baseline review verdicts stayed identical.
 The workbench uses bounded event-driven readiness waits, skips an unnecessary cache-hit request,

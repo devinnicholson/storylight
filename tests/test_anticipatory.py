@@ -111,15 +111,16 @@ class FakeRenderer:
     def __init__(self, *, delay: float = 0, cost: float = 0.004) -> None:
         self.delay = delay
         self.cost = cost
-        self.calls: list[tuple[str, int, str]] = []
+        self.calls: list[tuple[str, int, str, str | None]] = []
 
     async def render(
         self,
         spec: AnticipatorySceneSpec,
         *,
         attempt: int,
+        repair_guidance: str | None = None,
     ) -> RenderedScene:
-        self.calls.append((spec.branch_id, attempt, spec.visual_brief))
+        self.calls.append((spec.branch_id, attempt, spec.visual_brief, repair_guidance))
         if self.delay:
             await asyncio.sleep(self.delay)
         return _scene(spec, attempt, cost=self.cost)
@@ -244,7 +245,8 @@ def test_critic_can_request_exactly_one_bounded_repair() -> None:
         assert record.repair_attempts == 1
         assert len(record.critic_history) == 2
         assert len(renderer.calls) == 2
-        assert renderer.calls[1][2] == record.critic_history[0].verdict.correction_visual_brief
+        assert renderer.calls[1][2] == _spec().visual_brief
+        assert renderer.calls[1][3] == record.critic_history[0].verdict.correction_visual_brief
         assert record.render_cost_usd == pytest.approx(0.008)
         await orchestrator.close()
 
@@ -268,6 +270,53 @@ def test_second_critic_failure_rejects_without_a_third_render() -> None:
         assert record.render_attempts == 2
         assert len(renderer.calls) == 2
         await orchestrator.close()
+
+    asyncio.run(scenario())
+
+
+def test_repair_cannot_weaken_the_original_acceptance_contract() -> None:
+    class DriftingCritic:
+        def __init__(self) -> None:
+            self.requests: list[AnticipatorySceneSpec] = []
+
+        async def evaluate(self, spec, scene):
+            self.requests.append(spec)
+            # The proposed correction omits the fox, gate, and crossing action.
+            if len(self.requests) == 1:
+                evidence = _evidence(NemotronCriticDecision.REFINE)
+                return evidence.model_copy(update={
+                    "verdict": evidence.verdict.model_copy(update={
+                        "correction_visual_brief": "A luminous indigo garden under moonlight."
+                    })
+                })
+            decision = (
+                NemotronCriticDecision.REJECT
+                if "fox" in spec.visual_brief
+                else NemotronCriticDecision.ACCEPT
+            )
+            return _evidence(decision)
+
+    async def scenario() -> None:
+        renderer = FakeRenderer()
+        critic = DriftingCritic()
+        original = _spec()
+        orchestrator = AnticipatorySceneOrchestrator(
+            renderer=renderer, critic=critic, now=lambda: NOW,
+        )
+        try:
+            await orchestrator.submit(_batch(original))
+            record = await orchestrator.wait_terminal(SESSION_A, 3, "moon_path")
+            assert record.state is CandidateState.REJECTED
+            assert critic.requests == [original, original]
+            assert renderer.calls[1][2] == original.visual_brief
+            assert renderer.calls[1][3] == "A luminous indigo garden under moonlight."
+            assert record.render_attempts == 2
+            # A rejected repair must not seed a successful cache entry.
+            await orchestrator.submit(_batch(_spec("later"), session=SESSION_B))
+            await orchestrator.wait_terminal(SESSION_B, 3, "later")
+            assert len(renderer.calls) == 4
+        finally:
+            await orchestrator.close()
 
     asyncio.run(scenario())
 

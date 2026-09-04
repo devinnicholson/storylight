@@ -277,6 +277,7 @@ class AnticipatoryRenderer(Protocol):
         spec: AnticipatorySceneSpec,
         *,
         attempt: Literal[1, 2],
+        repair_guidance: str | None = None,
     ) -> RenderedScene: ...
 
 
@@ -527,14 +528,14 @@ class AnticipatorySceneOrchestrator:
                 if correction is None:
                     await self._reject(key, "critic requested repair without a correction")
                     return
-                repair_spec = spec.model_copy(update={"visual_brief": correction})
                 if not await self._begin_repair(key, first_evidence):
                     return
-                repaired = await self.renderer.render(repair_spec, attempt=2)
+                repaired = await self.renderer.render(spec, attempt=2, repair_guidance=correction)
                 self._validate_render_cost(spec, repaired)
                 if not await self._record_render(key, repaired, repair=True):
                     return
-                repaired_evidence = await self.critic.evaluate(repair_spec, repaired)
+                # A correction guides rendering; it must never replace the acceptance contract.
+                repaired_evidence = await self.critic.evaluate(spec, repaired)
                 history = [first_evidence, repaired_evidence]
                 if repaired_evidence.verdict.decision is NemotronCriticDecision.ACCEPT:
                     await self._promote(key, repaired, history, repair_attempts=1)

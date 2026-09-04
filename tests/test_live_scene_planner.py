@@ -732,13 +732,9 @@ def test_compact_plan_normalizes_to_canonical_scene_spec_and_layers() -> None:
     assert plan.background_prompt in page.scene_spec.master_prompt
     assert plan.focus.prompt in page.scene_spec.master_prompt
     assert plan.accent.prompt in page.scene_spec.master_prompt
-    assert "Show the background, subject, and supporting visual simultaneously" in (
-        page.scene_spec.master_prompt
-    )
-    assert "exactly one main actor, shown once, performing every required action" in (
-        page.scene_spec.master_prompt
-    )
-    assert "visually dominant single subject" in page.scene_spec.master_prompt
+    assert "Show all required visuals simultaneously" in (page.scene_spec.master_prompt)
+    assert "Preserve the stated subject counts and actions" in page.scene_spec.master_prompt
+    assert "Only for unspecified placement" in page.scene_spec.master_prompt
     assert "duplicate person" in page.scene_spec.negative_prompt
     assert "main subject at left" in page.scene_spec.master_prompt
     assert "supporting detail at upper right" in page.scene_spec.master_prompt
@@ -758,6 +754,50 @@ def test_compact_plan_normalizes_to_canonical_scene_spec_and_layers() -> None:
     focus = page.scene_spec.composition[1]
     assert (focus.center_x, focus.center_y, focus.depth) == (0.32, 0.58, 4)
     assert focus.ambient_motion.kind == "breathe"
+
+
+@pytest.mark.parametrize("subject", ["a golden paper boat", "exactly two red paper boats"])
+def test_master_prompt_does_not_require_a_person_or_override_subject_count(subject: str) -> None:
+    plan = LiveSceneWirePlan(
+        background_prompt="indigo pond",
+        focus=LiveSceneWireFocus(kind="prop", subject=subject, action="floating"),
+        magic=LiveSceneWireMagic(kind="prop", prompt="crescent moon"),
+    ).to_live_scene_plan()
+    page = plan.to_page(source_text="A peaceful night.", visual_style="watercolor", seed=17)
+    prompt = page.scene_spec.master_prompt
+    assert subject in prompt
+    assert "exactly one main actor" not in prompt
+    assert "single subject" not in prompt
+    assert "Do not add unrequested characters" in prompt
+    assert "Honor specified positions, scale, and physical contact" in prompt
+
+
+@pytest.mark.parametrize(
+    ("accent", "duplicate"),
+    [
+        ("red paper two boats floating side via side", True),
+        ("calm azure pond", True),
+        ("three red paper boats", False),
+        ("one green paper boat", False),
+        ("red paper two boats sinking", False),
+        ("crescent moon", False),
+    ],
+)
+def test_master_prompt_deduplicates_only_covered_visual_details(
+    accent: str, duplicate: bool
+) -> None:
+    plan = LiveSceneWirePlan(
+        background_prompt="calm azure pond",
+        focus=LiveSceneWireFocus(
+            kind="prop", subject="red paper two boats", action="floating side via side"
+        ),
+        magic=LiveSceneWireMagic(kind="effect", prompt=accent),
+    ).to_live_scene_plan()
+    prompt = plan.to_page(
+        source_text="An evening scene.", visual_style="watercolor", seed=17
+    ).scene_spec.master_prompt
+    assert ("Required supporting visual:" not in prompt) == duplicate
+    assert ("supporting detail at" not in prompt) == duplicate
 
 
 def test_open_landscape_prompt_rejects_giant_unrequested_structures() -> None:

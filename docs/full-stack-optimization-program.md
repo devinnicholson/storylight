@@ -2,6 +2,18 @@
 
 Status: active, updated 2026-09-03
 
+Latest evidence superseding the earlier ranges below: a Vertex seed-range bug caused a
+60.4-second fallback; after the fix a new high-seed browser scene completed directly in 5.3 seconds.
+Cloud Run direct placement preserved all image/depth hashes and reduced one cold request from
+75.9 to 65.1 seconds. Warm medians stayed near 0.32 seconds. Nemotron's clean-node cached-engine
+startup took 652 seconds, distinct from its 234-second same-node restart. Neither the current
+critic nor the complete story-to-image path passes the expanded semantic gate. Klein 4B is an
+experimental stronger renderer, not an enabled production route; bounded shorter text encoding
+reduced its warm image-only median from 2.37 to 2.02 seconds. Duplicate prompt assembly is fixed
+and verified on the real two-boat UI regression (3.49 seconds); repeat artifact reuse took 54 ms.
+The full test suite now has 1,097 passes. See
+[the complete performance/accuracy record](performance-accuracy-2026-09-03.md).
+
 Implementation checkpoint: the privacy-safe Cloud Monitoring dashboard is deployed as
 `projects/your-gcp-project/dashboards/YOUR_DASHBOARD_ID`; the strict renderer digest
 is staged at zero traffic; and `bookforge.gcp_scene_benchmark` provides bounded probe/prepared
@@ -32,7 +44,7 @@ quality, reliability, privacy, cost, or presentation gate. Product count is not 
 | Prepared master plus depth | 0.50-1.99 s | p95 under 1.0 s |
 | Uncached text to master | 4.20-4.86 s | p95 under 4.0 s |
 | Exact replay | 4-5 ms | p95 under 10 ms; zero provider work |
-| Cold renderer readiness | 19-52 s accepted history | p95 under 60 s; no failed starts |
+| Cold renderer readiness | 19-52 s earlier history; latest cold requests 65-76 s | p95 under 60 s; no failed starts |
 | Physical moving projection | 30 Hz accepted | p95 frame interval under 40 ms; zero software WebGL |
 | GKE anticipatory uncached candidate | 6.82-7.87 s after explicit prewarm | p95 under 8 s; every candidate accepted and checksum-verified |
 | GKE anticipatory replay | 67.0-69.5 ms ready; 141.2-146.9 ms commit plus fetch | p95 ready under 250 ms; zero renderer or critic work |

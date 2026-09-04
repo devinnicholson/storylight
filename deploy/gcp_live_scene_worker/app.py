@@ -7,6 +7,7 @@ import io
 import json
 import os
 import time
+from collections.abc import Callable
 from concurrent.futures import ThreadPoolExecutor
 from contextvars import ContextVar, Token
 from typing import Annotated, Any
@@ -23,6 +24,9 @@ PROVIDER_NAME = "gcp-cloud-run"
 MASTER_JPEG_QUALITY = 95
 DEPTH_JPEG_QUALITY = 85
 MODEL_CACHE = os.environ.get("BOOKFORGE_MODEL_CACHE", "/models/huggingface")
+MODEL_LOAD_STRATEGY = os.environ.get("BOOKFORGE_MODEL_LOAD_STRATEGY", "cpu_then_cuda")
+if MODEL_LOAD_STRATEGY not in {"cpu_then_cuda", "direct_cuda"}:
+    raise ValueError("BOOKFORGE_MODEL_LOAD_STRATEGY must be cpu_then_cuda or direct_cuda")
 EXPECTED_GPU = os.environ.get("BOOKFORGE_EXPECTED_GPU", "L4")
 GOOGLE_CLOUD_PROJECT = os.environ.get("GOOGLE_CLOUD_PROJECT", "")
 _request_trace: ContextVar[str | None] = ContextVar("bookforge_cloud_trace", default=None)
@@ -95,6 +99,7 @@ class SceneRuntime:
         self.image_pipe: Any | None = None
         self.depth_pipe: Any | None = None
         self.model_load_seconds = 0.0
+        self.load_stages: dict[str, float] = {}
         self.inference_warmup_seconds = 0.0
         self.inference_warmed = False
         self.loaded_at = 0.0
@@ -104,20 +109,21 @@ class SceneRuntime:
         self.torch_cuda_version = "unloaded"
 
     async def ensure_loaded(self) -> None:
-        if self.image_pipe is not None:
+        if self.image_pipe is not None and self.depth_pipe is not None:
             return
         async with self._load_lock:
-            if self.image_pipe is not None:
+            if self.image_pipe is not None and self.depth_pipe is not None:
                 return
-            await asyncio.to_thread(self._load)
+            await _finish_thread_before_unlock(self._load)
 
     def _load(self) -> None:
+        started = time.perf_counter()
         import diffusers
         import torch
         from huggingface_hub import snapshot_download
         from transformers import pipeline
 
-        started = time.perf_counter()
+        imported = time.perf_counter()
         gpu_name = torch.cuda.get_device_name(0).upper()
         compute_capability = torch.cuda.get_device_capability(0)
         expected_arch = f"sm_{compute_capability[0]}{compute_capability[1]}"
@@ -139,28 +145,43 @@ class SceneRuntime:
         self.gpu_compute_capability = f"{compute_capability[0]}.{compute_capability[1]}"
         self.torch_version = torch.__version__
         self.torch_cuda_version = torch.version.cuda or "unknown"
-        self.image_pipe = diffusers.SanaSprintPipeline.from_pretrained(
+        load_options = {"device_map": "cuda"} if MODEL_LOAD_STRATEGY == "direct_cuda" else {}
+        image_started = time.perf_counter()
+        image_pipe = diffusers.SanaSprintPipeline.from_pretrained(
             FAST_MODEL,
             revision=FAST_MODEL_REVISION,
             cache_dir=MODEL_CACHE,
             local_files_only=True,
             torch_dtype=torch.bfloat16,
-        ).to("cuda")
-        self.image_pipe.set_progress_bar_config(disable=True)
+            **load_options,
+        )
+        if MODEL_LOAD_STRATEGY == "cpu_then_cuda":
+            image_pipe = image_pipe.to("cuda")
+        image_pipe.set_progress_bar_config(disable=True)
+        depth_started = time.perf_counter()
         depth_model_path = snapshot_download(
             repo_id=DEPTH_MODEL,
             revision=DEPTH_MODEL_REVISION,
             cache_dir=MODEL_CACHE,
             local_files_only=True,
         )
-        self.depth_pipe = pipeline(
+        depth_pipe = pipeline(
             task="depth-estimation",
             model=depth_model_path,
             image_processor=depth_model_path,
             dtype=torch.float16,
             device=0,
         )
-        self.model_load_seconds = time.perf_counter() - started
+        completed = time.perf_counter()
+        self.load_stages = {
+            "import_seconds": imported - started,
+            "device_setup_seconds": image_started - imported,
+            "image_load_seconds": depth_started - image_started,
+            "depth_load_seconds": completed - depth_started,
+        }
+        self.model_load_seconds = completed - started
+        # Publish readiness only after both components have loaded successfully.
+        self.image_pipe, self.depth_pipe = image_pipe, depth_pipe
         self.loaded_at = time.monotonic()
         _log_metric(
             "runtime.load.complete",
@@ -169,6 +190,8 @@ class SceneRuntime:
             torch_version=self.torch_version,
             torch_cuda_version=self.torch_cuda_version,
             model_load_seconds=self.model_load_seconds,
+            model_load_strategy=MODEL_LOAD_STRATEGY,
+            **self.load_stages,
         )
 
     async def prewarm(self) -> dict[str, Any]:
@@ -176,7 +199,7 @@ class SceneRuntime:
         async with self._inference_lock:
             if not self.inference_warmed:
                 started = time.perf_counter()
-                await asyncio.to_thread(
+                await _finish_thread_before_unlock(
                     self._infer,
                     "bright layered paper theater with one simple lantern",
                     1,
@@ -200,12 +223,14 @@ class SceneRuntime:
             "inference_warmup_seconds": self.inference_warmup_seconds,
             "container_age_seconds": time.monotonic() - self.loaded_at,
             "warm_state": "prewarmed",
+            "load_stages": self.load_stages,
         }
 
     async def generate(self, request: GenerateRequest) -> dict[str, Any]:
         await self.ensure_loaded()
         async with self._inference_lock:
-            result = await asyncio.to_thread(
+            was_warm = self.inference_warmed
+            result = await _finish_thread_before_unlock(
                 self._infer,
                 request.prompt,
                 request.seed,
@@ -234,7 +259,8 @@ class SceneRuntime:
             "scene_id": request.scene_id,
             "model_load_seconds": self.model_load_seconds,
             "container_age_seconds": time.monotonic() - self.loaded_at,
-            "warm_state": "warm" if self.inference_warmup_seconds else "cold",
+            "warm_state": "warm" if was_warm else "cold",
+            "load_stages": self.load_stages,
             **result,
         }
 
@@ -317,7 +343,26 @@ class SceneRuntime:
             "depth_model": DEPTH_MODEL,
             "depth_model_revision": DEPTH_MODEL_REVISION,
             "depth_dtype": DEPTH_DTYPE,
+            "model_load_strategy": MODEL_LOAD_STRATEGY,
         }
+
+
+async def _finish_thread_before_unlock(operation: Callable[..., Any], *args: Any) -> Any:
+    task = asyncio.create_task(asyncio.to_thread(operation, *args))
+    try:
+        return await asyncio.shield(task)
+    except asyncio.CancelledError:
+        # CUDA work cannot be cancelled with its HTTP request. Keep the lock until it exits.
+        while not task.done():
+            try:
+                await asyncio.shield(task)
+            except asyncio.CancelledError:
+                continue
+            except Exception:
+                break
+        if not task.cancelled():
+            task.exception()
+        raise
 
 
 def _encode_scene_assets(master: Any, depth: Any) -> tuple[bytes, bytes, float]:
@@ -364,7 +409,7 @@ async def health() -> dict[str, Any]:
         "provider": PROVIDER_NAME,
         "fast_model_revision": FAST_MODEL_REVISION,
         "depth_model_revision": DEPTH_MODEL_REVISION,
-        "loaded": runtime.image_pipe is not None,
+        "loaded": runtime.image_pipe is not None and runtime.depth_pipe is not None,
     }
 
 

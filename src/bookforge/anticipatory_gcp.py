@@ -219,6 +219,7 @@ class CloudRunAnticipatoryRenderer:
         spec: AnticipatorySceneSpec,
         *,
         attempt: Literal[1, 2],
+        repair_guidance: str | None = None,
     ) -> RenderedScene:
         worst_case_usd = self.timeout_seconds * GPU_USD_PER_SECOND[self.expected_gpu]
         if worst_case_usd > spec.max_render_cost_usd + 1e-9:
@@ -226,6 +227,8 @@ class CloudRunAnticipatoryRenderer:
                 "renderer timeout reservation exceeds the candidate cost ceiling"
             )
         prompt = f"{spec.visual_style}. {spec.visual_brief}"
+        if repair_guidance:
+            prompt += f" Preserve all scene requirements. Revision guidance: {repair_guidance}"
         started = time.perf_counter()
         payload, wall_seconds = await self._request(
             "POST",

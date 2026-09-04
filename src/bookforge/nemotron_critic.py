@@ -106,6 +106,10 @@ class NemotronCriticVerdict(FrozenStrictModel):
 
     @model_validator(mode="after")
     def require_actionable_correction(self) -> NemotronCriticVerdict:
+        if self.decision is NemotronCriticDecision.ACCEPT and (
+            not self.identity_consistent or self.unintended_text
+        ):
+            raise ValueError("accept contradicts an identity or unintended-text failure")
         if (
             self.decision in {NemotronCriticDecision.REFINE, NemotronCriticDecision.REJECT}
             and self.correction_visual_brief is None
@@ -256,7 +260,10 @@ class NemotronVisionCritic:
             )
             response.raise_for_status()
             payload = response.json()
-            content = payload["choices"][0]["message"]["content"]
+            choice = payload["choices"][0]
+            if choice.get("finish_reason") not in {None, "stop"}:
+                raise ValueError("Nemotron review did not finish normally")
+            content = choice["message"]["content"]
             verdict = _verdict_from_wire(content)
         except (httpx.HTTPError, json.JSONDecodeError, KeyError, IndexError, ValueError) as error:
             raise NemotronCriticUnavailableError(

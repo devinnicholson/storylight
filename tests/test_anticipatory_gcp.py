@@ -143,7 +143,8 @@ def test_renderer_cache_validation_fails_closed_after_asset_eviction() -> None:
     asyncio.run(scenario())
 
 
-def test_renderer_sends_only_sanitized_scene_direction_and_validates_identity() -> None:
+@pytest.mark.parametrize("guidance", [None, "Keep one fox, not two. Preserve the moon gate."])
+def test_renderer_sends_only_sanitized_scene_direction_and_validates_identity(guidance) -> None:
     observed: list[httpx.Request] = []
 
     def handler(request: httpx.Request) -> httpx.Response:
@@ -165,7 +166,9 @@ def test_renderer_sends_only_sanitized_scene_direction_and_validates_identity() 
                 transport=httpx.MockTransport(handler), **kwargs
             ),
         )
-        result = await renderer.render(_spec(), attempt=1)
+        result = await renderer.render(
+            _spec(), attempt=2 if guidance else 1, repair_guidance=guidance
+        )
         assert result.provider == "gcp-cloud-run"
         assert result.master_sha256 == _sha(JPEG)
         assert (await store.get(result.master_ref, now=NOW)).content == JPEG
@@ -175,7 +178,11 @@ def test_renderer_sends_only_sanitized_scene_direction_and_validates_identity() 
     assert len(observed) == 1
     assert observed[0].headers["authorization"] == "Bearer workload-identity-token"
     payload = json.loads(observed[0].content)
-    assert payload["prompt"].endswith(_spec().visual_brief)
+    assert _spec().visual_brief in payload["prompt"]
+    if guidance:
+        assert payload["prompt"].endswith(guidance)
+    else:
+        assert payload["prompt"].endswith(_spec().visual_brief)
     serialized = observed[0].content.decode()
     assert "source_text" not in serialized
     assert "transcript" not in serialized

@@ -28,7 +28,7 @@ from bookforge.provider_router import SafeProviderFallbackError
 PROVIDER_NAME = "gcp-vertex-gemini-image"
 DEFAULT_MODEL = "gemini-3.1-flash-lite-image"
 MODEL_REVISION = "vertex-managed"
-REQUEST_CONTRACT_REVISION = "story-scene-v2-exact-count-lock"
+REQUEST_CONTRACT_REVISION = "story-scene-v3-int31-seed"
 DEPTH_MODEL = "bookforge-projection-depth-bootstrap"
 DEPTH_MODEL_REVISION = "vertical-gradient-v1"
 DEFAULT_ESTIMATED_IMAGE_USD = 0.034
@@ -310,7 +310,8 @@ def _request_payload(request: FastSceneRequest) -> dict[str, Any]:
         "generationConfig": {
             "responseModalities": ["TEXT", "IMAGE"],
             "candidateCount": 1,
-            "seed": request.seed,
+            # Bookforge seeds are uint32; Vertex's GenerationConfig uses int32.
+            "seed": request.seed & 0x7FFFFFFF,
             "imageConfig": {
                 "aspectRatio": "16:9",
                 "imageOutputOptions": {
@@ -490,6 +491,7 @@ def _write_bundle(
                 request.negative_prompt.encode()
             ).hexdigest(),
             "seed": request.seed,
+            "provider_seed": request.seed & 0x7FFFFFFF,
             "requested_width": request.width,
             "requested_height": request.height,
             "steps": request.steps,

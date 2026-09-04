@@ -265,6 +265,7 @@ class StoryPack(StrictModel):
     reading_level: int
     visual_style: NonEmpty
     compiler_model: NonEmpty
+    compiler_contract_revision: NonEmpty | None = None
     pages: list[GeneratedPagePlan]
     assets: list[AssetRecord] = Field(default_factory=list)
 

@@ -52,8 +52,10 @@ def _response(width: int = 1024, height: int = 576) -> dict[str, object]:
     }
 
 
+@pytest.mark.parametrize("seed", [77, 2810313968, 2**32 - 1])
 def test_vertex_provider_generates_checksum_bound_master_and_local_depth(
     tmp_path: Path,
+    seed: int,
 ) -> None:
     requests: list[httpx.Request] = []
     token_calls = 0
@@ -79,8 +81,9 @@ def test_vertex_provider_generates_checksum_bound_master_and_local_depth(
     request = FastSceneRequest(
         scene_id="vertex-scene",
         prompt="One silver fox raises a lantern beneath a moon gate.",
-        seed=77,
+        seed=seed,
     )
+
     async def exercise():
         assert (await provider.probe())[0] is True
         return await provider.generate_fast(request, output_dir=tmp_path / "vertex")
@@ -95,6 +98,9 @@ def test_vertex_provider_generates_checksum_bound_master_and_local_depth(
     )
     body = json.loads(requests[-1].content)
     assert body["generationConfig"]["responseModalities"] == ["TEXT", "IMAGE"]
+    assert body["generationConfig"]["seed"] == seed & 0x7FFFFFFF
+    assert bundle.manifest["request"]["seed"] == seed
+    assert bundle.manifest["request"]["provider_seed"] == body["generationConfig"]["seed"]
     assert body["generationConfig"]["imageConfig"]["aspectRatio"] == "16:9"
     contract = body["contents"][0]["parts"][0]["text"]
     assert "NON-NEGOTIABLE VISUAL CONTRACT" in contract
@@ -110,6 +116,13 @@ def test_vertex_provider_generates_checksum_bound_master_and_local_depth(
     assert bundle.manifest["request"]["contract_revision"] == REQUEST_CONTRACT_REVISION
     assert "One silver fox" not in bundle.manifest_path.read_text()
     assert bundle.estimated_gpu_usd == pytest.approx(0.034)
+
+
+@pytest.mark.parametrize("seed", [0, 2**31 - 1, 2**31, 2810313968, 2**32 - 1])
+def test_vertex_seed_fits_nonnegative_int32_without_changing_original_request(seed: int) -> None:
+    request = FastSceneRequest(scene_id="seed-boundary", prompt="One paper boat", seed=seed)
+    assert 0 <= _request_payload(request)["generationConfig"]["seed"] <= 2**31 - 1
+    assert request.seed == seed
 
 
 def test_vertex_request_reinforces_sanitized_exact_counts() -> None:

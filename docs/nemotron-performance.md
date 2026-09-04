@@ -1,5 +1,10 @@
 # Nemotron and next-page latency experiments
 
+The [subsequent performance and accuracy pass](performance-accuracy-2026-09-03.md) records the
+clean-node cached-engine startup, failed image-blind/short-question experiments, and accepted
+repair-contract and response-integrity fixes. Existing Nemotron acceptance is not reliable evidence
+of action/count/spatial fidelity; the stronger prompts were not promoted.
+
 ## Accepted transport changes
 
 The next-page panel now uses a bounded 20-second long poll rather than sleeping for 1.5 seconds

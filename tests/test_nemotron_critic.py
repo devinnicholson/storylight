@@ -231,6 +231,35 @@ def test_refinement_requires_actionable_visual_correction() -> None:
         )
 
 
+@pytest.mark.parametrize("changes", [{"identity_consistent": False}, {"unintended_text": True}])
+def test_accept_cannot_contradict_hard_quality_failures(changes):
+    with pytest.raises(ValidationError, match="accept contradicts"):
+        NemotronCriticVerdict.model_validate({**_verdict(), **changes})
+
+
+def test_truncated_response_cannot_pass_even_if_partial_json_is_parseable():
+    async def scenario():
+        critic = NemotronVisionCritic(
+            base_url="https://example.org",
+            client_factory=lambda **kwargs: httpx.AsyncClient(
+                transport=httpx.MockTransport(lambda request: httpx.Response(200, json={
+                    "choices": [{"finish_reason": "length", "message": {
+                        "content": json.dumps(_wire_verdict())
+                    }}]
+                })), **kwargs,
+            ),
+        )
+        try:
+            with pytest.raises(NemotronCriticUnavailableError, match="did not finish"):
+                await critic.evaluate(
+                    _request(), image_bytes=b"\xff\xd8\xffsynthetic", media_type="image/jpeg"
+                )
+        finally:
+            await critic.aclose()
+
+    asyncio.run(scenario())
+
+
 def test_invalid_media_fails_before_network() -> None:
     called = False
 
