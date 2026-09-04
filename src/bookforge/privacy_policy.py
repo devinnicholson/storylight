@@ -8,6 +8,10 @@ import unicodedata
 EMAIL_PATTERN = re.compile(r"\b[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}\b", re.IGNORECASE)
 PHONE_PATTERN = re.compile(r"(?<!\w)(?:\+?\d[\d\s()./-]{6,}\d)(?!\w)")
 URL_PATTERN = re.compile(r"\b(?:https?://|www\.)\S+", re.IGNORECASE)
+SENSITIVE_CONTENT_PATTERN = re.compile(
+    r"\b(?:account|credential|password|passcode|secret|social security|ssn)\b",
+    re.IGNORECASE,
+)
 
 PHRASE_STOPWORDS = frozenset(
     {
@@ -120,7 +124,7 @@ _NAME_AFTER_MARKER = re.compile(
 _CAPITALIZED_WORD = re.compile(r"(?<!\w)[^\W\d_][\w'’\-]*(?!\w)", re.UNICODE)
 _PRINTED_SOURCE_MARKER = re.compile(
     r"\b(?P<subject>[^\W\d_][\w'’\-]*)\s+"
-    r"(?P<verb>(?:reads?|says?|shows?|displays?|contains?|includes?|features?|has|had|"
+    r"(?P<verb>(?:reads?|reading|says?|shows?|displays?|contains?|includes?|features?|has|had|"
     r"carries?|depicts?|bears?)|"
     r"(?:spells?\s+out)|"
     r"(?:(?:is|was)\s+)?"
@@ -140,7 +144,7 @@ _TRAILING_PRINTED_PREDICATE = re.compile(
     re.IGNORECASE,
 )
 _UNMARKED_CLAUSE_HEAD = re.compile(
-    r"(?:\A|[.!?]\s+|\b(?:meanwhile|then|whereas|while)\s+)"
+    r"(?:\A|[.!?,]\s+|\b(?:as|meanwhile|then|whereas|while)\s+)"
     r"([^\W\d_][\w'’\-]*)",
     re.IGNORECASE | re.UNICODE,
 )
@@ -212,6 +216,13 @@ _UNMARKED_ENTITY_VERBS = VISIBLE_VERBS | {
     "walked",
     "walks",
 }
+_NAME_AFTER_ROLE = re.compile(
+    r"\b(?:adult|baker|boy|child|father|girl|keeper|king|knight|mother|parent|pilot|"
+    r"prince|queen|reader|student|teacher|wizard)\s+"
+    r"(?P<name>[^\W\d_][\w'’\-]*(?:\s+[^\W\d_][\w'’\-]*){0,2})\s+"
+    r"(?=(?:" + "|".join(sorted(_UNMARKED_ENTITY_VERBS, key=len, reverse=True)) + r")\b)",
+    re.IGNORECASE | re.UNICODE,
+)
 _SAFE_UNMARKED_ENTITY_HEADS = frozenset(
     {
         "adult",
@@ -319,10 +330,16 @@ _TEXT_BEARING_MEDIA = _READING_OBJECTS | {
 }
 _INVERTED_PRINTED_PAYLOAD = re.compile(
     r"(?P<payload>[^.!?;,\r\n]{1,160}?)\s+"
-    r"(?:is|are|was|were)\s+"
+    r"(?:(?:is|are|was|were)\s+|(?:has|have|had)\s+been\s+)"
     r"(?:printed|written|labeled|inscribed|engraved|captioned|titled|marked|painted|"
     r"emblazoned)\s+(?:on|in|across)\s+(?:a|an|the)?\s*"
     r"(?P<medium>[^\W\d_][\w'’\-]*)\b",
+    re.IGNORECASE,
+)
+_ADJECTIVAL_PRINTED_PAYLOAD = re.compile(
+    r"(?P<payload>[^\W_][\w'’\-]*)[\-–—]"
+    r"(?:printed|written|labeled|inscribed|engraved|captioned|titled|marked|painted|"
+    r"emblazoned)\s+(?P<medium>[^\W\d_][\w'’\-]*)\b",
     re.IGNORECASE,
 )
 
@@ -337,6 +354,18 @@ def privacy_tokens(value: str) -> tuple[str, ...]:
 def proper_name_candidates(source_text: str) -> frozenset[tuple[str, ...]]:
     normalized_source = unicodedata.normalize("NFKC", source_text)
     candidates: set[tuple[str, ...]] = set()
+    for match in _NAME_AFTER_ROLE.finditer(normalized_source):
+        tokens = privacy_tokens(match.group("name"))
+        if any(
+            token in _NON_NAME_CAPITALIZED
+            or token in PHRASE_STOPWORDS
+            or token in _SAFE_UNMARKED_MODIFIERS
+            or token in _UNMARKED_ENTITY_VERBS
+            for token in tokens
+        ):
+            continue
+        candidates.add(tokens)
+        candidates.update((token,) for token in tokens)
     for match in _NAME_AFTER_MARKER.finditer(normalized_source):
         tokens = privacy_tokens(match.group(1))
         verb_index = next(
@@ -375,6 +404,13 @@ def proper_name_candidates(source_text: str) -> frozenset[tuple[str, ...]]:
         if verb_index is None:
             continue
         candidate = (*privacy_tokens(word), *following[:verb_index])
+        boundary = next(
+            (index for index, token in enumerate(candidate) if token in _NON_NAME_CAPITALIZED),
+            len(candidate),
+        )
+        candidate = candidate[:boundary]
+        if not candidate:
+            continue
         head = candidate[-1]
         if (
             head in _SAFE_UNMARKED_ENTITY_HEADS
@@ -431,7 +467,9 @@ def printed_source_payload_candidates(source_text: str) -> frozenset[tuple[str, 
         known_animate = subject in _SAFE_UNMARKED_ENTITY_HEADS or (
             subject.endswith("s") and subject[:-1] in _SAFE_UNMARKED_ENTITY_HEADS
         )
-        if verb_tokens and verb_tokens[-1] in {"read", "reads"}:
+        if verb_tokens and verb_tokens[-1] in {"read", "reads", "reading"}:
+            if verb_tokens[-1] == "reading" and subject not in _TEXT_BEARING_MEDIA:
+                continue
             if known_animate and subject not in _TEXT_BEARING_MEDIA:
                 continue
             if tokens[0] == "aloud":
@@ -495,6 +533,12 @@ def printed_source_payload_candidates(source_text: str) -> frozenset[tuple[str, 
         tokens = privacy_tokens(payload)
         if not tokens:
             continue
+        candidates.add(tokens)
+        candidates.update((token,) for token in tokens if token not in PHRASE_STOPWORDS)
+    for marker in _ADJECTIVAL_PRINTED_PAYLOAD.finditer(normalized_source):
+        if marker.group("medium").casefold() not in _TEXT_BEARING_MEDIA:
+            continue
+        tokens = privacy_tokens(marker.group("payload"))
         candidates.add(tokens)
         candidates.update((token,) for token in tokens if token not in PHRASE_STOPWORDS)
     return frozenset(candidates)

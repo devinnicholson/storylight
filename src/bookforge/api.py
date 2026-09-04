@@ -180,8 +180,11 @@ def _build_live_scene_planner_client(
         fallback=fallback,
         fallback_ready_seconds=settings.live_scene_planner_fallback_ready_seconds,
         protocol=(
-            "hybrid" if settings.live_scene_planner_backend == "tensorrt_hybrid" else "slots"
+            "hybrid"
+            if settings.live_scene_planner_backend in {"tensorrt_hybrid", "tensorrt_graph"}
+            else "slots"
         ),
+        scene_facts_enabled=settings.live_scene_planner_backend == "tensorrt_graph",
     )
 
 

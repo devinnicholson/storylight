@@ -17,6 +17,7 @@ from pydantic import AfterValidator, Field, StringConstraints, field_validator, 
 
 from bookforge.domain import FrozenStrictModel
 from bookforge.privacy_policy import (
+    SENSITIVE_CONTENT_PATTERN,
     contains_distinctive_source_phrase,
     contains_token_sequence,
     printed_source_payload_candidates,
@@ -752,12 +753,11 @@ def validate_scene_facts_grounding(facts: SceneFactsV2, *, source_text: str) -> 
                         issues.append(f"{path}.actions[{action_index}]")
             else:
                 for state_index, state in enumerate(entity.states):
-                    if not _phrase_near_label(
+                    if not _descriptor_grounded(
                         state,
                         entity.label,
                         entity_sentences,
-                        radius=4,
-                        descriptor=True,
+                        entity_labels=tuple(item.label for item in entity_by_ref.values()),
                     ):
                         issues.append(f"{path}.states[{state_index}]")
 
@@ -790,6 +790,7 @@ def validate_scene_facts_grounding(facts: SceneFactsV2, *, source_text: str) -> 
             destination_label=destination,
             sentences=sentences,
             entity_labels=tuple(item.label for item in entity_by_ref.values()),
+            subject_labels=tuple(subject.label for subject in facts.subjects),
         ):
             issues.append(f"motions[{index}]")
 
@@ -1229,30 +1230,16 @@ def _phrase_near_label(
     sentences: tuple[tuple[str, ...], ...],
     *,
     radius: int = 7,
-    descriptor: bool = False,
 ) -> bool:
     for sentence in sentences:
         label_positions = _phrase_positions(sentence, label)
         detail_positions = _phrase_positions(sentence, detail)
         for label_start, label_end in label_positions:
-            if descriptor:
-                matched = any(
-                    label_start - radius <= detail_start < label_start and detail_end <= label_start
-                    for detail_start, detail_end in detail_positions
-                ) or any(
-                    detail_start >= label_end
-                    and detail_end <= label_end + 3
-                    and label_end < len(sentence)
-                    and sentence[label_end] in {"be", "look", "appear", "remain"}
-                    for detail_start, detail_end in detail_positions
-                )
-            else:
-                matched = any(
-                    detail_start >= max(0, label_start - radius)
-                    and detail_end <= min(len(sentence), label_end + radius)
-                    for detail_start, detail_end in detail_positions
-                )
-            if matched:
+            if any(
+                detail_start >= max(0, label_start - radius)
+                and detail_end <= min(len(sentence), label_end + radius)
+                for detail_start, detail_end in detail_positions
+            ):
                 return True
     return False
 
@@ -1361,6 +1348,8 @@ def _salience_grounded(
         for _, source_end in _phrase_positions(sentence, source):
             for layer_start, _ in _phrase_positions(sentence, layer):
                 if not source_end <= layer_start <= source_end + 4:
+                    continue
+                if _position_negated(sentence, layer_start):
                     continue
                 if not _has_intervening_entity(
                     sentence,
@@ -1514,14 +1503,16 @@ def _motion_grounded(
     destination_label: str | None,
     sentences: tuple[tuple[str, ...], ...],
     entity_labels: tuple[str, ...],
+    subject_labels: tuple[str, ...],
 ) -> bool:
     for sentence in sentences:
         source_positions = _phrase_positions(sentence, source_label)
         if not source_positions:
             continue
+        direction_grounded = motion.direction is None
         if motion.direction is not None:
             direction_positions = _phrase_positions(sentence, motion.direction.value)
-            if any(
+            direction_grounded = any(
                 source_end <= direction_start
                 and not _position_negated(sentence, direction_start)
                 and not _has_binding_boundary(sentence[source_end:direction_start])
@@ -1534,16 +1525,33 @@ def _motion_grounded(
                 )
                 for _, source_end in source_positions
                 for direction_start, _ in direction_positions
-            ):
-                return True
-        if destination_label is None:
+            )
+        if not direction_grounded:
             continue
+        if destination_label is None:
+            return True
         destination_positions = _phrase_positions(sentence, destination_label)
         toward_positions = _token_positions(sentence, ("toward",))
         if any(
             source_end <= toward_start
             and toward_end <= destination_start
             and not _position_negated(sentence, toward_start)
+            and not _has_binding_boundary(sentence[source_end:toward_start])
+            and not _has_binding_boundary(sentence[toward_end:destination_start])
+            and not _has_intervening_entity(
+                sentence,
+                start=source_end,
+                end=toward_start,
+                excluded=(source_label,),
+                entity_labels=subject_labels,
+            )
+            and not _has_intervening_entity(
+                sentence,
+                start=toward_end,
+                end=destination_start,
+                excluded=(destination_label,),
+                entity_labels=entity_labels,
+            )
             for _, source_end in source_positions
             for toward_start, toward_end in toward_positions
             for destination_start, _ in destination_positions
@@ -1567,27 +1575,39 @@ def _event_grounded(
         action_positions = _phrase_positions(sentence, event.action)
         if not action_positions:
             continue
-        if not any(
-            source_end <= action_start
-            and not _position_negated(sentence, action_start)
-            and not _has_binding_boundary(sentence[source_end:action_start])
-            and not _has_intervening_entity(
-                sentence,
-                start=source_end,
-                end=action_start,
-                excluded=(source_label,),
-                entity_labels=subject_labels,
+        bound_actions = tuple(
+            (action_start, action_end)
+            for action_start, action_end in action_positions
+            if any(
+                source_end <= action_start
+                and not _position_negated(sentence, action_start)
+                and not _has_binding_boundary(sentence[source_end:action_start])
+                and not _has_intervening_entity(
+                    sentence,
+                    start=source_end,
+                    end=action_start,
+                    excluded=(source_label,),
+                    entity_labels=subject_labels,
+                )
+                for _, source_end in _phrase_positions(sentence, source_label)
             )
-            for _, source_end in _phrase_positions(sentence, source_label)
-            for action_start, _ in action_positions
-        ):
+        )
+        if not bound_actions:
             continue
         if object_label is None:
             return True
         object_positions = _phrase_positions(sentence, object_label)
         if any(
             action_end <= object_start
-            for _, action_end in action_positions
+            and not _has_binding_boundary(sentence[action_end:object_start])
+            and not _has_intervening_entity(
+                sentence,
+                start=action_end,
+                end=object_start,
+                excluded=(object_label,),
+                entity_labels=tuple(entity.label for entity in entities.values()),
+            )
+            for _, action_end in bound_actions
             for object_start, _ in object_positions
         ):
             return True
@@ -1620,15 +1640,17 @@ def _temporal_order_grounded(
             continue
         before_actions = _phrase_positions(sentence, before.action)
         after_actions = _phrase_positions(sentence, after.action)
-        if not any(
-            before_end <= after_start
-            for _, before_end in before_actions
-            for after_start, _ in after_actions
-        ):
-            continue
         if any(
-            _contains_phrase(sentence, marker)
-            for marker in (("before",), ("first",), ("then",), ("afterward",))
+            before_end <= after_start
+            and not {"before", "after"}.intersection(sentence[:before_start])
+            and (
+                {"before", "then", "afterward"}.intersection(
+                    sentence[before_end:after_start]
+                )
+                or "first" in sentence[max(0, before_start - 2) : before_start + 1]
+            )
+            for before_start, before_end in before_actions
+            for after_start, _ in after_actions
         ):
             return True
     return False
@@ -1786,6 +1808,10 @@ def _validate_facts_privacy(facts: SceneFactsV2, *, source_text: str) -> None:
         for value in values
     ):
         raise SceneFactsPrivacyError("scene facts contain a source proper-name candidate")
+    if any(
+        SENSITIVE_CONTENT_PATTERN.search(unicodedata.normalize("NFKC", value)) for value in values
+    ):
+        raise SceneFactsPrivacyError("scene facts contain protected sensitive content")
 
 
 def _validate_style_privacy(style: str, *, source_text: str) -> None:

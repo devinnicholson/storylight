@@ -29,6 +29,7 @@ from bookforge.domain import (
     VisualLayer,
 )
 from bookforge.model_client import StructuredModelClient
+from bookforge.scene_facts import SceneFactsV2
 
 _COLOR_WORDS = privacy_policy.COLOR_WORDS
 _COUNT_WORDS = privacy_policy.COUNT_WORDS
@@ -311,6 +312,19 @@ class LiveSceneWirePlan(FrozenStrictModel):
         )
 
 
+class LiveSceneGraphWirePlan(LiveSceneWirePlan):
+    """Opt-in graph extension; the accepted wire schema remains unchanged."""
+
+    scene_facts: SceneFactsV2 | None = None
+
+    def to_live_scene_plan(self, *, context_text: str = "") -> LiveScenePlan:
+        plan = super().to_live_scene_plan(context_text=context_text)
+        if self.scene_facts is None:
+            return plan
+        self.scene_facts.validate_source_grounding(source_text=context_text)
+        return LiveSceneGraphPlan(**plan.model_dump(), scene_facts=self.scene_facts)
+
+
 CompactFocusSubject = Annotated[
     str,
     StringConstraints(strip_whitespace=True, min_length=1, max_length=80),
@@ -576,6 +590,34 @@ class LiveScenePlan(FrozenStrictModel):
             literacy_support=[],
             comprehension=[],
         )
+
+
+class LiveSceneGraphPlan(LiveScenePlan):
+    """Retain validated facts through local caching and scene-job compilation."""
+
+    scene_facts: SceneFactsV2
+
+    def to_page(
+        self,
+        *,
+        source_text: str,
+        visual_style: str,
+        seed: int,
+        page_id: str = "page-01",
+        render_contract: Literal["full", "concise"] = "full",
+    ) -> GeneratedPagePlan:
+        page = super().to_page(
+            source_text=source_text,
+            visual_style=visual_style,
+            seed=seed,
+            page_id=page_id,
+            render_contract=render_contract,
+        )
+        prompt = self.scene_facts.to_renderer_prompt(
+            source_text=source_text, visual_style=visual_style
+        )
+        scene_spec = page.scene_spec.model_copy(update={"master_prompt": prompt})
+        return page.model_copy(update={"scene_spec": scene_spec})
 
 
 def _normalized_background_prompt(
@@ -1748,6 +1790,8 @@ def validate_live_scene_plan_privacy(
 ) -> None:
     """Fail closed when a model plan carries source text or obvious PII outbound."""
 
+    if isinstance(plan, LiveSceneGraphPlan):
+        plan.scene_facts.to_renderer_prompt(source_text=source_text)
     source_tokens = _privacy_tokens(source_text)
     proper_names = _proper_name_candidates(source_text)
     printed_payloads = _printed_source_payload_candidates(source_text)
@@ -2105,6 +2149,8 @@ class StructuredLiveScenePlanner:
         try:
             async with asyncio.timeout(self.timeout_seconds):
                 output_type = LiveSceneCompactWirePlan if self.compact_wire else LiveSceneWirePlan
+                if getattr(self.client, "scene_facts_enabled", False):
+                    output_type = LiveSceneGraphWirePlan
                 plan, metrics = await self.client.generate(
                     system=LIVE_SCENE_SYSTEM_PROMPT,
                     prompt=live_scene_plan_prompt(
@@ -2131,7 +2177,12 @@ class StructuredLiveScenePlanner:
             compact_plan = LiveSceneCompactWirePlan.model_validate(plan.model_dump())
             wire_plan = compact_plan.to_wire_plan()
         else:
-            wire_plan = LiveSceneWirePlan.model_validate(plan.model_dump())
+            wire_type = (
+                LiveSceneGraphWirePlan
+                if isinstance(plan, LiveSceneGraphWirePlan)
+                else LiveSceneWirePlan
+            )
+            wire_plan = wire_type.model_validate(plan.model_dump())
         if getattr(self.client, "wire_plans_are_privacy_sanitized", False):
             sanitized_wire_plan = wire_plan
         else:
@@ -2204,7 +2255,11 @@ class StructuredLiveScenePlanner:
             ):
                 return None
             return (
-                LiveScenePlan.model_validate(payload["plan"]),
+                (
+                    LiveSceneGraphPlan
+                    if "scene_facts" in payload["plan"]
+                    else LiveScenePlan
+                ).model_validate(payload["plan"]),
                 ModelMetrics.model_validate(payload["metrics"]),
             )
         except (OSError, TypeError, ValueError, KeyError, json.JSONDecodeError):

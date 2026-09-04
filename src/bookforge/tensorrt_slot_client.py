@@ -16,6 +16,7 @@ from bookforge import privacy_policy
 from bookforge.domain import ModelMetrics
 from bookforge.live_scene_planner import (
     _SEMANTIC_WORD,
+    LiveSceneGraphWirePlan,
     LiveSceneWirePlan,
     _bounded_words,
     _normalized_action,
@@ -136,10 +137,7 @@ _SEMANTIC_SYNONYMS = {
     "upward": "skyward",
 }
 
-_SENSITIVE_SEMANTIC_CONTENT = re.compile(
-    r"\b(?:account|credential|password|passcode|secret|social security|ssn)\b",
-    re.IGNORECASE,
-)
+_SENSITIVE_SEMANTIC_CONTENT = privacy_policy.SENSITIVE_CONTENT_PATTERN
 _NEGATION_TOKENS = frozenset({"no", "not", "nothing", "without", "neither", "never", "nor"})
 _SEMANTIC_GERUNDS = {
     "becomes": "becoming",
@@ -548,6 +546,40 @@ def tensor_slot_wire_plan(
     )
 
 
+def parse_tensor_graph_slots(output_text: str) -> dict[str, str]:
+    """Parse exactly one ordered field per line without legacy label recovery."""
+
+    if not isinstance(output_text, str) or len(output_text) > 2048:
+        raise ValueError("graph response exceeds the bounded envelope")
+    lines = output_text.strip().splitlines()
+    labels = ("SETTING", "ACTOR", "ACTION", "MAGIC")
+    if len(lines) != 4 or any(
+        re.fullmatch(rf"{label}:\s*\S.*", line) is None
+        for label, line in zip(labels, lines, strict=True)
+    ):
+        raise ValueError("graph response requires four ordered nonempty lines")
+    slots = {
+        label: line.split(":", 1)[1].strip()
+        for label, line in zip(labels, lines, strict=True)
+    }
+    if any(_SLOT_LABEL_PATTERN.search(value) for value in slots.values()):
+        raise ValueError("graph response contains an embedded field label")
+    return slots
+
+
+def tensor_graph_wire_plan(
+    output_text: str, *, source_text: str
+) -> LiveSceneGraphWirePlan:
+    """Validate a strict hybrid envelope and attach locally grounded graph facts."""
+
+    from bookforge.live_scene_facts import adapt_live_scene_facts
+
+    slots = parse_tensor_graph_slots(output_text)
+    result = adapt_live_scene_facts(slots, source_text=source_text)
+    wire = tensor_slot_wire_plan(output_text, source_text=source_text, protocol="hybrid")
+    return LiveSceneGraphWirePlan(**wire.model_dump(), scene_facts=result.facts)
+
+
 class TensorRTSlotModelClient(StructuredModelClient):
     """Use Gemma's accepted slot prompt through a loopback TensorRT server."""
 
@@ -563,6 +595,7 @@ class TensorRTSlotModelClient(StructuredModelClient):
         fallback: StructuredModelClient | None = None,
         fallback_ready_seconds: float = 5,
         protocol: Literal["slots", "hybrid"] = "slots",
+        scene_facts_enabled: bool = False,
     ) -> None:
         parsed = httpx.URL(base_url)
         if parsed.scheme not in {"http", "https"} or parsed.host not in {
@@ -579,6 +612,9 @@ class TensorRTSlotModelClient(StructuredModelClient):
         self.model = model
         self.max_output_tokens = max_output_tokens
         self.protocol = protocol
+        if scene_facts_enabled and protocol != "hybrid":
+            raise ValueError("scene facts require the opt-in hybrid protocol")
+        self.scene_facts_enabled = scene_facts_enabled
         self.cache_identity = hashlib.sha256(
             json.dumps(
                 {
@@ -590,6 +626,10 @@ class TensorRTSlotModelClient(StructuredModelClient):
                 separators=(",", ":"),
             ).encode()
         ).hexdigest()
+        if scene_facts_enabled:
+            self.cache_identity = hashlib.sha256(
+                f"{self.cache_identity}:live-scene-facts-v1".encode()
+            ).hexdigest()
         self.fallback = fallback
         self.fallback_ready_seconds = fallback_ready_seconds
         self.client = httpx.AsyncClient(
@@ -614,9 +654,17 @@ class TensorRTSlotModelClient(StructuredModelClient):
                 fallback_output, metrics = await self.fallback.generate(
                     system=system,
                     prompt=prompt,
-                    output_type=output_type,
+                    output_type=(
+                        LiveSceneWirePlan
+                        if output_type is LiveSceneGraphWirePlan
+                        else output_type
+                    ),
                 )
-                if set(output_type.model_fields) == {"background_prompt", "focus", "magic"}:
+                if set(output_type.model_fields) - {"scene_facts"} == {
+                    "background_prompt",
+                    "focus",
+                    "magic",
+                }:
                     source_text = _source_text_from_plan_prompt(prompt)
                     fallback_wire_plan = LiveSceneWirePlan.model_validate(
                         fallback_output.model_dump()
@@ -661,7 +709,10 @@ class TensorRTSlotModelClient(StructuredModelClient):
                 model=self.model,
                 total_ms=0,
             )
-        if set(output_type.model_fields) != {"background_prompt", "focus", "magic"}:
+        expected_fields = {"background_prompt", "focus", "magic"}
+        if self.scene_facts_enabled:
+            expected_fields.add("scene_facts")
+        if set(output_type.model_fields) != expected_fields:
             raise TypeError("TensorRT slot client only supports Bookforge live-scene plans")
 
         source_text = _source_text_from_plan_prompt(prompt)
@@ -700,13 +751,25 @@ class TensorRTSlotModelClient(StructuredModelClient):
             content = choice["message"]["content"]
             if not isinstance(content, str):
                 raise TypeError("message content is not text")
-            wire_plan = tensor_slot_wire_plan(
-                content,
-                source_text=source_text,
-                protocol=self.protocol,
-            )
-            parsed_output = output_type.model_validate(wire_plan.model_dump())
             usage = payload.get("usage", {})
+            if self.scene_facts_enabled:
+                try:
+                    wire_plan = tensor_graph_wire_plan(content, source_text=source_text)
+                except ValueError:
+                    wire_plan = None
+                if wire_plan is None or wire_plan.scene_facts is None:
+                    wire_plan, fallback_usage = await self._accepted_graph_fallback(source_text)
+                    usage = {
+                        key: int(usage.get(key, 0)) + int(fallback_usage.get(key, 0))
+                        for key in ("prompt_tokens", "completion_tokens")
+                    }
+            else:
+                wire_plan = tensor_slot_wire_plan(
+                    content,
+                    source_text=source_text,
+                    protocol=self.protocol,
+                )
+            parsed_output = output_type.model_validate(wire_plan.model_dump())
             metrics = ModelMetrics(
                 backend="tensorrt-edge-llm",
                 model=payload.get("model", self.model),
@@ -715,10 +778,39 @@ class TensorRTSlotModelClient(StructuredModelClient):
                 output_tokens=int(usage.get("completion_tokens", 0)),
             )
         except (AttributeError, KeyError, IndexError, TypeError, ValueError) as error:
+            if self.scene_facts_enabled:
+                raise ModelUnavailableError("TensorRT graph response failed validation") from None
             raise ModelUnavailableError(
                 f"TensorRT slot response failed validation: {error}"
             ) from error
         return parsed_output, metrics
+
+    async def _accepted_graph_fallback(
+        self, source_text: str
+    ) -> tuple[LiveSceneGraphWirePlan, dict[str, object]]:
+        """One accepted request after a completed but refused graph candidate."""
+
+        try:
+            response = await self.client.post(
+                "/v1/chat/completions",
+                json={
+                    "model": self.model,
+                    "messages": _slot_messages(source_text),
+                    "temperature": 0,
+                    "top_p": 1,
+                    "max_tokens": self.max_output_tokens,
+                    "stream": False,
+                },
+            )
+            response.raise_for_status()
+            payload = response.json()
+            choice = payload["choices"][0]
+            if choice.get("finish_reason") not in {None, "stop"}:
+                raise ValueError("incomplete accepted fallback")
+            wire = tensor_slot_wire_plan(choice["message"]["content"], source_text=source_text)
+            return LiveSceneGraphWirePlan(**wire.model_dump()), payload.get("usage", {})
+        except (httpx.HTTPError, AttributeError, KeyError, IndexError, TypeError, ValueError):
+            raise ModelUnavailableError("TensorRT accepted graph fallback failed") from None
 
     async def probe(self) -> tuple[bool, str]:
         try:
