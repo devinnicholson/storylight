@@ -106,6 +106,9 @@ App `ap-fEUEkIuUTZYRQ28w7sL4Bo`, call `fc-01M1N799GH1EVJ6NGRNA7HQV3N`, completed
 seconds at the client boundary. All 24 image/depth files passed recorded SHA-256 verification.
 The exact executed harness hash was
 `019695e9b8f1fc5fd776e44ac5307c29046f9aeadb819a3b9c062a8a3beaf23c`.
+It is retained in commit `53b6a4c`. A subsequent harness-only cleanup captures its source hash
+before dispatch and returns a failing exit status after saving a failed comparison, so an
+automated caller cannot mistake partial eager-only evidence for success.
 All three experimental apps were subsequently verified stopped with zero tasks.
 Their combined reported Modal usage was **$0.25824**; that is a usage-report observation, not a
 guarantee that billing has finished settling. No GCP configuration or budget was changed.

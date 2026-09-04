@@ -170,6 +170,7 @@ def compare(regional: bool = False, mode: str = "reduce-overhead"):
 def main(output_dir: str, regional: bool = False, mode: str = "reduce-overhead"):
     if mode not in {"default", "reduce-overhead"}:
         raise ValueError("compile mode must be default or reduce-overhead")
+    harness_sha256 = hashlib.sha256(Path(__file__).read_bytes()).hexdigest()
     destination = Path(output_dir)
     destination.mkdir(parents=True, exist_ok=False)
     started = time.perf_counter()
@@ -179,9 +180,11 @@ def main(output_dir: str, regional: bool = False, mode: str = "reduce-overhead")
     report.update(
         function_call_id=call.object_id,
         whole_call_seconds=time.perf_counter() - started,
-        harness_sha256=hashlib.sha256(Path(__file__).read_bytes()).hexdigest(),
+        harness_sha256=harness_sha256,
     )
     for filename, content in assets.items():
         (destination / filename).write_bytes(content)
     (destination / "results.json").write_text(json.dumps(report, indent=2) + "\n")
     print(json.dumps({"output_dir": str(destination), "samples": len(report["samples"])}))
+    if "failure" in report:
+        raise RuntimeError(f"Renderer comparison failed: {report['failure']['type']}")
