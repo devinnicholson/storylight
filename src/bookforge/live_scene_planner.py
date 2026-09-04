@@ -67,8 +67,8 @@ _LEADING_ARTICLE = re.compile(r"^(?:a|an|the)\s+", re.IGNORECASE)
 _SEMANTIC_WORD = re.compile(r"[A-Za-z][A-Za-z'-]*")
 _PLACEMENT_MARGIN = 0.04
 _PLAN_CACHE_SCHEMA_VERSION = "1"
-_PLAN_CACHE_CONTRACT_REVISION = "semantic-v18-tensorrt-slot-privacy"
-LIVE_SCENE_RENDER_CONTRACT_REVISION = "subject-counts-constraints-v3"
+_PLAN_CACHE_CONTRACT_REVISION = "semantic-v19-preserve-negation"
+LIVE_SCENE_RENDER_CONTRACT_REVISION = "subject-counts-constraints-v4"
 _EMAIL = re.compile(r"\b[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}\b", re.IGNORECASE)
 _PHONE = re.compile(r"(?<!\w)(?:\+?\d[\d\s()./-]{6,}\d)(?!\w)")
 _URL = re.compile(r"\b(?:https?://|www\.)\S+", re.IGNORECASE)
@@ -1913,6 +1913,10 @@ def _proper_name_candidates(source_text: str) -> set[tuple[str, ...]]:
         word = match.group(0)
         if word.casefold() in _NON_NAME_CAPITALIZED or word.casefold() in _COUNT_WORDS:
             continue
+        if word.casefold() == "exactly":
+            following = _privacy_tokens(source_text[match.end() :])
+            if following and (following[0] in _COUNT_WORDS or following[0].isdigit()):
+                continue
         candidates.add(_privacy_tokens(word))
     return {candidate for candidate in candidates if candidate}
 
@@ -1954,6 +1958,7 @@ def _remove_distinctive_source_overlap(
 ) -> str:
     """Minimally redact repeated source trigrams without inventing replacement text."""
 
+    value = re.sub(r"\bno\s+other\b", "no additional", value, flags=re.IGNORECASE)
     output_tokens = list(_privacy_tokens(value))
     source_tokens = _privacy_tokens(source_text)
     if len(output_tokens) < 3 or len(source_tokens) < 3:
@@ -2005,7 +2010,10 @@ def _remove_distinctive_source_overlap(
         else:
             window = output_tokens[overlap_index : overlap_index + 3]
             deletion_offset = min(range(3), key=lambda offset: len(window[offset]))
-        del output_tokens[overlap_index + deletion_offset]
+        deletion_index = overlap_index + deletion_offset
+        if output_tokens[deletion_index] in {"no", "not", "without", "neither", "never", "nor"}:
+            raise LiveScenePlannerPrivacyError("privacy rewrite would remove a negation")
+        del output_tokens[deletion_index]
         changed = True
     return (" ".join(output_tokens) if changed else value) or value
 

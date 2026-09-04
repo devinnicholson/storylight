@@ -2,6 +2,18 @@
 
 Last updated: 2026-09-03
 
+## Latest increment — offline renderer loading and restartable compilation
+
+Pinned Klein/DepthAnything weights now build on CPU and load offline in an isolated, portable
+runtime. Three single-use L4 containers establish compiler-artifact reuse: first 128-token render
+fell from 23.072 s during compilation to 8.624 / 8.355 s after restoration; model loading is a
+separate 20.446 / 6.804 / 6.759 s. Warm full contracts run around 1.7–1.9 s including depth/encoding.
+A paired production-parser contract experiment removed duplicate owls, foxes, and boats with
+concise instructions, at 1.644 s versus 1.728 s warm median. These are small synthetic diagnostics,
+not a live provider promotion or end-to-end latency claim. Exactly/count privacy false positives
+and negation deletion are fixed, with both semantic and completed-pack cache versions advanced.
+See [results, deployment, costs, and remaining gates](renderer-restart-optimization-2026-09-03.md).
+
 ## Latest increment — warmup-independent cache and regional compilation
 
 The Jetson now returns validated memory/disk semantic-cache hits without waiting for model warmup;

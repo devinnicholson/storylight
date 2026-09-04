@@ -15,6 +15,7 @@ from bookforge.live_scene_planner import (
     LiveSceneWireMagic,
     LiveSceneWirePlan,
     StructuredLiveScenePlanner,
+    _remove_distinctive_source_overlap,
     validate_live_scene_plan_privacy,
 )
 
@@ -1099,6 +1100,8 @@ def test_privacy_gate_rejects_source_proper_name_candidate() -> None:
         ("Two wooden turtles sit below a glass sphere.", "two turtles beneath sphere"),
         ("Three boats float on blue water.", "three boats, moonlit water"),
         ("One owl perches on a branch.", "one owl beside sea"),
+        ("Exactly two red paper boats float on blue water.", "exactly two boats on water"),
+        ("Exactly 3 owls perch on a branch.", "exactly 3 birds beside sea"),
     ],
 )
 def test_privacy_gate_does_not_treat_sentence_initial_relations_as_names(
@@ -1121,13 +1124,50 @@ def test_privacy_gate_accepts_visual_semantic_paraphrase() -> None:
     )
 
 
-def test_privacy_gate_still_rejects_count_word_explicitly_used_as_name() -> None:
+@pytest.mark.parametrize("name", ["Two", "Exactly"])
+def test_privacy_gate_still_rejects_count_word_explicitly_used_as_name(name: str) -> None:
     payload = _plan().model_dump()
-    payload["accent"]["prompt"] = "Two beside a silver constellation"
+    payload["accent"]["prompt"] = f"{name} beside a silver constellation"
     with pytest.raises(LiveScenePlannerPrivacyError, match="proper-name candidate"):
         validate_live_scene_plan_privacy(
             LiveScenePlan.model_validate(payload),
-            source_text="A child named Two lifts a green lantern.",
+            source_text=f"A child named {name} lifts a green lantern.",
+        )
+
+
+def test_exactly_is_not_globally_exempted_as_a_name() -> None:
+    payload = _plan().model_dump()
+    payload["accent"]["prompt"] = "Exactly beside a silver constellation"
+    for source in (
+        "Exactly lifts a green lantern.",
+        "A child named Exactly 2 lifts a green lantern.",
+    ):
+        with pytest.raises(LiveScenePlannerPrivacyError, match="proper-name candidate"):
+            validate_live_scene_plan_privacy(
+                LiveScenePlan.model_validate(payload), source_text=source
+            )
+
+
+def test_generic_wire_privacy_preserves_absent_people() -> None:
+    source = "One child holds a green book. No other people."
+    wire = (
+        _wire_plan()
+        .model_copy(update={"magic": LiveSceneWireMagic(kind="effect", prompt="no other people")})
+        .privacy_sanitized(source_text=source)
+    )
+    plan = wire.to_live_scene_plan(context_text=source)
+    page = plan.to_page(source_text=source, visual_style="watercolor", seed=17)
+    assert plan.accent.prompt == "no additional people"
+    assert "Scene constraint: no additional people" in page.scene_spec.master_prompt
+    assert "Required supporting visual: other people" not in page.scene_spec.master_prompt
+
+
+@pytest.mark.parametrize("negation", ["no", "not", "without", "neither", "never", "nor"])
+def test_privacy_rewrite_never_deletes_a_negation(negation: str) -> None:
+    value = f"{negation} silver fox"
+    with pytest.raises(LiveScenePlannerPrivacyError, match="remove a negation"):
+        _remove_distinctive_source_overlap(
+            value, f"The illustration has {value}.", preserve_tail=True
         )
 
 
