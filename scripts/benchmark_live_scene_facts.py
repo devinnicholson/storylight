@@ -24,7 +24,7 @@ import httpx
 from pydantic import BaseModel, ConfigDict, Field, StringConstraints
 
 from bookforge.fidelity_dataset import DATASET_ID, generate_split
-from bookforge.fidelity_evaluation import evaluate_surface
+from bookforge.fidelity_evaluation import FIDELITY_EVALUATOR_REVISION, evaluate_surface
 from bookforge.fidelity_schema import DatasetSplit, FidelityRecord
 from bookforge.live_scene_planner import (
     LiveScenePlannerPrivacyError,
@@ -221,6 +221,7 @@ def context(
     return {
         "kind": "header",
         "schema_version": 1,
+        "evaluator_revision": FIDELITY_EVALUATOR_REVISION,
         "dataset_id": DATASET_ID,
         "dataset_sha256": digest([record.model_dump(mode="json") for record in records]),
         "implementation_sha256": digest(

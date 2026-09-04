@@ -8,6 +8,7 @@ from pathlib import Path
 import pytest
 
 from bookforge.fidelity_dataset import generate_split
+from bookforge.fidelity_evaluation import FIDELITY_EVALUATOR_REVISION
 from bookforge.fidelity_schema import DatasetSplit
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -37,7 +38,8 @@ def test_build_report_never_requests_hidden_and_canonicalizes_split_order(
     assert [item["split"] for item in report["splits"]] == ["train", "development"]
     assert report["hidden_evaluated"] is False
     assert report["paid_services_used"] is False
-    assert report["tool_revision"] == "scene-facts-public-coverage-v1"
+    assert report["tool_revision"] == "scene-facts-public-coverage-v2"
+    assert report["evaluator_revision"] == FIDELITY_EVALUATOR_REVISION
     assert report["selected_splits"] == ["train", "development"]
     assert report["target_derivation"] == "deterministic_public_contract_adapter"
     assert report["evaluation_surface"] == "postprocessed_typed_graph"

@@ -201,6 +201,7 @@ class SceneTransformationFact(FrozenStrictModel):
     result_label: FactPhrase
     result_color: FactAtom | None = None
     result_attributes: Annotated[tuple[FactAtom, ...], Field(max_length=3)] = ()
+    result_count: Annotated[int | None, Field(strict=True, ge=1, le=12)] = None
 
     @field_validator("result_attributes")
     @classmethod
@@ -496,6 +497,11 @@ class SceneFactsV2(FrozenStrictModel):
                     self.transformation.result_label,
                     self.transformation.result_color,
                     self.transformation.result_attributes,
+                    *(
+                        (self.transformation.result_count,)
+                        if self.transformation.result_count is not None
+                        else ()
+                    ),
                 )
             )
         wire = "\n".join(lines)
@@ -665,7 +671,10 @@ def parse_scene_facts_wire(wire: str) -> SceneFactsV2:
                 )
             )
         else:
-            _require_width(parts, 5, tag)
+            _require_width(parts, 6 if len(parts) == 6 else 5, tag)
+            result_count = _wire_count(parts[5]) if len(parts) == 6 else None
+            if len(parts) == 6 and result_count is None:
+                raise ValueError("scene facts transformation count must be explicit")
             if transformation is not None:
                 raise ValueError("scene facts wire contains more than one transformation")
             transformation = SceneTransformationFact(
@@ -673,6 +682,7 @@ def parse_scene_facts_wire(wire: str) -> SceneFactsV2:
                 result_label=parts[2],
                 result_color=_wire_optional(parts[3]),
                 result_attributes=_wire_list(parts[4]),
+                result_count=result_count,
             )
 
     if setting is None:
@@ -808,6 +818,7 @@ def validate_scene_facts_grounding(facts: SceneFactsV2, *, source_text: str) -> 
     for index, event in enumerate(facts.events):
         if not _event_grounded(
             event,
+            prior_events=facts.events,
             entities=entity_by_ref,
             sentences=sentences,
             subject_labels=tuple(subject.label for subject in facts.subjects),
@@ -932,16 +943,11 @@ def compile_scene_facts_prompt(
             )
         )
     if facts.transformation is not None:
-        result = _descriptor(
+        result = _entity_descriptor(
             facts.transformation.result_label,
-            (
-                *(
-                    (facts.transformation.result_color,)
-                    if facts.transformation.result_color
-                    else ()
-                ),
-                *facts.transformation.result_attributes,
-            ),
+            count=facts.transformation.result_count,
+            color=facts.transformation.result_color,
+            modifiers=facts.transformation.result_attributes,
         )
         source_label = entities[facts.transformation.source].label
         clauses.append(f"Transformation: {source_label} becomes {result}")
@@ -1312,7 +1318,9 @@ def _action_grounded(
     *,
     entity_labels: tuple[str, ...],
 ) -> bool:
-    action_tokens = _normalized_phrase(action)
+    action_tokens = tuple(
+        token for token in _normalized_phrase(action) if token not in {"a", "an", "the"}
+    )
     if not action_tokens:
         return False
     for sentence in sentences:
@@ -1321,7 +1329,10 @@ def _action_grounded(
             for action_start, _ in action_positions:
                 if source_end > action_start or _position_negated(sentence, action_start):
                     continue
-                if _has_binding_boundary(sentence[source_end:action_start]):
+                if _has_binding_boundary(sentence[source_end:action_start]) or {
+                    "and",
+                    "or",
+                }.intersection(sentence[source_end:action_start]):
                     continue
                 if _has_intervening_entity(
                     sentence,
@@ -1332,9 +1343,36 @@ def _action_grounded(
                 ):
                     continue
                 window = sentence[action_start : action_start + len(action_tokens) + 12]
-                if all(token in window for token in action_tokens):
+                cursor = 1
+                for token in action_tokens[1:]:
+                    next_position = next(
+                        (index for index in range(cursor, len(window)) if window[index] == token),
+                        None,
+                    )
+                    if next_position is None:
+                        break
+                    gap = window[cursor:next_position]
+                    if _has_action_binding_boundary(gap):
+                        break
+                    cursor = next_position + 1
+                else:
                     return True
     return False
+
+
+def _has_action_binding_boundary(tokens: tuple[str, ...]) -> bool:
+    return bool(
+        _has_binding_boundary(tokens)
+        or _DESCRIPTOR_BINDING_BOUNDARIES.intersection(tokens)
+        or _NEGATION_MARKERS.intersection(tokens)
+        or {"and", "or", "neither", "nor"}.intersection(tokens)
+        or any(
+            _token_positions(tokens, marker)
+            for markers in _RELATION_MARKERS.values()
+            for marker in markers
+        )
+        or any(_token_positions(tokens, marker) for marker in _TRANSFORMATION_MARKERS)
+    )
 
 
 def _salience_grounded(
@@ -1566,52 +1604,90 @@ def _event_grounded(
     entities: dict[str, SceneSubjectFact | SceneObjectFact],
     sentences: tuple[tuple[str, ...], ...],
     subject_labels: tuple[str, ...],
+    prior_events: tuple[SceneEventFact, ...] = (),
 ) -> bool:
+    return any(
+        _event_spans(
+            event,
+            sentence,
+            entities=entities,
+            subject_labels=subject_labels,
+            prior_events=prior_events,
+        )
+        for sentence in sentences
+    )
+
+
+def _event_spans(
+    event: SceneEventFact,
+    sentence: tuple[str, ...],
+    *,
+    entities: dict[str, SceneSubjectFact | SceneObjectFact],
+    subject_labels: tuple[str, ...],
+    prior_events: tuple[SceneEventFact, ...] = (),
+) -> tuple[tuple[int, int], ...]:
+    """Locate actions only where their actor and optional object bind together."""
+
     source_label = entities[event.source].label
     object_label = entities[event.object].label if event.object is not None else None
-    for sentence in sentences:
-        if not _phrase_positions(sentence, source_label):
-            continue
-        action_positions = _phrase_positions(sentence, event.action)
-        if not action_positions:
-            continue
-        bound_actions = tuple(
-            (action_start, action_end)
-            for action_start, action_end in action_positions
-            if any(
-                source_end <= action_start
-                and not _position_negated(sentence, action_start)
-                and not _has_binding_boundary(sentence[source_end:action_start])
-                and not _has_intervening_entity(
-                    sentence,
-                    start=source_end,
-                    end=action_start,
-                    excluded=(source_label,),
-                    entity_labels=subject_labels,
-                )
-                for _, source_end in _phrase_positions(sentence, source_label)
-            )
-        )
-        if not bound_actions:
-            continue
-        if object_label is None:
-            return True
-        object_positions = _phrase_positions(sentence, object_label)
+    bound_actions = tuple(
+        (action_start, action_end)
+        for action_start, action_end in _phrase_positions(sentence, event.action)
         if any(
-            action_end <= object_start
-            and not _has_binding_boundary(sentence[action_end:object_start])
+            source_end <= action_start
+            and not _position_negated(sentence, action_start)
+            and not _has_binding_boundary(sentence[source_end:action_start])
+            and not {"and", "or"}.intersection(sentence[source_end:action_start])
             and not _has_intervening_entity(
                 sentence,
-                start=action_end,
-                end=object_start,
-                excluded=(object_label,),
-                entity_labels=tuple(entity.label for entity in entities.values()),
+                start=source_end,
+                end=action_start,
+                excluded=(source_label,),
+                entity_labels=subject_labels,
             )
-            for _, action_end in bound_actions
-            for object_start, _ in object_positions
-        ):
-            return True
-    return False
+            for _, source_end in _phrase_positions(sentence, source_label)
+        )
+    )
+    coordinated_actions = []
+    for action_start, action_end in _phrase_positions(sentence, event.action):
+        for connector in (("and", "then"), ("and", "afterward"), ("and", "only", "afterward")):
+            connector_start = action_start - len(connector)
+            if connector_start < 0 or sentence[connector_start:action_start] != connector:
+                continue
+            if any(
+                prior.source == event.source
+                and prior.ref != event.ref
+                and prior.object is not None
+                and any(
+                    end == connector_start
+                    for _, end in _event_spans(
+                        prior,
+                        sentence[:connector_start],
+                        entities=entities,
+                        subject_labels=subject_labels,
+                    )
+                )
+                for prior in prior_events
+            ):
+                coordinated_actions.append((action_start, action_end))
+    bound_actions += tuple(coordinated_actions)
+    if object_label is None:
+        return bound_actions
+    return tuple(
+        (action_start, object_end)
+        for action_start, action_end in bound_actions
+        for object_start, object_end in _phrase_positions(sentence, object_label)
+        if action_end <= object_start
+        and not _position_negated(sentence, object_start)
+        and not _has_action_binding_boundary(sentence[action_end:object_start])
+        and not _has_intervening_entity(
+            sentence,
+            start=action_end,
+            end=object_start,
+            excluded=(object_label,),
+            entity_labels=tuple(entity.label for entity in entities.values()),
+        )
+    )
 
 
 def _temporal_order_grounded(
@@ -1623,23 +1699,20 @@ def _temporal_order_grounded(
     subject_labels: tuple[str, ...],
 ) -> bool:
     for sentence in sentences:
-        if not (
-            _event_grounded(
-                before,
-                entities=entities,
-                sentences=(sentence,),
-                subject_labels=subject_labels,
-            )
-            and _event_grounded(
-                after,
-                entities=entities,
-                sentences=(sentence,),
-                subject_labels=subject_labels,
-            )
-        ):
-            continue
-        before_actions = _phrase_positions(sentence, before.action)
-        after_actions = _phrase_positions(sentence, after.action)
+        before_actions = _event_spans(
+            before,
+            sentence,
+            entities=entities,
+            subject_labels=subject_labels,
+            prior_events=(before, after),
+        )
+        after_actions = _event_spans(
+            after,
+            sentence,
+            entities=entities,
+            subject_labels=subject_labels,
+            prior_events=(before, after),
+        )
         if any(
             before_end <= after_start
             and not {"before", "after"}.intersection(sentence[:before_start])
@@ -1737,6 +1810,21 @@ def _transformation_grounded(
                             for detail_start, _ in _phrase_positions(sentence, detail)
                         )
                         for detail in details
+                    ):
+                        continue
+                    if transformation.result_count is not None and not any(
+                        marker_end <= result_start <= marker_end + 12
+                        and not _has_binding_boundary(sentence[marker_end:result_start])
+                        and not {"and", "or"}.intersection(sentence[marker_end:result_start])
+                        and _count_near_label(
+                            transformation.result_count,
+                            transformation.result_label,
+                            (sentence[marker_end:result_end],),
+                            entity_labels=entity_labels,
+                        )
+                        for result_start, result_end in _phrase_positions(
+                            sentence, transformation.result_label
+                        )
                     ):
                         continue
                     if not _has_intervening_entity(

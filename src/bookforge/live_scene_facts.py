@@ -204,7 +204,11 @@ _BOUNDARY = re.compile(
     r"named|called|who|which|that)\b"
 )
 _SCOPED_SOURCE = re.compile(
-    r"\b(?:if|unless|would|could|might|neither|either|imagine|imagines|imagined|in a dream)\b"
+    r"\b(?:if|unless|would|could|might|neither|either|imagine|imagines|imagined|in a dream|"
+    r"allegedly|hypothetically|reportedly|supposedly)\b"
+)
+_NEUTRAL_ADVERBS = frozenset(
+    {"carefully", "deliberately", "gently", "quietly", "slowly", "steadily"}
 )
 
 
@@ -286,6 +290,8 @@ def _clause(value: str) -> _Clause:
         match = _PREDICATE.search(value)
     assert match is not None
     head = value[: match.start()].strip()
+    while head and head.rsplit(" ", 1)[-1] in _NEUTRAL_ADVERBS:
+        head = head.rsplit(" ", 1)[0] if " " in head else ""
     negative = bool(re.search(r"\b(?:does not|do not|did not|never)$", head))
     head = re.sub(r"\s+(?:does not|do not|did not|never)$", "", head)
     subject = _noun(head)
@@ -417,6 +423,46 @@ def _matches(requested: _Clause, actual: _Clause) -> bool:
     )
 
 
+def _result_matches(requested: _Clause, actual: _Clause) -> bool:
+    if _key(requested.verb) == ("be",) and requested.relation is not None:
+        requested = _Clause(
+            requested.subject,
+            actual.verb,
+            relation=requested.relation,
+            anchor=requested.anchor,
+            secondary=requested.secondary,
+            negative=requested.negative,
+        )
+    return _matches(requested, actual)
+
+
+def _action_linked_results(
+    source: str,
+    selected: list[_Clause],
+    *,
+    setting: str,
+) -> tuple[_Noun, ...]:
+    results = []
+    for sentence in re.split(r"[.!?;]", source):
+        match = re.fullmatch(r"(.+),\s*(?:calling forth|causing)\s+(.+)", sentence.strip())
+        if match is None:
+            continue
+        action_text = re.sub(
+            rf"^(?:in|at|inside)\s+(?:a\s+|an\s+|the\s+)?{re.escape(setting)},\s*",
+            "",
+            match[1],
+            count=1,
+        )
+        try:
+            action = _clause(action_text)
+            result = _noun(match[2])
+        except _Refuse:
+            continue
+        if not action.negative and action in selected:
+            results.append(result)
+    return tuple(results)
+
+
 def _build(slots: dict[str, str], source: str) -> SceneFactsV2:
     if _SCOPED_SOURCE.search(source):
         raise _Refuse(LiveSceneFactsRefusal.UNSUPPORTED_SYNTAX)
@@ -485,9 +531,14 @@ def _build(slots: dict[str, str], source: str) -> SceneFactsV2:
         magic_clause = None
     transformation = None
     if magic_clause is not None:
-        if not magic_clause.transform or magic_clause.object is None:
+        if magic_clause.transform and magic_clause.object is not None:
+            magic = magic_clause.object
+        elif (magic_clause.verb in _RESULT_VERBS or magic_clause.relation is not None) and (
+            magic_clause.object is None and not magic_clause.negative
+        ):
+            magic = magic_clause.subject
+        else:
             raise _Refuse(LiveSceneFactsRefusal.UNSUPPORTED_SYNTAX)
-        magic = magic_clause.object
     else:
         magic = _noun(magic_value)
     transforms = [
@@ -501,7 +552,7 @@ def _build(slots: dict[str, str], source: str) -> SceneFactsV2:
     ]
     if len(transforms) > 1:
         raise _Refuse(LiveSceneFactsRefusal.AMBIGUOUS_BINDING)
-    if magic_clause:
+    if magic_clause and magic_clause.transform:
         known = nouns.get(_key(magic_clause.subject.label))
         if (
             known is None
@@ -511,7 +562,7 @@ def _build(slots: dict[str, str], source: str) -> SceneFactsV2:
             )
         ):
             raise _Refuse(LiveSceneFactsRefusal.UNGROUNDED)
-    if transforms:
+    if transforms and (magic_clause is None or magic_clause.transform):
         transformation = transforms[0]
     else:
         # Match an affirmative result subject, not a phrase embedded in a
@@ -523,11 +574,23 @@ def _build(slots: dict[str, str], source: str) -> SceneFactsV2:
             and not clause.negative
             and clause.object is None
             and _compatible(magic, clause.subject)
+            and (magic_clause is None or _result_matches(magic_clause, clause))
         ]
-        if not results:
+        linked = [
+            result
+            for result in _action_linked_results(source, selected, setting=slots["SETTING"])
+            if magic_clause is None and _compatible(magic, result)
+        ]
+        if not results and not linked:
             raise _Refuse(LiveSceneFactsRefusal.UNGROUNDED)
         for result in results:
-            add(result.subject)
+            for noun in (result.subject, result.anchor, result.secondary):
+                if noun:
+                    add(noun)
+            if result not in selected:
+                selected.append(result)
+        for result in linked:
+            add(result)
 
     # Recover explicit attributes/edges of selected entities. New source-only
     # actors or unrelated objects are never pulled into the focal graph.
@@ -647,6 +710,7 @@ def _build(slots: dict[str, str], source: str) -> SceneFactsV2:
         transformed = SceneTransformationFact(
             source=refs[_key(transformation.subject.label)],
             result_label=result.label,
+            result_count=result.count,
             result_color=result.color,
             result_attributes=(*result.states, *result.attributes),
         )

@@ -399,3 +399,132 @@ def test_simultaneous_result_does_not_add_causality_or_unrelated_actor() -> None
     }
     assert len(facts.relationships) == 1
     assert facts.relationships[0].relation.value == "holds"
+
+
+@pytest.mark.parametrize("predicate", ["appears", "rises", "falls"])
+def test_magic_noun_and_explicit_physical_predicate_produce_same_graph(predicate: str) -> None:
+    source = f"In a cave, a badger lifts a thimble. A comet {predicate}."
+    base = _slots(ACTOR="badger", ACTION="lifts thimble", MAGIC="comet")
+    assert _facts(base, source) == _facts({**base, "MAGIC": f"comet {predicate}"}, source)
+
+
+@pytest.mark.parametrize("relation", ["above", "below"])
+def test_magic_result_keeps_its_direct_anchor_for_noun_and_clause_slots(relation: str) -> None:
+    source = f"In a cave, a badger lifts a thimble. A comet appears {relation} a fountain."
+    base = _slots(ACTOR="badger", ACTION="lifts thimble", MAGIC="comet")
+    facts = _facts(base, source)
+    assert facts == _facts({**base, "MAGIC": f"comet appears {relation} fountain"}, source)
+    assert facts == _facts({**base, "MAGIC": f"comet {relation} fountain"}, source)
+    entities = {node.ref: node.label for node in (*facts.subjects, *facts.objects)}
+    edge = facts.relationships[0]
+    assert (entities[edge.source], edge.relation.value, entities[edge.target]) == (
+        "comet",
+        relation,
+        "fountain",
+    )
+    wrong = "below" if relation == "above" else "above"
+    assert (
+        adapt_live_scene_facts(
+            {**base, "MAGIC": f"comet appears {wrong} fountain"}, source_text=source
+        ).facts
+        is None
+    )
+
+
+def test_unrelated_result_subject_cannot_supply_magic_anchor() -> None:
+    source = "In a cave, a badger lifts a thimble. A comet appears. An owl rises above a fountain."
+    base = _slots(ACTOR="badger", ACTION="lifts thimble", MAGIC="comet")
+    facts = _facts(base, source)
+    assert {node.label for node in (*facts.subjects, *facts.objects)} == {
+        "badger",
+        "thimble",
+        "comet",
+    }
+    assert (
+        adapt_live_scene_facts(
+            {**base, "MAGIC": "comet appears above fountain"}, source_text=source
+        ).facts
+        is None
+    )
+
+
+@pytest.mark.parametrize("link", ["calling forth", "causing"])
+@pytest.mark.parametrize("adverb", ["deliberately", "carefully", "gently"])
+def test_explicit_action_linked_result_with_neutral_adverb(link: str, adverb: str) -> None:
+    facts = _facts(
+        _slots(ACTOR="badger", ACTION="lifts thimble", MAGIC="comet"),
+        f"In a cave, a badger {adverb} lifts a thimble, {link} a comet.",
+    )
+    assert facts.subjects[0].actions == ("lifts thimble",)
+    assert {node.label for node in facts.objects} == {"thimble", "comet"}
+
+
+@pytest.mark.parametrize(
+    "source",
+    [
+        "In a cave, a badger allegedly lifts a thimble, causing a comet.",
+        "Allegedly, a badger lifts a thimble, causing a comet.",
+        "In a cave, a badger hypothetically lifts a thimble, calling forth a comet.",
+        "In a cave, a badger does not lift a thimble, causing a comet.",
+        "In a cave, a badger lifts a thimble. An owl waits, causing a comet.",
+        "In a cave, a badger lifts a thimble, an owl waits, causing a comet.",
+        "In a cave, a badger lifts a thimble, causing no comet.",
+    ],
+)
+def test_action_linked_result_requires_actual_selected_antecedent(source: str) -> None:
+    assert (
+        adapt_live_scene_facts(
+            _slots(ACTOR="badger", ACTION="lifts thimble", MAGIC="comet"), source_text=source
+        ).facts
+        is None
+    )
+
+
+def test_transformation_preserves_explicit_result_count() -> None:
+    source = "In a cave, a badger lifts a thimble. The thimble becomes two kettles."
+    facts = _facts(_slots(ACTOR="badger", ACTION="lifts thimble", MAGIC="two kettles"), source)
+    assert facts.transformation is not None
+    assert facts.transformation.result_count == 2
+    assert "exactly 2" in compile_scene_facts_prompt(facts, source_text=source)
+    assert (
+        adapt_live_scene_facts(
+            _slots(ACTOR="badger", ACTION="lifts thimble", MAGIC="three kettles"),
+            source_text=source,
+        ).facts
+        is None
+    )
+
+
+def test_repeated_action_temporal_order_is_bound_to_its_object() -> None:
+    source = "In a cave, a badger lifts a thimble then the badger lifts a kettle. A comet appears."
+    base = _slots(ACTOR="badger", MAGIC="comet")
+    assert (
+        adapt_live_scene_facts(
+            {**base, "ACTION": "lifts thimble then badger lifts kettle"}, source_text=source
+        ).facts
+        is not None
+    )
+    assert (
+        adapt_live_scene_facts(
+            {**base, "ACTION": "lifts kettle then badger lifts thimble"}, source_text=source
+        ).facts
+        is None
+    )
+
+
+@pytest.mark.parametrize("verb", ["promises", "denies"])
+def test_unlisted_speech_predicates_are_not_treated_as_visible_actions(verb: str) -> None:
+    result = adapt_live_scene_facts(
+        _slots(ACTOR="badger", ACTION=f"{verb} lantern", MAGIC="comet"),
+        source_text=f"In a cave, a badger {verb} a lantern. A comet appears.",
+    )
+    assert result.refusal is LiveSceneFactsRefusal.UNSUPPORTED_SYNTAX
+
+
+@pytest.mark.parametrize("verb", ["says", "claims", "denies"])
+def test_action_linked_result_does_not_discard_reported_clause_scope(verb: str) -> None:
+    result = adapt_live_scene_facts(
+        _slots(ACTOR="badger", ACTION="lifts thimble", MAGIC="comet"),
+        source_text=(f"In a cave, an owl {verb}, a badger lifts a thimble, causing a comet."),
+    )
+    assert result.facts is None

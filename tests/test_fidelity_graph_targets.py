@@ -105,7 +105,7 @@ def test_outside_containment_is_a_typed_directional_edge() -> None:
     assert result.facts.relationships[0].relation.value == "outside"
 
 
-def test_motion_salience_and_temporal_targets_are_typed_and_exact() -> None:
+def test_typed_motion_and_order_are_exact_but_salience_does_not_prove_posture() -> None:
     for category in ("destination", "reversed_motion", "salience", "temporal_order"):
         record = _development_record(category)
         result = derive_fidelity_graph_target(record, token_budget=64)
@@ -117,7 +117,13 @@ def test_motion_salience_and_temporal_targets_are_typed_and_exact() -> None:
             result.facts,
             surface="postprocessed",
         )
-        assert evaluation.exact_example_pass is True
+        if category == "salience":
+            assert evaluation.exact_example_pass is False
+            assert [atom.slot for atom in evaluation.expectation_results if not atom.passed] == [
+                "ACTION"
+            ]
+        else:
+            assert evaluation.exact_example_pass is True
 
     destination = derive_fidelity_graph_target(_development_record("destination"))
     reversed_motion = derive_fidelity_graph_target(_development_record("reversed_motion"))

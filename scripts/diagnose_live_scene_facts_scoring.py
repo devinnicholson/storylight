@@ -16,7 +16,11 @@ from pathlib import Path
 from typing import Any
 
 from bookforge.fidelity_dataset import DATASET_ID, generate_split
-from bookforge.fidelity_evaluation import SurfaceEvaluation, evaluate_surface
+from bookforge.fidelity_evaluation import (
+    FIDELITY_EVALUATOR_REVISION,
+    SurfaceEvaluation,
+    evaluate_surface,
+)
 from bookforge.fidelity_graph_targets import derive_fidelity_graph_target
 from bookforge.fidelity_schema import DatasetSplit, FidelityRecord
 from bookforge.live_scene_facts import adapt_live_scene_facts
@@ -43,6 +47,7 @@ class Control:
             unsupported_concepts=0,
         )
         self.missed_slots: Counter[str] = Counter()
+        self.missed_categories: Counter[str] = Counter()
 
     def add(self, evaluation: SurfaceEvaluation) -> None:
         self.counts.update(
@@ -60,6 +65,7 @@ class Control:
                 self.missed_slots[
                     atom.slot if atom.slot in {"SETTING", "ACTOR", "ACTION", "MAGIC"} else "other"
                 ] += 1
+                self.missed_categories.update(evaluation.categories)
 
     def report(self) -> dict[str, Any]:
         required = self.counts["required_atoms"]
@@ -67,6 +73,7 @@ class Control:
             **self.counts,
             "semantic_atom_recall": self.counts["passed_atoms"] / required if required else None,
             "missed_required_slots": dict(sorted(self.missed_slots.items())),
+            "missed_required_categories": dict(sorted(self.missed_categories.items())),
         }
 
 
@@ -138,6 +145,7 @@ def build_report() -> dict[str, Any]:
     paths = [Path(__file__), *sorted((root / "src/bookforge").glob("*.py"))]
     return {
         "schema_version": 1,
+        "evaluator_revision": FIDELITY_EVALUATOR_REVISION,
         "diagnostic": "live-scene-facts-scoring-positive-controls",
         "dataset_id": DATASET_ID,
         "split": "development",

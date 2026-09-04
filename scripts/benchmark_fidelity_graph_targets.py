@@ -12,7 +12,7 @@ from pathlib import Path
 from typing import Any, Literal
 
 from bookforge.fidelity_dataset import DATASET_ID, generate_split
-from bookforge.fidelity_evaluation import evaluate_surface
+from bookforge.fidelity_evaluation import FIDELITY_EVALUATOR_REVISION, evaluate_surface
 from bookforge.fidelity_graph_targets import (
     FidelityGraphTarget,
     derive_fidelity_graph_target,
@@ -100,7 +100,8 @@ def build_report(
     return {
         "schema_version": "1.0",
         "benchmark": "story-fidelity-v2-graph-target-coverage",
-        "tool_revision": "scene-facts-public-coverage-v1",
+        "tool_revision": "scene-facts-public-coverage-v2",
+        "evaluator_revision": FIDELITY_EVALUATOR_REVISION,
         "dataset_id": DATASET_ID,
         "token_budget": token_budget,
         "selected_splits": [split_.value for split_ in ordered_splits],

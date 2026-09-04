@@ -42,6 +42,9 @@ SceneFacts. Both the [hybrid-first candidate](docs/live-scene-facts-gate-2026-09
 [single-request accepted-first candidate](docs/accepted-first-scene-facts-2026-09-04.md) failed
 the semantic development gate. Accepted-first meets the latency gate, but neither produced
 an accepted graph in its 512-record run. The appliance remains on `tensorrt_slots`.
+Subsequent [construction and scoring repairs](docs/live-scene-underlying-fixes-2026-09-04.md)
+address result clauses, counted transformations, entity binding, and semantic comparison using
+synthetic and fixed training controls. They do not revise the historical live results.
 
 ## Local setup
 

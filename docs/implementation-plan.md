@@ -2,6 +2,23 @@
 
 Last updated: 2026-09-04
 
+## Latest increment — construction, grounding, and evaluator repairs
+
+Bounded result clauses, explicit transformation counts, complete action/object grounding, and
+shared-subject temporal proofs repair deterministic losses in the opt-in graph path. Semantic
+comparison now tolerates articles and equivalent descriptor placement while preserving entity
+bindings. Typed renderer evidence must match the actual source-validated compiler output.
+
+The frozen first 32 training targets now produce two integrated graphs, one exact, against zero
+before the repair. The accepted path remains 28 valid and four refused. Coverage is still low;
+the parser retains a finite grammar, and an unsafe open-ended predicate extension was removed.
+No new model inference or paid rendering ran, and the accepted appliance remains unchanged.
+
+Stricter evaluation exposes missing watched-object, posture, and extent proof in authored public
+targets. Valid target counts remain 4,096 training and 509 development; exact counts are now
+3,684 and 460 under the new evaluator. Historical evidence stays pinned to its original evaluator.
+See [repairs, paired controls, remaining blockers, and reproduction](live-scene-underlying-fixes-2026-09-04.md).
+
 ## Latest increment — accepted-first single-request gate
 
 The opt-in `tensorrt_accepted_graph` backend attempts graph binding on the unchanged accepted
