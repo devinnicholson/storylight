@@ -4,6 +4,7 @@ import asyncio
 import hashlib
 import io
 import json
+import os
 import stat
 import sys
 from pathlib import Path
@@ -146,7 +147,11 @@ def completed_render(captured_story, tmp_path):  # noqa: F811
 def test_install_verified_candidate_pages_and_cache_replay(completed_render, tmp_path):
     args, inputs, cases = completed_render
     original_pack = inputs.private_pack.read_bytes()
-    assert installer.main(args) == 0
+    previous_umask = os.umask(0o002)
+    try:
+        assert installer.main(args) == 0
+    finally:
+        os.umask(previous_umask)
     data = tmp_path / "installed"
     pack = asyncio.run(StoryPackStore(data / "story-packs").latest())
     assert len(pack.pages) == 8 and len(pack.assets) == 16
@@ -159,7 +164,11 @@ def test_install_verified_candidate_pages_and_cache_replay(completed_render, tmp
         sum(asset.page_id == page.page_id for asset in pack.assets) == 2 for page in pack.pages
     )
     assert asyncio.run(AssetCache(data / "cache/assets").install_pack(pack, data)) == pack
-    assert stat.S_IMODE(data.stat().st_mode) == 0o700
+    assert all(
+        stat.S_IMODE(path.stat().st_mode) == 0o700
+        for path in (data, *data.rglob("*"))
+        if path.is_dir()
+    )
     assert inputs.private_pack.read_bytes() == original_pack
     receipt = (tmp_path / "installation.json").read_text()
     assert json.loads(receipt)["cached_replay_checksums_verified"] is True

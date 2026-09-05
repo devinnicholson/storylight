@@ -260,6 +260,7 @@ def completed_bundles(batch, proof: str, directory: Path):
 
 async def install(pack: StoryPack, artifacts: dict, data_dir: Path, seeds: dict):
     data_dir.mkdir(mode=0o700, exist_ok=False)
+    (data_dir / "cache").mkdir(mode=0o700)
     cache = AssetCache(data_dir / "cache/assets")
     records = []
     for page in pack.pages:

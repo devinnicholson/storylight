@@ -2,8 +2,8 @@
 
 Status: the focal graph repair passed the 512-case development gate. The subsequent complete-scene
 candidate passed 16 control outcomes and all seven frozen story inputs, producing eight display
-states. The 11-image comparison passed local preflight; generation awaits explicit approval for
-the Modal payload and $2.75 batch. See [current results](story-display-results-2026-09-04.md) and
+states. All 11 comparison images were generated and verified within one $2.75 reservation;
+human visual review remains pending. See [current results](story-display-results-2026-09-04.md) and
 the separate [512-case measurement](product-fidelity-color-repair-2026-09-04.md).
 
 ## Outcome
@@ -141,6 +141,6 @@ credential scanning and deslop before reviewed fast-forward pushes. Preserve use
 
 ## Next action
 
-Run the preflighted 11-image batch after its required approval, verify and install the assets,
-then complete human fact review and cached-playback rehearsal. Keep the failed reports and frozen
-story; microphone-driven reading follows a faithful typed-story demonstration.
+Complete human fact review and physical-projector rehearsal for the installed eight display pages;
+cached HTTP delivery and restart recovery have passed. Keep the failed reports and frozen story;
+microphone-driven reading follows a faithful typed-story demonstration.
