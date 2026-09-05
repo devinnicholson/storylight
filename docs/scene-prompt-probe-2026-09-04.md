@@ -67,6 +67,14 @@ clauses, multiple possible patients and unasserted clauses refuse. Other passive
 this repair. Fresh synthetic controls verify these boundaries; the original story and prompt stay
 frozen for the next measurement.
 
+Revision `33f336e2c8a5487cb5a8100a752df281768bc08b` retained 8/8 candidate controls,
+with 1,068.8 ms median and 1,197.1 ms p95 planning. The story stage remained **reject** at
+6/7: all six pages passed, while the extra control's model ACTION named a by-agent whose
+entity and color contradicted the source. The new fragment grammar correctly refused it.
+Story median/max was 1,256.7/1,427.0 ms. The
+[reports](../benchmarks/scene-passive-fragment-2026-09-04/story-summary.json) reproduce under
+the pinned revision; before/after runtime identity is unchanged. No images were generated.
+
 Both [control](../benchmarks/scene-prompt-grounding-repair-2026-09-04/controls-summary.json) and
 [story](../benchmarks/scene-prompt-grounding-repair-2026-09-04/story-summary.json) aggregates
 reproduce byte-for-byte under the pinned revision. Before/after metadata confirms the resident
@@ -97,3 +105,16 @@ batch-hash marker beside the ledger prevents re-execution even with a new output
 Ambiguous failures retain that marker and reservation. Negative prompts are recorded but this
 Klein route does not execute them. Returned model/runtime identity, seeds, dimensions, tokens,
 master/depth checksums and timings must match; visual acceptance still requires human review.
+
+`scripts/install_fidelity_display.py` verifies the complete render journal and all 11 bundles,
+then binds only the eight candidate pages to 16 master/depth assets. It requires an independently
+supplied checksum of the entire private pack and a fresh data directory outside Git checkouts.
+Existing asset-cache and story-store APIs verify checksums again during local replay. No running
+appliance is changed by this offline command.
+
+`scripts/build_fidelity_review.py` prepares a static local gallery with neutral randomized A/B
+labels, frozen fact checklists and separate correctness, legibility and continuity ratings.
+Ordered still states remain in sequence; the original baseline still repeats for temporal pages.
+The mapping key stays outside the gallery in an owner-only file. This hides model labels, but
+different temporal behavior and missing baseline options remain distinguishable. Exported unrated
+fields remain unrated; the tool cannot grant visual acceptance.
