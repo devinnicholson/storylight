@@ -10,7 +10,7 @@ from __future__ import annotations
 import re
 import unicodedata
 from collections.abc import Mapping
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from enum import StrEnum
 
 from bookforge.privacy_policy import COLOR_WORDS, COUNT_WORDS, VISIBLE_VERBS
@@ -153,6 +153,8 @@ _VERBS = frozenset(
         "stop",
         "stops",
         "stopped",
+        "stand",
+        "stands",
         "fall",
         "falls",
         "fell",
@@ -317,6 +319,12 @@ def _clause(value: str) -> _Clause:
     if _key(verb) == ("belong",) and tail.startswith("to "):
         return _Clause(_noun(tail[3:]), "owns", subject, negative=negative)
     relation_match = _RELATION.search(tail)
+    if _key(verb) == ("stand",) and tail and (
+        relation_match is None
+        or relation_match.start() != 0
+        or relation_match.group() in {"toward", "towards"}
+    ):
+        raise _Refuse(LiveSceneFactsRefusal.UNSUPPORTED_SYNTAX)
     if relation_match:
         relation = relation_match.group()
         before = tail[: relation_match.start()].strip()
@@ -478,30 +486,81 @@ def _build(slots: dict[str, str], source: str) -> SceneFactsV2:
         for noun in (clause.subject, clause.object, clause.anchor, clause.secondary):
             if noun and noun.color:
                 source_colors.setdefault(_key(noun.label), set()).add(noun.color)
+
+    def identity(noun: _Noun) -> tuple[tuple[str, ...], str | None] | None:
+        label = _key(noun.label)
+        colors = source_colors.get(label, set())
+        if noun.color is None and len(colors) > 1:
+            return None
+        return label, noun.color or next(iter(colors), None)
+
+    def resolved(noun: _Noun | None) -> _Noun | None:
+        if noun is None:
+            return None
+        key = identity(noun)
+        return replace(noun, color=key[1]) if key is not None else noun
+
+    def matches(request: _Clause, actual: _Clause) -> bool:
+        if any(
+            noun is not None and identity(noun) is None
+            for clause in (request, actual)
+            for noun in (clause.subject, clause.object, clause.anchor, clause.secondary)
+        ):
+            return False
+        return _matches(
+            replace(
+                request,
+                subject=resolved(request.subject),
+                object=resolved(request.object),
+                anchor=resolved(request.anchor),
+                secondary=resolved(request.secondary),
+            ),
+            replace(
+                actual,
+                subject=resolved(actual.subject),
+                object=resolved(actual.object),
+                anchor=resolved(actual.anchor),
+                secondary=resolved(actual.secondary),
+            ),
+        )
+
     requested = []
-    for value in re.split(r"[;,]|\b(?:then|before)\b", slots["ACTION"]):
-        value = re.sub(r"^first\s+", "", value.strip())
-        match = _PREDICATE.match(value)
-        if match or value.startswith(("does not ", "do not ", "never ")):
-            value = f"{slots['ACTOR']} {value}"
-        requested.append(_clause(value))
-    if not requested or not any(_key(c.subject.label) == _key(actor.label) for c in requested):
+    ordered_indices = []
+    for group in re.split(r"[;,]", slots["ACTION"]):
+        values = re.split(r"\b(?:then|before)\b", group)
+        if re.search(r"\b(?:then|before|first)\b", group):
+            if len(values) != 2:
+                raise _Refuse(LiveSceneFactsRefusal.UNSUPPORTED_SYNTAX)
+            ordered_indices.append((len(requested), len(requested) + 1))
+        for value in values:
+            value = re.sub(r"^first\s+", "", value.strip())
+            match = _PREDICATE.match(value)
+            if match or value.startswith(("does not ", "do not ", "never ")):
+                value = f"{slots['ACTOR']} {value}"
+            requested.append(_clause(value))
+    actor_key = identity(actor)
+    if actor_key is None or not any(identity(c.subject) == actor_key for c in requested):
         raise _Refuse(LiveSceneFactsRefusal.UNGROUNDED)
     selected = []
+    request_sources = []
     for request in requested:
-        matches = [candidate for candidate in clauses if _matches(request, candidate)]
-        if not matches:
+        candidates = [candidate for candidate in clauses if matches(request, candidate)]
+        if not candidates:
             raise _Refuse(LiveSceneFactsRefusal.UNGROUNDED)
-        if len(set(matches)) != 1:
+        if len(set(candidates)) != 1:
             raise _Refuse(LiveSceneFactsRefusal.AMBIGUOUS_BINDING)
-        if matches[0] not in selected:
-            selected.append(matches[0])
+        request_sources.append(candidates[0])
+        if candidates[0] not in selected:
+            selected.append(candidates[0])
 
-    nouns: dict[tuple[str, ...], _Noun] = {}
-    subject_keys = {_key(actor.label)}
+    nouns: dict[tuple[tuple[str, ...], str | None], _Noun] = {}
+    subject_keys = {actor_key}
 
     def add(noun: _Noun) -> None:
-        key = _key(noun.label)
+        key = identity(noun)
+        if key is None:
+            raise _Refuse(LiveSceneFactsRefusal.AMBIGUOUS_BINDING)
+        noun = replace(noun, color=key[1])
         prior = nouns.get(key)
         if prior is not None:
             if (
@@ -518,20 +577,20 @@ def _build(slots: dict[str, str], source: str) -> SceneFactsV2:
         nouns[key] = noun
 
     for clause in selected:
-        if _key(clause.verb)[0] in _OWNERSHIP:
-            subject_keys.add(_key(clause.subject.label))
+        if _key(clause.verb) != ("be",) and not clause.state and not clause.layer:
+            subject_keys.add(identity(clause.subject))
         for noun in (clause.subject, clause.object, clause.anchor, clause.secondary):
             if noun:
                 add(noun)
 
-    if not _compatible(actor, nouns[_key(actor.label)]):
+    if not _compatible(actor, nouns[actor_key]):
         raise _Refuse(LiveSceneFactsRefusal.UNGROUNDED)
 
     magic_value = slots["MAGIC"]
     cause = re.fullmatch(r"(.+?) causes (.+)", magic_value)
     if cause:
         cause_subject = _noun(cause[1])
-        cause_known = nouns.get(_key(cause_subject.label))
+        cause_known = nouns.get(identity(cause_subject))
         if cause_known is None or not _compatible(cause_subject, cause_known):
             raise _Refuse(LiveSceneFactsRefusal.UNGROUNDED)
         magic_value = cause[2]
@@ -557,19 +616,19 @@ def _build(slots: dict[str, str], source: str) -> SceneFactsV2:
         if c.transform
         and not c.negative
         and c.object
-        and _key(c.subject.label) in nouns
-        and _compatible(c.subject, nouns[_key(c.subject.label)])
+        and identity(c.subject) in nouns
+        and _compatible(c.subject, nouns[identity(c.subject)])
         and _compatible(magic, c.object)
     ]
     if len(transforms) > 1:
         raise _Refuse(LiveSceneFactsRefusal.AMBIGUOUS_BINDING)
     if magic_clause and magic_clause.transform:
-        known = nouns.get(_key(magic_clause.subject.label))
+        known = nouns.get(identity(magic_clause.subject))
         if (
             known is None
             or not _compatible(magic_clause.subject, known)
             or not any(
-                _key(magic_clause.subject.label) == _key(c.subject.label) for c in transforms
+                identity(magic_clause.subject) == identity(c.subject) for c in transforms
             )
         ):
             raise _Refuse(LiveSceneFactsRefusal.UNGROUNDED)
@@ -596,7 +655,7 @@ def _build(slots: dict[str, str], source: str) -> SceneFactsV2:
             raise _Refuse(LiveSceneFactsRefusal.UNGROUNDED)
         for result in results:
             if result.verb in _RESULT_MOTION_VERBS:
-                subject_keys.add(_key(result.subject.label))
+                subject_keys.add(identity(result.subject))
             for noun in (result.subject, result.anchor, result.secondary):
                 if noun:
                     add(noun)
@@ -608,16 +667,10 @@ def _build(slots: dict[str, str], source: str) -> SceneFactsV2:
     # Recover explicit attributes/edges of selected entities. New source-only
     # actors or unrelated objects are never pulled into the focal graph.
     for clause in clauses:
-        if clause in selected or clause.transform or _key(clause.subject.label) not in nouns:
-            continue
-        known = nouns[_key(clause.subject.label)]
-        if (clause.subject.color is not None and clause.subject.color != known.color) or (
-            clause.subject.color is None
-            and len(source_colors.get(_key(clause.subject.label), set())) > 1
-        ):
+        if clause in selected or clause.transform or identity(clause.subject) not in nouns:
             continue
         targets = (clause.object, clause.anchor, clause.secondary)
-        if any(noun and _key(noun.label) not in nouns for noun in targets):
+        if any(noun and identity(noun) not in nouns for noun in targets):
             continue
         if (
             clause.state
@@ -642,15 +695,26 @@ def _build(slots: dict[str, str], source: str) -> SceneFactsV2:
             raise _Refuse(LiveSceneFactsRefusal.AMBIGUOUS_BINDING)
     relationships, motions, salience, negatives, events = [], [], [], [], []
     actions: dict[str, list[str]] = {}
-    temporal = bool(re.search(r"\b(?:before|then|first)\b", slots["ACTION"]))
-    requested_events = []
+    ordered_sources = [
+        (request_sources[before], request_sources[after]) for before, after in ordered_indices
+    ]
+    event_by_clause: dict[_Clause, SceneEventFact] = {}
+
+    def object_label(noun: _Noun | None) -> str | None:
+        if noun is None:
+            return None
+        value = nouns[identity(noun)]
+        if value.color is not None:
+            return f"{value.color} {value.label}"
+        return value.label
+
     for clause in selected:
-        ref = refs[_key(clause.subject.label)]
-        obj = refs[_key(clause.object.label)] if clause.object else None
+        ref = refs[identity(clause.subject)]
+        obj = refs[identity(clause.object)] if clause.object else None
         verb = _key(clause.verb)[0]
         if clause.negative:
             value = clause.state or " ".join(
-                v for v in (clause.verb, clause.object.label if clause.object else None) if v
+                v for v in (clause.verb, object_label(clause.object)) if v
             )
             negatives.append(
                 SceneNegativeFact(
@@ -659,11 +723,14 @@ def _build(slots: dict[str, str], source: str) -> SceneFactsV2:
             )
             continue
         if clause.state:
-            old = nouns[_key(clause.subject.label)]
+            key = identity(clause.subject)
+            old = nouns[key]
             if clause.state in COLOR_WORDS:
-                add(_Noun(old.label, color=clause.state))
+                if old.color is not None and old.color != clause.state:
+                    raise _Refuse(LiveSceneFactsRefusal.AMBIGUOUS_BINDING)
+                nouns[key] = replace(old, color=clause.state)
             else:
-                add(_Noun(old.label, states=(clause.state,)))
+                nouns[key] = replace(old, states=tuple(dict.fromkeys((*old.states, clause.state))))
         if clause.layer:
             salience.append(SceneSalienceFact(source=ref, layer=clause.layer))
         if verb in _OWNERSHIP and obj:
@@ -671,7 +738,7 @@ def _build(slots: dict[str, str], source: str) -> SceneFactsV2:
                 SceneRelationshipFact(source=ref, relation=_OWNERSHIP[verb], target=obj)
             )
         if clause.relation and clause.anchor:
-            anchor = refs[_key(clause.anchor.label)]
+            anchor = refs[identity(clause.anchor)]
             if clause.relation in {"toward", "towards"}:
                 motions.append(SceneMotionFact(source=ref, destination=anchor))
             else:
@@ -680,7 +747,7 @@ def _build(slots: dict[str, str], source: str) -> SceneFactsV2:
                         source=obj or ref,
                         relation=_RELATIONS[clause.relation],
                         target=anchor,
-                        secondary_target=refs[_key(clause.secondary.label)]
+                        secondary_target=refs[identity(clause.secondary)]
                         if clause.secondary
                         else None,
                     )
@@ -689,31 +756,38 @@ def _build(slots: dict[str, str], source: str) -> SceneFactsV2:
             motions.append(
                 SceneMotionFact(source=ref, direction="falls" if verb == "fall" else "rises")
             )
-        requested_action = any(_matches(request, clause) for request in requested)
-        if verb != "be" and not clause.layer and not clause.state and requested_action and temporal:
+        requested_action = any(matches(request, clause) for request in requested)
+        if (
+            verb != "be"
+            and not clause.layer
+            and not clause.state
+            and any(clause in pair for pair in ordered_sources)
+        ):
             event = SceneEventFact(
                 ref=f"e{len(events)}", source=ref, action=clause.verb, object=obj
             )
             events.append(event)
-            requested_events.append(event)
+            event_by_clause[clause] = event
         elif (
             verb != "be"
             and (requested_action or clause.verb in _RESULT_MOTION_VERBS)
-            and _key(clause.subject.label) in subject_keys
+            and identity(clause.subject) in subject_keys
         ):
             action = " ".join(
-                v for v in (clause.verb, clause.object.label if clause.object else None) if v
+                v for v in (clause.verb, object_label(clause.object)) if v
             )
             actions.setdefault(ref, []).append(action)
     orders = []
-    if temporal and len(requested_events) != 2:
-        raise _Refuse(LiveSceneFactsRefusal.UNSUPPORTED_SYNTAX)
-    if temporal and len(requested_events) == 2:
+    for before, after in ordered_sources:
+        if before not in event_by_clause or after not in event_by_clause:
+            raise _Refuse(LiveSceneFactsRefusal.UNSUPPORTED_SYNTAX)
         orders.append(
-            SceneTemporalOrderFact(before=requested_events[0].ref, after=requested_events[1].ref)
+            SceneTemporalOrderFact(
+                before=event_by_clause[before].ref, after=event_by_clause[after].ref
+            )
         )
     subjects, objects = [], []
-    for key, noun in nouns.items():
+    for key, noun in sorted(nouns.items(), key=lambda item: item[0] != actor_key):
         common = dict(ref=refs[key], label=noun.label, count=noun.count, color=noun.color)
         if key in subject_keys:
             subjects.append(
@@ -731,7 +805,7 @@ def _build(slots: dict[str, str], source: str) -> SceneFactsV2:
     if transformation and transformation.object:
         result = transformation.object
         transformed = SceneTransformationFact(
-            source=refs[_key(transformation.subject.label)],
+            source=refs[identity(transformation.subject)],
             result_label=result.label,
             result_count=result.count,
             result_color=result.color,

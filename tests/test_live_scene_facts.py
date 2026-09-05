@@ -54,6 +54,7 @@ def test_plain_slots_recover_bound_counts_colors_and_secondary_spatial_object() 
         ("box", None, None),
         ("ribbon", None, None),
     ]
+    assert facts.subjects[0].actions == ("hold blue lantern",)
     assert [(edge.source, edge.relation.value, edge.target) for edge in facts.relationships] == [
         ("n0", "holds", "n1"),
         ("n1", "above", "n2"),
@@ -86,6 +87,89 @@ def test_colored_focal_actor_cannot_borrow_another_or_ambiguous_actor_action(act
         _slots(ACTOR="silver fox", ACTION="lifts box"), source_text=source
     )
     assert result.refusal is LiveSceneFactsRefusal.UNGROUNDED
+
+
+def test_explicit_actors_keep_separate_colored_object_bindings() -> None:
+    source = (
+        "In a cave, a silver fox holds one blue lantern. "
+        "A red fox carries one green lantern. A ribbon appears."
+    )
+    slots = _slots(
+        ACTOR="silver fox",
+        ACTION="red fox carries green lantern; silver fox holds blue lantern",
+    )
+    facts = _facts(slots, source)
+    entities = {node.ref: node for node in (*facts.subjects, *facts.objects)}
+    assert [(node.label, node.color) for node in facts.subjects] == [
+        ("fox", "silver"),
+        ("fox", "red"),
+    ]
+    assert [
+        (entities[edge.source].color, edge.relation.value, entities[edge.target].color)
+        for edge in facts.relationships
+    ] == [("red", "carries", "green"), ("silver", "holds", "blue")]
+    swapped = {**slots, "ACTION": "red fox carries blue lantern; silver fox holds green lantern"}
+    assert adapt_live_scene_facts(swapped, source_text=source).facts is None
+
+
+def test_ordered_pair_keeps_independent_actor_posture_and_shared_spatial_anchor() -> None:
+    source = (
+        "In a cave, a silver fox opens a wooden box then the silver fox lifts a lantern "
+        "above the box. A red fox stands below the box. A ribbon appears."
+    )
+    slots = _slots(
+        ACTOR="silver fox",
+        ACTION="opens box then silver fox lifts lantern above box; red fox stands below box",
+    )
+    facts = _facts(slots, source)
+    silver, red = facts.subjects
+    assert red.actions == ("stands",)
+    assert len(facts.events) == 2 and {event.source for event in facts.events} == {silver.ref}
+    assert (facts.temporal_order[0].before, facts.temporal_order[0].after) == (
+        facts.events[0].ref,
+        facts.events[1].ref,
+    )
+    above, below = facts.relationships
+    assert above.relation.value == "above" and below.relation.value == "below"
+    assert above.target == below.target
+    assert below.source == red.ref and above.source == facts.events[1].object
+
+
+def test_standing_posture_refuses_symbolic_object_complement() -> None:
+    source = "In a cave, a fox stands for justice. A ribbon appears."
+    result = adapt_live_scene_facts(_slots(ACTION="stands for justice"), source_text=source)
+    assert result.refusal is LiveSceneFactsRefusal.UNSUPPORTED_SYNTAX
+
+
+def test_transformation_uses_selected_colored_object_ref() -> None:
+    source = (
+        "In a cave, a silver fox holds a red feather. A red fox holds a blue feather. "
+        "The blue feather becomes a boat."
+    )
+    slots = _slots(
+        ACTOR="silver fox",
+        ACTION="silver fox holds red feather; red fox holds blue feather",
+        MAGIC="boat",
+    )
+    facts = _facts(slots, source)
+    assert facts.transformation is not None
+    transformed = next(node for node in facts.objects if node.ref == facts.transformation.source)
+    assert transformed.label == "feather" and transformed.color == "blue"
+    assert adapt_live_scene_facts(
+        {**slots, "MAGIC": "red feather becomes boat"}, source_text=source
+    ).facts is None
+
+
+def test_bare_continuation_resolves_only_one_source_color() -> None:
+    source = (
+        "In a cave, a silver fox holds a lantern. The fox lifts a wooden box. A ribbon appears."
+    )
+    slots = _slots(ACTOR="silver fox", ACTION="holds lantern; silver fox lifts box")
+    facts = _facts(slots, source)
+    assert len(facts.subjects) == 1 and facts.subjects[0].color == "silver"
+    assert facts.subjects[0].actions == ("holds lantern", "lifts box")
+    assert adapt_live_scene_facts(slots, source_text=source + " A red fox waits.").facts is None
+    assert adapt_live_scene_facts(slots, source_text=source + " A silver fox waits.").facts is None
 
 
 def test_explicit_passive_carry_preserves_binding_through_renderer() -> None:
@@ -175,10 +259,11 @@ def test_transformation_uses_original_entity_and_does_not_add_result_node() -> N
 def test_states_salience_and_explicit_negative_are_bound_to_selected_entity() -> None:
     facts = _facts(
         _slots(),
-        "In a cave, a fox holds a lantern. The lantern is closed. "
+        "In a cave, a fox holds a lantern. The lantern is blue. The lantern is closed. "
         "The fox is in the foreground. The fox does not run. A ribbon appears.",
     )
     assert facts.objects[0].states == ("closed",)
+    assert facts.objects[0].color == "blue"
     assert facts.salience[0].source == facts.subjects[0].ref
     assert facts.negatives[0].target == facts.subjects[0].ref
     assert facts.negatives[0].value == "run"
