@@ -473,6 +473,11 @@ def _build(slots: dict[str, str], source: str) -> SceneFactsV2:
         raise _Refuse(LiveSceneFactsRefusal.UNSUPPORTED_SYNTAX)
     actor = _noun(slots["ACTOR"])
     clauses = _source_clauses(source)
+    source_colors: dict[tuple[str, ...], set[str]] = {}
+    for clause in clauses:
+        for noun in (clause.subject, clause.object, clause.anchor, clause.secondary):
+            if noun and noun.color:
+                source_colors.setdefault(_key(noun.label), set()).add(noun.color)
     requested = []
     for value in re.split(r"[;,]|\b(?:then|before)\b", slots["ACTION"]):
         value = re.sub(r"^first\s+", "", value.strip())
@@ -605,6 +610,12 @@ def _build(slots: dict[str, str], source: str) -> SceneFactsV2:
     for clause in clauses:
         if clause in selected or clause.transform or _key(clause.subject.label) not in nouns:
             continue
+        known = nouns[_key(clause.subject.label)]
+        if (clause.subject.color is not None and clause.subject.color != known.color) or (
+            clause.subject.color is None
+            and len(source_colors.get(_key(clause.subject.label), set())) > 1
+        ):
+            continue
         targets = (clause.object, clause.anchor, clause.secondary)
         if any(noun and _key(noun.label) not in nouns for noun in targets):
             continue
@@ -627,7 +638,7 @@ def _build(slots: dict[str, str], source: str) -> SceneFactsV2:
             rf"\b(?:{introducers})\s+(?:(?:{modifiers})\s+){{0,5}}{re.escape(noun.label)}\b",
             source,
         )
-        if len(introductions) > 1:
+        if sum(_noun(value).color in {None, noun.color} for value in introductions) > 1:
             raise _Refuse(LiveSceneFactsRefusal.AMBIGUOUS_BINDING)
     relationships, motions, salience, negatives, events = [], [], [], [], []
     actions: dict[str, list[str]] = {}

@@ -75,6 +75,35 @@ ACTION: moth changes into birds
 MAGIC: three silver birds above the library"""
 
 
+def test_colored_reference_slots_preserve_distinct_actor_bindings():
+    facts = SceneFactsV2.model_validate(
+        {
+            "setting": {"label": "cave"},
+            "subjects": [
+                {"ref": "r", "label": "fox", "color": "red"},
+                {"ref": "b", "label": "fox", "color": "blue"},
+            ],
+            "objects": [{"ref": "ball", "label": "ball"}, {"ref": "cup", "label": "cup"}],
+            "relationships": [
+                {"source": "r", "relation": "holds", "target": "ball"},
+                {"source": "b", "relation": "holds", "target": "cup"},
+            ],
+        }
+    )
+    record = _record(
+        passage="In a cave, a red fox holds a ball. A blue fox holds a cup.",
+        expectations=[
+            {"kind": "slot", "label": phrase, "slot": "ACTION", "alternatives": [phrase]}
+            for phrase in ("red fox holds ball", "blue fox holds cup", "blue fox holds ball")
+        ],
+        allowed_concepts=["cave", "red fox", "blue fox", "ball", "cup"],
+        forbidden_terms=[],
+        privacy_terms=[],
+    )
+    evaluation = evaluate_surface(record, facts, surface="postprocessed")
+    assert [result.passed for result in evaluation.expectation_results] == [True, True, False]
+
+
 def test_raw_evaluation_checks_slots_relations_counts_roles_and_transformation() -> None:
     evaluation = evaluate_surface(
         _record(),

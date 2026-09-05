@@ -61,6 +61,33 @@ def test_plain_slots_recover_bound_counts_colors_and_secondary_spatial_object() 
     assert facts == adapt_live_scene_facts(_slots(), source_text=source).facts
 
 
+def test_colored_focal_actor_excludes_other_color_and_ambiguous_continuation() -> None:
+    source = (
+        "In a cave, a silver fox holds a lantern above a wooden box. "
+        "A red fox is below the box. A ribbon appears."
+    )
+    slots = _slots(ACTOR="silver fox")
+    facts = _facts(slots, source)
+    assert [(subject.label, subject.color) for subject in facts.subjects] == [("fox", "silver")]
+    assert [edge.relation.value for edge in facts.relationships] == ["holds", "above"]
+    prompt = compile_scene_facts_prompt(facts, source_text=source)
+    assert "silver fox holds lantern" in prompt
+    assert "red fox" not in prompt
+    assert _facts(slots, source + " The fox is below the box.") == facts
+
+
+@pytest.mark.parametrize("actor", ["a red fox", "the fox"])
+def test_colored_focal_actor_cannot_borrow_another_or_ambiguous_actor_action(actor: str) -> None:
+    source = (
+        "In a cave, a silver fox holds a lantern. A red fox waits. "
+        f"{actor} lifts a wooden box. A ribbon appears."
+    )
+    result = adapt_live_scene_facts(
+        _slots(ACTOR="silver fox", ACTION="lifts box"), source_text=source
+    )
+    assert result.refusal is LiveSceneFactsRefusal.UNGROUNDED
+
+
 def test_explicit_passive_carry_preserves_binding_through_renderer() -> None:
     source = "In a cave, one blue lantern is carried by two orange foxes. A ribbon appears."
     slots = _slots(ACTION="carries lantern")

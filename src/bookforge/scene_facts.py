@@ -277,9 +277,19 @@ class SceneFactsV2(FrozenStrictModel):
         refs = [entity.ref for entity in entities]
         if len(refs) != len(set(refs)):
             raise ValueError("scene entity references must be unique")
-        labels = [_normalized_phrase(entity.label) for entity in entities]
-        if len(labels) != len(set(labels)):
-            raise ValueError("repeated entity labels must use one entity with an explicit count")
+        labels: dict[tuple[str, ...], list[str | None]] = {}
+        for entity in entities:
+            labels.setdefault(_normalized_phrase(entity.label), []).append(entity.color)
+        for colors in labels.values():
+            if len(colors) > 1 and (
+                any(color is None for color in colors)
+                or any(len(_normalized_phrase(color or "")) != 1 for color in colors)
+                or len({_normalized_phrase(color or "") for color in colors}) != len(colors)
+            ):
+                raise ValueError(
+                    "repeated entity labels require distinct colors with one word each "
+                    "or one entity with an explicit count"
+                )
 
         known_refs = set(refs)
         subject_refs = {subject.ref for subject in self.subjects}
@@ -724,62 +734,80 @@ def validate_scene_facts_grounding(facts: SceneFactsV2, *, source_text: str) -> 
             issues,
         )
 
-    entity_by_ref = {entity.ref: entity for entity in (*facts.subjects, *facts.objects)}
+    entity_by_ref, entity_labels = _grounding_entities(facts, sentences)
+    subject_aliases = {
+        _normalized_phrase(label)
+        for subject in facts.subjects
+        for label in (
+            subject.label,
+            *(f"{color} {subject.label}" for color in COLOR_WORDS),
+            entity_by_ref[subject.ref].label,
+        )
+    }
+    subject_labels = tuple(
+        label for label in entity_labels if _normalized_phrase(label) in subject_aliases
+    )
+    ambiguous_labels = tuple(
+        entity.label
+        for entity in (*facts.subjects, *facts.objects)
+        if entity_by_ref[entity.ref].label != entity.label
+    )
     for kind, entities in (("subjects", facts.subjects), ("objects", facts.objects)):
         for index, entity in enumerate(entities):
             path = f"{kind}[{index}]"
-            entity_sentences = _sentences_with_phrase(sentences, entity.label)
+            label = entity_by_ref[entity.ref].label
+            entity_sentences = _sentences_with_phrase(sentences, label)
             if not entity_sentences:
                 issues.append(f"{path}.label")
                 continue
-            if sum(
-                _descriptor_grounded(
-                    color,
-                    entity.label,
-                    entity_sentences,
-                    entity_labels=tuple(item.label for item in entity_by_ref.values()),
-                )
-                for color in COLOR_WORDS | ({entity.color} if entity.color else set())
-            ) > 1:
-                issues.append(f"{path}.identity")
             if entity.count is not None and not _count_near_label(
                 entity.count,
-                entity.label,
+                label,
                 entity_sentences,
-                entity_labels=tuple(item.label for item in entity_by_ref.values()),
+                entity_labels=entity_labels,
             ):
                 issues.append(f"{path}.count")
-            if entity.color is not None and not _descriptor_grounded(
+            if entity.color is not None and label == entity.label and not _descriptor_grounded(
                 entity.color,
                 entity.label,
                 entity_sentences,
-                entity_labels=tuple(item.label for item in entity_by_ref.values()),
+                entity_labels=entity_labels,
             ):
                 issues.append(f"{path}.color")
             for attribute_index, attribute in enumerate(entity.attributes):
                 if not _descriptor_grounded(
                     attribute,
-                    entity.label,
+                    label,
                     entity_sentences,
-                    entity_labels=tuple(item.label for item in entity_by_ref.values()),
+                    entity_labels=entity_labels,
                 ):
                     issues.append(f"{path}.attributes[{attribute_index}]")
             if isinstance(entity, SceneSubjectFact):
                 for action_index, action in enumerate(entity.actions):
-                    if not _action_grounded(
+                    unqualified_object = any(
+                        _contains_phrase(_normalized_phrase(action), ambiguous)
+                        and not any(
+                            _contains_phrase(_normalized_phrase(action), reference)
+                            for reference in entity_labels
+                            if reference != ambiguous
+                            and _contains_phrase(_normalized_phrase(reference), ambiguous)
+                        )
+                        for ambiguous in ambiguous_labels
+                    )
+                    if unqualified_object or not _action_grounded(
                         action,
-                        entity.label,
-                        _sentences_with_phrase(action_sentences, entity.label),
-                        entity_labels=tuple(item.label for item in entity_by_ref.values()),
+                        label,
+                        _sentences_with_phrase(action_sentences, label),
+                        entity_labels=entity_labels,
                     ):
                         issues.append(f"{path}.actions[{action_index}]")
             else:
                 for state_index, state in enumerate(entity.states):
                     if not _descriptor_grounded(
                         state,
-                        entity.label,
+                        label,
                         entity_sentences,
-                        entity_labels=tuple(item.label for item in entity_by_ref.values()),
+                        entity_labels=entity_labels,
                     ):
                         issues.append(f"{path}.states[{state_index}]")
 
@@ -797,7 +825,7 @@ def validate_scene_facts_grounding(facts: SceneFactsV2, *, source_text: str) -> 
             target,
             secondary,
             action_sentences,
-            entity_labels=tuple(item.label for item in entity_by_ref.values()),
+            entity_labels=entity_labels,
         ):
             issues.append(f"relationships[{index}]")
 
@@ -811,8 +839,8 @@ def validate_scene_facts_grounding(facts: SceneFactsV2, *, source_text: str) -> 
             source_label=source,
             destination_label=destination,
             sentences=sentences,
-            entity_labels=tuple(item.label for item in entity_by_ref.values()),
-            subject_labels=tuple(subject.label for subject in facts.subjects),
+            entity_labels=entity_labels,
+            subject_labels=subject_labels,
         ):
             issues.append(f"motions[{index}]")
 
@@ -822,7 +850,7 @@ def validate_scene_facts_grounding(facts: SceneFactsV2, *, source_text: str) -> 
             salience.layer.value,
             source,
             _sentences_with_phrase(sentences, source),
-            entity_labels=tuple(item.label for item in entity_by_ref.values()),
+            entity_labels=entity_labels,
         ):
             issues.append(f"salience[{index}]")
 
@@ -833,7 +861,7 @@ def validate_scene_facts_grounding(facts: SceneFactsV2, *, source_text: str) -> 
             prior_events=facts.events,
             entities=entity_by_ref,
             sentences=sentences,
-            subject_labels=tuple(subject.label for subject in facts.subjects),
+            subject_labels=subject_labels,
         ):
             issues.append(f"events[{index}]")
     for index, order in enumerate(facts.temporal_order):
@@ -842,7 +870,7 @@ def validate_scene_facts_grounding(facts: SceneFactsV2, *, source_text: str) -> 
             events_by_ref[order.after],
             entities=entity_by_ref,
             sentences=sentences,
-            subject_labels=tuple(subject.label for subject in facts.subjects),
+            subject_labels=subject_labels,
         ):
             issues.append(f"temporal_order[{index}]")
 
@@ -852,7 +880,7 @@ def validate_scene_facts_grounding(facts: SceneFactsV2, *, source_text: str) -> 
             negative,
             target_label=target_label,
             sentences=sentences,
-            entity_labels=tuple(item.label for item in entity_by_ref.values()),
+            entity_labels=entity_labels,
         ):
             issues.append(f"negatives[{index}]")
 
@@ -862,7 +890,7 @@ def validate_scene_facts_grounding(facts: SceneFactsV2, *, source_text: str) -> 
             facts.transformation,
             source,
             sentences,
-            entity_labels=tuple(item.label for item in entity_by_ref.values()),
+            entity_labels=entity_labels,
             related_labels=tuple(
                 entity_by_ref[ref].label
                 for relation in facts.relationships
@@ -890,7 +918,7 @@ def compile_scene_facts_prompt(
     _validate_style_privacy(style, source_text=source_text)
     validate_scene_facts_grounding(facts, source_text=source_text)
 
-    entities = {entity.ref: entity for entity in (*facts.subjects, *facts.objects)}
+    entities, _ = _grounding_entities(facts, _source_sentences(source_text))
     clauses = [
         f"Style: {style}",
         f"Setting: {_descriptor(facts.setting.label, facts.setting.attributes)}",
@@ -1186,6 +1214,42 @@ def _source_sentences(source_text: str) -> tuple[tuple[str, ...], ...]:
         for sentence in _asserted_units(source_text)
         if (tokens := _normalized_phrase(sentence))
     )
+
+
+def _grounding_entities(
+    facts: SceneFactsV2, sentences: tuple[tuple[str, ...], ...]
+) -> tuple[dict[str, SceneSubjectFact | SceneObjectFact], tuple[str, ...]]:
+    entities = (*facts.subjects, *facts.objects)
+    labels = tuple(entity.label for entity in entities)
+    references = {}
+    binding_labels = set()
+    color_words = {
+        " ".join(_normalized_phrase(color))
+        for color in COLOR_WORDS | {item.color for item in entities if item.color}
+    }
+    for entity in entities:
+        colors = {
+            color
+            for color in color_words
+            if _descriptor_grounded(color, entity.label, sentences, entity_labels=labels)
+        }
+        repeated = sum(
+            _normalized_phrase(label) == _normalized_phrase(entity.label) for label in labels
+        ) > 1
+        if len(colors) > 1 or repeated:
+            qualified = {f"{color} {entity.label}" for color in colors}
+            if " ".join(_normalized_phrase(entity.color or "")) not in colors or not all(
+                any(_contains_phrase(sentence, label) for sentence in sentences)
+                for label in qualified
+            ):
+                raise SceneFactsGroundingError(("entities.identity",))
+            label = f"{entity.color} {entity.label}"
+            references[entity.ref] = entity.model_copy(update={"label": label})
+            binding_labels.update(qualified)
+        else:
+            references[entity.ref] = entity
+            binding_labels.add(entity.label)
+    return references, tuple(sorted(binding_labels))
 
 
 def _asserted_units(source_text: str) -> tuple[str, ...]:
@@ -1769,7 +1833,9 @@ def _event_spans(
             start=action_end,
             end=object_start,
             excluded=(object_label,),
-            entity_labels=tuple(entity.label for entity in entities.values()),
+            entity_labels=tuple(
+                dict.fromkeys((*subject_labels, *(entity.label for entity in entities.values())))
+            ),
         )
     )
 

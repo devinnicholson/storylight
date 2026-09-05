@@ -23,7 +23,7 @@ from bookforge.semantic_text import semantic_lemma
 
 SurfaceName = Literal["raw", "postprocessed", "renderer"]
 SceneEntity = SceneSubjectFact | SceneObjectFact
-FIDELITY_EVALUATOR_REVISION = "bound-descriptors-renderer-proof-v2"
+FIDELITY_EVALUATOR_REVISION = "colored-references-renderer-proof-v3"
 _ARTICLES = frozenset({"a", "an", "the"})
 
 
@@ -637,22 +637,36 @@ def _transformation_result_text(facts: SceneFactsV2) -> str:
     )
 
 
+def _scene_reference_labels(facts: SceneFactsV2) -> dict[str, str]:
+    entities = (*facts.subjects, *facts.objects)
+    labels = [_identity_phrase(entity.label) for entity in entities]
+    return {
+        entity.ref: f"{entity.color} {entity.label}"
+        if labels.count(_identity_phrase(entity.label)) > 1
+        else entity.label
+        for entity in entities
+    }
+
+
 def _scene_facts_slots(facts: SceneFactsV2) -> Mapping[str, str]:
     entities = {entity.ref: entity for entity in (*facts.subjects, *facts.objects)}
+    labels = _scene_reference_labels(facts)
     setting = " ".join((*facts.setting.attributes, facts.setting.label))
     actors = " ".join(_scene_entity_text(subject) for subject in facts.subjects)
     actions = [
-        f"{subject.label} {action}" for subject in facts.subjects for action in subject.actions
+        f"{labels[subject.ref]} {action}"
+        for subject in facts.subjects
+        for action in subject.actions
     ]
     actions.extend(
         " ".join(
             value
             for value in (
-                entities[relation.source].label,
+                labels[relation.source],
                 relation.relation.value.replace("_", " "),
-                entities[relation.target].label,
+                labels[relation.target],
                 (
-                    entities[relation.secondary_target].label
+                    labels[relation.secondary_target]
                     if relation.secondary_target is not None
                     else ""
                 ),
@@ -664,16 +678,16 @@ def _scene_facts_slots(facts: SceneFactsV2) -> Mapping[str, str]:
     for motion in facts.motions:
         source = entities[motion.source]
         if motion.direction is not None:
-            actions.append(f"{source.label} {motion.direction.value}")
+            actions.append(f"{labels[source.ref]} {motion.direction.value}")
         if motion.destination is not None:
-            actions.append(f"{source.label} travels toward {entities[motion.destination].label}")
+            actions.append(f"{labels[source.ref]} travels toward {labels[motion.destination]}")
     actions.extend(
         " ".join(
             value
             for value in (
-                entities[event.source].label,
+                labels[event.source],
                 event.action,
-                f"the {entities[event.object].label}" if event.object is not None else "",
+                f"the {labels[event.object]}" if event.object is not None else "",
             )
             if value
         )
@@ -681,7 +695,7 @@ def _scene_facts_slots(facts: SceneFactsV2) -> Mapping[str, str]:
     )
     if facts.transformation is not None:
         actions.append(
-            f"{entities[facts.transformation.source].label} becomes "
+            f"{labels[facts.transformation.source]} becomes "
             f"{_transformation_result_text(facts)}"
         )
     direction_by_ref = {
@@ -766,14 +780,14 @@ def _scene_action_paths(facts: SceneFactsV2) -> tuple[str, ...]:
 
 
 def _scene_slot_atoms(facts: SceneFactsV2, slot: str) -> tuple[str, ...]:
-    entities = _scene_entities(facts)
+    labels = _scene_reference_labels(facts)
     if slot == "SETTING":
         return (" ".join((*facts.setting.attributes, facts.setting.label)),)
     if slot == "ACTOR":
         atoms = [_scene_entity_text(subject) for subject in facts.subjects]
         subject_refs = {subject.ref for subject in facts.subjects}
         atoms.extend(
-            f"{entities[salience.source].label} {salience.layer.value}"
+            f"{labels[salience.source]} {salience.layer.value}"
             for salience in facts.salience
             if salience.source in subject_refs
         )
@@ -785,18 +799,18 @@ def _scene_slot_atoms(facts: SceneFactsV2, slot: str) -> tuple[str, ...]:
                 value
                 for subject in facts.subjects
                 for action in subject.actions
-                for value in (action, f"{subject.label} {action}")
+                for value in (action, f"{labels[subject.ref]} {action}")
             ),
         ]
         atoms.extend(
             " ".join(
                 value
                 for value in (
-                    entities[relation.source].label,
+                    labels[relation.source],
                     relation.relation.value.replace("_", " "),
-                    entities[relation.target].label,
+                    labels[relation.target],
                     (
-                        entities[relation.secondary_target].label
+                        labels[relation.secondary_target]
                         if relation.secondary_target is not None
                         else ""
                     ),
@@ -809,16 +823,16 @@ def _scene_slot_atoms(facts: SceneFactsV2, slot: str) -> tuple[str, ...]:
             " ".join(
                 value
                 for value in (
-                    entities[event.source].label,
+                    labels[event.source],
                     event.action,
-                    entities[event.object].label if event.object is not None else "",
+                    labels[event.object] if event.object is not None else "",
                 )
                 if value
             )
             for event in facts.events
         )
         atoms.extend(
-            f"travels toward {entities[motion.destination].label}"
+            f"travels toward {labels[motion.destination]}"
             for motion in facts.motions
             if motion.destination is not None
         )
@@ -830,7 +844,7 @@ def _scene_slot_atoms(facts: SceneFactsV2, slot: str) -> tuple[str, ...]:
                     "first",
                     events[order.before].action,
                     (
-                        f"the {entities[events[order.before].object].label}"
+                        f"the {labels[events[order.before].object]}"
                         if events[order.before].object is not None
                         else ""
                     ),
@@ -843,7 +857,7 @@ def _scene_slot_atoms(facts: SceneFactsV2, slot: str) -> tuple[str, ...]:
     if slot == "MAGIC":
         atoms = [_scene_entity_text(item) for item in facts.objects]
         atoms.extend(
-            f"{entities[motion.source].label} {motion.direction.value}"
+            f"{labels[motion.source]} {motion.direction.value}"
             for motion in facts.motions
             if motion.direction is not None
         )

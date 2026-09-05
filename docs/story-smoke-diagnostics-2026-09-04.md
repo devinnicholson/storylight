@@ -52,3 +52,29 @@ before and after. Its summary reproduces byte-for-byte with the pinned `006025f`
 Evidence lives in `benchmarks/product-fidelity-diagnostics-2026-09-04`; private archives remain
 on the Jetson. The marker and identity changes passed 782 tests and scoped lint. These results
 establish construction repairs, not full story fidelity, image quality or promotion readiness.
+
+Replay at `582db7b` produces three proved graphs and five valid candidate contracts from the
+original responses. Page 1 now constructs independently from its validated graph when the
+legacy wire fails. The accepted wire still behaves identically; graph failure preserves its
+original fallback or error. Graph scaffolding retains the focal subject even when its actions
+are typed events and a secondary subject has a simple action.
+
+The adapter now supports explicitly flying result subjects, including their count, color and
+spatial anchor. This repairs synthetic page-6 construction with correct result slots, but does
+not repair the captured page-6 response: its selected result does not match the expected birds,
+count or color. Do not turn that refusal into a semantic pass. An omitted second action also
+remains omitted; constructing one graph does not establish the story's complete event order.
+
+The next identity increment permits distinct explicit colors on repeated entity labels without
+changing the wire fields. Grounding and rendering qualify references when the source contains
+competing colors, including an unselected actor. Ambiguous bare references and swapped edges
+refuse. The adapter currently selects one colored focal actor; the two-character checklists
+still require both actors. The evaluator's flattened reference atoms retain colors for repeated
+graph labels, with revision `colored-references-renderer-proof-v3`; historical scores stay pinned.
+
+The combined increment passes 801 tests, including JavaScript bridges, scoped lint and whitespace
+checks. A full-suite motion regression was repaired with an independent synthetic case: destination
+objects must not be treated as competing actors. Public target coverage was regenerated across
+4,608 public records: 4,605 eligible, 4,144 exact under the stricter evaluator and three ambiguous
+refusals. These counts match a fresh reproduction at `9f449f8`; only the evaluator revision differs.
+This remains deterministic coverage rather than live-model accuracy.

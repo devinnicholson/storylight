@@ -6,6 +6,7 @@ from bookforge.scene_facts import (
     SceneFactsGroundingError,
     SceneFactsPrivacyError,
     SceneFactsV2,
+    SceneMotionFact,
     SceneObjectFact,
     SceneRelationshipFact,
     SceneSettingFact,
@@ -217,10 +218,11 @@ def test_colored_actor_cannot_borrow_action_event_or_relation_from_same_label():
             ),
         }
     )
-    with pytest.raises(SceneFactsGroundingError, match=r"subjects\[0\].identity"):
+    with pytest.raises(SceneFactsGroundingError) as caught:
         facts.validate_source_grounding(
             source_text="In a cave, a red fox holds a cup. The blue fox holds a ball."
         )
+    assert {"subjects[0].actions[0]", "relationships[0]", "events[0]"}.issubset(caught.value.paths)
 
 
 @pytest.mark.parametrize("antecedent", ["the blue feather", "the red feather", "the feather"])
@@ -232,7 +234,83 @@ def test_transformation_preserves_colored_antecedent_identity(antecedent):
     )
     source = f"In a cave, a fox holds a red feather. {antecedent} becomes a boat."
     if antecedent == "the blue feather":
-        with pytest.raises(SceneFactsGroundingError, match=r"objects\[0\].identity"):
+        with pytest.raises(SceneFactsGroundingError, match="transformation"):
             facts.validate_source_grounding(source_text=source)
     else:
         facts.validate_source_grounding(source_text=source)
+
+
+def _colored_pairs():
+    return SceneFactsV2(
+        setting=SceneSettingFact(label="cave"),
+        subjects=(
+            SceneSubjectFact(ref="red_fox", label="fox", color="red", actions=("holds blue ball",)),
+            SceneSubjectFact(
+                ref="blue_fox", label="fox", color="blue", actions=("holds red ball",)
+            ),
+        ),
+        objects=(
+            SceneObjectFact(ref="blue_ball", label="ball", color="blue"),
+            SceneObjectFact(ref="red_ball", label="ball", color="red"),
+        ),
+        relationships=(
+            SceneRelationshipFact(source="red_fox", relation="holds", target="blue_ball"),
+            SceneRelationshipFact(source="blue_fox", relation="holds", target="red_ball"),
+        ),
+        events=(
+            SceneEventFact(ref="first", source="red_fox", action="holds", object="blue_ball"),
+            SceneEventFact(ref="second", source="blue_fox", action="holds", object="red_ball"),
+        ),
+        temporal_order=(SceneTemporalOrderFact(before="first", after="second"),),
+    )
+
+
+def test_colored_identities_roundtrip_and_render_bound_references():
+    facts = _colored_pairs()
+    source = "In a cave, a red fox holds a blue ball then a blue fox holds a red ball."
+    prompt = facts.to_renderer_prompt(source_text=source)
+    assert "Relations: red fox holds blue ball; blue fox holds red ball" in prompt
+    assert "Order: red fox holds blue ball before blue fox holds red ball" in prompt
+    assert "red red fox" not in prompt
+    assert SceneFactsV2.from_wire(facts.to_wire()) == facts
+    assert facts.subjects[0].label == "fox" and facts.subjects[0].color == "red"
+
+
+@pytest.mark.parametrize(
+    "source",
+    [
+        "In a cave, a red fox holds a red ball then a blue fox holds a blue ball.",
+        "In a cave, a red fox stands beside a blue fox. "
+        "A red ball stands beside a blue ball. The fox holds the ball.",
+    ],
+)
+def test_colored_identities_reject_swapped_or_bare_references(source):
+    with pytest.raises(SceneFactsGroundingError):
+        _colored_pairs().to_renderer_prompt(source_text=source)
+
+
+@pytest.mark.parametrize("second_color", [None, "red"])
+def test_repeated_labels_require_distinct_explicit_colors(second_color):
+    with pytest.raises(ValidationError, match="distinct colors"):
+        SceneFactsV2(
+            setting=SceneSettingFact(label="cave"),
+            subjects=(
+                SceneSubjectFact(ref="first", label="fox", color="red"),
+                SceneSubjectFact(ref="second", label="fox", color=second_color),
+            ),
+        )
+
+
+def test_motion_toward_destination_does_not_treat_carried_object_as_another_actor():
+    facts = SceneFactsV2(
+        setting=SceneSettingFact(label="valley"),
+        subjects=(SceneSubjectFact(ref="kite", label="kite"),),
+        objects=(
+            SceneObjectFact(ref="ribbon", label="ribbon"),
+            SceneObjectFact(ref="tower", label="tower"),
+        ),
+        motions=(SceneMotionFact(source="kite", direction="rises", destination="tower"),),
+    )
+    facts.validate_source_grounding(
+        source_text="In a valley, a kite rises and pulls a ribbon toward a tower."
+    )
