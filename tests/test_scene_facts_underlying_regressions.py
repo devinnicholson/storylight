@@ -164,3 +164,42 @@ def test_shared_subject_temporal_connector_requires_grounded_prior_event(connect
             facts.validate_source_grounding(
                 source_text=f"In a cave, a fox beside a feather and {connector} opens a box."
             )
+
+
+def _held_ball_facts():
+    return SceneFactsV2(
+        setting=SceneSettingFact(label="cave"),
+        subjects=(SceneSubjectFact(ref="fox", label="fox", actions=("holds ball",)),),
+        objects=(SceneObjectFact(ref="ball", label="ball"),),
+        events=(SceneEventFact(ref="e1", source="fox", action="holds", object="ball"),),
+    )
+
+
+@pytest.mark.parametrize(
+    "source",
+    [
+        "In a cave, an owl says, a fox holds a ball.",
+        "In a cave, if a fox holds a ball, an owl smiles.",
+        "In a cave, a fox holds a ball if an owl smiles.",
+        "In a cave, a fox holds a ball, an owl says.",
+        'An owl says, "a cat sleeps. A fox holds a ball."',
+        "In a cave, a fox may hold a ball.",
+    ],
+)
+def test_unasserted_action_cannot_ground_action_or_typed_event(source):
+    with pytest.raises(SceneFactsGroundingError) as caught:
+        _held_ball_facts().validate_source_grounding(
+            source_text=f"A fox and a ball are in a cave. {source}"
+        )
+    assert {"subjects[0].actions[0]", "events[0]"}.issubset(caught.value.paths)
+
+
+@pytest.mark.parametrize(
+    "source",
+    [
+        "An owl says, a fox holds a ball; in a cave, a fox holds a ball.",
+        "In a cave, a fox holds a ball, and an owl says a dragon flies.",
+    ],
+)
+def test_independent_assertion_survives_reported_clause(source):
+    _held_ball_facts().validate_source_grounding(source_text=source)

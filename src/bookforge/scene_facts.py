@@ -1172,9 +1172,40 @@ def _normalized_phrase(value: str) -> tuple[str, ...]:
 def _source_sentences(source_text: str) -> tuple[tuple[str, ...], ...]:
     return tuple(
         tokens
-        for sentence in re.split(r"[.!?;]+", source_text)
+        for sentence in _asserted_units(source_text)
         if (tokens := _normalized_phrase(sentence))
     )
+
+
+def _asserted_units(source_text: str) -> tuple[str, ...]:
+    without_quotes = re.sub(
+        r'''"[^"]*(?:"|$)|“[^”]*(?:”|$)|(?<!\w)['‘](?:[^'’]|['’](?=\w))*(?:['’](?!\w)|$)''',
+        " ",
+        source_text,
+    )
+    return tuple(_asserted_clause(unit) for unit in re.split(r"[.!?;]+", without_quotes))
+
+
+def _asserted_clause(sentence: str) -> str:
+    if re.search(
+        r"\b(?:if|unless|whether|would|could|might|may|will|must|should|can|perhaps|"
+        r"allegedly|reportedly|supposedly|hypothetically|in a dream)\b",
+        sentence,
+        re.IGNORECASE,
+    ):
+        return ""
+    report = re.search(
+        r"\b(?:says?|said|tells?|told|claims?|claimed|reports?|reported|promises?|promised|"
+        r"denies|deny|denied|imagines?|imagined|believes?|believed|thinks?|thought|"
+        r"supposes?|supposed|hears?|heard|dreams?|dreamed)\b",
+        sentence,
+        re.IGNORECASE,
+    )
+    if report is None:
+        return sentence
+    # A comma alone may introduce speech or trailing attribution, not a true clause.
+    independent = re.search(r",\s*(?:and|but|while)\b", sentence[: report.start()], re.IGNORECASE)
+    return sentence[: independent.start()] if independent else ""
 
 
 def _explicit_carried_sentences(
@@ -1183,7 +1214,7 @@ def _explicit_carried_sentences(
     """Prove a complete passive clause before reordering it for action checks."""
     result = []
     setting = re.escape(facts.setting.label.casefold())
-    for sentence in re.split(r"[.!?;]+", source_text.casefold()):
+    for sentence in _asserted_units(source_text.casefold()):
         clause = re.sub(
             rf"^(?:in|at|inside)\s+(?:(?:a|an|the)\s+)?{setting},\s*",
             "",

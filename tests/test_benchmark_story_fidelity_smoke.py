@@ -6,6 +6,7 @@ from pathlib import Path
 
 import httpx
 import pytest
+from pydantic import ValidationError
 
 from scripts import benchmark_story_fidelity_smoke as smoke
 
@@ -42,6 +43,9 @@ def test_frozen_story_smoke_is_source_free_one_request_and_reproducible(tmp_path
         str(contracts),
     ]
     calls = []
+    private_dir = tmp_path / "responses"
+    private_dir.mkdir(mode=0o700)
+    archive = private_dir / "capture.jsonl"
     raw = "SETTING: cave\nACTOR: orange foxes\nACTION: carry blue lantern\nMAGIC: ribbon"
 
     def respond(request):
@@ -65,9 +69,10 @@ def test_frozen_story_smoke_is_source_free_one_request_and_reproducible(tmp_path
     )
     assert smoke.main([*args, "--aggregate-only"]) == 1
     assert not evidence.exists() and not contracts.exists()
-    assert smoke.main(args) == 0
+    assert smoke.main([*args, "--private-responses", str(archive)]) == 0
     summary = json.loads(output.read_text())
     assert len(calls) == 7
+    assert stat.S_IMODE(archive.stat().st_mode) == 0o600
     assert all(call["max_tokens"] == 64 and call["temperature"] == 0 for call in calls)
     assert summary["request_failures"] == 1
     assert summary["decision"] == "stop_before_development_gate"
@@ -89,6 +94,43 @@ def test_frozen_story_smoke_is_source_free_one_request_and_reproducible(tmp_path
     # A restart without private-contract export does not retry the failed request.
     assert smoke.main(args[:-2]) == 0
     assert len(calls) == 7
+    replay_evidence, replay_output = tmp_path / "replay.jsonl", tmp_path / "replay.json"
+    replay_args = [
+        *args[:6],
+        "--evidence",
+        str(replay_evidence),
+        "--output",
+        str(replay_output),
+        "--replay-private",
+        str(archive),
+        "--replay-evidence",
+        str(evidence),
+    ]
+    monkeypatch.setattr(smoke.httpx, "Client", lambda **kwargs: pytest.fail("replay used HTTP"))
+    assert smoke.main(replay_args) == 0
+    replay_summary = json.loads(replay_output.read_text())
+    assert replay_summary["decision"] == "offline_replay_only"
+    assert replay_summary["context"]["original_context_sha256"] == summary["context_sha256"]
+    assert replay_summary["context"]["original_started_cases"] == 7
+    assert replay_summary["context"]["original_finished_cases"] == 7
+    assert replay_summary["context"]["original_request_failures"] == 1
+    assert replay_summary["context"]["original_interrupted_cases"] == 0
+    assert all(
+        row["learned_inference_ms"] is None
+        and row["output_tokens"] is None
+        and row["accepted_construction_ms"] is None
+        and row["candidate_construction_ms"] is None
+        for row in replay_summary["results"]
+    )
+    assert [row["candidate_sha256"] for row in replay_summary["results"]] == [
+        row["candidate_sha256"] for row in summary["results"] if row["status"] == "ok"
+    ]
+    entries = [json.loads(line) for line in archive.read_text().splitlines()]
+    entries[1]["raw"] += "private altered output"
+    archive.write_text("\n".join(json.dumps(row) for row in entries) + "\n")
+    assert smoke.main(replay_args) == 1
+    archive.chmod(0o644)
+    assert smoke.main(replay_args) == 1
 
 
 def test_smoke_rejects_changed_manifest_and_never_retries_interrupted_case(tmp_path):
@@ -140,3 +182,35 @@ def test_strict_raw_refusal_still_measures_tolerant_accepted_fallback():
     assert result.compiler_proof is False
     assert result.accepted_sha256 == result.candidate_sha256
     assert contracts["accepted_master_prompt"] == contracts["candidate_master_prompt"]
+    assert result.diagnostics[0].stage == "raw_parse"
+    assert result.diagnostics[0].outcome == "value_error"
+
+
+def test_stage_validation_diagnostics_never_include_inputs_or_unknown_field_names(monkeypatch):
+    def reject(*args, **kwargs):
+        raise ValidationError.from_exception_data(
+            "private model title",
+            [
+                {
+                    "type": "extra_forbidden",
+                    "loc": ("private@example.invalid",),
+                    "input": "private payload value",
+                }
+            ],
+        )
+
+    monkeypatch.setattr(smoke, "tensor_slot_wire_plan", reject)
+    raw = "SETTING: cave\nACTOR: orange foxes\nACTION: carrying lantern\nMAGIC: ribbon"
+    result, _ = smoke.construct_case(
+        smoke.Result(index=6, status="ok", generation_complete=True),
+        raw,
+        smoke.PASSIVE_CONTROL,
+        style="watercolor",
+        seed=90407,
+    )
+    wire = next(item for item in result.diagnostics if item.stage == "accepted_wire")
+    assert wire.outcome == "validation_error"
+    assert wire.errors == [{"loc": ["other"], "type": "extra_forbidden"}]
+    assert "private" not in result.model_dump_json()
+    assert result.slot_shapes["ACTION"]["first_token_kind"] == "gerund"
+    assert result.adapter_refusal == smoke.LiveSceneFactsRefusal.UNSUPPORTED_SYNTAX
