@@ -1,0 +1,272 @@
+{
+  "schema_version": 1,
+  "fixture_kind": "authored synthetic engineering controls; not a holdout",
+  "visual_style": "watercolor paper theater",
+  "cases": [
+    {
+      "source": "In a quarry, two badgers carry one red bucket. A white arch appears.",
+      "expect_refusal": false,
+      "expected": {
+        "setting": {
+          "label": "quarry",
+          "attributes": []
+        },
+        "nodes": [
+          {
+            "label": "badgers",
+            "role": "subject",
+            "count": 2,
+            "color": null,
+            "attributes": [],
+            "actions": [
+              "carry red bucket"
+            ]
+          },
+          {
+            "label": "bucket",
+            "role": "object",
+            "count": 1,
+            "color": "red",
+            "attributes": [],
+            "actions": []
+          },
+          {
+            "label": "arch",
+            "role": "object",
+            "count": null,
+            "color": "white",
+            "attributes": [],
+            "actions": []
+          }
+        ],
+        "relationships": [
+          {
+            "source": 0,
+            "relation": "carries",
+            "target": 1
+          }
+        ]
+      }
+    },
+    {
+      "source": "In a garden, a hedgehog pushes one wooden cart. One blue balloon rises.",
+      "expect_refusal": false,
+      "expected": {
+        "setting": {
+          "label": "garden",
+          "attributes": []
+        },
+        "nodes": [
+          {
+            "label": "hedgehog",
+            "role": "subject",
+            "count": null,
+            "color": null,
+            "attributes": [],
+            "actions": [
+              "pushes cart"
+            ]
+          },
+          {
+            "label": "cart",
+            "role": "object",
+            "count": 1,
+            "color": null,
+            "attributes": [
+              "wooden"
+            ],
+            "actions": []
+          },
+          {
+            "label": "balloon",
+            "role": "object",
+            "count": 1,
+            "color": "blue",
+            "attributes": [],
+            "actions": []
+          }
+        ],
+        "motions": [
+          {
+            "source": 2,
+            "direction": "rises"
+          }
+        ]
+      }
+    },
+    {
+      "source": "In a courtyard, a badger lifts one purple stone. Two white kites fly above a wooden tower.",
+      "expect_refusal": false,
+      "expected": {
+        "setting": {
+          "label": "courtyard",
+          "attributes": []
+        },
+        "nodes": [
+          {
+            "label": "badger",
+            "role": "subject",
+            "count": null,
+            "color": null,
+            "attributes": [],
+            "actions": [
+              "lifts purple stone"
+            ]
+          },
+          {
+            "label": "kites",
+            "role": "subject",
+            "count": 2,
+            "color": "white",
+            "attributes": [],
+            "actions": [
+              "fly"
+            ]
+          },
+          {
+            "label": "stone",
+            "role": "object",
+            "count": 1,
+            "color": "purple",
+            "attributes": [],
+            "actions": []
+          },
+          {
+            "label": "tower",
+            "role": "object",
+            "count": null,
+            "color": null,
+            "attributes": [
+              "wooden"
+            ],
+            "actions": []
+          }
+        ],
+        "relationships": [
+          {
+            "source": 1,
+            "relation": "above",
+            "target": 3
+          }
+        ]
+      }
+    },
+    {
+      "source": "In a workshop, a mouse lifts one red button. The button becomes two blue bells.",
+      "expect_refusal": false,
+      "expected": {
+        "setting": {
+          "label": "workshop",
+          "attributes": []
+        },
+        "nodes": [
+          {
+            "label": "mouse",
+            "role": "subject",
+            "count": null,
+            "color": null,
+            "attributes": [],
+            "actions": [
+              "lifts red button"
+            ]
+          },
+          {
+            "label": "button",
+            "role": "object",
+            "count": 1,
+            "color": "red",
+            "attributes": [],
+            "actions": []
+          }
+        ],
+        "transformation": {
+          "source": 1,
+          "result_label": "bells",
+          "result_count": 2,
+          "result_color": "blue",
+          "result_attributes": []
+        }
+      }
+    },
+    {
+      "source": "In a cave, a red badger holds one blue cup. A silver badger carries one green cup. A ribbon appears.",
+      "expect_refusal": false,
+      "expected": {
+        "setting": {
+          "label": "cave",
+          "attributes": []
+        },
+        "nodes": [
+          {
+            "label": "badger",
+            "role": "subject",
+            "count": null,
+            "color": "red",
+            "attributes": [],
+            "actions": [
+              "holds blue cup"
+            ]
+          },
+          {
+            "label": "badger",
+            "role": "subject",
+            "count": null,
+            "color": "silver",
+            "attributes": [],
+            "actions": [
+              "carries green cup"
+            ]
+          },
+          {
+            "label": "cup",
+            "role": "object",
+            "count": 1,
+            "color": "blue",
+            "attributes": [],
+            "actions": []
+          },
+          {
+            "label": "cup",
+            "role": "object",
+            "count": 1,
+            "color": "green",
+            "attributes": [],
+            "actions": []
+          },
+          {
+            "label": "ribbon",
+            "role": "object",
+            "count": null,
+            "color": null,
+            "attributes": [],
+            "actions": []
+          }
+        ],
+        "relationships": [
+          {
+            "source": 0,
+            "relation": "holds",
+            "target": 2
+          },
+          {
+            "source": 1,
+            "relation": "carries",
+            "target": 3
+          }
+        ]
+      }
+    },
+    {
+      "source": "In a cave, a badger holds one lantern. A ribbon does not appear.",
+      "expect_refusal": true
+    },
+    {
+      "source": "In a cave, a badger holds one lantern.",
+      "expect_refusal": true
+    },
+    {
+      "source": "In a cave, a badger holds one lantern. A sign reads \"two blue birds\".",
+      "expect_refusal": true
+    }
+  ]
+}

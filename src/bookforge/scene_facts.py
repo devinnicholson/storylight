@@ -1697,7 +1697,11 @@ def _motion_grounded(
             continue
         direction_grounded = motion.direction is None
         if motion.direction is not None:
-            direction_positions = _phrase_positions(sentence, motion.direction.value)
+            direction_positions = tuple(
+                position
+                for form in (motion.direction.value, motion.direction.value.removesuffix("s"))
+                for position in _phrase_positions(sentence, form)
+            )
             direction_grounded = any(
                 source_end <= direction_start
                 and not _position_negated(sentence, direction_start)

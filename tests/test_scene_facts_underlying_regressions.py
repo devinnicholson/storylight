@@ -314,3 +314,28 @@ def test_motion_toward_destination_does_not_treat_carried_object_as_another_acto
     facts.validate_source_grounding(
         source_text="In a valley, a kite rises and pulls a ribbon toward a tower."
     )
+
+
+@pytest.mark.parametrize(
+    "count, clause", [(1, "one blue balloon rises"), (3, "three blue balloons rise")]
+)
+def test_rising_motion_agrees_in_number_without_borrowing_actor_or_direction(count, clause):
+    source = f"In a valley, {clause} toward a tower. A fox stands."
+    facts = SceneFactsV2(
+        setting=SceneSettingFact(label="valley"),
+        subjects=(
+            SceneSubjectFact(ref="balloon", label="balloon", count=count, color="blue"),
+            SceneSubjectFact(ref="fox", label="fox"),
+        ),
+        objects=(SceneObjectFact(ref="tower", label="tower"),),
+        motions=(SceneMotionFact(source="balloon", direction="rises", destination="tower"),),
+    )
+    facts.validate_source_grounding(source_text=source)
+    with pytest.raises(SceneFactsGroundingError, match="motions"):
+        facts.model_copy(update={"motions": (
+            SceneMotionFact(source="fox", direction="rises", destination="tower"),
+        )}).validate_source_grounding(source_text=source)
+    with pytest.raises(SceneFactsGroundingError, match="motions"):
+        facts.model_copy(update={"motions": (
+            SceneMotionFact(source="balloon", direction="falls", destination="tower"),
+        )}).validate_source_grounding(source_text=source)
