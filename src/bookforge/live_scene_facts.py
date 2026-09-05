@@ -289,12 +289,13 @@ class _Clause:
     state: str | None = None
     layer: str | None = None
     transform: bool = False
+    passive: bool = field(default=False, compare=False)
 
 
 def _clause(value: str) -> _Clause:
     passive = re.fullmatch(r"(.+?) (?:is|are|was|were) carried by (.+)", value)
     if passive:
-        return _Clause(_noun(passive[2]), "carries", _noun(passive[1]))
+        return _Clause(_noun(passive[2]), "carries", _noun(passive[1]), passive=True)
     match = _PREDICATE.search(value)
     # Hybrid clauses may use a bare relation rather than a copula.
     if match is None:
@@ -595,6 +596,22 @@ def _build(
             ordered_indices.append((len(requested), len(requested) + 1))
         for value in values:
             value = re.sub(r"^first\s+", "", value.strip())
+            fragment = re.fullmatch(r"carried by (.+)", value)
+            if fragment:
+                agent = _noun(fragment[1])
+                passive_candidates = [
+                    clause
+                    for clause in clauses
+                    if clause.passive
+                    and _key(clause.verb) == ("carry",)
+                    and identity(actor) == identity(agent) == identity(clause.subject)
+                    and _compatible(actor, clause.subject)
+                    and _compatible(agent, clause.subject)
+                ]
+                if len(passive_candidates) != 1:
+                    raise _Refuse(LiveSceneFactsRefusal.AMBIGUOUS_BINDING)
+                requested.append(passive_candidates[0])
+                continue
             match = _PREDICATE.match(value)
             if match or value.startswith(("does not ", "do not ", "never ")):
                 value = f"{slots['ACTOR']} {value}"

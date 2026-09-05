@@ -60,6 +60,13 @@ actions on the last page. Its extra passive-voice control refused, leaving the o
 identified a passive predicate fragment in the refused ACTION field; no raw response left the
 Jetson. The next repair must bind that fragment to a unique explicit source passive clause.
 
+The bounded repair now recognizes “carried by” followed by an agent only when the source contains
+exactly one matching complete carried-by clause. Both the selected actor and fragment agent must
+match that source actor's identity, count and color before the patient is recovered. Active source
+clauses, multiple possible patients and unasserted clauses refuse. Other passive verbs are outside
+this repair. Fresh synthetic controls verify these boundaries; the original story and prompt stay
+frozen for the next measurement.
+
 Both [control](../benchmarks/scene-prompt-grounding-repair-2026-09-04/controls-summary.json) and
 [story](../benchmarks/scene-prompt-grounding-repair-2026-09-04/story-summary.json) aggregates
 reproduce byte-for-byte under the pinned revision. Before/after metadata confirms the resident
