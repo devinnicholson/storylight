@@ -1398,17 +1398,6 @@ async function activatePage(nextIndex, renderToken = null) {
     && state.readerConfiguredPageId === nextPage.page_id
     && state.readerConfiguredPageText === nextPage.source_text
   );
-  state.pageIndex = nextIndex;
-  state.page = nextPage;
-  if (!readerSessionReusable) {
-    state.pendingReaderEvents = [];
-    state.cursor = -1;
-  }
-  state.tokens = tokenize(state.page.source_text);
-  state.triggerIndices = indexTriggers(state.page);
-  clearLayerState();
-  renderTimeline();
-  updatePageControls();
   const activationStartedAt = performance.now();
   const timings = {
     mediaReadyMs: 0,
@@ -1421,8 +1410,19 @@ async function activatePage(nextIndex, renderToken = null) {
     readerEnabled: READER_MODE,
     readerSessionReused: readerSessionReusable,
   };
-  const renderedMode = await renderPackLayers(state.pack, state.page, renderToken, timings);
+  const renderedMode = await renderPackLayers(state.pack, nextPage, renderToken, timings);
   if (!renderedMode || !liveRenderTokenIsCurrent(renderToken)) return false;
+  state.pageIndex = nextIndex;
+  state.page = nextPage;
+  if (!readerSessionReusable) {
+    state.pendingReaderEvents = [];
+    state.cursor = -1;
+  }
+  state.tokens = tokenize(state.page.source_text);
+  state.triggerIndices = indexTriggers(state.page);
+  clearLayerState();
+  renderTimeline();
+  updatePageControls();
   const committedPaint = state.lastSceneCommitPaint;
   const firstPaintAt = committedPaint?.version?.isConnected
     ? await committedPaint.promise

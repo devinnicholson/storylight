@@ -38,6 +38,7 @@ from bookforge.live_scene import (
 from bookforge.live_scene_planner import (
     CONCISE_RENDER_CONTRACT_REVISION,
     LIVE_SCENE_RENDER_CONTRACT_REVISION,
+    LiveSceneGraphPlan,
     LiveScenePlanner,
     LiveScenePlannerError,
 )
@@ -46,6 +47,7 @@ from bookforge.modal_budget import (
     release_modal_budget_reservation,
     settle_modal_budget,
 )
+from bookforge.semantic_text import normalize_semantic_phrase
 from bookforge.visual_evaluation import MediaEvaluation, evaluate_media
 from bookforge.visual_lab import GPU_USD_PER_SECOND, GenerationRecord
 
@@ -1508,6 +1510,7 @@ class _ResolvedLiveScenePlan:
     fidelity_label: str = ""
     preparation_ms: float = 0
     planning_cache_hit: bool = False
+    expected_subject_count: int = 1
 
 
 @dataclass(frozen=True, slots=True)
@@ -1549,6 +1552,9 @@ class FiniteModalLiveSceneProvider:
         self.enable_motion = enable_motion
         self.enable_preview = enable_preview
         self.planner = planner
+        self.planning_scope = getattr(planner, "planning_scope", "focal")
+        if self.planning_scope not in {"focal", "scene"}:
+            raise ValueError("unsupported scene planning scope")
         self.motion_gate = motion_gate or MotionTechnicalGate()
         self.motion_evaluator = motion_evaluator or _evaluate_motion_technical
         if fidelity_mode not in {"inline", "deferred"}:
@@ -1635,7 +1641,7 @@ class FiniteModalLiveSceneProvider:
             seed=seed,
             assets=[],
             compiler_model=deterministic_compiler,
-        )
+        ).model_copy(update={"planning_scope": self.planning_scope})
         yield LiveSceneUpdate(
             stage=LiveSceneStage.DRAFT_READY,
             progress=0.35,
@@ -1725,11 +1731,12 @@ class FiniteModalLiveSceneProvider:
                 "Full-bleed luminous storybook projection, strong foreground/background depth, "
                 "clean silhouettes, no border, no interface.",
             )
-            if self.render_contract == "full"
+            if self.render_contract == "full" and self.planning_scope == "focal"
             else page.scene_spec.master_prompt,
             negative_prompt=(
                 f"{page.scene_spec.negative_prompt}, words, letters, captions, interface, border, "
-                "split screen, collage, photorealism, duplicate character"
+                "split screen, collage, photorealism"
+                + (", duplicate character" if self.planning_scope == "focal" else "")
             ),
             seed=seed,
             width=self.master_width,
@@ -1741,7 +1748,7 @@ class FiniteModalLiveSceneProvider:
             require_subject_object_overlap=(
                 _fidelity_requires_overlap(page.layers) if inline_fidelity else False
             ),
-            expected_subject_count=1,
+            expected_subject_count=resolved.expected_subject_count,
         )
         try:
             fast_bundle = await self.provider.generate_fast(
@@ -1859,6 +1866,7 @@ class FiniteModalLiveSceneProvider:
     async def _should_generate_preview(self, request: LiveSceneCreateRequest) -> bool:
         if (
             not self.enable_preview
+            or self.planning_scope == "scene"
             or not isinstance(self.provider, WarmModalSceneProvider)
             or self.planner is None
         ):
@@ -1934,6 +1942,19 @@ class FiniteModalLiveSceneProvider:
         draft: StoryPack,
         prepare_renderer: bool = True,
     ) -> _ResolvedLiveScenePlan:
+        if self.planning_scope == "scene":
+            resolved = await self._resolve_plan(
+                request, job_id=job_id, seed=seed, draft=draft
+            )
+            preparation_ms = 0.0
+            if prepare_renderer:
+                if isinstance(self.provider, WarmModalSceneProvider) or (
+                    self.auto_prewarm_on_submit and self._supports_auto_prewarm()
+                ):
+                    preparation_ms = await self._prepare_warm_renderer(job_id=job_id)
+                else:
+                    preparation_ms = await self._prepare_safe_provider_route()
+            return replace(resolved, preparation_ms=preparation_ms)
         prepare_task: asyncio.Task[float] | None = None
         if prepare_renderer and (
             isinstance(self.provider, WarmModalSceneProvider)
@@ -2063,12 +2084,44 @@ class FiniteModalLiveSceneProvider:
                 visual_style=request.visual_style,
                 seed=seed,
             )
+            expected_subject_count = 1
+            if self.planning_scope == "scene":
+                if not isinstance(result.plan, LiveSceneGraphPlan):
+                    raise LiveScenePlannerError("scene scope requires a typed scene graph")
+                if len(" ".join(request.visual_style.split())) > 120:
+                    raise LiveScenePlannerError("scene renderer style must fit 120 characters")
+                facts = result.plan.scene_facts
+                if facts.transformation is not None or facts.temporal_order:
+                    raise LiveScenePlannerError(
+                        "temporal scenes require authored display steps before rendering"
+                    )
+                expected_subject_count = sum(subject.count or 1 for subject in facts.subjects)
+                if not 1 <= expected_subject_count <= 4:
+                    raise LiveScenePlannerError("scene renderer supports one to four subjects")
+                if self.fidelity_mode == "inline" and len({
+                    normalize_semantic_phrase(subject.label) for subject in facts.subjects
+                }) != 1:
+                    raise LiveScenePlannerError(
+                        "inline scene fidelity requires one shared subject label"
+                    )
             planned_page = result.plan.to_page(
                 source_text=request.text,
                 visual_style=request.visual_style,
                 seed=seed,
                 render_contract=self.render_contract,
             )
+            if self.planning_scope == "scene" and (
+                planned_page.scene_spec is None
+                or planned_page.scene_spec.master_prompt != facts.to_renderer_prompt(
+                    source_text=request.text, visual_style=request.visual_style
+                )
+            ):
+                raise LiveScenePlannerError("scene renderer prompt differs from its typed graph")
+            if (
+                self.planning_scope == "scene"
+                and len(planned_page.scene_spec.master_prompt) > 4_000
+            ):
+                raise LiveScenePlannerError("scene renderer prompt exceeds the request limit")
         except LiveScenePlannerError as error:
             # A generic privacy-safe prompt is useful for deterministic fixtures,
             # but it is not a faithful substitute for a requested live scene. In
@@ -2087,6 +2140,7 @@ class FiniteModalLiveSceneProvider:
             compiler_model=result.metrics.model,
         ).model_copy(
             update={
+                "planning_scope": self.planning_scope,
                 "compiler_contract_revision": (
                     CONCISE_RENDER_CONTRACT_REVISION
                     if self.render_contract == "concise"
@@ -2103,8 +2157,13 @@ class FiniteModalLiveSceneProvider:
                 model=result.metrics.model,
                 revision=result.model_revision,
             ),
-            fidelity_label=result.plan.focus_label,
+            fidelity_label=(
+                facts.subjects[0].label
+                if self.planning_scope == "scene" and self.fidelity_mode == "inline"
+                else result.plan.focus_label
+            ),
             planning_cache_hit=result.cache_hit,
+            expected_subject_count=expected_subject_count,
         )
 
     async def _promote_artifact(

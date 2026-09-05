@@ -230,6 +230,7 @@ def context(args: argparse.Namespace, provenance: benchmark.Provenance) -> dict:
         "schema_version": 2,
         "benchmark": "lantern-bridge-resident-smoke-v2",
         "execution_mode": "live",
+        "planning_scope": args.planning_scope,
         "manifest_sha256": MANIFEST_SHA256,
         "control_sha256": benchmark.digest(PASSIVE_CONTROL),
         "implementation_sha256": benchmark.digest(
@@ -288,6 +289,7 @@ def run_case(
     model: str,
     style: str,
     seed: int,
+    planning_scope: Literal["focal", "scene"] = "focal",
     capture: Callable[[dict], None] | None = None,
 ) -> tuple[Result, dict]:
     start = time.perf_counter()
@@ -328,10 +330,22 @@ def run_case(
                 "generation_complete": complete,
             }
         )
-    return construct_case(result, raw, source, style=style, seed=seed)
+    return construct_case(
+        result, raw, source, style=style, seed=seed, planning_scope=planning_scope
+    )
 
 
-def construct_case(result: Result, raw: str, source: str, *, style: str, seed: int):
+def construct_case(
+    result: Result,
+    raw: str,
+    source: str,
+    *,
+    style: str,
+    seed: int,
+    planning_scope: Literal["focal", "scene"] = "focal",
+):
+    if planning_scope == "scene":
+        result.fallback = False
     if not result.generation_complete:
         return result, {}
     slots = None
@@ -371,7 +385,7 @@ def construct_case(result: Result, raw: str, source: str, *, style: str, seed: i
     start = time.perf_counter()
     stage = "candidate_integration"
     try:
-        wire = tensor_accepted_graph_wire_plan(raw, source_text=source)
+        wire = tensor_accepted_graph_wire_plan(raw, source_text=source, scope=planning_scope)
         result.diagnostics.append(StageDiagnostic(stage=stage, outcome="pass"))
         stage = "candidate_plan"
         candidate = wire.to_live_scene_plan(context_text=source)
@@ -409,7 +423,7 @@ def construct_case(result: Result, raw: str, source: str, *, style: str, seed: i
     result.candidate_construction_ms = (time.perf_counter() - start) * 1000
     if slots is not None:
         try:
-            adapted = adapt_live_scene_facts(slots, source_text=source)
+            adapted = adapt_live_scene_facts(slots, source_text=source, scope=planning_scope)
             result.adapter_refusal = adapted.refusal
             result.diagnostics.append(
                 StageDiagnostic(
@@ -561,6 +575,7 @@ def load_private_replay(path: Path, evidence: Path, header: dict, cases) -> tupl
         "execution_mode": "replay",
         "private_archive_sha256": hashlib.sha256(data).hexdigest(),
         "original_context_sha256": benchmark.digest(original),
+        "original_planning_scope": original.get("planning_scope", "focal"),
         "original_evidence_sha256": hashlib.sha256(evidence.read_bytes()).hexdigest(),
         "original_started_cases": len(started),
         "original_finished_cases": len(results),
@@ -574,6 +589,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     parser.add_argument("--manifest", type=Path, required=True)
     parser.add_argument("--endpoint", default="http://127.0.0.1:11435")
     parser.add_argument("--model", required=True)
+    parser.add_argument("--planning-scope", choices=("focal", "scene"), default="focal")
     parser.add_argument("--max-output-tokens", type=int, choices=(64,), default=64)
     parser.add_argument("--provenance", type=Path, required=True)
     parser.add_argument("--memory-pid", type=int)
@@ -626,6 +642,7 @@ def main(argv: Sequence[str] | None = None) -> int:
                     source,
                     style=manifest["visual_style"],
                     seed=seed,
+                    planning_scope=args.planning_scope,
                 )
                 result.accepted_construction_ms = None
                 result.candidate_construction_ms = None
@@ -659,6 +676,7 @@ def main(argv: Sequence[str] | None = None) -> int:
                             model=args.model,
                             style=manifest["visual_style"],
                             seed=seed,
+                            planning_scope=args.planning_scope,
                             capture=(
                                 lambda entry: benchmark.append_event(args.private_responses, entry)
                             )

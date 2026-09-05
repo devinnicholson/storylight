@@ -2014,6 +2014,7 @@ class StructuredLiveScenePlanner:
         if timeout_seconds <= 0:
             raise ValueError("live-scene planner timeout must be positive")
         self.client = client
+        self.planning_scope = getattr(client, "planning_scope", "focal")
         self.timeout_seconds = timeout_seconds
         self.model_revision = _PLAN_MODEL_REVISION_ADAPTER.validate_python(model_revision)
         self.compact_wire = compact_wire

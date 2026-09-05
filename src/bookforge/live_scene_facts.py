@@ -12,6 +12,7 @@ import unicodedata
 from collections.abc import Mapping
 from dataclasses import dataclass, replace
 from enum import StrEnum
+from typing import Literal
 
 from bookforge.privacy_policy import COLOR_WORDS, COUNT_WORDS, VISIBLE_VERBS
 from bookforge.scene_facts import (
@@ -476,11 +477,60 @@ def _action_linked_results(
     return tuple(results)
 
 
-def _build(slots: dict[str, str], source: str) -> SceneFactsV2:
+def _complete_source_clauses(
+    source: str, setting: str
+) -> tuple[tuple[_Clause, ...], tuple[tuple[_Clause, _Clause], ...]]:
+    source = re.sub(
+        rf"^(?:in|at|inside)\s+(?:(?:a|an|the)\s+)?{re.escape(setting)},\s*",
+        "",
+        source.strip(),
+        count=1,
+    )
+    clauses, ordered = [], []
+    for sentence in re.split(r"[.!?;]", source):
+        if not sentence.strip():
+            continue
+        parts = re.split(r"\b(?:then|before)\b", sentence)
+        if len(parts) > 2 or (len(parts) == 1 and re.search(r"\bfirst\b", sentence)):
+            raise _Refuse(LiveSceneFactsRefusal.UNSUPPORTED_SYNTAX)
+        group = []
+        for part in parts:
+            part = re.sub(r"^first\s+", "", part.strip())
+            if _PREDICATE.search(part) is None:
+                raise _Refuse(LiveSceneFactsRefusal.UNSUPPORTED_SYNTAX)
+            clause = _clause(part)
+            if (
+                clause.verb in _RESULT_VERBS
+                and clause.object is None
+                and clause.verb not in (
+                    _RESULT_MOTION_VERBS
+                    | {"appear", "appears", "appeared", "rise", "rises", "fall", "falls"}
+                )
+            ) or any(
+                noun is not None
+                and noun.label.split()[0] in {"to", "from", "for", "by", "with", "about", "in"}
+                for noun in (clause.subject, clause.object, clause.anchor, clause.secondary)
+            ):
+                raise _Refuse(LiveSceneFactsRefusal.UNSUPPORTED_SYNTAX)
+            group.append(clause)
+        clauses.extend(group)
+        if len(group) == 2:
+            ordered.append((group[0], group[1]))
+    if not clauses:
+        raise _Refuse(LiveSceneFactsRefusal.UNSUPPORTED_SYNTAX)
+    return tuple(clauses), tuple(ordered)
+
+
+def _build(
+    slots: dict[str, str], source: str, *, scope: Literal["focal", "scene"] = "focal"
+) -> SceneFactsV2:
     if _SCOPED_SOURCE.search(source):
         raise _Refuse(LiveSceneFactsRefusal.UNSUPPORTED_SYNTAX)
     actor = _noun(slots["ACTOR"])
     clauses = _source_clauses(source)
+    scene_clauses, scene_order = (
+        _complete_source_clauses(source, slots["SETTING"]) if scope == "scene" else ((), ())
+    )
     source_colors: dict[tuple[str, ...], set[str]] = {}
     for clause in clauses:
         for noun in (clause.subject, clause.object, clause.anchor, clause.secondary):
@@ -553,6 +603,23 @@ def _build(slots: dict[str, str], source: str) -> SceneFactsV2:
         if candidates[0] not in selected:
             selected.append(candidates[0])
 
+    if scene_clauses:
+        present = {
+            identity(noun)
+            for clause in scene_clauses
+            if not clause.negative and not clause.transform
+            for noun in (clause.subject, clause.object, clause.anchor, clause.secondary)
+            if noun is not None
+        }
+        for clause in scene_clauses:
+            if clause.negative and any(
+                noun is not None and identity(noun) not in present
+                for noun in (clause.subject, clause.object, clause.anchor, clause.secondary)
+            ):
+                raise _Refuse(LiveSceneFactsRefusal.UNSUPPORTED_SYNTAX)
+            if not clause.transform and clause not in selected:
+                selected.append(clause)
+
     nouns: dict[tuple[tuple[str, ...], str | None], _Noun] = {}
     subject_keys = {actor_key}
 
@@ -577,11 +644,40 @@ def _build(slots: dict[str, str], source: str) -> SceneFactsV2:
         nouns[key] = noun
 
     for clause in selected:
-        if _key(clause.verb) != ("be",) and not clause.state and not clause.layer:
+        if (scope == "scene" and _key(clause.subject.label) == _key(actor.label)) or (
+            _key(clause.verb) != ("be",)
+            and not clause.state
+            and not clause.layer
+            and not (scope == "scene" and clause.negative)
+            and not (
+                scope == "scene"
+                and clause.verb in _RESULT_VERBS - _RESULT_MOTION_VERBS
+                and clause.object is None
+                and clause not in request_sources
+            )
+        ):
             subject_keys.add(identity(clause.subject))
         for noun in (clause.subject, clause.object, clause.anchor, clause.secondary):
             if noun:
                 add(noun)
+
+    if scope == "scene":
+        object_keys = {
+            identity(noun)
+            for clause in selected
+            for noun in (clause.object, clause.anchor, clause.secondary)
+            if noun is not None
+        } | {
+            identity(clause.subject)
+            for clause in selected
+            if clause.verb in _RESULT_VERBS and clause.object is None
+        }
+        if any(
+            _key(clause.verb) == ("be",)
+            and identity(clause.subject) not in subject_keys | object_keys
+            for clause in selected
+        ):
+            raise _Refuse(LiveSceneFactsRefusal.UNSUPPORTED_SYNTAX)
 
     if not _compatible(actor, nouns[actor_key]):
         raise _Refuse(LiveSceneFactsRefusal.UNGROUNDED)
@@ -664,6 +760,9 @@ def _build(slots: dict[str, str], source: str) -> SceneFactsV2:
         for result in linked:
             add(result)
 
+    if any(clause.transform and clause != transformation for clause in scene_clauses):
+        raise _Refuse(LiveSceneFactsRefusal.UNSUPPORTED_SYNTAX)
+
     # Recover explicit attributes/edges of selected entities. New source-only
     # actors or unrelated objects are never pulled into the focal graph.
     for clause in clauses:
@@ -698,6 +797,7 @@ def _build(slots: dict[str, str], source: str) -> SceneFactsV2:
     ordered_sources = [
         (request_sources[before], request_sources[after]) for before, after in ordered_indices
     ]
+    ordered_sources.extend(pair for pair in scene_order if pair not in ordered_sources)
     event_by_clause: dict[_Clause, SceneEventFact] = {}
 
     def object_label(noun: _Noun | None) -> str | None:
@@ -756,7 +856,10 @@ def _build(slots: dict[str, str], source: str) -> SceneFactsV2:
             motions.append(
                 SceneMotionFact(source=ref, direction="falls" if verb == "fall" else "rises")
             )
-        requested_action = any(matches(request, clause) for request in requested)
+        requested_action = any(matches(request, clause) for request in requested) or (
+            clause in scene_clauses
+            and not (clause.verb in _RESULT_VERBS and clause.object is None)
+        )
         if (
             verb != "be"
             and not clause.layer
@@ -825,15 +928,24 @@ def _build(slots: dict[str, str], source: str) -> SceneFactsV2:
     )
 
 
-def adapt_live_scene_facts(slots: Mapping[str, str], *, source_text: str) -> LiveSceneFactsResult:
+def adapt_live_scene_facts(
+    slots: Mapping[str, str],
+    *,
+    source_text: str,
+    scope: Literal["focal", "scene"] = "focal",
+) -> LiveSceneFactsResult:
     """Return a locally grounded graph or a stable refusal containing no values.
 
     Input is limited to four nonempty values of at most 512 characters each and
     a source of at most 4,000 characters. No source, exception details, or raw
     slot values are logged or retained in a refusal.
+
+    Scene scope includes every supported source clause and refuses incomplete
+    coverage. Both scopes require the original slot selections to be grounded.
     """
     if (
-        not isinstance(slots, Mapping)
+        scope not in ("focal", "scene")
+        or not isinstance(slots, Mapping)
         or set(slots) != {"SETTING", "ACTOR", "ACTION", "MAGIC"}
         or not isinstance(source_text, str)
         or not source_text.strip()
@@ -868,7 +980,7 @@ def adapt_live_scene_facts(slots: Mapping[str, str], *, source_text: str) -> Liv
             for key, value in expanded.items()
         }
         source = unicodedata.normalize("NFKC", source_text).casefold()
-        facts = _build(normalized, source)
+        facts = _build(normalized, source, scope=scope)
         compile_scene_facts_prompt(facts, source_text=source_text)
         return LiveSceneFactsResult(facts=facts)
     except _Refuse as error:

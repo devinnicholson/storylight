@@ -66,6 +66,7 @@ class StoryPackStore:
         visual_style: str,
         seed: int,
         session_id: str | None,
+        planning_scope: str = "focal",
     ) -> StoryPack | None:
         """Return the newest exact completed live scene, if one is stored.
 
@@ -81,6 +82,7 @@ class StoryPackStore:
                 visual_style=visual_style,
                 seed=seed,
                 session_id=session_id,
+                planning_scope=planning_scope,
             )
 
     def _latest_sync(self) -> StoryPack:
@@ -110,6 +112,7 @@ class StoryPackStore:
         visual_style: str,
         seed: int,
         session_id: str | None,
+        planning_scope: str = "focal",
     ) -> StoryPack | None:
         del session_id  # Transport identity does not change exact visual identity.
         self._initialize_sync()
@@ -119,6 +122,7 @@ class StoryPackStore:
             text=text,
             visual_style=visual_style,
             seed=seed,
+            planning_scope=planning_scope,
         )
         candidate = self._live_scene_index.get(cache_key)
         if candidate is None:
@@ -178,6 +182,7 @@ class StoryPackStore:
             text=pack.pages[0].source_text,
             visual_style=pack.visual_style,
             seed=master_assets[0].seed,
+            planning_scope=pack.planning_scope,
         )
 
     @staticmethod
@@ -186,12 +191,14 @@ class StoryPackStore:
         text: str,
         visual_style: str,
         seed: int,
+        planning_scope: str = "focal",
     ) -> str:
         payload = json.dumps(
             {
                 "text": text,
                 "visual_style": visual_style,
                 "seed": seed,
+                "planning_scope": planning_scope,
             },
             ensure_ascii=False,
             sort_keys=True,

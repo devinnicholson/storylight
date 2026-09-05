@@ -12,6 +12,7 @@ from bookforge.api import _build_live_scene_planner_client
 from bookforge.config import Settings
 from bookforge.domain import ModelMetrics
 from bookforge.live_scene_planner import (
+    LiveSceneGraphWirePlan,
     LiveSceneWirePlan,
     live_scene_plan_prompt,
     validate_live_scene_plan_privacy,
@@ -325,6 +326,20 @@ def test_api_planner_client_keeps_default_or_builds_tensorrt_candidate() -> None
     assert hybrid.protocol == "hybrid"
     asyncio.run(hybrid.client.aclose())
 
+    with pytest.raises(ValueError, match="scene scope requires"):
+        Settings(_env_file=None, live_scene_planner_scope="scene")
+    scene = _build_live_scene_planner_client(
+        Settings(
+            _env_file=None,
+            live_scene_planner="model",
+            live_scene_planner_backend="tensorrt_accepted_graph",
+            live_scene_planner_scope="scene",
+        ),
+        fallback=fallback,
+    )
+    assert scene.planning_scope == "scene"
+    asyncio.run(scene.client.aclose())
+
     with pytest.raises(ValueError, match="standard wire contract"):
         _build_live_scene_planner_client(
             Settings(
@@ -334,6 +349,39 @@ def test_api_planner_client_keeps_default_or_builds_tensorrt_candidate() -> None
             ),
             fallback=fallback,
         )
+
+
+def test_scene_scope_isolates_cache_and_refuses_focal_connection_fallback() -> None:
+    async def run():
+        fallback = StubFallback()
+        clients = [
+            TensorRTSlotModelClient(
+                base_url="http://127.0.0.1:11435", model="llm", timeout_seconds=5,
+                scene_facts_enabled=True, planning_scope=scope, fallback=fallback,
+            )
+            for scope in ("focal", "scene")
+        ]
+        def disconnected(request):
+            raise httpx.ConnectError("unavailable", request=request)
+        try:
+            assert clients[0].cache_identity != clients[1].cache_identity
+            await clients[1].client.aclose()
+            clients[1].client = httpx.AsyncClient(
+                base_url="http://127.0.0.1:11435", transport=httpx.MockTransport(disconnected),
+            )
+            with pytest.raises(ModelUnavailableError, match="no focal fallback"):
+                await clients[1].generate(
+                    system="ignored",
+                    prompt=live_scene_plan_prompt(
+                        text=_GRAPH_SOURCE, visual_style="watercolor", seed=1
+                    ),
+                    output_type=LiveSceneGraphWirePlan,
+                )
+            assert fallback.generations == fallback.probes == 0
+        finally:
+            for client in clients:
+                await client.client.aclose()
+    asyncio.run(run())
 
 
 def test_tensorrt_slot_client_falls_back_only_when_endpoint_cannot_connect() -> None:

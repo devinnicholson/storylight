@@ -21,8 +21,8 @@ def _slots(**changes: str) -> dict[str, str]:
     }
 
 
-def _facts(slots: dict[str, str], source: str):
-    result = adapt_live_scene_facts(slots, source_text=source)
+def _facts(slots: dict[str, str], source: str, *, scope="focal"):
+    result = adapt_live_scene_facts(slots, source_text=source, scope=scope)
     assert result.refusal is None
     assert result.facts is not None
     compile_scene_facts_prompt(result.facts, source_text=source)
@@ -170,6 +170,89 @@ def test_bare_continuation_resolves_only_one_source_color() -> None:
     assert facts.subjects[0].actions == ("holds lantern", "lifts box")
     assert adapt_live_scene_facts(slots, source_text=source + " A red fox waits.").facts is None
     assert adapt_live_scene_facts(slots, source_text=source + " A silver fox waits.").facts is None
+
+
+def test_scene_scope_includes_explicit_secondary_actor_and_object() -> None:
+    source = (
+        "In a cave, a silver fox holds one blue lantern. "
+        "A red fox carries one green lantern. A ribbon appears."
+    )
+    slots = _slots(ACTOR="silver fox", ACTION="holds blue lantern")
+    focal = _facts(slots, source)
+    assert len(focal.subjects) == 1
+    assert all(node.color != "green" for node in focal.objects)
+    scene = _facts(slots, source, scope="scene")
+    nodes = {node.ref: node for node in (*scene.subjects, *scene.objects)}
+    assert [
+        (nodes[edge.source].color, edge.relation.value, nodes[edge.target].color)
+        for edge in scene.relationships
+    ] == [("silver", "holds", "blue"), ("red", "carries", "green")]
+
+
+def test_scene_scope_keeps_passive_binding_and_shared_spatial_anchor() -> None:
+    source = (
+        "In a cave, one blue lantern is carried by a silver fox. "
+        "The lantern is above a wooden box. A red fox is below the box. A ribbon appears."
+    )
+    slots = _slots(ACTOR="silver fox", ACTION="carries lantern")
+    scene = _facts(slots, source, scope="scene")
+    silver, red = scene.subjects
+    assert red.color == "red" and not red.actions
+    carry, above, below = scene.relationships
+    assert carry.source == silver.ref and carry.target == above.source
+    assert above.relation.value == "above" and below.relation.value == "below"
+    assert above.target == below.target and below.source == red.ref
+
+
+def test_scene_scope_recovers_explicit_order_and_independent_flying_result() -> None:
+    source = (
+        "In a cave, a badger opens a wooden box then the badger lifts a lantern. "
+        "Three golden birds fly above the box."
+    )
+    slots = _slots(ACTOR="badger", ACTION="opens box", MAGIC="three golden birds")
+    assert not _facts(slots, source).temporal_order
+    scene = _facts(slots, source, scope="scene")
+    assert [event.action for event in scene.events] == ["opens", "lifts"]
+    assert (scene.temporal_order[0].before, scene.temporal_order[0].after) == (
+        scene.events[0].ref,
+        scene.events[1].ref,
+    )
+    assert scene.subjects[1].count == 3 and scene.subjects[1].actions == ("fly",)
+
+
+def test_scene_scope_refuses_unsupported_trailing_clause() -> None:
+    source = "In a cave, a fox holds a lantern. A ribbon appears. The fox ponders a puzzle."
+    assert _facts(_slots(), source)
+    result = adapt_live_scene_facts(_slots(), source_text=source, scope="scene")
+    assert result.refusal is LiveSceneFactsRefusal.UNSUPPORTED_SYNTAX
+    assert source not in repr(result)
+
+
+def test_scene_scope_cannot_replace_wrong_model_result_with_source_result() -> None:
+    source = "In a cave, a fox holds a lantern. An owl carries a box. A ribbon appears."
+    result = adapt_live_scene_facts(_slots(MAGIC="comet"), source_text=source, scope="scene")
+    assert result.refusal is LiveSceneFactsRefusal.UNGROUNDED
+
+
+def test_scene_scope_refuses_dynamic_result_without_a_typed_action_or_state() -> None:
+    source = "In a cave, a fox holds a lantern. A ribbon appears. A flower blooms."
+    result = adapt_live_scene_facts(_slots(), source_text=source, scope="scene")
+    assert result.refusal is LiveSceneFactsRefusal.UNSUPPORTED_SYNTAX
+
+
+def test_scene_scope_refuses_prepositional_complement_as_an_object_label() -> None:
+    source = "In a cave, a fox holds a lantern. A ribbon appears. A bird emerges from a box."
+    result = adapt_live_scene_facts(_slots(), source_text=source, scope="scene")
+    assert result.refusal is LiveSceneFactsRefusal.UNSUPPORTED_SYNTAX
+
+
+def test_scene_scope_refuses_unclassified_copular_entity_role() -> None:
+    source = (
+        "In a cave, a fox holds a lantern above a wooden box. "
+        "An owl is below the box. A ribbon appears."
+    )
+    result = adapt_live_scene_facts(_slots(), source_text=source, scope="scene")
+    assert result.refusal is LiveSceneFactsRefusal.UNSUPPORTED_SYNTAX
 
 
 def test_explicit_passive_carry_preserves_binding_through_renderer() -> None:

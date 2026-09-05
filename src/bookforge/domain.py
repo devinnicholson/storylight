@@ -266,6 +266,7 @@ class StoryPack(StrictModel):
     visual_style: NonEmpty
     compiler_model: NonEmpty
     compiler_contract_revision: NonEmpty | None = None
+    planning_scope: Literal["focal", "scene"] = "focal"
     pages: list[GeneratedPagePlan]
     assets: list[AssetRecord] = Field(default_factory=list)
 

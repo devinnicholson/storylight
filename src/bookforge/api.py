@@ -186,6 +186,7 @@ def _build_live_scene_planner_client(
         ),
         scene_facts_enabled=settings.live_scene_planner_backend
         in {"tensorrt_graph", "tensorrt_accepted_graph"},
+        planning_scope=settings.live_scene_planner_scope,
     )
 
 
@@ -233,6 +234,7 @@ async def lifespan(app: FastAPI):
             visual_style=payload.visual_style,
             seed=live_scene_request_seed(payload),
             session_id=payload.session_id,
+            planning_scope=settings.live_scene_planner_scope,
         )
         if pack is not None and not _completed_pack_matches_planner_mode(
             pack,

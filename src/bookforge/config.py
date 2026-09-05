@@ -2,7 +2,7 @@ from functools import lru_cache
 from pathlib import Path
 from typing import Annotated, Literal
 
-from pydantic import Field, field_validator
+from pydantic import Field, field_validator, model_validator
 from pydantic_settings import BaseSettings, NoDecode, SettingsConfigDict
 
 
@@ -54,6 +54,7 @@ class Settings(BaseSettings):
         "tensorrt_graph",
         "tensorrt_accepted_graph",
     ] = "configured"
+    live_scene_planner_scope: Literal["focal", "scene"] = "focal"
     live_scene_planner_base_url: str = "http://127.0.0.1:11435"
     live_scene_planner_model_name: str = "llm"
     live_scene_planner_max_output_tokens: Annotated[int, Field(ge=1, le=128)] = 64
@@ -143,6 +144,15 @@ class Settings(BaseSettings):
         if isinstance(value, str):
             return [origin.strip() for origin in value.split(",") if origin.strip()]
         return value
+
+    @model_validator(mode="after")
+    def validate_scene_scope(self) -> "Settings":
+        if self.live_scene_planner_scope == "scene" and (
+            self.live_scene_planner != "model"
+            or self.live_scene_planner_backend != "tensorrt_accepted_graph"
+        ):
+            raise ValueError("scene scope requires the accepted graph model planner")
+        return self
 
     @field_validator("live_scene_master_width", "live_scene_master_height")
     @classmethod

@@ -1824,6 +1824,8 @@ def build_live_scene_provider(
 
     selected = asset_backend if live_scene_backend == "auto" else live_scene_backend
     if selected == "fake":
+        if getattr(planner, "planning_scope", "focal") == "scene":
+            raise ValueError("scene scope requires a graph-aware live-scene provider")
         # A small delay makes each progressive stage observable in local UI smoke tests.
         return DeterministicFakeLiveSceneProvider(
             cache=cache,

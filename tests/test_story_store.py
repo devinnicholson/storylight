@@ -128,6 +128,20 @@ def test_story_pack_store_finds_only_exact_completed_live_scene(tmp_path: Path) 
     assert exact == pack
     assert other_session == pack
     assert wrong_seed is None
+    scene_request = dict(
+        text=pack.pages[0].source_text,
+        visual_style=pack.visual_style,
+        seed=17,
+        session_id=None,
+        planning_scope="scene",
+    )
+    assert asyncio.run(restarted.find_live_scene(**scene_request)) is None
+    scene_pack = pack.model_copy(update={"planning_scope": "scene"})
+    asyncio.run(restarted.save(scene_pack))
+    reloaded = StoryPackStore(store.root)
+    assert asyncio.run(reloaded.find_live_scene(**scene_request)) == scene_pack
+    focal_request = {**scene_request, "planning_scope": "focal"}
+    assert asyncio.run(reloaded.find_live_scene(**focal_request)) == pack
     assert all("The moth found the gate." not in key for key in restarted._live_scene_index)  # noqa: SLF001
 
 

@@ -591,7 +591,7 @@ def tensor_graph_wire_plan(
 
 
 def tensor_accepted_graph_wire_plan(
-    output_text: str, *, source_text: str
+    output_text: str, *, source_text: str, scope: Literal["focal", "scene"] = "focal"
 ) -> LiveSceneGraphWirePlan:
     """Compile a validated graph, retaining the accepted wire when available."""
 
@@ -607,7 +607,7 @@ def tensor_accepted_graph_wire_plan(
         slots = parse_tensor_graph_slots(output_text)
         if any("|" in value or "=" in value for value in slots.values()):
             raise ValueError("accepted graph requires plain slots")
-        result = adapt_live_scene_facts(slots, source_text=source_text)
+        result = adapt_live_scene_facts(slots, source_text=source_text, scope=scope)
         if result.facts is None:
             raise ValueError("scene graph adapter refused")
         candidate = (
@@ -626,6 +626,8 @@ def tensor_accepted_graph_wire_plan(
             raise ValueError("compiled graph prompt mismatch")
         return candidate
     except (ValueError, LiveScenePlannerPrivacyError):
+        if scope == "scene":
+            raise ValueError("complete scene graph construction refused") from None
         if accepted is not None:
             return LiveSceneGraphWirePlan(**accepted.model_dump())
         raise accepted_error from None
@@ -684,6 +686,7 @@ class TensorRTSlotModelClient(StructuredModelClient):
         fallback_ready_seconds: float = 5,
         protocol: Literal["slots", "hybrid"] = "slots",
         scene_facts_enabled: bool = False,
+        planning_scope: Literal["focal", "scene"] = "focal",
     ) -> None:
         parsed = httpx.URL(base_url)
         if parsed.scheme not in {"http", "https"} or parsed.host not in {
@@ -696,11 +699,16 @@ class TensorRTSlotModelClient(StructuredModelClient):
             raise ValueError("TensorRT slot output bound must be between 1 and 128")
         if not 0 <= fallback_ready_seconds <= 30:
             raise ValueError("TensorRT fallback wait must be between 0 and 30 seconds")
+        if planning_scope not in {"focal", "scene"} or (
+            planning_scope == "scene" and (not scene_facts_enabled or protocol != "slots")
+        ):
+            raise ValueError("scene scope requires the accepted graph protocol")
         self.base_url = base_url.rstrip("/")
         self.model = model
         self.max_output_tokens = max_output_tokens
         self.protocol = protocol
         self.scene_facts_enabled = scene_facts_enabled
+        self.planning_scope = planning_scope
         self.cache_identity = hashlib.sha256(
             json.dumps(
                 {
@@ -719,6 +727,10 @@ class TensorRTSlotModelClient(StructuredModelClient):
             self.cache_identity = hashlib.sha256(
                 f"{self.cache_identity}:{graph_revision}".encode()
             ).hexdigest()
+        if planning_scope == "scene":
+            self.cache_identity = hashlib.sha256(
+                f"{self.cache_identity}:complete-scene-v1".encode()
+            ).hexdigest()
         self.fallback = fallback
         self.fallback_ready_seconds = fallback_ready_seconds
         self.client = httpx.AsyncClient(
@@ -734,6 +746,8 @@ class TensorRTSlotModelClient(StructuredModelClient):
         prompt: str,
         output_type: type[OutputT],
     ) -> tuple[OutputT, ModelMetrics]:
+        if self.planning_scope == "scene" and set(output_type.model_fields) != {"ready"}:
+            raise ModelUnavailableError("complete scene planning has no focal fallback")
         if self.fallback is None:
             raise ModelUnavailableError("TensorRT slot endpoint is unreachable")
         deadline = time.monotonic() + self.fallback_ready_seconds
@@ -842,7 +856,9 @@ class TensorRTSlotModelClient(StructuredModelClient):
                 raise TypeError("message content is not text")
             usage = payload.get("usage", {})
             if self.scene_facts_enabled and self.protocol == "slots":
-                wire_plan = tensor_accepted_graph_wire_plan(content, source_text=source_text)
+                wire_plan = tensor_accepted_graph_wire_plan(
+                    content, source_text=source_text, scope=self.planning_scope
+                )
             elif self.scene_facts_enabled:
                 try:
                     wire_plan = tensor_graph_wire_plan(content, source_text=source_text)

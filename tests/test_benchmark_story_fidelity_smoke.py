@@ -75,6 +75,7 @@ def test_frozen_story_smoke_is_source_free_one_request_and_reproducible(tmp_path
     assert stat.S_IMODE(archive.stat().st_mode) == 0o600
     assert all(call["max_tokens"] == 64 and call["temperature"] == 0 for call in calls)
     assert summary["request_failures"] == 1
+    assert summary["context"]["planning_scope"] == "focal"
     assert summary["decision"] == "stop_before_development_gate"
     assert summary["visual_fidelity_assessed"] is False
     assert summary["temporal_playback_assessed"] is False
@@ -126,6 +127,34 @@ def test_frozen_story_smoke_is_source_free_one_request_and_reproducible(tmp_path
         row["candidate_sha256"] for row in summary["results"] if row["status"] == "ok"
     ]
     entries = [json.loads(line) for line in archive.read_text().splitlines()]
+    # Earlier v2 captures did not name the deterministic reconstruction scope.
+    original_context = entries[0]["context"]
+    original_context.pop("planning_scope")
+    original_events = [json.loads(line) for line in evidence.read_text().splitlines()]
+    original_events[0] = original_context
+    evidence.write_text("\n".join(json.dumps(row) for row in original_events) + "\n")
+    archive.write_text("\n".join(json.dumps(row) for row in entries) + "\n")
+    scene_args = [
+        *replay_args[:6],
+        "--evidence",
+        str(tmp_path / "scene-replay.jsonl"),
+        "--output",
+        str(tmp_path / "scene-replay.json"),
+        *replay_args[10:],
+        "--planning-scope",
+        "scene",
+    ]
+    assert smoke.main(scene_args) == 0
+    scene_summary = json.loads((tmp_path / "scene-replay.json").read_text())
+    assert scene_summary["decision"] == "offline_replay_only"
+    assert scene_summary["context"]["planning_scope"] == "scene"
+    assert scene_summary["context"]["original_planning_scope"] == "focal"
+    assert scene_summary["context"]["original_context_sha256"] == smoke.benchmark.digest(
+        original_context
+    )
+    assert scene_summary["context"]["request_sha256"] == summary["context"]["request_sha256"]
+    assert all(not row["fallback"] for row in scene_summary["results"])
+    assert all(row["learned_inference_ms"] is None for row in scene_summary["results"])
     entries[1]["raw"] += "private altered output"
     archive.write_text("\n".join(json.dumps(row) for row in entries) + "\n")
     assert smoke.main(replay_args) == 1
@@ -184,6 +213,19 @@ def test_strict_raw_refusal_still_measures_tolerant_accepted_fallback():
     assert contracts["accepted_master_prompt"] == contracts["candidate_master_prompt"]
     assert result.diagnostics[0].stage == "raw_parse"
     assert result.diagnostics[0].outcome == "value_error"
+
+    refused, contracts = smoke.construct_case(
+        smoke.Result(index=6, status="ok", generation_complete=True),
+        "SETTING: cave\nACTOR: orange foxes\nACTION: carry blue lantern\nMAGIC: ribbon",
+        smoke.PASSIVE_CONTROL + " A flower blooms.",
+        style="watercolor",
+        seed=90407,
+        planning_scope="scene",
+    )
+    assert refused.accepted_valid
+    assert not refused.candidate_valid and not refused.fallback
+    assert refused.adapter_refusal == smoke.LiveSceneFactsRefusal.UNSUPPORTED_SYNTAX
+    assert "candidate_master_prompt" not in contracts
 
     graph, _ = smoke.construct_case(
         smoke.Result(index=0, status="ok", generation_complete=True),

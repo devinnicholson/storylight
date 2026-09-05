@@ -36,12 +36,22 @@ from bookforge.live_scene import (
     build_live_scene_story_pack,
 )
 from bookforge.live_scene_planner import (
+    LiveSceneGraphPlan,
     LiveScenePlacedLayerPlan,
     LiveScenePlan,
     LiveScenePlannerError,
     LiveScenePlanningResult,
 )
 from bookforge.modal_budget import budget_envelope_from_plan
+from bookforge.scene_facts import (
+    SceneEventFact,
+    SceneFactsV2,
+    SceneObjectFact,
+    SceneSettingFact,
+    SceneSubjectFact,
+    SceneTemporalOrderFact,
+    SceneTransformationFact,
+)
 from bookforge.visual_lab import VisualLabLedger
 
 
@@ -539,6 +549,170 @@ def test_billing_authorization_overlaps_planning_without_starting_gpu_early(
     ledger = VisualLabLedger.read(warm.ledger_path, envelope=envelope)
     assert ledger.reservations == {}
     assert [record.stage for record in ledger.records] == ["warm-fast-scene"]
+
+
+def _scene_scope_plan(facts: SceneFactsV2) -> LiveSceneGraphPlan:
+    return LiveSceneGraphPlan(
+        scene_summary="A cave scene",
+        art_direction="watercolor",
+        camera_motion="locked",
+        background_prompt="cave",
+        focus_label="fox",
+        focus=LiveScenePlacedLayerPlan(
+            kind="character", prompt="fox", anchor=(0.4, 0.5, 0.3, 0.4), depth=5,
+            motion="parallax",
+        ),
+        accent=LiveScenePlacedLayerPlan(
+            kind="prop", prompt="box", anchor=(0.7, 0.5, 0.2, 0.2), depth=3,
+            motion="parallax",
+        ),
+        scene_facts=facts,
+    )
+
+
+@pytest.mark.parametrize("actors", ["group", "colors"])
+def test_scene_scope_validates_before_billing_and_renders_graph_subject_count(
+    tmp_path: Path, actors
+):
+    invoker = StubWarmInvoker()
+    warm = _warm_provider(tmp_path, invoker)
+    facts = SceneFactsV2(
+        setting=SceneSettingFact(label="cave"),
+        subjects=(SceneSubjectFact(ref="fox", label="fox", count=3, actions=("stand",)),)
+        if actors == "group" else (
+            SceneSubjectFact(ref="silver", label="fox", color="silver", actions=("stands",)),
+            SceneSubjectFact(ref="red", label="fox", color="red", actions=("stands",)),
+        ),
+        objects=(SceneObjectFact(ref="box", label="box"),),
+    )
+    source = (
+        "In a cave, three foxes stand beside a box." if actors == "group" else
+        "In a cave, a silver fox stands beside a box. A red fox stands beside the box."
+    )
+    planner_started, release_planner = asyncio.Event(), asyncio.Event()
+    preparation_started = []
+    original_authorize = warm.prepare_fast_authorization
+
+    async def authorize(**kwargs):
+        preparation_started.append("authorize")
+        await original_authorize(**kwargs)
+
+    warm.prepare_fast_authorization = authorize
+
+    class Planner:
+        planning_scope = "scene"
+
+        async def has_cached_plan(self, **kwargs):
+            raise AssertionError("scene scope must skip the generic preview route")
+
+        async def plan(self, **kwargs):
+            planner_started.set()
+            await release_planner.wait()
+            return LiveScenePlanningResult(
+                plan=_scene_scope_plan(facts).model_copy(
+                    update={"focus_label": "fox" if actors == "group" else "silver fox"}
+                ),
+                metrics=ModelMetrics(backend="fixture", model="fixture", total_ms=1),
+                model_revision="fixture", wall_ms=1,
+            )
+
+    async def run():
+        cache = AssetCache(tmp_path / "scene-cache")
+        await cache.initialize()
+        adapter = FiniteModalLiveSceneProvider(
+            warm, cache=cache, planner=Planner(), output_root=tmp_path / "scene-output"
+        )
+        iterator = adapter.generate(
+            LiveSceneCreateRequest(text=source), job_id="scene_scoped_count"
+        )
+        draft = await anext(iterator)
+        task = asyncio.create_task(anext(iterator))
+        await asyncio.wait_for(planner_started.wait(), timeout=1)
+        assert preparation_started == [] and invoker.calls == []
+        release_planner.set()
+        master = await asyncio.wait_for(task, timeout=2)
+        with pytest.raises(StopAsyncIteration):
+            await anext(iterator)
+        return draft, master
+
+    draft, master = asyncio.run(run())
+    assert draft.story_pack.planning_scope == master.story_pack.planning_scope == "scene"
+    assert preparation_started == ["authorize"]
+    assert len(invoker.calls) == 1 and invoker.calls[0][1] == "generate"
+    arguments = invoker.calls[0][2]
+    assert arguments["expected_subject_count"] == (3 if actors == "group" else 2)
+    assert arguments["fidelity_label"] == "fox"
+    assert arguments["prompt"] == facts.to_renderer_prompt(
+        source_text=source, visual_style="luminous watercolor paper theater"
+    )
+    assert "duplicate character" not in arguments["negative_prompt"]
+
+
+@pytest.mark.parametrize(
+    "unsupported", [
+        "count", "mixed", "transformation", "order", "legacy", "long-style", "oversized-prompt"
+    ]
+)
+def test_scene_scope_refuses_unsupported_plan_before_paid_preparation(
+    tmp_path: Path, unsupported, monkeypatch
+):
+    invoker = StubWarmInvoker()
+    warm = _warm_provider(tmp_path, invoker)
+    subjects = (SceneSubjectFact(ref="fox", label="fox", count=5 if unsupported == "count" else 1),)
+    if unsupported == "mixed":
+        subjects += (SceneSubjectFact(ref="owl", label="owl"),)
+    facts = SceneFactsV2(
+        setting=SceneSettingFact(label="cave"), subjects=subjects,
+        objects=(SceneObjectFact(ref="box", label="box"),),
+        transformation=(
+            SceneTransformationFact(source="box", result_label="birds")
+            if unsupported == "transformation" else None
+        ),
+        events=(
+            SceneEventFact(ref="open", source="fox", action="opens", object="box"),
+            SceneEventFact(ref="close", source="fox", action="closes", object="box"),
+        ) if unsupported == "order" else (),
+        temporal_order=(SceneTemporalOrderFact(before="open", after="close"),)
+        if unsupported == "order" else (),
+    )
+
+    async def unexpected_preparation(**kwargs):
+        raise AssertionError("unsupported scene reached paid preparation")
+
+    warm.prepare_fast_authorization = unexpected_preparation
+    warm.prewarm = unexpected_preparation
+    if unsupported == "oversized-prompt":
+        monkeypatch.setattr(SceneFactsV2, "to_renderer_prompt", lambda self, **kwargs: "x" * 4_001)
+
+    class Planner:
+        planning_scope = "scene"
+
+        async def plan(self, **kwargs):
+            return LiveScenePlanningResult(
+                plan=_gemma_live_plan() if unsupported == "legacy" else _scene_scope_plan(facts),
+                metrics=ModelMetrics(backend="fixture", model="fixture", total_ms=1),
+                model_revision="fixture", wall_ms=1,
+            )
+
+    async def run():
+        adapter = FiniteModalLiveSceneProvider(
+            warm, cache=AssetCache(tmp_path / "cache"), planner=Planner(),
+            auto_prewarm_on_submit=True,
+        )
+        with pytest.raises(LiveSceneProviderUnavailableError, match="no cloud render"):
+            async for _ in adapter.generate(
+                LiveSceneCreateRequest(
+                    text="In a cave, a fox opens a box.",
+                    visual_style=(
+                        "watercolor " * 12 if unsupported == "long-style" else "watercolor"
+                    ),
+                ),
+                job_id="scene_scope_refusal",
+            ):
+                pass
+
+    asyncio.run(run())
+    assert invoker.calls == []
 
 
 def test_unused_overlapped_authorization_is_released_on_scene_cancellation(
