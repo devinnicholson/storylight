@@ -1,0 +1,12 @@
+{
+  "monthly_credit_usd": 30.0,
+  "workspace_usage_before_live_scenes_usd": 13.13786456,
+  "billing_delay_reserve_usd": 2.0,
+  "hard_stop_workspace_total_usd": 28.0,
+  "maximum_new_spend_usd": 14.85,
+  "latency_experiment_ceiling_usd": 4.58,
+  "maximum_operations": 14,
+  "operation_ceiling_usd": 0.22,
+  "setup_ceiling_usd": 1.5,
+  "note": "September 5 approved additional maximum $8. Reuse the existing canonical overnight ledger; preserve every prior reservation. Reduced comparison: six measured images per transport and two synthetic images in each of two warmup operations. Published L4 + 8 CPU cores + 64 GiB rate $0.00046888/s; 120s startup + 180s operation + 90s idle + 30s shutdown = $0.1969296, rounded up to $0.22 per operation. No region premium, retries or automatic fallback. Remaining reserve covers bounded setup; external supervised cleanup is required and provider billing may lag."
+}

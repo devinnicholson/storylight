@@ -1,8 +1,18 @@
 # Bookforge living implementation plan
 
-Last updated: 2026-09-04
+Last updated: 2026-09-05
 
-## Next product milestone — faithful six-page projection
+## Latest increment — renderer latency measurement
+
+The [Jetson transport comparison](renderer-latency-results-2026-09-05.md) completed 14 bounded
+operations with identical paired artwork and no failures. HTTP artifact-ready median was 2.586 s
+against SDK 3.154 s, an 18.02% improvement that missed the frozen 25% gate. Different compute
+locations also prevent attribution to transport alone. Both temporary apps stopped with zero
+containers; the accepted appliance remains unchanged. Control region/cloud placement before the
+next paid comparison. Session prewarming remains gated, and the visual correctness gate is still
+unresolved.
+
+## Earlier product milestone — faithful six-page projection
 
 The [product fidelity plan](product-fidelity-plan-2026-09-04.md) defines the next increment:
 freeze a short story and visible-fact criteria, fix one bounded source-binding failure,

@@ -3,6 +3,6 @@
   "workspace_usage_before_live_scenes_usd": 13.13786456,
   "billing_delay_reserve_usd": 2.0,
   "hard_stop_workspace_total_usd": 28.0,
-  "maximum_new_spend_usd": 10.0,
-  "note": "User-approved overnight allowance September 4. Conservative reservations are not a provider-enforced cap. Include separate finite qualification/build usage in handoff."
+  "maximum_new_spend_usd": 14.85,
+  "note": "Original September 4 phase cap $10. User approved up to $8 additional September 5; cumulative cap amended only to $14.85 to retain the $30 monthly credit boundary, $2 reserve and $28 workspace stop. Preserve all canonical ledger reservations. Latency experiment has a separate $4.58 maximum. Conservative reservations are not a provider-enforced cap."
 }

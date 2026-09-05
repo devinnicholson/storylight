@@ -49,6 +49,11 @@ The subsequent [six-page product fidelity increment](docs/product-fidelity-resul
 adds bounded passive binding, but its seven-request resident smoke still produces no accepted
 graphs. The frozen story remains an unmet product acceptance target.
 
+The [isolated Jetson renderer latency comparison](docs/renderer-latency-results-2026-09-05.md)
+measured 2.59-second median verified artwork over HTTP versus 3.15 seconds over the SDK.
+The 18% improvement missed its 25% gate, and compute placement differed. Both experimental
+deployments are stopped; the accepted renderer remains available.
+
 ## Local setup
 
 Prerequisites already present on the development laptop: Python, `uv`, and Ollama.

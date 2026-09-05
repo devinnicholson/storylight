@@ -1,6 +1,15 @@
 # Plan: faster verified images
 
-Status: proposed implementation and experiment; no new deployment, generation or budget change.
+Status: the September 5 comparison completed; HTTP did not qualify. See the
+[results and remaining gate](renderer-latency-results-2026-09-05.md). Session prewarming remains
+gated on transport qualification.
+
+The approved $8 ceiling does not release earlier ledger reservations. The executable comparison
+is reduced to one repeat of each of the six requests per transport: 12 measured images plus four
+synthetic warmup images, across 14 operations. The paired order and acceptance thresholds below
+remain unchanged; six samples per transport provide weaker tail evidence than the proposed 12.
+The new reservation is $4.58: 14 operations at $0.22 plus $1.50 for setup. Existing reservations,
+the $28 workspace stop, and the $2 billing-delay reserve remain in force.
 
 ## Objective and baseline
 
@@ -110,8 +119,8 @@ execution using the actual candidate resources, startup, request timeout and idl
 does not fit, reduce scope or obtain a revised envelope; do not assume the old ceiling qualifies
 a new serving primitive. Provider billing can lag and this is not a provider-enforced hard cap.
 
-The previous approval covered only the completed 11-image batch. Prepare the exact new payload,
-destination and cost for approval before billable work. Preserve existing ledger reservations;
+The user subsequently approved this experiment on September 5. Freeze the exact new payload,
+destination and qualified cost before billable work. Preserve existing ledger reservations;
 never reset the ledger to manufacture headroom. Verify zero GPU containers after the run and retain
 provisional billing snapshots without calling them final cost.
 

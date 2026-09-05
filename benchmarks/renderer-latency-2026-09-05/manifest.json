@@ -1,0 +1,197 @@
+{
+  "deployment_sha256": "c646fb80845c5c1d84f539b842197e05b97dfc0b44a0fb22bd7b546130aed9d9",
+  "expected_identity": {
+    "buckets": [
+      128,
+      256,
+      512
+    ],
+    "capability": [
+      8,
+      9
+    ],
+    "compile_mode": "default",
+    "contract": "klein-regional-default-v1",
+    "cuda": "12.8",
+    "depth_model": "depth-anything/Depth-Anything-V2-Small-hf",
+    "depth_revision": "b4769fd619394250528294b658587285526fab1c",
+    "diffusers": "0.39.0",
+    "dtype": "bfloat16",
+    "fullgraph": true,
+    "gpu": "NVIDIA L4",
+    "guidance": 1.0,
+    "height": 576,
+    "model": "black-forest-labs/FLUX.2-klein-4B",
+    "model_revision": "e7b7dc27f91deacad38e78976d1f2b499d76a294",
+    "runtime_sha256": "f87ab40c8b6a1ed457a10f1bce6bf92e07075eed40c0fdb224ba3ed18c5c3441",
+    "steps": 4,
+    "torch": "2.8.0+cu128",
+    "transformers": "4.57.1",
+    "triton": "3.4.0",
+    "width": 1024
+  },
+  "experiment_id": "klein-latency-20260905-a",
+  "expires_at": 1788646717,
+  "http_server_sha256": "e4e42bf4460feb4424ed01ffed137a7daf55f5be6804ee60502291b0e89182f6",
+  "instrumentation_sha256": "bd355f6d1d05116a6b0807da73c7fc1b51d98026ac1c9e722277bedfaf17210d",
+  "operations": [
+    {
+      "expected_bucket": null,
+      "pair_id": null,
+      "request": {
+        "operation": "prewarm",
+        "prompt": "",
+        "request_id": "331f0d3b1786fffefedc9f52fcce2986",
+        "seed": 0
+      },
+      "transport": "sdk"
+    },
+    {
+      "expected_bucket": null,
+      "pair_id": null,
+      "request": {
+        "operation": "prewarm",
+        "prompt": "",
+        "request_id": "917ecdaa914b5045a8fd9224535c6bfc",
+        "seed": 0
+      },
+      "transport": "http"
+    },
+    {
+      "expected_bucket": 128,
+      "pair_id": "candidate-page-01-still",
+      "request": {
+        "operation": "render",
+        "prompt": "Style: watercolor paper theater. Setting: forest. Subject: exactly 2 foxes; action: carry blue lantern. Object: exactly one blue lantern. Object: golden ribbon. Relations: foxes carries lantern. One continuous full-bleed scene; no captions, labels, signs, or readable text.",
+        "request_id": "8b3d99caae6c8ecfa89adb908c50c2af",
+        "seed": 90401
+      },
+      "transport": "sdk"
+    },
+    {
+      "expected_bucket": 128,
+      "pair_id": "candidate-page-01-still",
+      "request": {
+        "operation": "render",
+        "prompt": "Style: watercolor paper theater. Setting: forest. Subject: exactly 2 foxes; action: carry blue lantern. Object: exactly one blue lantern. Object: golden ribbon. Relations: foxes carries lantern. One continuous full-bleed scene; no captions, labels, signs, or readable text.",
+        "request_id": "24c5c211996101db62e34d24d1272b55",
+        "seed": 90401
+      },
+      "transport": "http"
+    },
+    {
+      "expected_bucket": 128,
+      "pair_id": "candidate-page-02-still",
+      "request": {
+        "operation": "render",
+        "prompt": "Style: watercolor paper theater. Setting: forest. Subject: silver fox; action: holds blue lantern. Subject: red fox; action: carries basket. Object: exactly one blue lantern. Object: exactly one wooden basket. Object: golden ribbon. Relations: silver fox holds lantern; red fox carries basket. One continuous full-bleed scene; no captions, labels, signs, or readable text.",
+        "request_id": "a1185b3967c4e133ea081d63d35fdf4f",
+        "seed": 90402
+      },
+      "transport": "http"
+    },
+    {
+      "expected_bucket": 128,
+      "pair_id": "candidate-page-02-still",
+      "request": {
+        "operation": "render",
+        "prompt": "Style: watercolor paper theater. Setting: forest. Subject: silver fox; action: holds blue lantern. Subject: red fox; action: carries basket. Object: exactly one blue lantern. Object: exactly one wooden basket. Object: golden ribbon. Relations: silver fox holds lantern; red fox carries basket. One continuous full-bleed scene; no captions, labels, signs, or readable text.",
+        "request_id": "6fab84f33496fe414a0a82aa312dc826",
+        "seed": 90402
+      },
+      "transport": "sdk"
+    },
+    {
+      "expected_bucket": 128,
+      "pair_id": "candidate-page-04-still",
+      "request": {
+        "operation": "render",
+        "prompt": "Style: watercolor paper theater. Setting: forest. Subject: silver fox; action: holds blue lantern. Subject: red fox; action: stands. Object: exactly one blue lantern. Object: wooden bridge. Object: golden ribbon. Relations: silver fox holds lantern; lantern above bridge; red fox below bridge. One continuous full-bleed scene; no captions, labels, signs, or readable text.",
+        "request_id": "104a259635b3cf38de18584ee0d54bb0",
+        "seed": 90404
+      },
+      "transport": "sdk"
+    },
+    {
+      "expected_bucket": 128,
+      "pair_id": "candidate-page-04-still",
+      "request": {
+        "operation": "render",
+        "prompt": "Style: watercolor paper theater. Setting: forest. Subject: silver fox; action: holds blue lantern. Subject: red fox; action: stands. Object: exactly one blue lantern. Object: wooden bridge. Object: golden ribbon. Relations: silver fox holds lantern; lantern above bridge; red fox below bridge. One continuous full-bleed scene; no captions, labels, signs, or readable text.",
+        "request_id": "375305cfaeae2fc47749d8aa91786c80",
+        "seed": 90404
+      },
+      "transport": "http"
+    },
+    {
+      "expected_bucket": 256,
+      "pair_id": "accepted-page-03",
+      "request": {
+        "operation": "render",
+        "prompt": "watercolor paper theater. clear silhouettes, projection-bright midtones, tactile depth. Background: forest. Required foreground subject: a complete visible silver fox, shown carrying blue lantern. Required supporting visual: golden ribbon. Preserve the stated subject counts and actions; depict each subject once. Do not add unrequested characters or duplicate objects. Show all required visuals simultaneously. Honor specified positions, scale, and physical contact. Only for unspecified placement: place the main subject at mid-frame center, clearly larger and nearer; place the supporting detail at upper right, smaller and separated within the same continuous scene. Never use an inset, panel, cutaway, collage, or split screen. Full-bleed cinematic 16:9 storybook projection with clear foreground/background depth, clean silhouettes, and no readable text, captions, logos, borders, or UI.",
+        "request_id": "bdcd815887cffc665de624d56c19c3c0",
+        "seed": 90403
+      },
+      "transport": "http"
+    },
+    {
+      "expected_bucket": 256,
+      "pair_id": "accepted-page-03",
+      "request": {
+        "operation": "render",
+        "prompt": "watercolor paper theater. clear silhouettes, projection-bright midtones, tactile depth. Background: forest. Required foreground subject: a complete visible silver fox, shown carrying blue lantern. Required supporting visual: golden ribbon. Preserve the stated subject counts and actions; depict each subject once. Do not add unrequested characters or duplicate objects. Show all required visuals simultaneously. Honor specified positions, scale, and physical contact. Only for unspecified placement: place the main subject at mid-frame center, clearly larger and nearer; place the supporting detail at upper right, smaller and separated within the same continuous scene. Never use an inset, panel, cutaway, collage, or split screen. Full-bleed cinematic 16:9 storybook projection with clear foreground/background depth, clean silhouettes, and no readable text, captions, logos, borders, or UI.",
+        "request_id": "8ac0bf7127afd6189d4116a76d470519",
+        "seed": 90403
+      },
+      "transport": "sdk"
+    },
+    {
+      "expected_bucket": 256,
+      "pair_id": "accepted-page-05",
+      "request": {
+        "operation": "render",
+        "prompt": "watercolor paper theater. clear silhouettes, projection-bright midtones, tactile depth. Background: forest. Required foreground subject: a complete visible silver fox, shown lifting single white feather. Required supporting visual: feather becomes trio of golden birds. Preserve the stated subject counts and actions; depict each subject once. Do not add unrequested characters or duplicate objects. Show all required visuals simultaneously. Honor specified positions, scale, and physical contact. Only for unspecified placement: place the main subject at mid-frame center, clearly larger and nearer; place the supporting detail at upper right, smaller and separated within the same continuous scene. Never use an inset, panel, cutaway, collage, or split screen. Full-bleed cinematic 16:9 storybook projection with clear foreground/background depth, clean silhouettes, and no readable text, captions, logos, borders, or UI.",
+        "request_id": "2a79ad111abc87ce3ff0f15eae1404d8",
+        "seed": 90405
+      },
+      "transport": "sdk"
+    },
+    {
+      "expected_bucket": 256,
+      "pair_id": "accepted-page-05",
+      "request": {
+        "operation": "render",
+        "prompt": "watercolor paper theater. clear silhouettes, projection-bright midtones, tactile depth. Background: forest. Required foreground subject: a complete visible silver fox, shown lifting single white feather. Required supporting visual: feather becomes trio of golden birds. Preserve the stated subject counts and actions; depict each subject once. Do not add unrequested characters or duplicate objects. Show all required visuals simultaneously. Honor specified positions, scale, and physical contact. Only for unspecified placement: place the main subject at mid-frame center, clearly larger and nearer; place the supporting detail at upper right, smaller and separated within the same continuous scene. Never use an inset, panel, cutaway, collage, or split screen. Full-bleed cinematic 16:9 storybook projection with clear foreground/background depth, clean silhouettes, and no readable text, captions, logos, borders, or UI.",
+        "request_id": "07ec3ea2d676bdf39a773ef981711e4a",
+        "seed": 90405
+      },
+      "transport": "http"
+    },
+    {
+      "expected_bucket": 256,
+      "pair_id": "accepted-page-06",
+      "request": {
+        "operation": "render",
+        "prompt": "watercolor paper theater. clear silhouettes, projection-bright midtones, tactile depth. Background: forest. Required foreground subject: a complete visible silver fox, shown opening wooden basket. Required supporting visual: single blue lantern. Preserve the stated subject counts and actions; depict each subject once. Do not add unrequested characters or duplicate objects. Show all required visuals simultaneously. Honor specified positions, scale, and physical contact. Only for unspecified placement: place the main subject at mid-frame center, clearly larger and nearer; place the supporting detail at upper right, smaller and separated within the same continuous scene. Never use an inset, panel, cutaway, collage, or split screen. Full-bleed cinematic 16:9 storybook projection with clear foreground/background depth, clean silhouettes, and no readable text, captions, logos, borders, or UI.",
+        "request_id": "2c1884d3a04cd7532a4e4690bc9a772b",
+        "seed": 90406
+      },
+      "transport": "http"
+    },
+    {
+      "expected_bucket": 256,
+      "pair_id": "accepted-page-06",
+      "request": {
+        "operation": "render",
+        "prompt": "watercolor paper theater. clear silhouettes, projection-bright midtones, tactile depth. Background: forest. Required foreground subject: a complete visible silver fox, shown opening wooden basket. Required supporting visual: single blue lantern. Preserve the stated subject counts and actions; depict each subject once. Do not add unrequested characters or duplicate objects. Show all required visuals simultaneously. Honor specified positions, scale, and physical contact. Only for unspecified placement: place the main subject at mid-frame center, clearly larger and nearer; place the supporting detail at upper right, smaller and separated within the same continuous scene. Never use an inset, panel, cutaway, collage, or split screen. Full-bleed cinematic 16:9 storybook projection with clear foreground/background depth, clean silhouettes, and no readable text, captions, logos, borders, or UI.",
+        "request_id": "b24905dc5b550407cda8064d260c4103",
+        "seed": 90406
+      },
+      "transport": "sdk"
+    }
+  ],
+  "original_batch_sha256": "4601956b9a3a39a4f5b9b802b694db70aea737e6182d03d1411499326a1b1331",
+  "protocol_sha256": "c7a4354e017b251ad693ef88088a3cc27df29df1abe4f6e599a776c46fdd563d",
+  "runtime_sha256": "f87ab40c8b6a1ed457a10f1bce6bf92e07075eed40c0fdb224ba3ed18c5c3441",
+  "schema_version": 1
+}
