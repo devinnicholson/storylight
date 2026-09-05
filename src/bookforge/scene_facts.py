@@ -17,6 +17,7 @@ from pydantic import AfterValidator, Field, StringConstraints, field_validator, 
 
 from bookforge.domain import FrozenStrictModel
 from bookforge.privacy_policy import (
+    COLOR_WORDS,
     SENSITIVE_CONTENT_PATTERN,
     contains_distinctive_source_phrase,
     contains_token_sequence,
@@ -731,6 +732,16 @@ def validate_scene_facts_grounding(facts: SceneFactsV2, *, source_text: str) -> 
             if not entity_sentences:
                 issues.append(f"{path}.label")
                 continue
+            if sum(
+                _descriptor_grounded(
+                    color,
+                    entity.label,
+                    entity_sentences,
+                    entity_labels=tuple(item.label for item in entity_by_ref.values()),
+                )
+                for color in COLOR_WORDS | ({entity.color} if entity.color else set())
+            ) > 1:
+                issues.append(f"{path}.identity")
             if entity.count is not None and not _count_near_label(
                 entity.count,
                 entity.label,

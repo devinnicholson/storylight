@@ -7,6 +7,7 @@ from bookforge.scene_facts import (
     SceneFactsPrivacyError,
     SceneFactsV2,
     SceneObjectFact,
+    SceneRelationshipFact,
     SceneSettingFact,
     SceneSubjectFact,
     SceneTemporalOrderFact,
@@ -203,3 +204,35 @@ def test_unasserted_action_cannot_ground_action_or_typed_event(source):
 )
 def test_independent_assertion_survives_reported_clause(source):
     _held_ball_facts().validate_source_grounding(source_text=source)
+
+
+def test_colored_actor_cannot_borrow_action_event_or_relation_from_same_label():
+    facts = _held_ball_facts().model_copy(
+        update={
+            "subjects": (
+                SceneSubjectFact(ref="fox", label="fox", color="red", actions=("holds ball",)),
+            ),
+            "relationships": (
+                SceneRelationshipFact(source="fox", relation="holds", target="ball"),
+            ),
+        }
+    )
+    with pytest.raises(SceneFactsGroundingError, match=r"subjects\[0\].identity"):
+        facts.validate_source_grounding(
+            source_text="In a cave, a red fox holds a cup. The blue fox holds a ball."
+        )
+
+
+@pytest.mark.parametrize("antecedent", ["the blue feather", "the red feather", "the feather"])
+def test_transformation_preserves_colored_antecedent_identity(antecedent):
+    facts = SceneFactsV2(
+        setting=SceneSettingFact(label="cave"),
+        objects=(SceneObjectFact(ref="feather", label="feather", color="red"),),
+        transformation=SceneTransformationFact(source="feather", result_label="boat"),
+    )
+    source = f"In a cave, a fox holds a red feather. {antecedent} becomes a boat."
+    if antecedent == "the blue feather":
+        with pytest.raises(SceneFactsGroundingError, match=r"objects\[0\].identity"):
+            facts.validate_source_grounding(source_text=source)
+    else:
+        facts.validate_source_grounding(source_text=source)

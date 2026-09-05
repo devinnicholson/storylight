@@ -26,3 +26,29 @@ graph cache identities change; the accepted four-slot path retains its cache ide
 
 Validation: 769 tests passed, including JavaScript bridges; after the final replay metadata
 change, all 31 affected tests passed again. Scoped Ruff and whitespace checks passed.
+
+## Observed failures and repair replay
+
+The fresh seven-request run at `006025f` reproduced four accepted contracts and zero graphs.
+Every response had one known terminal TensorRT control marker. The strict graph parser treated
+its pipe as hybrid syntax; the legacy parser already removed the marker. The three accepted
+construction failures were separately traced to the privacy phrase separator. These diagnoses
+used only static code locations and delimiter/control-marker flags outside the device.
+
+At `2e9836b`, the graph parser removes one terminal known marker and rejects embedded or repeated
+markers. Offline reconstruction of the same seven responses now produces two compiler-proved
+graphs: the transformation page and passive control. Page 1 passes the adapter but still fails
+integration because accepted-wire construction fails. The three two-fox pages refuse ambiguous
+binding, and the final page refuses result grounding. No new inference occurred during replay.
+
+The adapter also rejects transformation antecedents whose explicit color or attributes differ
+from the selected entity. Shared grounding conservatively refuses multiple explicit colors for
+one entity label, closing borrowed action, event, relation and transformation claims. Distinct
+colored characters still need a representation and binding extension before those pages can pass.
+
+The diagnostic run's median inference was 891.2 ms and maximum/p95 1,128.6 ms. Engine, deployed
+files, accepted prompt, planner configuration, power mode and resident process identity match
+before and after. Its summary reproduces byte-for-byte with the pinned `006025f` implementation.
+Evidence lives in `benchmarks/product-fidelity-diagnostics-2026-09-04`; private archives remain
+on the Jetson. The marker and identity changes passed 782 tests and scoped lint. These results
+establish construction repairs, not full story fidelity, image quality or promotion readiness.
