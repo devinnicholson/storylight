@@ -14,7 +14,13 @@ from bookforge.scene_facts import (
     SceneTemporalOrderFact,
     SceneTransformationFact,
 )
-from bookforge.scene_playback import build_display_plan, derive_display_steps, display_manifest
+from bookforge.scene_playback import (
+    DisplaySourcePage,
+    build_display_plan,
+    build_display_story_pack,
+    derive_display_steps,
+    display_manifest,
+)
 
 SOURCE = (
     "In a cave, a silver fox lifts a white feather. The feather becomes three golden birds."
@@ -63,6 +69,9 @@ def test_transformation_steps_replace_source_without_inventing_after_action():
         source_text=SOURCE, visual_style="watercolor"
     )
     assert "feather" not in page.scene_spec.master_prompt
+    assert "duplicate actor" not in page.scene_spec.negative_prompt
+    assert "duplicate person" not in page.scene_spec.negative_prompt
+    assert "duplicate tool" not in page.scene_spec.negative_prompt
     assert "action:" not in page.scene_spec.master_prompt
     manifest = display_manifest((before, after))
     assert SOURCE not in json.dumps(manifest)
@@ -212,3 +221,95 @@ def test_parent_graph_privacy_and_references_are_revalidated_before_splitting():
             source_text=SOURCE,
             source_page_id="page-05",
         )
+
+
+def _authored_story_control():
+    static = _transformation().model_copy(update={"transformation": None})
+    source_pages = [
+        DisplaySourcePage(
+            page_id=f"page-{index:02}", seed=index, facts=static,
+            source_text="In a cave, a silver fox lifts a white feather.",
+        )
+        for index in range(1, 5)
+    ]
+    source_pages.append(DisplaySourcePage(
+        page_id="page-05", source_text=SOURCE, seed=5, facts=_transformation(),
+        phase_selection={"before": ["action:fox:0"], "after": []},
+    ))
+    source_pages.append(DisplaySourcePage(
+        page_id="page-06", seed=6,
+        source_text="In a cave, a fox opens a box then the fox lifts a lantern.",
+        facts=SceneFactsV2(
+            setting=SceneSettingFact(label="cave"),
+            subjects=(SceneSubjectFact(ref="fox", label="fox"),),
+            objects=(SceneObjectFact(ref="box", label="box"),
+                     SceneObjectFact(ref="lantern", label="lantern")),
+            events=(
+                SceneEventFact(ref="open", source="fox", action="opens", object="box"),
+                SceneEventFact(ref="lift", source="fox", action="lifts", object="lantern"),
+            ),
+            temporal_order=(SceneTemporalOrderFact(before="open", after="lift"),),
+        ),
+    ))
+    return source_pages
+
+
+def test_authored_six_page_control_builds_eight_local_display_pages():
+    source_pages = _authored_story_control()
+    style = "watercolor"
+    pack, manifest = build_display_story_pack(
+        source_pages, story_id="authored-control", title="Authored control", visual_style=style
+    )
+    assert [page.page_id for page in pack.pages] == [
+        "page-01-still", "page-02-still", "page-03-still", "page-04-still",
+        "page-05-before", "page-05-after", "page-06-first", "page-06-then",
+    ]
+    assert pack.assets == [] and pack.planning_scope == "scene"
+    assert pack.compiler_model == "local-authored-scene-facts-v2"
+    assert pack.visual_style == style
+    assert manifest["state"] == "planned" and manifest["assets_generated"] is False
+    assert manifest["semantic_accuracy_assessed"] is False
+    assert manifest["visual_fidelity_assessed"] is False
+    source_by_id = {source.page_id: source for source in source_pages}
+    for page, entry in zip(pack.pages, manifest["steps"], strict=True):
+        source = source_by_id[entry["source_page_id"]]
+        step = derive_display_steps(
+            source.facts, source_text=source.source_text, source_page_id=source.page_id,
+            phase_selection=source.phase_selection,
+        )[entry["ordinal"]]
+        assert page.source_text == source.source_text
+        assert page.scene_spec.master_prompt == step.facts.to_renderer_prompt(
+            source_text=source.source_text, visual_style=style
+        )
+        assert page.scene_spec.camera.duration_ms == 8_000 + source.seed % 4_001
+        assert source.source_text not in json.dumps(manifest)
+    still = derive_display_steps(
+        source_pages[0].facts, source_text=source_pages[0].source_text, source_page_id="page-01"
+    )[0]
+    assert still.facts == source_pages[0].facts
+    assert "feather" not in pack.pages[5].scene_spec.master_prompt
+    assert "lifts" not in pack.pages[5].scene_spec.master_prompt
+    assert "opens" in pack.pages[6].scene_spec.master_prompt
+    assert "lifts" not in pack.pages[6].scene_spec.master_prompt
+    assert "lifts" in pack.pages[7].scene_spec.master_prompt
+    assert "opens" not in pack.pages[7].scene_spec.master_prompt
+
+
+@pytest.mark.parametrize(
+    "invalid", ["duplicate", "missing-phase", "static-phase", "source", "style"]
+)
+def test_local_display_pack_refuses_ambiguous_or_unbound_inputs(invalid):
+    sources = _authored_story_control()
+    style = "watercolor"
+    if invalid == "duplicate":
+        sources[1] = replace(sources[1], page_id=sources[0].page_id)
+    elif invalid == "missing-phase":
+        sources[4] = replace(sources[4], phase_selection=None)
+    elif invalid == "static-phase":
+        sources[0] = replace(sources[0], phase_selection={"still": []})
+    elif invalid == "source":
+        sources[0] = replace(sources[0], source_text="In a cave, a red fox holds a box.")
+    else:
+        style = "watercolor " * 12
+    with pytest.raises(ValueError):
+        build_display_story_pack(sources, story_id="control", title="Control", visual_style=style)

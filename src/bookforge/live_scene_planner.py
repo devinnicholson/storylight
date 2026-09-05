@@ -625,7 +625,14 @@ class LiveSceneGraphPlan(LiveScenePlan):
         prompt = self.scene_facts.to_renderer_prompt(
             source_text=source_text, visual_style=visual_style
         )
-        scene_spec = page.scene_spec.model_copy(update={"master_prompt": prompt})
+        negative_prompt = ", ".join(
+            term.strip()
+            for term in page.scene_spec.negative_prompt.split(",")
+            if term.strip() not in {"duplicate actor", "duplicate person", "duplicate tool"}
+        )
+        scene_spec = page.scene_spec.model_copy(
+            update={"master_prompt": prompt, "negative_prompt": negative_prompt}
+        )
         return page.model_copy(update={"scene_spec": scene_spec})
 
 

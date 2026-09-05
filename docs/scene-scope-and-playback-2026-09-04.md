@@ -41,6 +41,16 @@ media succeeds. A failed transition leaves the visible page active, so retry doe
 unseen step. The JavaScript check exercises the actual navigation functions with controlled media
 loading; it is not a physical projector rehearsal.
 
-The display-step library still needs integration into an eight-step Story Pack for the six-page
-demonstration. Full-scene model replay, generated image review and physical playback remain separate
-acceptance steps. No cloud image or hardware success follows from these local checks alone.
+`build_display_story_pack` assembles static and ordered steps from typed `DisplaySourcePage` inputs
+into a local Story Pack and a separate hash manifest. Its authored six-page control produces eight
+display pages. The pack has no generated assets and is explicitly marked as a local authored plan.
+Graph-specific renderer negatives omit blanket duplicate-actor/person/tool prohibitions that can
+conflict with explicit counts; the accepted plain-slot renderer remains unchanged.
+
+Private replay of the original seven model responses under complete-scene scope produces six
+proved graphs, including both foxes on the supported pages. Page 6 refuses without a focal fallback.
+Evidence is in `benchmarks/product-fidelity-scene-scope-2026-09-04/`; replay makes no inference calls
+or latency claim. The model-selected result remains the next isolated issue to investigate.
+
+Generated image review and physical playback remain separate acceptance steps. No cloud image or
+hardware success follows from these local checks alone.

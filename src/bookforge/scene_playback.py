@@ -8,6 +8,7 @@ import re
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 
+from bookforge.domain import StoryPack
 from bookforge.live_scene_planner import (
     LiveSceneGraphPlan,
     LiveScenePlacedLayerPlan,
@@ -39,6 +40,33 @@ def _mentions(value: str, label: str) -> bool:
     return any(tokens[index : index + len(phrase)] == phrase for index in range(len(tokens)))
 
 
+def _validate_page_id(value: str) -> None:
+    if not isinstance(value, str) or not re.fullmatch(r"[a-z][a-z0-9_-]{0,47}", value):
+        raise ValueError("invalid source page identifier")
+
+
+@dataclass(frozen=True)
+class DisplaySourcePage:
+    page_id: str
+    source_text: str
+    seed: int
+    facts: SceneFactsV2
+    phase_selection: Mapping[str, Sequence[str]] | None = None
+
+    def __post_init__(self) -> None:
+        _validate_page_id(self.page_id)
+        if (
+            not isinstance(self.source_text, str)
+            or not self.source_text.strip()
+            or len(self.source_text) > 4_000
+        ):
+            raise ValueError("display source requires one to 4000 characters")
+        if type(self.seed) is not int or not 0 <= self.seed <= 2**32 - 1:
+            raise ValueError("display seed must be an unsigned 32-bit integer")
+        if not isinstance(self.facts, SceneFactsV2):
+            raise ValueError("display source requires typed facts")
+
+
 @dataclass(frozen=True)
 class DisplayStep:
     source_page_id: str
@@ -50,11 +78,8 @@ class DisplayStep:
     event_ref: str | None = None
 
     def __post_init__(self) -> None:
-        if not isinstance(self.source_page_id, str) or not re.fullmatch(
-            r"[a-z][a-z0-9_-]{0,47}", self.source_page_id
-        ):
-            raise ValueError("invalid source page identifier")
-        ordinals = {"before": 0, "after": 1, "first": 0, "then": 1}
+        _validate_page_id(self.source_page_id)
+        ordinals = {"still": 0, "before": 0, "after": 1, "first": 0, "then": 1}
         if (
             not isinstance(self.phase, str)
             or self.phase not in ordinals
@@ -69,6 +94,8 @@ class DisplayStep:
             raise ValueError("invalid display parent digest")
         if not isinstance(self.facts, SceneFactsV2):
             raise ValueError("display step requires typed facts")
+        if self.facts.transformation is not None or self.facts.temporal_order:
+            raise ValueError("display phase cannot contain an unsplit temporal graph")
         if self.phase in {"first", "then"}:
             if (
                 not isinstance(self.event_ref, str)
@@ -77,7 +104,7 @@ class DisplayStep:
             ):
                 raise ValueError("display event reference differs from phase facts")
         elif self.event_ref is not None:
-            raise ValueError("transformation phase cannot carry an ordered event reference")
+            raise ValueError("unordered phase cannot carry an ordered event reference")
 
     @property
     def step_id(self) -> str:
@@ -102,17 +129,24 @@ def derive_display_steps(
     source_text: str,
     source_page_id: str,
     phase_selection: Mapping[str, Sequence[str]] | None = None,
-) -> tuple[DisplayStep, DisplayStep]:
+) -> tuple[DisplayStep, ...]:
     """Select dynamic fact IDs explicitly; never infer an event's postconditions.
 
     Each phase names action:<subject-ref>:<index>, motion:<index>, relation:<index>,
     or event:<ref>. Every unscoped dynamic fact must appear in at least one phase.
     Ordered events and their equivalent relationships are assigned automatically.
     """
-    if not re.fullmatch(r"[a-z][a-z0-9_-]{0,47}", source_page_id):
-        raise ValueError("invalid source page identifier")
+    _validate_page_id(source_page_id)
     facts = SceneFactsV2.model_validate(facts.model_dump())
     facts.validate_source_grounding(source_text=source_text)
+    if facts.transformation is None and not facts.temporal_order:
+        if phase_selection is not None:
+            raise ValueError("static display graph does not accept phase selection")
+        return (DisplayStep(
+            source_page_id=source_page_id, phase="still", ordinal=0,
+            source_sha256=_digest(source_text),
+            parent_graph_sha256=_digest(facts.model_dump(mode="json")), facts=facts,
+        ),)
     entities = {item.ref: item for item in (*facts.subjects, *facts.objects)}
     transformation = facts.transformation
     ordered = {}
@@ -349,9 +383,20 @@ def display_manifest(steps: Sequence[DisplayStep]) -> dict[str, object]:
     identifiers = [step.step_id for step in steps]
     if len(identifiers) != len(set(identifiers)):
         raise ValueError("display step identifiers must be unique")
-    if not steps or len(steps) % 2:
-        raise ValueError("display manifest requires complete ordered step pairs")
-    for index in range(0, len(steps), 2):
+    if not steps:
+        raise ValueError("display manifest requires at least one display step")
+    index = 0
+    source_ids = set()
+    while index < len(steps):
+        first = steps[index]
+        if first.source_page_id in source_ids:
+            raise ValueError("display source page identifiers must be unique")
+        source_ids.add(first.source_page_id)
+        if first.phase == "still":
+            index += 1
+            continue
+        if index + 1 == len(steps):
+            raise ValueError("display manifest requires complete ordered step pairs")
         first, second = steps[index : index + 2]
         if (
             first.source_page_id != second.source_page_id
@@ -361,6 +406,7 @@ def display_manifest(steps: Sequence[DisplayStep]) -> dict[str, object]:
             or first.parent_graph_sha256 != second.parent_graph_sha256
         ):
             raise ValueError("display step order or parent binding differs")
+        index += 2
     return {
         "schema_version": 1,
         "kind": "authored-display-steps",
@@ -368,3 +414,49 @@ def display_manifest(steps: Sequence[DisplayStep]) -> dict[str, object]:
         "semantic_accuracy_assessed": False,
         "visual_fidelity_assessed": False,
     }
+
+
+def build_display_story_pack(
+    source_pages: Sequence[DisplaySourcePage], *, story_id: str, title: str, visual_style: str
+) -> tuple[StoryPack, dict[str, object]]:
+    """Build a local plan from supplied graphs; no media or model accuracy is implied."""
+    if not 1 <= len(source_pages) <= 12:
+        raise ValueError("display story requires one to twelve source pages")
+    if any(not isinstance(page, DisplaySourcePage) for page in source_pages):
+        raise ValueError("display story requires typed source pages")
+    source_by_id = {page.page_id: page for page in source_pages}
+    if len(source_by_id) != len(source_pages):
+        raise ValueError("display source page identifiers must be unique")
+    steps = tuple(
+        step
+        for source in source_pages
+        for step in derive_display_steps(
+            source.facts, source_text=source.source_text, source_page_id=source.page_id,
+            phase_selection=source.phase_selection,
+        )
+    )
+    if len(steps) > 12:
+        raise ValueError("display story exceeds twelve display pages")
+    manifest = display_manifest(steps)
+    pages = []
+    for step in steps:
+        source = source_by_id[step.source_page_id]
+        plan = build_display_plan(
+            step, source_text=source.source_text, visual_style=visual_style
+        )
+        page = plan.to_page(
+            source_text=source.source_text, visual_style=visual_style,
+            seed=source.seed, page_id=step.step_id,
+        )
+        if page.scene_spec.master_prompt != step.facts.to_renderer_prompt(
+            source_text=source.source_text, visual_style=visual_style
+        ):
+            raise ValueError("display page renderer differs from its graph")
+        pages.append(page)
+    pack = StoryPack(
+        schema_version="2.0", story_id=story_id, title=title, reading_level=2,
+        visual_style=visual_style, compiler_model="local-authored-scene-facts-v2",
+        compiler_contract_revision="authored-display-steps-v1", planning_scope="scene",
+        pages=pages, assets=[],
+    )
+    return pack, {**manifest, "state": "planned", "assets_generated": False}
