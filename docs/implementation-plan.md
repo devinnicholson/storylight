@@ -2,6 +2,15 @@
 
 Last updated: 2026-09-04
 
+## Next product milestone — faithful six-page projection
+
+The [product fidelity plan](product-fidelity-plan-2026-09-04.md) defines the next increment:
+freeze a short story and visible-fact criteria, fix one bounded source-binding failure,
+pass a matched live semantic gate, then evaluate a finite image comparison and complete
+projector rehearsal. The story is frozen and the bounded passive construction change passes
+local controls; see the [increment results](product-fidelity-results-2026-09-04.md).
+Device and visual gates remain pending, and the accepted appliance is unchanged.
+
 ## Latest increment — construction, grounding, and evaluator repairs
 
 Bounded result clauses, explicit transformation counts, complete action/object grounding, and

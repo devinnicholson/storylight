@@ -38,6 +38,12 @@ Nonnegative = Annotated[float, Field(ge=0, allow_inf_nan=False)]
 Temperature = Annotated[int, Field(ge=-100_000, le=200_000)]
 SURFACES = ("accepted_raw", "hybrid_raw", "accepted_renderer", "graph_candidate", "final_renderer")
 Mode = Literal["hybrid", "accepted_first"]
+ACCEPTED_FIRST_GATE = {
+    "revision": "product-fidelity-v1",
+    "expected_cases": 512,
+    "median_limit_ms": 1500,
+    "p95_ratio_limit": 1.10,
+}
 
 
 def surfaces_for(mode: str) -> tuple[str, ...]:
@@ -218,7 +224,7 @@ def context(
 ) -> dict[str, Any]:
     root = Path(__file__).resolve().parents[1]
     paths = [Path(__file__), *sorted((root / "src/bookforge").glob("*.py"))]
-    return {
+    header = {
         "kind": "header",
         "schema_version": 1,
         "evaluator_revision": FIDELITY_EVALUATOR_REVISION,
@@ -247,6 +253,11 @@ def context(
         "retries": 0,
         "memory_pid": memory_pid,
     }
+    if mode == "accepted_first":
+        header["schema_version"] = 2
+        header["renderer_scoring"] = "verified-graph-prompt-or-accepted-lexical-v1"
+        header["gate"] = dict(ACCEPTED_FIRST_GATE)
+    return header
 
 
 def append_event(path: Path, event: Mapping[str, object]) -> None:
@@ -319,6 +330,8 @@ def score(
         except (TypeError, ValueError):
             schema_valid = False
     serialized = output.model_dump(mode="json") if isinstance(output, BaseModel) else output
+    if surface == "renderer" and isinstance(serialized, Mapping):
+        serialized = serialized.get("master_prompt", serialized)
     return Score(
         schema_valid=schema_valid and generation_complete,
         exact_pass=result.exact_example_pass and schema_valid and generation_complete,
@@ -371,10 +384,18 @@ def safe_slots(text: str, source: str, protocol: Literal["slots", "hybrid"]) -> 
     return renderer_contract(plan, source)
 
 
-def renderer_contract(plan: Any, source: str) -> str:
-    return plan.to_page(
-        source_text=source, visual_style="luminous storybook illustration", seed=0
-    ).scene_spec.master_prompt
+def renderer_contract(plan: Any, source: str) -> object:
+    from bookforge.live_scene_planner import LiveSceneGraphPlan
+
+    style = "luminous storybook illustration"
+    prompt = plan.to_page(source_text=source, visual_style=style, seed=0).scene_spec.master_prompt
+    if isinstance(plan, LiveSceneGraphPlan):
+        return {
+            "master_prompt": prompt,
+            "scene_facts": plan.scene_facts.model_dump(mode="json"),
+            "visual_style": style,
+        }
+    return prompt
 
 
 def run_case(
@@ -472,6 +493,8 @@ def run_case(
             )
             validate_live_scene_plan_privacy(plan, source_text=record.passage)
             final = renderer_contract(plan, record.passage)
+            if isinstance(final, Mapping):
+                final = final["master_prompt"]
         else:
             final = accepted_safe
     except ValueError:
@@ -638,6 +661,64 @@ def compare_renderer_cases(
     return {"overall": dict(total), "categories": dict(sorted(categories.items()))}
 
 
+def accepted_first_gate(
+    report: Mapping[str, Any], results: Sequence[CaseEvidence]
+) -> dict[str, Any]:
+    criteria = report["context"]["gate"]
+    expected = criteria["expected_cases"]
+    accepted = report["surfaces"]["accepted_renderer"]
+    final = report["surfaces"]["final_renderer"]
+    graph_cases = sum(
+        row.status == "ok"
+        and not row.fallback
+        and row.refusal == "none"
+        and row.surfaces["graph_candidate"].schema_valid
+        for row in results
+    )
+    category_regressions = []
+    for category, baseline in accepted["categories"].items():
+        candidate = final["categories"].get(category)
+        if candidate is None or (
+            candidate["exact"] < baseline["exact"]
+            or candidate["required_atoms"] != baseline["required_atoms"]
+            or candidate["passed_atoms"] < baseline["passed_atoms"]
+        ):
+            category_regressions.append(category)
+    median = final["latency_ms"]["p50"]
+    p95 = final["latency_ms"]["p95"]
+    baseline_p95 = accepted["latency_ms"]["p95"]
+    checks = {
+        "complete_matched_run": (
+            report["complete"]
+            and report["started_cases"] == expected
+            and accepted["count"] == final["count"] == expected
+        ),
+        "nonzero_accepted_graphs": graph_cases > 0,
+        "strict_exact_gain": final["exact_pass"] > accepted["exact_pass"],
+        "strict_required_fact_gain": (
+            final["required_atoms"] == accepted["required_atoms"] > 0
+            and final["passed_atoms"] > accepted["passed_atoms"]
+        ),
+        "no_category_regressions": not category_regressions,
+        "zero_final_privacy_failures": final["privacy_failures"] == 0,
+        "median_within_limit": median is not None and median <= criteria["median_limit_ms"],
+        "p95_within_limit": (
+            p95 is not None
+            and baseline_p95 is not None
+            and p95 <= baseline_p95 * criteria["p95_ratio_limit"]
+        ),
+    }
+    return {
+        "decision": "advance_to_visual_comparison" if all(checks.values()) else "reject",
+        "checks": checks,
+        "accepted_graph_cases": graph_cases,
+        "graph_coverage_denominator": expected,
+        "accepted_plan_failures": accepted["count"] - accepted["schema_valid"],
+        "category_regressions": sorted(category_regressions),
+        "appliance_promotion_permitted": False,
+    }
+
+
 def aggregate(
     header: Mapping[str, Any],
     started: set[int],
@@ -699,7 +780,7 @@ def aggregate(
             "output_tokens_unavailable": sum(row.output_tokens is None for _, row in rows),
         }
     complete = len(results) == 512 and all(result.status == "ok" for result in results)
-    return {
+    report = {
         "schema_version": 1,
         "benchmark": "live-scene-facts-public-development",
         "context": dict(header),
@@ -788,6 +869,10 @@ def aggregate(
         else "captured accepted response; summed accepted and hybrid planning latency",
         "deterministic_recovery_is_model_improvement": False,
     }
+    if header.get("mode") == "accepted_first" and "gate" in header:
+        report["schema_version"] = 2
+        report["gate"] = accepted_first_gate(report, results)
+    return report
 
 
 def main(argv: Sequence[str] | None = None) -> int:

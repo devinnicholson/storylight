@@ -1,0 +1,66 @@
+{
+  "schema_version": 1,
+  "story_id": "lantern-bridge-v1",
+  "title": "The Lantern and the Bridge",
+  "fixture_kind": "authored synthetic engineering demonstration; not a holdout",
+  "visual_style": "watercolor paper theater",
+  "continuity": "A forest, a silver fox, a red fox, a blue lantern and a wooden bridge; include characters only when the page states them.",
+  "pages": [
+    {
+      "page": 1,
+      "seed": 90401,
+      "category": "counts",
+      "text": "In a forest, two foxes carry one blue lantern. A golden ribbon appears.",
+      "required_facts": ["Exactly two foxes", "Exactly one blue lantern", "The foxes carry the lantern", "A golden ribbon is visible", "The setting is a forest"],
+      "forbidden_mistakes": ["One or three foxes", "A separate lantern for each fox", "An unsupported additional character"],
+      "display_states": ["Two foxes carrying one lantern with the ribbon visible"]
+    },
+    {
+      "page": 2,
+      "seed": 90402,
+      "category": "actor_object_binding",
+      "text": "In a forest, a silver fox holds one blue lantern. A red fox carries one wooden basket. A golden ribbon appears.",
+      "required_facts": ["The silver fox holds the blue lantern", "The red fox carries the wooden basket", "The two objects remain distinct", "A golden ribbon is visible"],
+      "forbidden_mistakes": ["The red fox holds the lantern", "The silver fox carries the basket", "Either fox or object is missing"],
+      "display_states": ["Both foxes with their correctly assigned objects"]
+    },
+    {
+      "page": 3,
+      "seed": 90403,
+      "category": "explicit_passive",
+      "text": "In a forest, one blue lantern is carried by a silver fox. A red fox holds one wooden basket. A golden ribbon appears.",
+      "required_facts": ["The silver fox carries the blue lantern", "The red fox holds the wooden basket", "A golden ribbon is visible"],
+      "forbidden_mistakes": ["The lantern is treated as the actor", "The red fox carries the lantern", "The by-agent is omitted"],
+      "display_states": ["The silver fox carrying the lantern beside the red fox holding its basket"]
+    },
+    {
+      "page": 4,
+      "seed": 90404,
+      "category": "spatial_relationships",
+      "text": "In a forest, a silver fox holds one blue lantern above a wooden bridge. A red fox stands below the bridge. A golden ribbon appears.",
+      "required_facts": ["The silver fox holds the blue lantern", "The lantern is above the wooden bridge", "The red fox stands below the same bridge", "A golden ribbon is visible"],
+      "forbidden_mistakes": ["The red fox is above the bridge", "The lantern is below the bridge", "Two different bridges supply the relationships"],
+      "display_states": ["One bridge with the lantern above it and the red fox below it"]
+    },
+    {
+      "page": 5,
+      "seed": 90405,
+      "category": "counted_transformation",
+      "text": "In a forest, a silver fox lifts one white feather. The feather becomes three golden birds.",
+      "required_facts": ["The silver fox lifts one white feather", "That feather becomes exactly three golden birds", "The result is shown after the feather"],
+      "forbidden_mistakes": ["The fox transforms", "The result contains one or four birds", "A still image is presented as proof of a transformation"],
+      "display_states": ["Before: the silver fox lifts one white feather", "After: exactly three golden birds replace the feather"],
+      "temporal_acceptance": "Requires visible ordered before/after states; parallax alone cannot pass."
+    },
+    {
+      "page": 6,
+      "seed": 90406,
+      "category": "event_order",
+      "text": "In a forest, a silver fox opens one wooden basket then the silver fox lifts one blue lantern. Three golden birds fly above a wooden bridge.",
+      "required_facts": ["The silver fox opens the wooden basket before lifting the blue lantern", "The same fox performs both actions", "Exactly three golden birds fly above the wooden bridge"],
+      "forbidden_mistakes": ["The lantern is lifted before the basket opens", "Another fox performs one of the actions", "The birds appear below the bridge"],
+      "display_states": ["First: the silver fox opens the wooden basket", "Then: the same fox lifts the blue lantern while three golden birds fly above the bridge"],
+      "temporal_acceptance": "Requires ordered authored states or independently verified motion; a single still cannot prove order."
+    }
+  ]
+}

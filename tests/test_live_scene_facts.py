@@ -8,6 +8,7 @@ from bookforge.live_scene_facts import (
     adapt_live_scene_facts,
 )
 from bookforge.scene_facts import compile_scene_facts_prompt
+from bookforge.tensorrt_slot_client import tensor_accepted_graph_wire_plan, tensor_slot_wire_plan
 
 
 def _slots(**changes: str) -> dict[str, str]:
@@ -58,6 +59,62 @@ def test_plain_slots_recover_bound_counts_colors_and_secondary_spatial_object() 
         ("n1", "above", "n2"),
     ]
     assert facts == adapt_live_scene_facts(_slots(), source_text=source).facts
+
+
+def test_explicit_passive_carry_preserves_binding_through_renderer() -> None:
+    source = "In a cave, one blue lantern is carried by two orange foxes. A ribbon appears."
+    slots = _slots(ACTION="carries lantern")
+    facts = _facts(slots, source)
+    assert (facts.subjects[0].label, facts.subjects[0].count, facts.subjects[0].color) == (
+        "foxes",
+        2,
+        "orange",
+    )
+    assert (facts.objects[0].label, facts.objects[0].count, facts.objects[0].color) == (
+        "lantern",
+        1,
+        "blue",
+    )
+    edge = facts.relationships[0]
+    assert (edge.source, edge.relation.value, edge.target) == (
+        facts.subjects[0].ref,
+        "carries",
+        facts.objects[0].ref,
+    )
+    wire = tensor_accepted_graph_wire_plan(
+        "\n".join(f"{key}: {value}" for key, value in slots.items()), source_text=source
+    )
+    assert wire.scene_facts == facts
+    page = wire.to_live_scene_plan(context_text=source).to_page(
+        source_text=source, visual_style="watercolor", seed=0
+    )
+    assert page.scene_spec.master_prompt == compile_scene_facts_prompt(
+        facts, source_text=source, visual_style="watercolor"
+    )
+
+
+@pytest.mark.parametrize(
+    "clause",
+    [
+        "a lantern is not carried by a fox",
+        "an owl claims, a lantern is carried by a fox",
+        "if a lantern is carried by a fox, an owl watches",
+        "a lantern is carried by an owl",
+        "a fox is carried by a lantern",
+        "a lantern is carried by an owl; a kettle is carried by a fox",
+        "a lantern is carried by her",
+        "a lantern is carried by a fox and an owl",
+    ],
+)
+def test_passive_carry_refusal_preserves_accepted_fallback(clause: str) -> None:
+    source = f"In a cave, {clause}. A ribbon appears."
+    slots = _slots(ACTION="carries lantern")
+    assert adapt_live_scene_facts(slots, source_text=source).facts is None
+    raw = "\n".join(f"{key}: {value}" for key, value in slots.items())
+    accepted = tensor_slot_wire_plan(raw, source_text=source)
+    candidate = tensor_accepted_graph_wire_plan(raw, source_text=source)
+    assert candidate.scene_facts is None
+    assert candidate.model_dump(exclude={"scene_facts"}) == accepted.model_dump()
 
 
 def test_hybrid_ids_preserve_object_relation_binding() -> None:

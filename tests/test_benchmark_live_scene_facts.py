@@ -327,3 +327,111 @@ def test_accepted_first_privacy_refusal_retains_raw_without_retry(monkeypatch, r
     )
     assert result.surfaces["accepted_renderer"].schema_valid is (stage != "baseline")
     assert "private refusal value" not in result.model_dump_json()
+
+
+def test_graph_renderer_scoring_requires_exact_prompt_and_hashes_only_prompt(records):
+    from bookforge.tensorrt_slot_client import tensor_accepted_graph_wire_plan
+
+    source = "In a cave, a fox holds a lantern. A ribbon appears."
+    wire = "SETTING: cave\nACTOR: fox\nACTION: holds lantern\nMAGIC: ribbon"
+    plan = tensor_accepted_graph_wire_plan(wire, source_text=source).to_live_scene_plan(
+        context_text=source
+    )
+    envelope = benchmark.renderer_contract(plan, source)
+    assert isinstance(envelope, dict)
+    record = records[0].model_copy(update={"passage": source})
+    verified = benchmark.score(record, envelope, surface="renderer", elapsed_ms=1, output_tokens=7)
+    assert verified.schema_valid
+    assert verified.output_sha256 == benchmark.digest(envelope["master_prompt"])
+    tampered = {**envelope, "master_prompt": "a dragon replaces the fox"}
+    rejected = benchmark.score(record, tampered, surface="renderer", elapsed_ms=1, output_tokens=7)
+    assert rejected.schema_valid is False
+    assert rejected.exact_pass is False
+    assert source not in verified.model_dump_json()
+
+
+@pytest.mark.parametrize(
+    "failure", [None, "incomplete", "no_graphs", "category_loss", "privacy", "p95"]
+)
+def test_accepted_first_gate_requires_complete_safe_gain_with_category_and_latency_limits(
+    records, failure
+):
+    records = tuple(
+        record.model_copy(update={"categories": ("rare" if index == 0 else "common",)})
+        for index, record in enumerate(records)
+    )
+    expected = benchmark.context(
+        records,
+        provenance(),
+        model="resident",
+        max_output_tokens=64,
+        limit=512,
+        endpoint="http://localhost",
+        timeout=30,
+        mode="accepted_first",
+    )
+    assert expected["evaluator_revision"] == benchmark.FIDELITY_EVALUATOR_REVISION
+    assert expected["gate"] == {
+        "revision": "product-fidelity-v1",
+        "expected_cases": 512,
+        "median_limit_ms": 1500,
+        "p95_ratio_limit": 1.10,
+    }
+    accepted = benchmark.Score(
+        schema_valid=True,
+        exact_pass=False,
+        privacy_pass=True,
+        required_atoms=2,
+        passed_atoms=1,
+        forbidden_count=0,
+        unsupported_count=0,
+        output_sha256="a" * 64,
+        latency_ms=1000,
+        output_tokens=31,
+        required_atom_passes=[True, False],
+    )
+    improved = accepted.model_copy(
+        update={
+            "exact_pass": True,
+            "passed_atoms": 2,
+            "required_atom_passes": [True, True],
+            "latency_ms": 1100,
+        }
+    )
+    rows = []
+    for index in range(511 if failure == "incomplete" else 512):
+        final = improved
+        if failure == "category_loss" and index == 0:
+            final = final.model_copy(
+                update={
+                    "exact_pass": False,
+                    "passed_atoms": 0,
+                    "required_atom_passes": [False, False],
+                }
+            )
+        elif failure == "privacy" and index == 0:
+            final = final.model_copy(update={"privacy_pass": False, "exact_pass": False})
+        elif failure == "p95" and index >= 480:
+            final = final.model_copy(update={"latency_ms": 1101})
+        rows.append(
+            benchmark.CaseEvidence(
+                index=index,
+                status="ok",
+                refusal="none",
+                fallback=failure == "no_graphs",
+                surfaces={
+                    "accepted_raw": accepted,
+                    "accepted_renderer": accepted,
+                    "graph_candidate": improved,
+                    "final_renderer": final,
+                },
+            )
+        )
+    report = benchmark.aggregate(expected, set(range(512)), rows, records)
+    gate = report["gate"]
+    assert gate["decision"] == ("advance_to_visual_comparison" if failure is None else "reject")
+    assert gate["graph_coverage_denominator"] == 512
+    assert gate["appliance_promotion_permitted"] is False
+    if failure == "category_loss":
+        assert gate["checks"]["strict_required_fact_gain"]
+        assert gate["category_regressions"] == ["rare"]

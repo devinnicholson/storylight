@@ -711,6 +711,7 @@ def validate_scene_facts_grounding(facts: SceneFactsV2, *, source_text: str) -> 
 
     _validate_facts_privacy(facts, source_text=source_text)
     sentences = _source_sentences(source_text)
+    action_sentences = sentences + _explicit_carried_sentences(facts, source_text)
     issues: list[str] = []
     _check_phrase(facts.setting.label, sentences, "setting.label", issues)
     for index, attribute in enumerate(facts.setting.attributes):
@@ -757,7 +758,7 @@ def validate_scene_facts_grounding(facts: SceneFactsV2, *, source_text: str) -> 
                     if not _action_grounded(
                         action,
                         entity.label,
-                        entity_sentences,
+                        _sentences_with_phrase(action_sentences, entity.label),
                         entity_labels=tuple(item.label for item in entity_by_ref.values()),
                     ):
                         issues.append(f"{path}.actions[{action_index}]")
@@ -784,7 +785,7 @@ def validate_scene_facts_grounding(facts: SceneFactsV2, *, source_text: str) -> 
             source,
             target,
             secondary,
-            sentences,
+            action_sentences,
             entity_labels=tuple(item.label for item in entity_by_ref.values()),
         ):
             issues.append(f"relationships[{index}]")
@@ -1174,6 +1175,47 @@ def _source_sentences(source_text: str) -> tuple[tuple[str, ...], ...]:
         for sentence in re.split(r"[.!?;]+", source_text)
         if (tokens := _normalized_phrase(sentence))
     )
+
+
+def _explicit_carried_sentences(
+    facts: SceneFactsV2, source_text: str
+) -> tuple[tuple[str, ...], ...]:
+    """Prove a complete passive clause before reordering it for action checks."""
+    result = []
+    setting = re.escape(facts.setting.label.casefold())
+    for sentence in re.split(r"[.!?;]+", source_text.casefold()):
+        clause = re.sub(
+            rf"^(?:in|at|inside)\s+(?:(?:a|an|the)\s+)?{setting},\s*",
+            "",
+            sentence.strip(),
+        )
+        match = re.fullmatch(
+            r"([a-z0-9 -]+) (?:is|are|was|were) carried by ([a-z0-9 -]+)", clause
+        )
+        if match is None:
+            continue
+        patient, actor = match.groups()
+        if any(_passive_noun_matches(actor, entity) for entity in facts.subjects) and any(
+            _passive_noun_matches(patient, entity) for entity in facts.objects
+        ):
+            result.append(_normalized_phrase(f"{actor} carries {patient}"))
+    return tuple(result)
+
+
+def _passive_noun_matches(phrase: str, entity: SceneSubjectFact | SceneObjectFact) -> bool:
+    tokens = _normalized_phrase(phrase)
+    label = _normalized_phrase(entity.label)
+    if not label or tokens[-len(label) :] != label:
+        return False
+    modifiers = {"a", "an", "the"}
+    for value in (entity.color, *entity.attributes):
+        if value:
+            modifiers.update(_normalized_phrase(value))
+    if entity.count is not None:
+        modifiers.add(str(entity.count))
+        for value in _COUNT_WORDS[entity.count]:
+            modifiers.update(_normalized_phrase(value))
+    return all(token in modifiers for token in tokens[: -len(label)])
 
 
 def _contains_phrase(tokens: tuple[str, ...], phrase: str | tuple[str, ...]) -> bool:

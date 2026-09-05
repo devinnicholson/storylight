@@ -280,6 +280,9 @@ class _Clause:
 
 
 def _clause(value: str) -> _Clause:
+    passive = re.fullmatch(r"(.+?) (?:is|are|was|were) carried by (.+)", value)
+    if passive:
+        return _Clause(_noun(passive[2]), "carries", _noun(passive[1]))
     match = _PREDICATE.search(value)
     # Hybrid clauses may use a bare relation rather than a copula.
     if match is None:
