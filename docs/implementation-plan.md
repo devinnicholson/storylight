@@ -4,6 +4,11 @@ Last updated: 2026-09-05
 
 ## Latest increment — renderer latency measurement
 
+The [corrected regional recovery](renderer-region-recovery-2026-09-05.md) completed its bounded
+attempt but timed out waiting for GPU capacity. Both apps are stopped; no images completed.
+Closed-run reservation reductions allowed it within the already approved $35 stop. A matched
+eastern-region run is the next availability hypothesis.
+
 The approved [region-controlled follow-up](renderer-region-comparison-2026-09-05.md) failed before
 model initialization because a shared deployment module was missing from the container. The mount
 is fixed and an isolated import regression reproduces the failure. No images completed; both

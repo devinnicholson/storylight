@@ -23,7 +23,7 @@ if modal.is_local():
             DEPLOY / "modal_klein_latency.py", "/root/modal_klein_latency.py"
         )
         .add_local_file(
-            DEPLOY.parent / "benchmarks/renderer-region-2026-09-05/manifest.json",
+            DEPLOY.parent / "benchmarks/renderer-region-2026-09-05-b/manifest.json",
             "/root/region-manifest.json",
         )
         .add_local_file(
