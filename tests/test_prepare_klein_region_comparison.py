@@ -38,16 +38,18 @@ def test_draft_preserves_requests_and_activation_requires_exact_private_proof(co
     assert draft["status"] == "draft" and draft["expires_at"] is None
     assert draft["placement"] == {
         "cloud": "aws",
-        "compute_region": "us-west",
+        "compute_region": "us-east",
         "routing_region": "us-east",
         "expected_cloud": "CLOUD_PROVIDER_AWS",
-        "expected_compute_region": "us-west-2",
+        "expected_compute_region": "us-east-1",
     }
     assert draft["deployments"] == {
         "sdk": {"app": "bookforge-klein-region-sdk", "class": "RegionStudio"},
         "http": {"app": "bookforge-klein-region-http", "class": "RegionServer"},
     }
     assert len(draft["operations"]) == 14
+    assert draft["baked_image_id"] == "im-WtXer8GjRPdgMqWAAUSMwJ"
+    assert preparation.COST_CEILING_USD == 14 * 0.39 + 0.50
     for candidate, original_operation in zip(
         copy.deepcopy(draft["operations"]), source["operations"], strict=True
     ):
@@ -67,14 +69,16 @@ def test_draft_preserves_requests_and_activation_requires_exact_private_proof(co
     assert stat.S_IMODE(output.stat().st_mode) == 0o600
     assert preparation.SOURCE.read_bytes() == original
     assert preparation.main(args) == 1
-    for field in ("seed", "schema_version"):
+    for field in ("seed", "schema_version", "baked_image_id"):
         changed = copy.deepcopy(draft)
         if field == "seed":
             changed["operations"][2]["request"]["seed"] = float(
                 changed["operations"][2]["request"]["seed"]
             )
-        else:
+        elif field == "schema_version":
             changed["schema_version"] = 2.0
+        else:
+            changed["baked_image_id"] = "im-another-image"
         invalid = tmp_path / f"invalid-{field}.json"
         invalid.write_bytes(preparation.encoded(changed))
         with pytest.raises(ValueError):
@@ -99,7 +103,7 @@ def test_draft_preserves_requests_and_activation_requires_exact_private_proof(co
         "schema_version": 1,
         "manifest_sha256": hashlib.sha256(preparation.encoded(active)).hexdigest(),
         "reservation_id": "private-local-test-reservation",
-        "reserved_usd": 6.96,
+        "reserved_usd": 5.96,
         "maximum_operations": 14,
         "ledger_sha256": "a" * 64,
     }
@@ -155,7 +159,7 @@ def test_draft_preserves_requests_and_activation_requires_exact_private_proof(co
                 request,
                 expected_bucket,
             )
-            payload["location"].update(cloud="CLOUD_PROVIDER_AWS", compute_region="us-west-2")
+            payload["location"].update(cloud="CLOUD_PROVIDER_AWS", compute_region="us-east-1")
             return payload, dict.fromkeys(runner.legacy.TIMINGS, 0.0)
 
         async def cleanup(self):
@@ -172,7 +176,7 @@ def test_draft_preserves_requests_and_activation_requires_exact_private_proof(co
     assert len(client.calls) == 14 and result["complete"] and result["placement_verified"]
     journal = cli.output / "journal.jsonl"
     entries = [json.loads(line) for line in journal.read_text().splitlines()]
-    entries[2]["payload"]["location"]["compute_region"] = "us-east-1"
+    entries[2]["payload"]["location"]["compute_region"] = "us-west-2"
     journal.write_text("\n".join(json.dumps(entry) for entry in entries) + "\n")
     result = runner.aggregate(cli, active, header)
     assert not result["placement_verified"] and result["decision"] == "reject"

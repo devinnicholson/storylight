@@ -43,7 +43,7 @@ class RegionClient(LatencyClient):
         location = payload["location"]
         if (
             location["cloud"] != "CLOUD_PROVIDER_AWS"
-            or location["compute_region"] != "us-west-2"
+            or location["compute_region"] != "us-east-1"
             or location["routing_region"] != "us-east"
         ):
             self.last_failure = "region_response_provenance_mismatch"

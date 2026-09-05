@@ -15,20 +15,24 @@ sys.path.insert(0, str(DEPLOY))
 from klein_latency_protocol import digest, pack_response, validate_request  # noqa: E402
 from klein_latency_runtime import LatencySceneRuntime  # noqa: E402
 from modal_klein_latency import RESOURCES, Runtime  # noqa: E402
-from modal_klein_latency import image as original_image  # noqa: E402
+
+BAKED_IMAGE_ID = "im-WtXer8GjRPdgMqWAAUSMwJ"
 
 if modal.is_local():
-    image = (
-        original_image.add_local_file(
-            DEPLOY / "modal_klein_latency.py", "/root/modal_klein_latency.py"
-        )
-        .add_local_file(
-            DEPLOY.parent / "benchmarks/renderer-region-2026-09-05-b/manifest.json",
-            "/root/region-manifest.json",
-        )
-        .add_local_file(
-            DEPLOY.parent / "src/bookforge/klein_region_client.py", "/root/klein_region_client.py"
-        )
+    image = modal.Image.from_id(BAKED_IMAGE_ID)
+    for name in (
+        "modal_klein_latency.py",
+        "klein_scene_runtime.py",
+        "klein_latency_runtime.py",
+        "klein_latency_protocol.py",
+        "klein_latency_http.py",
+    ):
+        image = image.add_local_file(DEPLOY / name, f"/root/{name}")
+    image = image.add_local_file(
+        DEPLOY.parent / "benchmarks/renderer-region-2026-09-05-c/manifest.json",
+        "/root/region-manifest.json",
+    ).add_local_file(
+        DEPLOY.parent / "src/bookforge/klein_region_client.py", "/root/klein_region_client.py"
     )
 else:
     image = None
@@ -42,7 +46,7 @@ resources = {**RESOURCES, "image": image, "cloud": "aws"}
 def require_placement():
     if (
         os.environ.get("MODAL_CLOUD_PROVIDER") != "CLOUD_PROVIDER_AWS"
-        or os.environ.get("MODAL_REGION") != "us-west-2"
+        or os.environ.get("MODAL_REGION") != "us-east-1"
     ):
         raise RuntimeError("compute placement does not match the comparison")
 
@@ -58,12 +62,14 @@ class RegionRuntime(Runtime):
             or not time.time() < expires <= time.time() + 7200
         ):
             raise RuntimeError("region experiment is not authorized or has expired")
+        if self.manifest.get("baked_image_id") != BAKED_IMAGE_ID:
+            raise RuntimeError("region experiment baked image differs")
         if self.manifest.get("placement") != {
             "cloud": "aws",
-            "compute_region": "us-west",
+            "compute_region": "us-east",
             "routing_region": "us-east",
             "expected_cloud": "CLOUD_PROVIDER_AWS",
-            "expected_compute_region": "us-west-2",
+            "expected_compute_region": "us-east-1",
         }:
             raise RuntimeError("region experiment placement differs")
         for field, name in (
@@ -104,7 +110,7 @@ class RegionRuntime(Runtime):
         return payload
 
 
-@sdk_app.cls(**resources, region="us-west", routing_region="us-east", timeout=180, retries=0)
+@sdk_app.cls(**resources, region="us-east", routing_region="us-east", timeout=180, retries=0)
 @modal.concurrent(max_inputs=1)
 class RegionStudio:
     @modal.enter()
@@ -123,7 +129,7 @@ class RegionStudio:
 
 @http_app.server(
     **resources,
-    compute_region="us-west",
+    compute_region="us-east",
     routing_region="us-east",
     port=8000,
     unauthenticated=False,

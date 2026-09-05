@@ -31,15 +31,31 @@ from pathlib import Path
 from types import SimpleNamespace
 
 mounts = {}
+candidate = None
+registered_images = []
 class Image:
+    def __init__(self, cached=False):
+        self.cached = cached
+    @staticmethod
+    def from_id(image_id):
+        global candidate
+        assert image_id == "im-WtXer8GjRPdgMqWAAUSMwJ"
+        assert candidate is None
+        candidate = Image(cached=True)
+        return candidate
     def add_local_file(self, source, destination, **kwargs):
-        mounts[destination] = str(Path(source).resolve())
+        if self.cached:
+            assert not kwargs.get("copy", False)
+            mounts[destination] = str(Path(source).resolve())
         return self
     def run_function(self, *args, **kwargs):
+        assert not self.cached, "candidate image must not build"
         return self
     def env(self, *args, **kwargs):
+        assert not self.cached, "candidate image must not build"
         return self
     def uv_pip_install(self, *args, **kwargs):
+        assert not self.cached, "candidate image must not build"
         return self
 
 def decorator(**kwargs):
@@ -48,11 +64,14 @@ def decorator(**kwargs):
 class App:
     def __init__(self, name):
         pass
-    cls = staticmethod(decorator)
-    server = staticmethod(decorator)
+    @staticmethod
+    def register(**kwargs):
+        registered_images.append(kwargs.get("image"))
+        return decorator(**kwargs)
+    cls = server = register
 
 sys.modules["modal"] = SimpleNamespace(
-    App=App, is_local=lambda: sys.argv[1] == "build",
+    App=App, Image=Image, is_local=lambda: sys.argv[1] == "build",
     concurrent=decorator, enter=decorator, method=decorator,
     Volume=SimpleNamespace(from_name=lambda *args, **kwargs: object()),
     Dict=SimpleNamespace(from_name=lambda *args, **kwargs: object()),
@@ -64,7 +83,9 @@ sys.modules["modal"] = SimpleNamespace(
 sys.modules["klein_restart"] = SimpleNamespace(WEIGHTS={})
 sys.modules["klein_weights"] = SimpleNamespace(bake_weights=lambda *args: None)
 sys.modules["modal_compare"] = SimpleNamespace(image=Image())
-runpy.run_path(sys.argv[2])
+module = runpy.run_path(sys.argv[2])
+assert candidate is not None and module["image"] is candidate
+assert registered_images[-2:] == [candidate, candidate]
 assert "torch" not in sys.modules and "diffusers" not in sys.modules
 print(json.dumps(mounts))
 """
@@ -83,7 +104,13 @@ print(json.dumps(mounts))
         relative = Path(destination).relative_to("/root")
         target = runtime / relative
         target.parent.mkdir(parents=True, exist_ok=True)
-        shutil.copyfile(source, target)
+        if destination == "/root/region-manifest.json":
+            assert Path(source) == (
+                preparation.ROOT / "benchmarks/renderer-region-2026-09-05-c/manifest.json"
+            )
+            target.write_bytes(preparation.encoded(preparation.prepare("isolated-layout")))
+        else:
+            shutil.copyfile(source, target)
     # Modal supplies the service entry module; all its sibling imports must be explicit mounts.
     shutil.copyfile(deployment, runtime / deployment.name)
     remote = (
@@ -218,20 +245,20 @@ def test_deployment_pins_placement_and_rejects_wrong_host_before_model_initializ
     )
     sdk = registrations["bookforge-klein-region-sdk"]
     http = registrations["bookforge-klein-region-http"]
-    assert (sdk["cloud"], sdk["region"], sdk["routing_region"]) == ("aws", "us-west", "us-east")
+    assert (sdk["cloud"], sdk["region"], sdk["routing_region"]) == ("aws", "us-east", "us-east")
     assert (http["cloud"], http["compute_region"], http["routing_region"]) == (
         "aws",
-        "us-west",
+        "us-east",
         "us-east",
     )
     assert sdk["retries"] == 0 and http["unauthenticated"] is False
-    for cloud, region in (("CLOUD_PROVIDER_GCP", "us-west-2"), ("CLOUD_PROVIDER_AWS", "us-east-1")):
+    for cloud, region in (("CLOUD_PROVIDER_GCP", "us-east-1"), ("CLOUD_PROVIDER_AWS", "us-west-2")):
         monkeypatch.setenv("MODAL_CLOUD_PROVIDER", cloud)
         monkeypatch.setenv("MODAL_REGION", region)
         with pytest.raises(RuntimeError, match="compute placement"):
             module["RegionRuntime"]("sdk")
     monkeypatch.setenv("MODAL_CLOUD_PROVIDER", "CLOUD_PROVIDER_AWS")
-    monkeypatch.setenv("MODAL_REGION", "us-west-2")
+    monkeypatch.setenv("MODAL_REGION", "us-east-1")
     module["require_placement"]()
     assert not model_starts
     files = {**preparation.SUPPORT, "region_deployment_sha256": "modal_klein_region.py"}
@@ -250,6 +277,11 @@ def test_deployment_pins_placement_and_rejects_wrong_host_before_model_initializ
             else read_text(path, *args, **kwargs)
         ),
     )
+    manifest_path.write_text(json.dumps({**manifest, "baked_image_id": "im-another-image"}))
+    with pytest.raises(RuntimeError, match="image"):
+        module["RegionRuntime"]("sdk")
+    assert not model_starts
+    manifest_path.write_text(json.dumps(manifest))
     worker = module["RegionRuntime"]("sdk")
     assert len(model_starts) == 1 and len(worker.allowed) == 7
 
@@ -322,14 +354,14 @@ def test_client_binds_new_origins_and_region_evidence_for_render_and_prewarm():
             request, bucket = operation["request"], operation["expected_bucket"]
             selected_payload = response(client.expected, request, bucket)
             selected_payload["location"].update(
-                cloud="CLOUD_PROVIDER_AWS", compute_region="us-west-2"
+                cloud="CLOUD_PROVIDER_AWS", compute_region="us-east-1"
             )
             payload, _ = await client.invoke("sdk", request, bucket)
             assert payload["deployment_sha256"] == "f" * 64
             with pytest.raises(LatencyError, match="response_identity_mismatch"):
                 validate_payload(payload, request, manifest, bucket)
             valid = copy.deepcopy(selected_payload)
-            for field, wrong in (("cloud", "CLOUD_PROVIDER_GCP"), ("compute_region", "us-east-1")):
+            for field, wrong in (("cloud", "CLOUD_PROVIDER_GCP"), ("compute_region", "us-west-2")):
                 selected_payload = copy.deepcopy(valid)
                 selected_payload["location"][field] = wrong
                 with pytest.raises(LatencyError, match="region_response_provenance_mismatch"):

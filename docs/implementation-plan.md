@@ -4,6 +4,10 @@ Last updated: 2026-09-05
 
 ## Latest increment — renderer latency measurement
 
+The [eastern-region comparison](renderer-region-east-2026-09-05.md) is ready using the verified
+existing image, a $5.96 reservation, and unchanged inference gates. It passed local verification
+and review; explicit temporary credential-transfer approval is pending. Its idle apps are stopped.
+
 The [corrected regional recovery](renderer-region-recovery-2026-09-05.md) completed its bounded
 attempt but timed out waiting for GPU capacity. Both apps are stopped; no images completed.
 Closed-run reservation reductions allowed it within the already approved $35 stop. A matched

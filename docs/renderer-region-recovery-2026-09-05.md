@@ -1,15 +1,18 @@
 # Regional renderer recovery
 
-The corrected western-region attempt did not acquire an L4 within the client's 310-second result
-deadline. It recorded one failed SDK warmup and no completed images. Both temporary applications
+The corrected western-region attempt spent most of the client's 310-second result deadline waiting
+for capacity, then was cancelled during warmup compilation. It recorded one failed SDK warmup and
+no completed images. Both temporary applications
 were stopped by the supervisor, each with return code 0; separate checks confirmed zero containers.
 The proxy token was revoked and its private local and Jetson files removed. The accepted reader
 and planner remained running.
 
-This is an availability failure, not a measured speed or image-quality result. Provider logs
+This is an availability and cold-start timeout, not a measured warm-speed or image-quality result. Provider logs
 reported the requested AWS `us-west`, L4, and 64 GiB memory combination waiting for capacity.
-The container inventory was empty during the wait. The corrected import layout passed locally,
-but this attempt did not establish successful remote model initialization.
+The container inventory was empty at the sampled point during the wait. Final logs subsequently
+showed the corrected import and runtime initialization succeeded: execution reached the synthetic
+warmup and was interrupted inside Torch Dynamo compilation. The initial capacity-only description
+was incomplete. A later billing snapshot attributed $0.03122589 to the SDK app.
 
 Evidence is retained under [renderer-region-2026-09-05-b](../benchmarks/renderer-region-2026-09-05-b):
 the exact manifest, source hashes, journal, rejected summary, scheduling messages, supervisor,

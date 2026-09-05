@@ -22,10 +22,10 @@ SOURCE = ROOT / "benchmarks/renderer-latency-2026-09-05/manifest.json"
 SOURCE_SHA256 = "b9a817866d93b57b732b6571a5a06d117d43779d5593d8139c57157f7bcb81ce"
 PLACEMENT = {
     "cloud": "aws",
-    "compute_region": "us-west",
+    "compute_region": "us-east",
     "routing_region": "us-east",
     "expected_cloud": "CLOUD_PROVIDER_AWS",
-    "expected_compute_region": "us-west-2",
+    "expected_compute_region": "us-east-1",
 }
 REGION_DEPLOYMENT = ROOT / "deploy/modal_klein_region.py"
 REGION_CLIENT = ROOT / "src/bookforge/klein_region_client.py"
@@ -40,7 +40,8 @@ SUPPORT = {
     "protocol_sha256": "klein_latency_protocol.py",
     "http_server_sha256": "klein_latency_http.py",
 }
-COST_CEILING_USD = 6.96
+COST_CEILING_USD = 5.96
+BAKED_IMAGE_ID = "im-WtXer8GjRPdgMqWAAUSMwJ"
 
 
 def encoded(value: dict) -> bytes:
@@ -118,6 +119,7 @@ def prepare(experiment_id: str) -> dict:
         source_manifest_sha256=SOURCE_SHA256,
         region_deployment_sha256=deployment_sha,
         region_client_sha256=hashlib.sha256(read_code(REGION_CLIENT)).hexdigest(),
+        baked_image_id=BAKED_IMAGE_ID,
         placement=copy.deepcopy(PLACEMENT),
         deployments=copy.deepcopy(DEPLOYMENTS),
         **pins,
