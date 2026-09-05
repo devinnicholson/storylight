@@ -49,6 +49,22 @@ the source graph's existing count representation; definite mentions, unsupported
 different counts and borrowed identities still refuse. The prompt, frozen controls and exact
 oracle are unchanged. A fresh matched run will measure this constructor revision separately.
 
+At revision `b3de71b5fc1eb36707ded941870207b6cf986b83`, the repeated 16-request control run
+passed all eight candidate outcomes, versus six accepted. All 16 raw-response hashes matched the
+first run: the gain came from construction, not changed model output. Candidate median/p95 was
+1,079.9/1,199.0 ms, versus 1,004.7/1,295.4 ms accepted. The control gate advanced.
+
+The separately gated seven-input story stage proved all six story pages, including both ordered
+actions on the last page. Its extra passive-voice control refused, leaving the overall decision
+**reject** at 6/7. Median/max planning was 1,236.5/1,422.5 ms. A private on-device grammatical check
+identified a passive predicate fragment in the refused ACTION field; no raw response left the
+Jetson. The next repair must bind that fragment to a unique explicit source passive clause.
+
+Both [control](../benchmarks/scene-prompt-grounding-repair-2026-09-04/controls-summary.json) and
+[story](../benchmarks/scene-prompt-grounding-repair-2026-09-04/story-summary.json) aggregates
+reproduce byte-for-byte under the pinned revision. Before/after metadata confirms the resident
+process, engine, deployed files, prompt, planner settings and power mode stayed unchanged.
+
 The [sanitized evidence](../benchmarks/scene-prompt-probe-2026-09-04/controls-summary.json)
 includes all per-request checks and before/after provenance. The resident process, engine,
 deployed files, accepted prompt, planner configuration and power mode stayed unchanged.
@@ -65,3 +81,12 @@ The finite comparison therefore contains eight candidate requests and three acce
 11 images total. Missing accepted pages remain failures. The single accepted still for page 5
 or 6 is reused for comparison with the corresponding two candidate states; it cannot demonstrate
 event order. Assembly remains gated on all seven candidate story constructions passing.
+
+`scripts/render_fidelity_display.py` preflights the entire proved batch, exact frozen seeds,
+renderer receipt and locally cached tokenizer before any paid call. Its explicit execution mode
+uses the existing overnight plan and ledger with a $2.75 reservation ceiling: 11 calls at $0.25
+each, including conservative startup/idle allowances. It has no prewarm or paid retry. A durable
+batch-hash marker beside the ledger prevents re-execution even with a new output directory.
+Ambiguous failures retain that marker and reservation. Negative prompts are recorded but this
+Klein route does not execute them. Returned model/runtime identity, seeds, dimensions, tokens,
+master/depth checksums and timings must match; visual acceptance still requires human review.
