@@ -1,9 +1,10 @@
 {
   "monthly_credit_usd": 30.0,
+  "authorized_paid_usd": 7.0,
   "workspace_usage_before_live_scenes_usd": 13.13786456,
   "billing_delay_reserve_usd": 2.0,
-  "hard_stop_workspace_total_usd": 28.0,
-  "maximum_new_spend_usd": 14.85,
+  "hard_stop_workspace_total_usd": 35.0,
+  "maximum_new_spend_usd": 21.85,
   "latency_experiment_ceiling_usd": 4.58,
   "maximum_operations": 14,
   "operation_ceiling_usd": 0.22,

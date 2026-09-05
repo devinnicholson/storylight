@@ -4,6 +4,8 @@ import asyncio
 import copy
 import json
 import runpy
+import shutil
+import subprocess
 import sys
 import time
 from pathlib import Path
@@ -17,6 +19,122 @@ from bookforge.klein_region_client import RegionClient
 from deploy import klein_latency_protocol as protocol
 from scripts import freeze_klein_latency as freezer
 from scripts import prepare_klein_region_comparison as preparation
+
+
+def test_explicit_runtime_mounts_import_in_a_fresh_container_layout(tmp_path):
+    deployment = preparation.ROOT / "deploy/modal_klein_region.py"
+    stub = r"""
+import json
+import runpy
+import sys
+from pathlib import Path
+from types import SimpleNamespace
+
+mounts = {}
+class Image:
+    def add_local_file(self, source, destination, **kwargs):
+        mounts[destination] = str(Path(source).resolve())
+        return self
+    def run_function(self, *args, **kwargs):
+        return self
+    def env(self, *args, **kwargs):
+        return self
+    def uv_pip_install(self, *args, **kwargs):
+        return self
+
+def decorator(**kwargs):
+    return lambda target: target
+
+class App:
+    def __init__(self, name):
+        pass
+    cls = staticmethod(decorator)
+    server = staticmethod(decorator)
+
+sys.modules["modal"] = SimpleNamespace(
+    App=App, is_local=lambda: sys.argv[1] == "build",
+    concurrent=decorator, enter=decorator, method=decorator,
+    Volume=SimpleNamespace(from_name=lambda *args, **kwargs: object()),
+    Dict=SimpleNamespace(from_name=lambda *args, **kwargs: object()),
+)
+"""
+    build = (
+        stub
+        + r"""
+sys.modules["klein_restart"] = SimpleNamespace(WEIGHTS={})
+sys.modules["klein_weights"] = SimpleNamespace(bake_weights=lambda *args: None)
+sys.modules["modal_compare"] = SimpleNamespace(image=Image())
+runpy.run_path(sys.argv[2])
+assert "torch" not in sys.modules and "diffusers" not in sys.modules
+print(json.dumps(mounts))
+"""
+    )
+    built = subprocess.run(
+        [sys.executable, "-I", "-S", "-c", build, "build", str(deployment)],
+        cwd=tmp_path,
+        capture_output=True,
+        text=True,
+        timeout=15,
+        check=True,
+    )
+    runtime = tmp_path / "container-root"
+    runtime.mkdir()
+    for destination, source in json.loads(built.stdout).items():
+        relative = Path(destination).relative_to("/root")
+        target = runtime / relative
+        target.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copyfile(source, target)
+    # Modal supplies the service entry module; all its sibling imports must be explicit mounts.
+    shutil.copyfile(deployment, runtime / deployment.name)
+    remote = (
+        stub
+        + r"""
+root = Path(sys.argv[2]).resolve()
+assert not any(Path(entry).is_relative_to(Path(sys.argv[3])) for entry in sys.path if entry)
+assert "modal_klein_latency" not in sys.modules
+assert "klein_latency_runtime" not in sys.modules
+sys.path.insert(0, str(root))
+try:
+    module = runpy.run_path(str(root / "modal_klein_region.py"))
+except ModuleNotFoundError as error:
+    print(json.dumps({"missing": error.name}))
+    raise SystemExit(2)
+assert "RegionRuntime" in module and "RegionStudio" in module and "RegionServer" in module
+for name in (
+    "modal_klein_latency", "klein_latency_runtime", "klein_scene_runtime", "klein_latency_protocol"
+):
+    assert Path(sys.modules[name].__file__).parent == root
+heavy_modules = {"torch", "diffusers", "transformers", "klein_restart", "modal_compare"}
+assert not heavy_modules & set(sys.modules)
+print(json.dumps({"imported": True, "model_initialized": False}))
+"""
+    )
+
+    def import_remote():
+        return subprocess.run(
+            [
+                sys.executable,
+                "-I",
+                "-S",
+                "-c",
+                remote,
+                "remote",
+                str(runtime),
+                str(preparation.ROOT),
+            ],
+            cwd=runtime,
+            capture_output=True,
+            text=True,
+            timeout=15,
+        )
+
+    imported = import_remote()
+    assert imported.returncode == 0, imported.stdout + imported.stderr
+    assert json.loads(imported.stdout) == {"imported": True, "model_initialized": False}
+    (runtime / "modal_klein_latency.py").unlink()
+    missing = import_remote()
+    assert missing.returncode == 2
+    assert json.loads(missing.stdout) == {"missing": "modal_klein_latency"}
 
 
 def test_deployment_pins_placement_and_rejects_wrong_host_before_model_initialization(

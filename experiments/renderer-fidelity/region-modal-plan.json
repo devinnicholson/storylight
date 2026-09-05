@@ -1,0 +1,14 @@
+{
+  "monthly_credit_usd": 30.0,
+  "authorized_paid_usd": 7.0,
+  "workspace_usage_before_live_scenes_usd": 13.13786456,
+  "billing_delay_reserve_usd": 2.0,
+  "hard_stop_workspace_total_usd": 35.0,
+  "maximum_new_spend_usd": 21.85,
+  "experiment_ceiling_usd": 6.96,
+  "maximum_operations": 14,
+  "operation_ceiling_usd": 0.39,
+  "setup_ceiling_usd": 1.5,
+  "regional_price_multiplier": 1.75,
+  "note": "User approved September 5. Use the canonical overnight ledger and preserve all existing reservations. Run only the frozen region comparison with external supervision and shutdown; no paid retries."
+}

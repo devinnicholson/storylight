@@ -18,11 +18,17 @@ from modal_klein_latency import RESOURCES, Runtime  # noqa: E402
 from modal_klein_latency import image as original_image  # noqa: E402
 
 if modal.is_local():
-    image = original_image.add_local_file(
-        DEPLOY.parent / "benchmarks/renderer-region-2026-09-05/manifest.json",
-        "/root/region-manifest.json",
-    ).add_local_file(
-        DEPLOY.parent / "src/bookforge/klein_region_client.py", "/root/klein_region_client.py"
+    image = (
+        original_image.add_local_file(
+            DEPLOY / "modal_klein_latency.py", "/root/modal_klein_latency.py"
+        )
+        .add_local_file(
+            DEPLOY.parent / "benchmarks/renderer-region-2026-09-05/manifest.json",
+            "/root/region-manifest.json",
+        )
+        .add_local_file(
+            DEPLOY.parent / "src/bookforge/klein_region_client.py", "/root/klein_region_client.py"
+        )
     )
 else:
     image = None

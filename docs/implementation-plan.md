@@ -4,10 +4,11 @@ Last updated: 2026-09-05
 
 ## Latest increment — renderer latency measurement
 
-The [region-controlled follow-up](renderer-region-comparison-2026-09-05.md) is implemented and
-locally tested with an inactive draft. It requires $6.96 reserved funding and explicit approval
-to expand the existing workspace stop; previous reservations remain untouched. No new cloud run
-or provider promotion has occurred.
+The approved [region-controlled follow-up](renderer-region-comparison-2026-09-05.md) failed before
+model initialization because a shared deployment module was missing from the container. The mount
+is fixed and an isolated import regression reproduces the failure. No images completed; both
+temporary apps are stopped. The $6.96 reservation remains held under the approved $35 workspace
+stop. The repair draft is inactive; no provider promotion or session prewarming has occurred.
 
 The [Jetson transport comparison](renderer-latency-results-2026-09-05.md) completed 14 bounded
 operations with identical paired artwork and no failures. HTTP artifact-ready median was 2.586 s
