@@ -1,4 +1,4 @@
-# Story images generated; human review pending
+# Story image review: two of six candidate pages correct
 
 Revision `ba15b484c3a91ff65ce6f7949fc851669c137298` passed the source-selected scene probe
 on the existing resident Jetson model. The story and acceptance criteria remain frozen.
@@ -66,7 +66,7 @@ The user supplied that approval before execution. Independent review verified al
 The [installation receipt](../benchmarks/scene-routing-2026-09-04/install-receipt.json) verifies
 eight candidate pages and 16 cached assets in a fresh private Jetson data directory. The accepted
 appliance was not changed. The local gallery uses neutral A/B labels and a separately stored
-mapping key; ratings remain unfilled for human review.
+mapping key. The completed page-level human review is recorded below.
 Render bundles and the gallery are retained locally under the ignored
 `.bookforge/fidelity-display-ba15b48/` directory; the private mapping key is outside the gallery.
 
@@ -102,8 +102,50 @@ PYTHONPATH=src /opt/bookforge/.venv/bin/python scripts/rehearse_fidelity_cache.p
   --output evidence/cache-rehearsal-repeat.json
 ```
 
-## Completion path
+## Human review
 
-Record human fact, legibility and continuity ratings; an attractive but incorrect image still
-fails. Physical projection, depth animation and visible transition timing still need a Jetson-local
-rehearsal. Generation, installation and cached HTTP recovery cannot pass those remaining gates.
+The [original export](../benchmarks/scene-routing-2026-09-04/human-review.json) was matched to the
+gallery's review ID, frozen checklists, image hashes and saved A/B mapping. The
+[validated summary](../benchmarks/scene-routing-2026-09-04/human-review-summary.json) records the
+result. The candidate fails
+the visual gate: only pages 1 and 2 were rated correct and consistent. All nine available options
+were rated legible. Individual fact annotations were left blank and remain unrated; they are not
+inferred from the page ratings.
+
+| Page | Candidate correctness | Candidate rating | Accepted correctness | Accepted rating |
+| --- | --- | ---: | --- | ---: |
+| 1 | Correct | 5 | No image | — |
+| 2 | Correct | 5 | No image | — |
+| 3 | Incorrect | 3 | Incorrect | 2 |
+| 4 | Incorrect | 2 | No image | — |
+| 5 | Incorrect | 1 | Incorrect | 3 |
+| 6 | Incorrect | 2 | Incorrect | 1 |
+
+The candidate's overall rating wins two paired pages and loses one, but all three paired
+correctness comparisons fail on both sides. Preference does not establish fidelity. These are
+one reviewer's ratings of the frozen demonstration, not a general accuracy estimate.
+
+The summary reproduces byte-for-byte. Its importer rejects mismatched galleries and preserves
+blank fact ratings; independent review and the full 874-test suite passed.
+
+## Diagnosis and next step
+
+A separate [assistant inspection](../benchmarks/scene-routing-2026-09-04/assistant-image-screen.json)
+of the saved candidate images found duplicated lanterns on page
+3, extra foxes and lanterns on page 4, four birds after the page 5 transformation, and surplus
+birds, baskets and lanterns in the page 6 sequence. Page 5's feather also lacks a clear lifting
+action. These observations are machine prescreen findings, not annotations supplied by the user.
+
+The exact outbound contracts already specify the required bindings and counts. The renderer
+receives only text and a seed for each independent image; it has no reference image connecting
+successive states. Even the two states sharing a seed change their objects and composition.
+The failure is now in rendering fidelity and continuity, beyond the passed graph-construction
+gate. Loosening source validation would not repair these pictures.
+
+The next bounded hypothesis is to preserve a verified scene as an image reference while changing
+only the next grounded action. First qualify reference-image input locally, then freeze an
+independent two-state control covering character identity, object count and a spatial relation
+before any new paid comparison. Count and binding checks must still pass; reference conditioning
+alone does not guarantee them. Keep this run's images, story and ratings unchanged, with no rerolls
+or appliance promotion. Physical projection remains unverified and cannot override this failed
+visual gate.

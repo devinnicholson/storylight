@@ -6,7 +6,7 @@ prompt describes the same four fields using explicit visible entities and transf
 without assuming magic or causation. The final source-selected version is available in opt-in
 scene scope; the accepted appliance configuration is unchanged. The
 [latest run](story-display-results-2026-09-04.md) passed construction and generated the frozen
-image batch; human visual review remains pending.
+image batch; subsequent human review rated only two of six candidate pages correct.
 
 `scripts/benchmark_scene_prompt_probe.py` freezes eight independent synthetic controls and one
 candidate prompt. It makes exactly 16 matched control requests, alternating which prompt runs
