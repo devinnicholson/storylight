@@ -551,6 +551,7 @@ def _build(slots: dict[str, str], source: str) -> SceneFactsV2:
         and not c.negative
         and c.object
         and _key(c.subject.label) in nouns
+        and _compatible(c.subject, nouns[_key(c.subject.label)])
         and _compatible(magic, c.object)
     ]
     if len(transforms) > 1:

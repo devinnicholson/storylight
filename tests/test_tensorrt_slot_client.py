@@ -20,8 +20,45 @@ from bookforge.model_client import FakeModelClient, ModelUnavailableError
 from bookforge.planner_benchmark import CONTEST_CASES
 from bookforge.tensorrt_slot_client import (
     TensorRTSlotModelClient,
+    parse_tensor_graph_slots,
+    tensor_accepted_graph_wire_plan,
     tensor_slot_wire_plan,
 )
+
+_GRAPH_SOURCE = "In a cave, a fox holds a lantern. A ribbon appears."
+_GRAPH_SLOTS = "SETTING: cave\nACTOR: fox\nACTION: holds lantern\nMAGIC: ribbon"
+
+
+@pytest.mark.parametrize("ending", ["<turn|>", "\n<end_of_turn>\n"])
+def test_graph_parser_removes_one_terminal_control_marker_only(ending):
+    raw = _GRAPH_SLOTS + ending
+    assert parse_tensor_graph_slots(raw) == parse_tensor_graph_slots(_GRAPH_SLOTS)
+    candidate = tensor_accepted_graph_wire_plan(raw, source_text=_GRAPH_SOURCE)
+    assert candidate.scene_facts is not None
+    assert candidate.model_dump(exclude={"scene_facts"}) == tensor_slot_wire_plan(
+        _GRAPH_SLOTS, source_text=_GRAPH_SOURCE
+    ).model_dump()
+
+
+@pytest.mark.parametrize(
+    "raw,strict_refusal",
+    [
+        (_GRAPH_SLOTS.replace("fox", "fox<turn|>"), True),
+        (_GRAPH_SLOTS + "<turn|><end_of_turn>", True),
+        (_GRAPH_SLOTS + "<end_of_turn> trailing", True),
+        (_GRAPH_SLOTS + "<unknown|>", False),
+        (_GRAPH_SLOTS + "|unsupported", False),
+    ],
+)
+def test_control_marker_recovery_never_attaches_graph_to_malformed_content(raw, strict_refusal):
+    if strict_refusal:
+        with pytest.raises(ValueError):
+            parse_tensor_graph_slots(raw)
+    candidate = tensor_accepted_graph_wire_plan(raw, source_text=_GRAPH_SOURCE)
+    assert candidate.scene_facts is None
+    assert candidate.model_dump(exclude={"scene_facts"}) == tensor_slot_wire_plan(
+        raw, source_text=_GRAPH_SOURCE
+    ).model_dump()
 
 
 class StubFallback:

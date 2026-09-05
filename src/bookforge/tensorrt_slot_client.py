@@ -553,7 +553,14 @@ def parse_tensor_graph_slots(output_text: str) -> dict[str, str]:
 
     if not isinstance(output_text, str) or len(output_text) > 2048:
         raise ValueError("graph response exceeds the bounded envelope")
-    lines = output_text.strip().splitlines()
+    cleaned = output_text.strip()
+    for token in _MODEL_CONTROL_TOKENS:
+        if cleaned.endswith(token):
+            cleaned = cleaned[: -len(token)].rstrip()
+            break
+    if any(token in cleaned for token in _MODEL_CONTROL_TOKENS):
+        raise ValueError("graph response contains an embedded model control token")
+    lines = cleaned.splitlines()
     labels = ("SETTING", "ACTOR", "ACTION", "MAGIC")
     if len(lines) != 4 or any(
         re.fullmatch(rf"{label}:\s*\S.*", line) is None
@@ -655,7 +662,7 @@ class TensorRTSlotModelClient(StructuredModelClient):
         ).hexdigest()
         if scene_facts_enabled:
             graph_revision = (
-                "accepted-scene-facts-v4" if protocol == "slots" else "live-scene-facts-v4"
+                "accepted-scene-facts-v5" if protocol == "slots" else "live-scene-facts-v5"
             )
             self.cache_identity = hashlib.sha256(
                 f"{self.cache_identity}:{graph_revision}".encode()

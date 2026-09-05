@@ -366,7 +366,10 @@ def test_action_linked_result_requires_actual_selected_antecedent(source: str) -
 
 
 def test_transformation_preserves_explicit_result_count() -> None:
-    source = "In a cave, a badger lifts a thimble. The thimble becomes two kettles."
+    source = (
+        "In a cave, a badger lifts a red wooden thimble. "
+        "The red wooden thimble becomes two kettles."
+    )
     facts = _facts(_slots(ACTOR="badger", ACTION="lifts thimble", MAGIC="two kettles"), source)
     assert facts.transformation is not None
     assert facts.transformation.result_count == 2
@@ -378,6 +381,19 @@ def test_transformation_preserves_explicit_result_count() -> None:
         ).facts
         is None
     )
+
+
+@pytest.mark.parametrize("antecedent", ["blue feather", "red wooden feather"])
+def test_transformation_cannot_borrow_another_entity_descriptor(antecedent: str) -> None:
+    source = f"In a cave, a fox holds a red folded feather. The {antecedent} becomes a boat."
+    slots = _slots(ACTION="holds red folded feather", MAGIC="boat")
+    result = adapt_live_scene_facts(slots, source_text=source)
+    assert result.refusal is LiveSceneFactsRefusal.UNGROUNDED
+    raw = "\n".join(f"{key}: {value}" for key, value in slots.items())
+    accepted = tensor_slot_wire_plan(raw, source_text=source)
+    candidate = tensor_accepted_graph_wire_plan(raw, source_text=source)
+    assert candidate.scene_facts is None
+    assert candidate.model_dump(exclude={"scene_facts"}) == accepted.model_dump()
 
 
 def test_repeated_action_temporal_order_is_bound_to_its_object() -> None:
