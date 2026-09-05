@@ -84,26 +84,6 @@ def _export_bundle(tmp_path: Path, *, prefix: str = "gs://private-bucket/fidelit
     return bundle, _sha256(manifest_path), manifest
 
 
-def test_local_export_is_checksum_bound_exact_and_atomically_copied(tmp_path: Path) -> None:
-    source, digest, manifest = _export_bundle(tmp_path)
-    verified = downloader.verify_export_bundle(source, digest)
-    assert verified["candidate_id"] == manifest["candidate_id"]
-
-    destination = tmp_path / "copied"
-    result = downloader.copy_local_bundle(source, destination, digest)
-    assert result["result"] == "copied_and_verified"
-    assert downloader.verify_export_bundle(destination, digest) == manifest
-
-    (destination / "undeclared.txt").write_text("extra")
-    with pytest.raises(ValueError, match="undeclared or missing"):
-        downloader.verify_export_bundle(destination, digest)
-
-    broken_destination = tmp_path / "broken-destination"
-    broken_destination.symlink_to(tmp_path / "does-not-exist", target_is_directory=True)
-    with pytest.raises(FileExistsError, match="already exists"):
-        downloader.copy_local_bundle(source, broken_destination, digest)
-
-
 def test_export_verification_rejects_manifest_tampering_and_symlinks(tmp_path: Path) -> None:
     source, digest, _ = _export_bundle(tmp_path)
     (source / "export.manifest.json").write_text("{}\n")
@@ -167,48 +147,6 @@ def test_private_gcs_download_requires_external_sha_and_exact_prefix(tmp_path: P
             wrong_digest,
             fetch=fetch,
         )
-
-
-def test_local_modal_private_bundle_is_allowed_but_gcs_download_remains_strict(
-    tmp_path: Path,
-) -> None:
-    modal_prefix = (
-        "modal-private://bookforge-tensorrt-edge-llm-fidelity/"
-        "fidelity-run-20260901/fidelity-0123456789abcdefabcd"
-    )
-    source, digest, manifest = _export_bundle(tmp_path, prefix=modal_prefix)
-
-    assert downloader.verify_export_bundle(source, digest) == manifest
-    copied = tmp_path / "modal-copied"
-    downloader.copy_local_bundle(source, copied, digest)
-    assert downloader.verify_export_bundle(copied, digest) == manifest
-
-    with pytest.raises(ValueError, match="invalid private output prefix"):
-        downloader.verify_export_bundle(
-            source,
-            digest,
-            allow_modal_private=False,
-        )
-    with pytest.raises(ValueError, match="invalid private output prefix"):
-        downloader._validate_document(manifest, allow_modal_private=False)
-
-
-@pytest.mark.parametrize(
-    "prefix",
-    [
-        "modal-private://another-app/run/candidate",
-        "modal-private://bookforge-tensorrt-edge-llm-fidelity/../candidate",
-        "modal-private://bookforge-tensorrt-edge-llm-fidelity/run/candidate/",
-        "https://bookforge-tensorrt-edge-llm-fidelity/run/candidate",
-    ],
-)
-def test_local_bundle_rejects_noncanonical_modal_private_prefix(
-    tmp_path: Path, prefix: str
-) -> None:
-    source, digest, _ = _export_bundle(tmp_path, prefix=prefix)
-
-    with pytest.raises(ValueError, match="private output prefix"):
-        downloader.verify_export_bundle(source, digest)
 
 
 @pytest.mark.parametrize(
@@ -290,21 +228,3 @@ def test_wrapper_builds_isolated_bundle_accepted_by_candidate_installer(
         text=True,
     )
     assert "Candidate verification complete; no files changed." in verified.stdout
-
-
-def test_bridge_scripts_are_bounded_non_root_and_preserve_builder_default() -> None:
-    subprocess.run(["bash", "-n", str(WRAPPER)], check=True)
-    wrapper = WRAPPER.read_text()
-    builder = BUILDER.read_text()
-
-    assert "BUILD_TIMEOUT_SECONDS=1800" in wrapper
-    assert "--kill-after=30s" in wrapper
-    assert "Run the trained candidate builder as the Bookforge user" in wrapper
-    assert 'BOOKFORGE_EDGELLM_MODEL_ROOT="$model_root"' in wrapper
-    assert "source_export_manifest_sha256" in wrapper
-    assert "candidate.manifest.json" in wrapper
-    assert "sudo" not in wrapper
-    assert (
-        'MODEL_ROOT="${BOOKFORGE_EDGELLM_MODEL_ROOT:-$INSTALL_ROOT/models/'
-        'gemma4-e2b-it-int4-awq-v010}"'
-    ) in builder

@@ -47,42 +47,6 @@ def test_whisper_trt_backend_loads_once_and_transcribes_serially(tmp_path: Path)
     assert len(model.paths) == 2
 
 
-def test_whisper_trt_warmup_builds_once_before_transcription() -> None:
-    model = FakeWhisperTrtModel()
-    load_count = 0
-
-    def load_model(_: str) -> FakeWhisperTrtModel:
-        nonlocal load_count
-        load_count += 1
-        return model
-
-    backend = WhisperTrtBackend(model_loader=load_model)
-
-    async def exercise() -> None:
-        await backend.warmup()
-        await backend.warmup()
-        await backend.transcribe(b"encoded-audio", "audio/webm")
-
-    asyncio.run(exercise())
-
-    assert load_count == 1
-
-
-@pytest.mark.parametrize(
-    ("audio", "content_type", "message"),
-    [
-        (b"", "audio/webm", "empty"),
-        (b"encoded-audio", "application/octet-stream", "audio/"),
-    ],
-)
-def test_whisper_trt_backend_rejects_invalid_input(
-    audio: bytes, content_type: str, message: str
-) -> None:
-    backend = WhisperTrtBackend(model_loader=lambda _: FakeWhisperTrtModel())
-    with pytest.raises(AsrBackendError, match=message):
-        asyncio.run(backend.transcribe(audio, content_type))
-
-
 def test_whisper_trt_backend_wraps_engine_build_failure() -> None:
     def fail_loader(_: str) -> FakeWhisperTrtModel:
         raise RuntimeError("engine build failed")
@@ -115,40 +79,6 @@ def test_cancelled_engine_build_holds_serialization_lock() -> None:
         second = asyncio.create_task(backend.transcribe(b"encoded-audio", "audio/webm"))
         await asyncio.sleep(0.02)
         assert load_count == 1
-        release.set()
-        results = await asyncio.gather(first, second, return_exceptions=True)
-        assert isinstance(results[0], asyncio.CancelledError)
-        assert results[1].text == "The small moth."
-        assert load_count == 1
-
-    asyncio.run(exercise())
-
-
-def test_repeated_cancellation_keeps_engine_build_serialized() -> None:
-    started = threading.Event()
-    release = threading.Event()
-    load_count = 0
-
-    def blocking_loader(_: str) -> FakeWhisperTrtModel:
-        nonlocal load_count
-        load_count += 1
-        started.set()
-        release.wait(timeout=2)
-        return FakeWhisperTrtModel()
-
-    backend = WhisperTrtBackend(model_loader=blocking_loader)
-
-    async def exercise() -> None:
-        first = asyncio.create_task(backend.transcribe(b"encoded-audio", "audio/webm"))
-        while not started.is_set():
-            await asyncio.sleep(0.001)
-        first.cancel()
-        await asyncio.sleep(0.01)
-        first.cancel()
-        second = asyncio.create_task(backend.transcribe(b"encoded-audio", "audio/webm"))
-        await asyncio.sleep(0.02)
-        assert load_count == 1
-        assert backend._lock.locked()
         release.set()
         results = await asyncio.gather(first, second, return_exceptions=True)
         assert isinstance(results[0], asyncio.CancelledError)

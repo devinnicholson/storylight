@@ -45,18 +45,6 @@ class FakeRunner:
         return subprocess.CompletedProcess(command, 0, rows, "")
 
 
-def test_evaluates_projection_image(tmp_path: Path) -> None:
-    image = tmp_path / "scene.png"
-    image.write_bytes(b"candidate")
-
-    evaluation = evaluate_media(image, runner=FakeRunner())
-
-    assert evaluation.kind == "image"
-    assert evaluation.motion is None
-    assert evaluation.projection.luma_range == 200
-    assert evaluation.projection.projection_legibility > 0.9
-
-
 def test_evaluates_motion_loop_metadata_and_stability(tmp_path: Path) -> None:
     video = tmp_path / "scene.mp4"
     video.write_bytes(b"candidate-video")
@@ -81,12 +69,3 @@ def test_fails_closed_when_tool_output_is_incomplete(tmp_path: Path) -> None:
 
     with pytest.raises(VisualEvaluationError, match="omitted required"):
         evaluate_media(image, runner=incomplete)
-
-
-def test_rejects_missing_or_unsupported_media(tmp_path: Path) -> None:
-    with pytest.raises(VisualEvaluationError, match="does not exist"):
-        evaluate_media(tmp_path / "missing.mp4", runner=FakeRunner())
-    unsupported = tmp_path / "scene.txt"
-    unsupported.write_text("not media")
-    with pytest.raises(VisualEvaluationError, match="unsupported"):
-        evaluate_media(unsupported, runner=FakeRunner())

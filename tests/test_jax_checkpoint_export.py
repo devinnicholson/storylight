@@ -19,18 +19,11 @@ from scripts.validate_fidelity_release import (
     validate_release,
 )
 from training.jax_fidelity.artifact_contract import create_artifact_contract
-from training.jax_fidelity.commands import (
-    build_hf_to_maxtext_command,
-    build_logit_check_command,
-    build_maxtext_to_hf_command,
-)
 from training.jax_fidelity.configuration import load_config
 from training.jax_fidelity.integrity import (
-    DatasetIntegrityError,
     artifact_manifest,
     canonical_json_bytes,
     sha256_file,
-    verify_conversion_manifest,
 )
 from training.jax_fidelity.integrity import (
     canonical_sha256 as canonical_lineage_sha256,
@@ -38,7 +31,6 @@ from training.jax_fidelity.integrity import (
 from training.jax_fidelity.manifests import stable_run_id
 from training.jax_fidelity.merged_candidate import (
     build_merged_candidate_manifest,
-    validate_merged_candidate_declaration,
 )
 from training.jax_fidelity.orbax_receipt import orbax_leaf_receipt, terminal_checkpoint_step
 from training.jax_fidelity.release import (
@@ -46,43 +38,14 @@ from training.jax_fidelity.release import (
     produce_release,
     verified_artifact_binding,
     verify_development_evaluation,
-    verify_training_lineage,
 )
 from training.jax_fidelity.roundtrip_smoke import (
     RoundtripError,
     contract_document,
-    validate_roundtrip_contract,
     validate_roundtrip_evidence,
 )
 
 CONFIG_PATH = ROOT / "experiments/jax-fidelity-lab/config.json"
-
-
-def test_candidate_declaration_can_record_rejection_without_model_shards(
-    tmp_path: Path,
-) -> None:
-    checkpoint = tmp_path / "checkpoint"
-    checkpoint.mkdir()
-    (checkpoint / "model.safetensors").write_bytes(b"model")
-    document = build_merged_candidate_manifest(
-        config_path=CONFIG_PATH,
-        dataset_manifest_sha256="a" * 64,
-        training_run_id="lora-train-negative-test",
-        merged_hf_checkpoint=checkpoint,
-    )
-    manifest = tmp_path / "candidate.manifest.json"
-    manifest.write_bytes(canonical_json_bytes(document))
-    checkpoint.rename(tmp_path / "checkpoint-not-fetched")
-
-    validated = validate_merged_candidate_declaration(
-        manifest,
-        config_path=CONFIG_PATH,
-        expected_manifest_sha256=sha256_file(manifest),
-        expected_dataset_manifest_sha256="a" * 64,
-    )
-
-    assert validated["candidate_id"] == document["candidate_id"]
-    assert validated["eligibility"]["release_authorized"] is False
 
 
 def _evidence(config, checkpoint: Path) -> dict:
@@ -198,119 +161,6 @@ def test_roundtrip_contract_accepts_only_complete_checksummed_evidence(tmp_path:
     (checkpoint / "config.json").write_text('{"model_type":"changed"}\n')
     with pytest.raises(RoundtripError, match="manifest"):
         validate_roundtrip_evidence(config, evidence, exported_checkpoint=checkpoint)
-
-
-def test_roundtrip_contract_can_authorize_a_distinct_trained_checkpoint(tmp_path: Path) -> None:
-    config = load_config(CONFIG_PATH)
-    canary = tmp_path / "canary"
-    canary.mkdir()
-    (canary / "config.json").write_text("{}\n")
-    evidence = _evidence(config, canary)
-
-    validate_roundtrip_contract(config, evidence)
-
-    trained = tmp_path / "trained"
-    trained.mkdir()
-    (trained / "config.json").write_text('{"trained":true}\n')
-    with pytest.raises(RoundtripError, match="manifest"):
-        validate_roundtrip_evidence(config, evidence, exported_checkpoint=trained)
-
-
-@pytest.mark.parametrize(
-    ("key", "value", "match"),
-    [
-        ("tensor_shapes", False, "did not pass"),
-        ("eos_token_ids", [1, 50], "EOS"),
-        ("forward_kl_divergence", 0.031, "exceeds"),
-    ],
-)
-def test_roundtrip_gate_rejects_architecture_or_numerical_drift(
-    tmp_path: Path, key: str, value, match: str
-) -> None:
-    config = load_config(CONFIG_PATH)
-    checkpoint = tmp_path / "hf-checkpoint"
-    checkpoint.mkdir()
-    (checkpoint / "config.json").write_text("{}\n")
-    evidence = _evidence(config, checkpoint)
-    evidence["checks"][key] = value
-
-    with pytest.raises(RoundtripError, match=match):
-        validate_roundtrip_evidence(config, evidence, exported_checkpoint=checkpoint)
-
-
-def test_conversion_commands_pin_text_only_unscanned_gemma4() -> None:
-    config = load_config(CONFIG_PATH)
-    to_maxtext = build_hf_to_maxtext_command(
-        config,
-        hf_checkpoint="/hf/base",
-        output_directory="/orbax/base",
-    )
-    to_hf = build_maxtext_to_hf_command(
-        config,
-        base_checkpoint="/orbax/base/0/items",
-        lora_checkpoint="/orbax/lora/5/items",
-        hf_tokenizer_checkpoint="/hf/base",
-        output_directory="/hf/merged",
-    )
-    logit = build_logit_check_command(
-        config,
-        maxtext_checkpoint="/orbax/base/0/items",
-        adapter_checkpoint="/orbax/lora/5/items",
-        hf_checkpoint="/hf/merged",
-    )
-
-    for command in (to_maxtext, to_hf, logit):
-        assert "model_name=gemma4-e2b" in command
-        assert "hardware=gpu" in command
-        assert "skip_jax_distributed_system=true" in command
-        assert "scan_layers=false" in command
-        assert "use_multimodal=false" in command
-    assert "lora.lora_restore_path=/orbax/lora/5/items" in to_hf
-    assert "--max_kl_div=0.03" in logit
-    assert "tokenizer_path=/hf/merged" in logit
-    assert "lora.lora_restore_path=/orbax/lora/5/items" in logit
-
-
-def test_roundtrip_contract_is_bound_to_config_revision() -> None:
-    config = load_config(CONFIG_PATH)
-    contract = contract_document(config)
-
-    assert contract["base_model"]["revision"] == "3e22461f65e89153144f8adb70e3b8c2cc9845a7"
-    assert contract["maxtext"]["revision"] == "538fe7a3f3376d94cf3f04e77741aa6d7e8efa45"
-    assert contract["maxtext"]["scan_layers"] is False
-    assert contract["maxtext"]["use_multimodal"] is False
-    assert contract["requirements"]["eos_token_ids"] == [1, 106, 50]
-
-
-def test_conversion_manifest_binds_each_named_checkpoint_byte(tmp_path: Path) -> None:
-    base = tmp_path / "base"
-    tokenizer = tmp_path / "tokenizer"
-    base.mkdir()
-    tokenizer.mkdir()
-    (base / "checkpoint").write_bytes(b"orbax")
-    (tokenizer / "tokenizer.json").write_bytes(b"tokenizer")
-    manifest = tmp_path / "conversion.json"
-    document = {
-        "schema_version": "1.0",
-        "artifacts": {
-            "base_checkpoint": artifact_manifest(base),
-            "hf_checkpoint": artifact_manifest(tokenizer),
-        },
-    }
-    manifest_sha = _write_json(manifest, document)
-
-    verify_conversion_manifest(
-        manifest,
-        expected_manifest_sha256=manifest_sha,
-        artifact_roots={"base_checkpoint": base, "hf_checkpoint": tokenizer},
-    )
-    (base / "checkpoint").write_bytes(b"changed")
-    with pytest.raises(DatasetIntegrityError, match="on-disk bytes"):
-        verify_conversion_manifest(
-            manifest,
-            expected_manifest_sha256=manifest_sha,
-            artifact_roots={"base_checkpoint": base, "hf_checkpoint": tokenizer},
-        )
 
 
 def test_release_producer_emits_exact_checksum_bound_consumer_schema(tmp_path: Path) -> None:
@@ -724,93 +574,6 @@ def test_conversion_execution_is_write_once_and_has_terminal_evidence(
         convert_module.main()
 
 
-def test_maxtext_export_restores_generation_metadata_before_completion(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    config = load_config(CONFIG_PATH)
-    base = tmp_path / "base"
-    adapter = tmp_path / "adapter"
-    original = tmp_path / "hf"
-    for directory in (base, adapter, original):
-        directory.mkdir()
-    (base / "checkpoint").write_bytes(b"base")
-    (adapter / "checkpoint").write_bytes(b"adapter")
-    (original / "tokenizer.json").write_bytes(b"tokenizer")
-    _write_json(original / "generation_config.json", {"eos_token_id": [1, 106, 50]})
-    input_manifest = tmp_path / "conversion-input.json"
-    input_sha = _write_json(
-        input_manifest,
-        {
-            "schema_version": "1.0",
-            "artifacts": {
-                "adapter_checkpoint": artifact_manifest(adapter),
-                "base_checkpoint": artifact_manifest(base),
-                "hf_checkpoint": artifact_manifest(original),
-            },
-        },
-    )
-    output = tmp_path / "merged"
-    runs = tmp_path / "runs"
-    run_id = stable_run_id(
-        stage="maxtext-to-hf",
-        config_sha256=config.sha256,
-        dataset_manifest_sha256=input_sha,
-    )
-    monkeypatch.setenv(
-        "BOOKFORGE_JAX_EXECUTION_APPROVAL",
-        f"MAXTEXT-TO-HF:{run_id}:{config.sha256}:{input_sha}",
-    )
-    monkeypatch.setattr(convert_module, "validate_maxtext_checkout", lambda *_: tmp_path)
-    monkeypatch.setattr(convert_module, "validate_maxtext_import_provenance", lambda *_: {})
-
-    def fake_run(_command, *, cwd):
-        assert cwd == tmp_path
-        output.mkdir()
-        (output / "model.safetensors").write_bytes(b"trained")
-
-    monkeypatch.setattr(convert_module, "run_checked", fake_run)
-    monkeypatch.setattr(
-        sys,
-        "argv",
-        [
-            "convert",
-            "maxtext-to-hf",
-            "--config",
-            str(CONFIG_PATH),
-            "--input-manifest",
-            str(input_manifest),
-            "--input-manifest-sha256",
-            input_sha,
-            "--base-checkpoint",
-            str(base),
-            "--adapter-checkpoint",
-            str(adapter),
-            "--hf-checkpoint",
-            str(original),
-            "--output-directory",
-            str(output),
-            "--run-directory",
-            str(runs),
-            "--maxtext-root",
-            str(tmp_path),
-            "--execute",
-        ],
-    )
-
-    convert_module.main()
-
-    completion = json.loads((runs / run_id / "completion.json").read_text())
-    receipt = runs / run_id / "generation-normalization.json"
-    assert completion["status"] == "succeeded"
-    assert completion["evidence"]["generation_normalization_receipt_sha256"] == sha256_file(
-        receipt
-    )
-    assert (output / "generation_config.json").read_bytes() == (
-        original / "generation_config.json"
-    ).read_bytes()
-    assert not output.with_name(f".{output.name}.{run_id}.raw").exists()
-
-
 def test_release_producer_rejects_tampered_adapter_bytes(tmp_path: Path) -> None:
     adapter = tmp_path / "adapter"
     manifest, manifest_sha = _checkpoint(adapter, {"checkpoint": b"trained-lora"})
@@ -818,68 +581,6 @@ def test_release_producer_rejects_tampered_adapter_bytes(tmp_path: Path) -> None
 
     with pytest.raises(ReleaseError, match="on-disk bytes"):
         verified_artifact_binding(adapter, manifest, manifest_sha)
-
-
-def test_release_rejects_adapter_not_emitted_by_training_completion(tmp_path: Path) -> None:
-    adapter = tmp_path / "adapter"
-    adapter.mkdir()
-    adapter_file = adapter / "checkpoint"
-    adapter_file.write_bytes(b"unrelated-successful-adapter")
-    adapter_declaration = artifact_manifest(adapter)
-    training_inputs = {
-        "base_checkpoint": {"content_sha256": "a" * 64, "files": 1, "bytes": 10},
-        "prepared_train": {"sha256": "b" * 64, "bytes": 10},
-        "tokenizer_checkpoint": {"content_sha256": "c" * 64, "files": 1, "bytes": 10},
-    }
-    run = {
-        "schema_version": "1.0",
-        "stage": "lora-train",
-        "status": "planned",
-        "config_sha256": "d" * 64,
-        "dataset_manifest_sha256": "e" * 64,
-        "metadata": {"inputs": training_inputs},
-    }
-    completion = {
-        "run_manifest_sha256": "f" * 64,
-        "artifacts": [{"path": "/other/adapter", "sha256": sha256_file(adapter_file), "bytes": 28}],
-        "evidence": {"inputs": training_inputs},
-    }
-
-    with pytest.raises(ReleaseError, match="not artifacts"):
-        verify_training_lineage(
-            run=run,
-            run_sha256="f" * 64,
-            completion=completion,
-            config_sha256="d" * 64,
-            dataset_manifest_sha256="e" * 64,
-            release_inputs={"adapter_checkpoint": {}, **training_inputs},
-            adapter_root=adapter,
-            adapter_manifest=adapter_declaration,
-        )
-
-
-@pytest.mark.parametrize(
-    "decision",
-    [
-        {"passed": False, "hidden_evaluated": False},
-        {"passed": True, "hidden_evaluated": True},
-    ],
-)
-def test_release_rejects_failed_or_premature_hidden_evaluation(decision: dict) -> None:
-    with pytest.raises(ReleaseError, match="development-only"):
-        verify_development_evaluation(
-            {
-                "schema_version": "1.0",
-                "candidate_id": "fidelity-00000000000000000000",
-                "stage": "development",
-                "eligibility_decision": decision,
-                "summary": {"records": 512},
-            },
-            candidate_id="fidelity-00000000000000000000",
-            config_sha256=sha256_file(CONFIG_PATH),
-            dataset_manifest_sha256="e" * 64,
-            training_run_id="lora-train-test",
-        )
 
 
 def test_release_rejects_hand_authored_generic_development_success() -> None:

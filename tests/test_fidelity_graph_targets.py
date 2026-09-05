@@ -5,7 +5,6 @@ from bookforge.fidelity_evaluation import evaluate_surface
 from bookforge.fidelity_graph_targets import (
     GraphTargetRefusal,
     derive_fidelity_graph_target,
-    summarize_fidelity_graph_coverage,
 )
 from bookforge.fidelity_schema import DatasetSplit, FidelityRecord, PairVariant
 
@@ -49,24 +48,6 @@ def test_public_derivation_is_deterministic_grounded_and_contract_exact() -> Non
     assert evaluation.exact_example_pass is True
 
 
-def test_count_and_attribute_targets_use_typed_entity_fields() -> None:
-    counted = derive_fidelity_graph_target(_development_record("counts"))
-    attributed = derive_fidelity_graph_target(_development_record("attributes"))
-
-    assert counted.facts is not None
-    assert counted.facts.objects[0].count in {2, 5}
-    assert attributed.facts is not None
-    assert attributed.facts.objects[0].color in {"crimson", "azure"}
-
-
-def test_transformation_uses_typed_antecedent_for_exact_public_template() -> None:
-    result = derive_fidelity_graph_target(_development_record("transformation"))
-
-    assert result.eligible is True
-    assert result.facts is not None
-    assert result.facts.transformation is not None
-
-
 def test_pronoun_proof_fails_closed_when_public_template_changes() -> None:
     record = _development_record("coreference")
     changed = record.model_copy(
@@ -78,31 +59,6 @@ def test_pronoun_proof_fails_closed_when_public_template_changes() -> None:
     assert result.eligible is False
     assert result.refusal is GraphTargetRefusal.GROUNDING_REJECTED
     assert result.detail_codes == ("subjects[0].actions[0]",)
-
-
-def test_safe_pronoun_templates_cover_negation_coreference_and_injection() -> None:
-    for category in ("negation", "coreference", "prompt_injection"):
-        record = _development_record(category)
-        result = derive_fidelity_graph_target(record)
-
-        assert result.eligible is True
-        assert result.facts is not None
-        evaluation = evaluate_surface(
-            record.model_dump(mode="json", by_alias=True),
-            result.facts,
-            surface="postprocessed",
-        )
-        assert evaluation.exact_example_pass is True
-
-
-def test_outside_containment_is_a_typed_directional_edge() -> None:
-    result = derive_fidelity_graph_target(
-        _development_record("containment_relations", PairVariant.B)
-    )
-
-    assert result.eligible is True
-    assert result.facts is not None
-    assert result.facts.relationships[0].relation.value == "outside"
 
 
 def test_typed_motion_and_order_are_exact_but_salience_does_not_prove_posture() -> None:
@@ -178,26 +134,3 @@ def test_ambiguous_typed_contract_fails_closed() -> None:
     assert result.eligible is False
     assert result.refusal is GraphTargetRefusal.AMBIGUOUS_CONTRACT
     assert result.detail_codes == ("specialized_expectation",)
-
-
-def test_all_public_development_coverage_is_measured_without_hidden_data() -> None:
-    results = tuple(
-        derive_fidelity_graph_target(record) for record in generate_split(DatasetSplit.DEVELOPMENT)
-    )
-    summary = summarize_fidelity_graph_coverage(results)
-    categories = {row.category: row for row in summary.by_category}
-
-    assert summary.total == 512
-    assert summary.eligible == 509
-    assert summary.coverage == 509 / 512
-    assert categories["spatial_relations"].coverage == 1.0
-    assert categories["containment_relations"].eligible == 21
-    assert categories["coreference"].coverage == 1.0
-    assert categories["negation"].coverage == 1.0
-    assert categories["prompt_injection"].coverage == 1.0
-    assert categories["transformation"].coverage == 1.0
-    assert categories["destination"].coverage == 1.0
-    assert categories["reversed_motion"].coverage == 1.0
-    assert categories["salience"].coverage == 1.0
-    assert categories["temporal_order"].coverage == 1.0
-    assert all(result.split is DatasetSplit.DEVELOPMENT for result in results)

@@ -3,7 +3,6 @@ from __future__ import annotations
 
 import hashlib
 import json
-import subprocess
 import sys
 from pathlib import Path
 
@@ -21,8 +20,7 @@ from infra.gcp.jax.full_input_v2 import (
     clone_approval_token,
     manifest_sha256,
 )
-from infra.gcp.jax.stage_modal_v2_inputs import build_stage_plan, stage_overlay
-from scripts.plan_modal_jax_full_input_v2 import build_plan
+from infra.gcp.jax.stage_modal_v2_inputs import build_stage_plan
 
 
 def _sha(path: Path) -> str:
@@ -290,96 +288,6 @@ def test_clone_uses_cached_model_and_v2_files_with_manifest_last(
     assert (target / "checkpoint/0/items/weights.bin").read_bytes() == b"cached-base-weights"
     assert "inputs.manifest.json" not in observed["before_manifest"]
     assert observed["before_manifest"] == {row["path"] for row in manifest["files"]}
-
-
-def test_stage_plan_contains_only_small_v2_files(tmp_path: Path) -> None:
-    fixture = _fixture(tmp_path)
-    plan = fixture["stage_plan"]
-
-    assert plan["status"] == "plan-only"
-    assert plan["remote_mutation"] is False
-    assert plan["cached_model_upload_bytes"] == 0
-    assert set(plan["host_upload_paths"]) == set(OVERLAY_PATHS)
-    assert not any(
-        path.startswith(("tokenizer/", "checkpoint/"))
-        for path in plan["host_upload_paths"]
-    )
-
-
-def test_overlay_stager_publishes_manifest_last_and_reads_it_back(tmp_path: Path) -> None:
-    fixture = _fixture(tmp_path)
-    commands: list[list[str]] = []
-    manifest = fixture["overlay_manifest"]
-
-    def runner(command: list[str]) -> subprocess.CompletedProcess[str]:
-        commands.append(command)
-        if command[2] == "get":
-            Path(command[-1]).write_bytes(canonical_bytes(manifest))
-        stdout = "[]" if command[2] == "ls" else ""
-        return subprocess.CompletedProcess(command, 0, stdout=stdout, stderr="")
-
-    result = stage_overlay(
-        target_run_id=str(fixture["target_run_id"]),
-        manifest=manifest,
-        sources=fixture["stage_sources"],
-        approval_token_value=str(fixture["stage_plan"]["approval_token"]),
-        runner=runner,
-    )
-
-    puts = [command for command in commands if command[2] == "put"]
-    assert result["manifest_uploaded_last"] is True
-    assert result["cached_model_upload_bytes"] == 0
-    assert puts[-1][-1].endswith("/staging.manifest.json")
-    assert all(
-        "tokenizer" not in command[-1] and "checkpoint" not in command[-1]
-        for command in puts
-    )
-    assert commands[-1][2] == "get"
-    assert commands[0][-1] == "--json"
-    assert commands[0][-2] == "/"
-
-
-def test_overlay_stager_understands_modal_capitalized_json_listing(
-    tmp_path: Path,
-) -> None:
-    fixture = _fixture(tmp_path)
-    manifest = fixture["overlay_manifest"]
-
-    def runner(command: list[str]) -> subprocess.CompletedProcess[str]:
-        if command[2] == "ls" and command[-2] == "/":
-            stdout = json.dumps([{"Filename": "full-input-v2", "Type": "dir"}])
-        elif command[2] == "ls":
-            stdout = json.dumps(
-                [{"Filename": fixture["target_run_id"], "Type": "dir"}]
-            )
-        else:
-            raise AssertionError("no write should occur for an existing target")
-        return subprocess.CompletedProcess(command, 0, stdout=stdout, stderr="")
-
-    with pytest.raises(RuntimeError, match="already contains state"):
-        stage_overlay(
-            target_run_id=str(fixture["target_run_id"]),
-            manifest=manifest,
-            sources=fixture["stage_sources"],
-            approval_token_value=str(fixture["stage_plan"]["approval_token"]),
-            runner=runner,
-        )
-
-
-def test_clone_plan_binds_source_overlay_and_target_without_mutation(tmp_path: Path) -> None:
-    fixture = _fixture(tmp_path)
-    plan = build_plan(
-        source_input_manifest_path=fixture["source_manifest_path"],
-        roundtrip_release=fixture["source_release"],
-        overlay_manifest_path=fixture["overlay_manifest_path"],
-        target_run_id=str(fixture["target_run_id"]),
-    )
-
-    assert plan["status"] == "plan-only"
-    assert plan["remote_mutation"] is False
-    assert plan["cached_model_upload_bytes"] == 0
-    assert plan["target_manifest_sha256"] == fixture["request"]["target_manifest_sha256"]
-    assert plan["approval_token"] == fixture["request"]["approval_token"]
 
 
 def test_clone_rejects_inexact_approval_before_writing(

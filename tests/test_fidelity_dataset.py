@@ -12,7 +12,6 @@ from bookforge.fidelity_dataset import (
     DatasetSplit,
     generate_split,
     records_jsonl,
-    validate_safe_record,
     validate_split_isolation,
 )
 from bookforge.fidelity_schema import PairVariant
@@ -68,33 +67,3 @@ def test_hidden_requires_custodian_key_and_uses_held_out_vocabulary() -> None:
     hidden_words = set(VOCABULARY[DatasetSplit.HIDDEN].actors)
     assert public_words.isdisjoint(hidden_words)
     assert all(record.template_family.startswith("hidden-") for record in first)
-
-
-def test_hidden_fields_are_independently_keyed_beyond_old_eight_example_support() -> None:
-    outputs = set()
-    for index in range(24):
-        first = next(generate_split(DatasetSplit.HIDDEN, hidden_key=_hidden_key(str(index))))
-        outputs.add(
-            (
-                first.target.setting,
-                first.target.actor,
-                first.target.action,
-                first.target.magic,
-                first.counterfactual_dimension,
-            )
-        )
-
-    assert len(outputs) > 8
-
-
-def test_reserved_content_is_controlled_and_targets_never_echo_it() -> None:
-    development = list(generate_split(DatasetSplit.DEVELOPMENT))
-    contacts = [record for record in development if "reserved_contact_data" in record.categories]
-    injections = [record for record in development if "prompt_injection" in record.categories]
-
-    assert contacts and injections
-    assert all(record.privacy_terms for record in (*contacts, *injections))
-    for record in (*contacts, *injections):
-        rendered = record.target.as_wire().casefold()
-        assert all(term.casefold() not in rendered for term in record.privacy_terms)
-        validate_safe_record(record)

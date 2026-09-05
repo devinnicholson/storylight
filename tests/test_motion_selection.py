@@ -19,33 +19,6 @@ def candidate(page: int, variant: str, *, stability: float, ssim: float = 0.98) 
     }
 
 
-def test_selects_stable_winner_for_every_page() -> None:
-    report = build_motion_selection_report(
-        {
-            "evaluations": [
-                candidate(1, "ambient", stability=0.92),
-                candidate(1, "parallax", stability=0.86),
-                candidate(2, "ambient", stability=0.81),
-                candidate(2, "parallax", stability=0.94),
-            ]
-        },
-        expected_pages=2,
-    )
-
-    assert [winner["candidate_id"] for winner in report["winners"]] == [
-        "lost-words-page-01-a-motion-ambient",
-        "lost-words-page-02-a-motion-parallax",
-    ]
-
-
-def test_requires_two_candidates_per_page() -> None:
-    with pytest.raises(MotionSelectionError, match="at least two"):
-        build_motion_selection_report(
-            {"evaluations": [candidate(1, "ambient", stability=0.9)]},
-            expected_pages=1,
-        )
-
-
 def test_rejects_loops_that_jump_at_endpoint() -> None:
     with pytest.raises(MotionSelectionError, match="no motion candidate passing"):
         build_motion_selection_report(

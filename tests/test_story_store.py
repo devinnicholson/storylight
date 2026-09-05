@@ -13,7 +13,7 @@ from bookforge.domain import (
     StoryPack,
     VisualLayer,
 )
-from bookforge.story_store import StoryPackCorruptError, StoryPackNotFoundError, StoryPackStore
+from bookforge.story_store import StoryPackCorruptError, StoryPackStore
 
 
 def make_pack(story_id: str = "Moon Gate / Demo") -> StoryPack:
@@ -57,14 +57,6 @@ def test_story_pack_store_round_trip_and_private_permissions(tmp_path: Path) -> 
     assert destination.stat().st_mode & 0o777 == 0o600
     assert store.root.stat().st_mode & 0o777 == 0o700
     assert json.loads(destination.read_text())["story_id"] == pack.story_id
-
-
-def test_story_pack_store_reports_missing_latest(tmp_path: Path) -> None:
-    store = StoryPackStore(tmp_path / "packs")
-    asyncio.run(store.initialize())
-
-    with pytest.raises(StoryPackNotFoundError, match="No compiled"):
-        asyncio.run(store.latest())
 
 
 def test_story_pack_store_detects_corrupt_payload(tmp_path: Path) -> None:

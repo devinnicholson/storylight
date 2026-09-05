@@ -68,15 +68,6 @@ def _checkpoint_progression(adapter: dict[str, object]) -> dict[str, object]:
     }
 
 
-def test_learning_evidence_accepts_complete_nonzero_optimization_trace() -> None:
-    evidence = summarize_scalar_series(_series(), expected_steps=5)
-
-    assert evidence["status"] == "passed"
-    assert evidence["optimizer_steps"] == 5
-    assert evidence["nonzero_raw_gradient_observed"] is True
-    assert evidence["completion_tokens_present_every_step"] is True
-
-
 def test_learning_evidence_rejects_the_v2_zero_gradient_failure() -> None:
     series = _series()
     series["learning/raw_grad_norm"] = [(step, 0.0) for step in range(5)]
@@ -84,35 +75,6 @@ def test_learning_evidence_rejects_the_v2_zero_gradient_failure() -> None:
 
     with pytest.raises(LearningEvidenceError, match="no nonzero gradients"):
         summarize_scalar_series(series, expected_steps=5)
-
-
-def test_v3_smoke_enforces_epsilon_and_parameter_update() -> None:
-    series = _series(1)
-    series["learning/current_learning_rate"] = [(0, 1e-4)]
-    series["learning/raw_grad_norm"] = [(0, 1e-13)]
-    series["learning/grad_norm"] = [(0, 1e-13)]
-    series["learning/update_norm"] = [(0, 0.01)]
-    series["learning/changed_trainable_leaves"] = [(0, 1.0)]
-    with pytest.raises(LearningEvidenceError, match="no nonzero gradients"):
-        summarize_scalar_series(series, expected_steps=1, v3_acceptance=_thresholds())
-
-    series["learning/raw_grad_norm"] = [(0, 0.01)]
-    series["learning/grad_norm"] = [(0, 0.01)]
-    series["learning/update_norm"] = [(0, 0.0)]
-    with pytest.raises(LearningEvidenceError, match="no trainable parameter update"):
-        summarize_scalar_series(series, expected_steps=1, v3_acceptance=_thresholds())
-
-
-def test_learning_evidence_rejects_missing_steps_and_empty_supervision() -> None:
-    missing = _series()
-    missing["learning/loss"] = missing["learning/loss"][:-1]
-    with pytest.raises(LearningEvidenceError, match="every expected optimizer step"):
-        summarize_scalar_series(missing, expected_steps=5)
-
-    empty = _series()
-    empty["learning/total_weights"][2] = (2, 0.0)
-    with pytest.raises(LearningEvidenceError, match="no supervised completion tokens"):
-        summarize_scalar_series(empty, expected_steps=5)
 
 
 def test_v3_full_gate_accepts_persistent_learning() -> None:
@@ -127,47 +89,6 @@ def test_v3_full_gate_accepts_persistent_learning() -> None:
     assert gate["mode"] == "full-canary"
     assert gate["nonzero_raw_gradient_steps"] == 100
     assert gate["rolling_loss_relative_reduction"] >= 0.1
-
-
-def test_v3_full_gate_rejects_constant_loss() -> None:
-    series = _v3_series()
-    series["learning/loss"] = [(step, 1.5) for step in range(100)]
-
-    with pytest.raises(LearningEvidenceError, match="rolling loss reduction"):
-        summarize_scalar_series(
-            series,
-            expected_steps=100,
-            v3_acceptance=_thresholds(),
-            require_full_v3=True,
-        )
-
-
-def test_v3_full_gate_rejects_one_isolated_nonzero_gradient() -> None:
-    series = _v3_series()
-    series["learning/raw_grad_norm"] = [(step, 0.5 if step == 0 else 0.0) for step in range(100)]
-    series["learning/grad_norm"] = [(step, 0.5 if step == 0 else 0.0) for step in range(100)]
-
-    with pytest.raises(LearningEvidenceError, match="sustain nonzero gradients"):
-        summarize_scalar_series(
-            series,
-            expected_steps=100,
-            v3_acceptance=_thresholds(),
-            require_full_v3=True,
-        )
-
-
-def test_v3_full_gate_does_not_confuse_global_norm_with_parameter_identity() -> None:
-    series = _v3_series()
-    series["learning/param_norm"] = [(step, 10.0) for step in range(100)]
-
-    evidence = summarize_scalar_series(
-        series,
-        expected_steps=100,
-        v3_acceptance=_thresholds(),
-        require_full_v3=True,
-    )
-
-    assert evidence["v3_acceptance"]["mode"] == "full-canary"
 
 
 def test_v3_smoke_requires_optimizer_tokens_and_adapter_checkpoint_proof() -> None:

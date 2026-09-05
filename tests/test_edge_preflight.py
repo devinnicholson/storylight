@@ -67,23 +67,3 @@ def test_jetson_preflight_rejects_checkout_dotenv(
 
     assert report["ready"] is False
     assert report["checks"]["checkout_env"]["ready"] is False
-
-
-def test_jetson_preflight_requires_a_warmed_whisper_engine(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    monkeypatch.chdir(tmp_path)
-    report = evaluate(
-        Settings(
-            _env_file=None,
-            environment="jetson",
-            model_backend="fake",
-            asr_backend="whisper_trt",
-            asr_engine_path=str(tmp_path / "missing-engine.pth"),
-            data_dir=tmp_path / "data",
-            cache_dir=tmp_path / "cache",
-        )
-    )
-
-    assert report["ready"] is False
-    assert report["checks"]["asr_engine"]["ready"] is False

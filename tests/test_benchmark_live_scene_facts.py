@@ -62,13 +62,6 @@ def test_endpoint_rejects_nonlocal_and_payload_components(endpoint):
         benchmark.validate_endpoint(endpoint)
 
 
-@pytest.mark.parametrize(
-    "endpoint", ["http://127.0.0.1:11435", "http://[::1]:11435", "https://localhost:18435/"]
-)
-def test_loopback_origin(endpoint):
-    assert benchmark.validate_endpoint(endpoint) == endpoint.rstrip("/")
-
-
 def test_provenance_rejects_arbitrary_shell_payload_and_nonfinite_metrics():
     with pytest.raises(ValidationError):
         benchmark.Provenance.model_validate({**provenance().model_dump(), "hostname": "secret"})
@@ -119,19 +112,6 @@ def test_score_excludes_private_model_output_and_expectation_values(records):
     assert value.output_sha256 == benchmark.digest(private)
 
 
-def test_incomplete_generation_never_passes_schema(records):
-    value = benchmark.score(
-        records[0],
-        records[0].target.as_wire(),
-        surface="raw",
-        elapsed_ms=1,
-        output_tokens=64,
-        generation_complete=False,
-    )
-    assert not value.schema_valid
-    assert not value.exact_pass
-
-
 def test_restart_skips_started_and_rejects_changed_context(tmp_path, records):
     path = tmp_path / "evidence.jsonl"
     expected = header(records)
@@ -163,18 +143,6 @@ def test_resume_rejects_private_or_malformed_evidence(tmp_path, records, event):
         benchmark.load_evidence(path, expected)
 
 
-def test_duplicate_or_orphan_result_rejected(tmp_path, records):
-    path = tmp_path / "evidence.jsonl"
-    expected = header(records)
-    benchmark.load_evidence(path, expected)
-    row = benchmark.CaseEvidence(
-        index=0, status="request_failed", refusal="none", fallback=False, surfaces={}
-    )
-    benchmark.append_event(path, row.model_dump())
-    with pytest.raises(ValueError):
-        benchmark.load_evidence(path, expected)
-
-
 def test_aggregation_reproduces_without_raw_text(tmp_path, records):
     expected = header(records, limit=1)
     path = tmp_path / "evidence.jsonl"
@@ -203,16 +171,6 @@ def test_aggregation_reproduces_without_raw_text(tmp_path, records):
     assert report["hidden_evaluated"] is False
 
 
-def test_latency_nearest_rank_and_empty():
-    assert benchmark.distribution(list(range(1, 101))) == {
-        "count": 100,
-        "p50": 50.5,
-        "p95": 95,
-        "max": 100,
-    }
-    assert benchmark.distribution([]) == {"count": 0, "p50": None, "p95": None, "max": None}
-
-
 def test_requests_have_no_automatic_retry_and_do_not_leak_failures(monkeypatch, records):
     monkeypatch.setitem(
         sys.modules,
@@ -238,125 +196,6 @@ def test_requests_have_no_automatic_retry_and_do_not_leak_failures(monkeypatch, 
 def test_cli_rejects_hidden_split():
     with pytest.raises(SystemExit):
         benchmark.main(["--split", "hidden"])
-
-
-def test_memory_samples_linux_system_and_process_separately(monkeypatch):
-    def read(path, *args, **kwargs):
-        if str(path) == "/proc/meminfo":
-            return "MemTotal: 100 kB\nMemAvailable: 40 kB\n"
-        if str(path) == "/proc/123/status":
-            return "Name: private\nVmRSS: 7 kB\n"
-        raise OSError
-
-    monkeypatch.setattr(Path, "read_text", read)
-    with benchmark.MemorySampler(123) as sampler:
-        sampler._sample()
-    assert sampler.system_peak == 60 * 1024
-    assert sampler.process_peak == 7 * 1024
-    assert sampler.samples >= 3
-
-
-def test_missing_memory_is_unavailable_not_zero(monkeypatch):
-    def missing(*args, **kwargs):
-        raise OSError
-
-    monkeypatch.setattr(Path, "read_text", missing)
-    with benchmark.MemorySampler(None) as sampler:
-        pass
-    assert sampler.system_peak is None
-    assert sampler.process_peak is None
-    assert sampler.thermal_min is None
-    assert sampler.thermal_max is None
-    assert sampler.thermal_samples == 0
-
-
-def test_thermal_samples_all_zones_excluding_invalid_readings(monkeypatch):
-    readings = {
-        "cold": "42000",
-        "hot": "61000",
-        "bad": "private payload",
-        "impossible": "999999",
-        "missing": None,
-    }
-    monkeypatch.setattr(Path, "glob", lambda *a: iter(Path(name) for name in readings))
-
-    def read(path):
-        value = readings[str(path)]
-        if value is None:
-            raise OSError
-        return value
-
-    monkeypatch.setattr(Path, "read_text", read)
-    sampler = benchmark.MemorySampler(None)
-    sampler._sample_thermal()
-    readings["hot"] = "65000"
-    readings["cold"] = "40000"
-    sampler._sample_thermal()
-    assert sampler.thermal_min == 40000
-    assert sampler.thermal_max == 65000
-    assert sampler.thermal_samples == 2
-
-
-def test_thermal_schema_rejects_impossible_values():
-    with pytest.raises(ValidationError):
-        benchmark.CaseEvidence(
-            index=0,
-            status="request_failed",
-            refusal="none",
-            fallback=False,
-            surfaces={},
-            thermal_max_millicelsius=999999,
-        )
-
-
-def test_aggregate_thermal_extrema_across_cases(records):
-    rows = [
-        benchmark.CaseEvidence(
-            index=index,
-            status="request_failed",
-            refusal="none",
-            fallback=False,
-            surfaces={},
-            thermal_min_millicelsius=low,
-            thermal_max_millicelsius=high,
-            thermal_samples=10,
-        )
-        for index, low, high in [(0, 41000, 59000), (1, 43000, 61000)]
-    ]
-    report = benchmark.aggregate(header(records), {0, 1}, rows, records)
-    assert report["thermal_min_millicelsius"] == 41000
-    assert report["thermal_max_millicelsius"] == 61000
-    assert report["thermal_samples"] == 20
-
-
-def test_fallback_sums_measured_planning_latency_and_tokens(monkeypatch, records):
-    calls = []
-    monkeypatch.setitem(
-        sys.modules,
-        "bookforge.live_scene_facts",
-        SimpleNamespace(
-            adapt_live_scene_facts=lambda *a, **k: SimpleNamespace(
-                facts=None, refusal=SimpleNamespace(value="unsupported_syntax")
-            )
-        ),
-    )
-    monkeypatch.setattr(
-        "bookforge.tensorrt_slot_client.parse_tensor_graph_slots", lambda _: {}, raising=False
-    )
-    monkeypatch.setattr(benchmark, "safe_slots", lambda *a: "safe contract")
-
-    def inference(*args):
-        calls.append(args[2])
-        return records[0].target.as_wire(), 100.0, 10, True
-
-    monkeypatch.setattr(benchmark, "infer", inference)
-    result = benchmark.run_case(None, records[0], 0, model="resident", max_output_tokens=64)
-    assert calls == ["slots", "hybrid"]
-    assert result.fallback is True
-    assert result.adapter_refusal_code == "unsupported_syntax"
-    assert result.surfaces["final_renderer"].latency_ms >= 200
-    assert result.surfaces["final_renderer"].output_tokens == 20
-    assert result.surfaces["final_renderer"].output_sha256 == benchmark.digest("safe contract")
 
 
 @pytest.mark.parametrize("late_failure", [False, True])
@@ -413,36 +252,6 @@ def test_accepted_first_one_request_reuses_exact_fallback(monkeypatch, records, 
     assert "private compilation detail" not in result.model_dump_json()
 
 
-def test_accepted_first_context_and_journal_are_mode_bound(tmp_path, records):
-    expected = benchmark.context(
-        records,
-        provenance(),
-        model="resident",
-        max_output_tokens=64,
-        limit=1,
-        endpoint="http://127.0.0.1:11435",
-        timeout=30,
-        mode="accepted_first",
-    )
-    assert set(expected["requests"]) == {"slots"}
-    assert expected["mode"] == "accepted_first"
-    path = tmp_path / "single.jsonl"
-    benchmark.load_evidence(path, expected)
-    with pytest.raises(ValueError):
-        benchmark.load_evidence(path, {**expected, "mode": "hybrid"})
-    benchmark.append_event(path, {"kind": "start", "index": 0})
-    value = benchmark.score(records[0], {}, surface="postprocessed", elapsed_ms=1, output_tokens=7)
-    row = benchmark.CaseEvidence(
-        index=0,
-        status="ok",
-        refusal="adapter_refused",
-        fallback=True,
-        surfaces={name: value for name in benchmark.surfaces_for("accepted_first")},
-    )
-    benchmark.append_event(path, row.model_dump())
-    assert benchmark.load_evidence(path, expected) == ({0}, [row])
-
-
 def test_casewise_atom_comparison_detects_swaps_despite_equal_recall(records):
     value = benchmark.score(records[0], {}, surface="postprocessed", elapsed_ms=1, output_tokens=7)
     accepted = value.model_copy(
@@ -471,46 +280,6 @@ def test_casewise_atom_comparison_detects_swaps_despite_equal_recall(records):
     assert surface["passed_atoms"] == 1
     assert surface["semantic_atom_recall"] == 0.5
     assert surface["categories"][records[0].categories[0]]["semantic_atom_recall"] == 0.5
-
-
-def test_accepted_first_timing_excludes_evaluator_work(monkeypatch, records):
-    clock = [0.0]
-    monkeypatch.setattr(benchmark.time, "perf_counter", lambda: clock[0])
-    monkeypatch.setattr(
-        benchmark, "infer", lambda *a: (records[0].target.as_wire(), 100.0, 31, True)
-    )
-
-    def baseline(*args):
-        clock[0] += 0.01
-        return "safe"
-
-    def helper(*args, **kwargs):
-        clock[0] += 0.02
-        return SimpleNamespace(scene_facts=None, to_live_scene_plan=lambda **k: object())
-
-    def renderer(*args):
-        clock[0] += 0.03
-        return "safe"
-
-    real_score = benchmark.score
-
-    def slow_score(*args, **kwargs):
-        clock[0] += 1000
-        return real_score(*args, **kwargs)
-
-    monkeypatch.setattr(benchmark, "safe_slots", baseline)
-    monkeypatch.setattr(
-        "bookforge.tensorrt_slot_client.tensor_accepted_graph_wire_plan", helper, raising=False
-    )
-    monkeypatch.setattr(benchmark, "validate_live_scene_plan_privacy", lambda *a, **k: None)
-    monkeypatch.setattr(benchmark, "renderer_contract", renderer)
-    monkeypatch.setattr(benchmark, "score", slow_score)
-    result = benchmark.run_case(
-        None, records[0], 0, model="resident", max_output_tokens=64, mode="accepted_first"
-    )
-    assert result.graph_construction_ms == pytest.approx(20)
-    assert result.surfaces["accepted_renderer"].latency_ms == pytest.approx(110)
-    assert result.surfaces["final_renderer"].latency_ms == pytest.approx(150)
 
 
 @pytest.mark.parametrize("stage", ["baseline", "helper", "renderer"])

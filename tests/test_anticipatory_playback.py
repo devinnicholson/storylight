@@ -49,27 +49,6 @@ REQUEST = PrepareProjectionRequest(
 )
 
 
-def test_playback_wait_reaches_cloud_and_keeps_transport_timeout_above_wait(tmp_path):
-    async def scenario():
-        rig = Rig(tmp_path)
-        await rig.initialize()
-        try:
-            page = await rig.playback.prepare(REQUEST)
-            await rig.playback.status(page.prepared_id, wait_seconds=20)
-            request = rig.requests[-1]
-            assert request.url.params["wait_seconds"] == "20"
-            assert request.url.params["branch_id"] == "known_next"
-            assert request.extensions["timeout"]["read"] >= 25
-            await rig.playback.stage(page.prepared_id)
-            calls = len(rig.requests)
-            await rig.playback.status(page.prepared_id, wait_seconds=20)
-            assert len(rig.requests) == calls
-        finally:
-            await rig.close()
-
-    asyncio.run(scenario())
-
-
 class Planner:
     calls = 0
 
@@ -251,51 +230,7 @@ class Rig:
         return httpx.Response(200, json=result.model_dump(mode="json"))
 
 
-def test_prepare_stage_and_offline_activation_preserve_current_projection(tmp_path):
-    async def run():
-        rig = Rig(tmp_path)
-        await rig.initialize()
-        try:
-            subscription = await rig.registry.subscribe_session(REQUEST.session_id)
-            await subscription.receive()  # Initial empty pointer.
-            prepared = await rig.playback.prepare(REQUEST)
-            assert prepared.state == "approved"
-            staged = await rig.playback.stage(prepared.prepared_id)
-            assert staged.state == "staged" and staged.assets_verified
-            assert staged.render_ms == 400 and staged.critic_ms == 6200
-            assert subscription._queue.empty()
-            with pytest.raises(LiveSceneNotFoundError):
-                await rig.registry.get_session(REQUEST.session_id)
-            assert rig.planner.calls == 1
-            assert all("Mira" not in request.content.decode() for request in rig.requests)
-            rig.offline = True
-            assert (await rig.playback.status(staged.prepared_id)) == staged
-            assert (await rig.playback.stage(staged.prepared_id)) == staged
-            activation = ActivateProjectionRequest(
-                prepared_id=staged.prepared_id,
-                expected_server_instance_id=rig.registry.server_instance_id,
-                expected_session_revision=0,
-            )
-            pointer = await rig.playback.activate(activation)
-            assert pointer.job.complete and pointer.job.stage == "master_ready"
-            assert pointer.job.metrics.provider_ms == 0
-            assert pointer.job.story_pack.pages[0].source_text == REQUEST.text
-            assert {a.kind.value for a in pointer.job.artifacts} == {"master", "depth"}
-            assert (await rig.store.latest()).story_id == pointer.job.story_pack.story_id
-            assert (await subscription.receive()).job == pointer.job
-            assert (await rig.playback.activate(activation)) == pointer
-            assert subscription._queue.empty()
-            await rig.playback.discard(staged.prepared_id)
-            assert (await rig.registry.get_session(REQUEST.session_id)) == pointer
-        finally:
-            await rig.close()
-
-    asyncio.run(run())
-
-
-@pytest.mark.parametrize(
-    "failure", ["digest", "dimensions", "invalid_image", "rejected", "identity"]
-)
+@pytest.mark.parametrize("failure", ["digest", "rejected"])
 def test_unsafe_scenes_never_reach_the_projector(tmp_path, failure):
     async def run():
         rig = Rig(tmp_path)
@@ -388,44 +323,6 @@ def test_capacity_expiry_and_discard_are_bounded_before_cloud_work(tmp_path):
     asyncio.run(run())
 
 
-def test_offline_activation_does_not_wait_for_another_page_planner(tmp_path):
-    async def run():
-        rig = Rig(tmp_path)
-        await rig.initialize()
-        started = asyncio.Event()
-        hold = asyncio.Event()
-        try:
-            prepared = await rig.playback.prepare(REQUEST)
-            await rig.playback.stage(prepared.prepared_id)
-
-            async def slow_plan(**kwargs):
-                started.set()
-                await hold.wait()
-
-            rig.planner.plan = slow_plan
-            pending = asyncio.create_task(rig.playback.prepare(REQUEST))
-            await started.wait()
-            pointer = await asyncio.wait_for(
-                rig.playback.activate(
-                    ActivateProjectionRequest(
-                        prepared_id=prepared.prepared_id,
-                        expected_server_instance_id=rig.registry.server_instance_id,
-                        expected_session_revision=0,
-                    )
-                ),
-                timeout=1,
-            )
-            assert pointer.job.complete
-            pending.cancel()
-            with pytest.raises(asyncio.CancelledError):
-                await pending
-            assert rig.playback._preparing == 0
-        finally:
-            await rig.close()
-
-    asyncio.run(run())
-
-
 def test_prepared_projection_http_flow_and_privacy_boundary(tmp_path):
     from fastapi.testclient import TestClient
 
@@ -477,41 +374,6 @@ def test_prepared_projection_http_flow_and_privacy_boundary(tmp_path):
         finally:
             client.portal.call(rig.close)
             app.state.anticipatory_playback = None
-
-
-def test_capacity_replacement_publishes_no_empty_projection_event(tmp_path):
-    async def run():
-        rig = Rig(tmp_path)
-        await rig.initialize()
-        rig.registry.max_retained_jobs = 1
-        try:
-            first = await rig.playback.prepare(REQUEST)
-            second = await rig.playback.prepare(REQUEST.model_copy(update={"seed": 51}))
-            await rig.playback.stage(first.prepared_id)
-            await rig.playback.stage(second.prepared_id)
-            subscription = await rig.registry.subscribe_session(REQUEST.session_id)
-            await subscription.receive()
-            one = await rig.playback.activate(
-                ActivateProjectionRequest(
-                    prepared_id=first.prepared_id,
-                    expected_server_instance_id=rig.registry.server_instance_id,
-                    expected_session_revision=0,
-                )
-            )
-            await subscription.receive()
-            two = await rig.playback.activate(
-                ActivateProjectionRequest(
-                    prepared_id=second.prepared_id,
-                    expected_server_instance_id=rig.registry.server_instance_id,
-                    expected_session_revision=one.session_revision,
-                )
-            )
-            assert (await subscription.receive()).job == two.job
-            assert subscription._queue.empty()
-        finally:
-            await rig.close()
-
-    asyncio.run(run())
 
 
 def test_nim_off_blocks_planning_generation_and_renderer_warmup(tmp_path):

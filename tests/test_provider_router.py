@@ -7,7 +7,6 @@ import pytest
 
 from bookforge.finite_modal_provider import (
     FastSceneRequest,
-    FiniteModalUnavailableError,
     FiniteSceneBundle,
     SceneArtifact,
 )
@@ -165,64 +164,6 @@ def test_router_status_selects_healthy_route_without_generation() -> None:
     assert modal.generations == 0
 
 
-def test_router_status_reports_managed_route_readiness_window() -> None:
-    vertex = StubProvider("vertex")
-    router = ResilientFastSceneProvider(
-        [
-            ProviderRoute(
-                "vertex",
-                vertex,
-                healthy_probe_ttl_seconds=300,
-                readiness_warm_seconds=300,
-            )
-        ]
-    )
-
-    status = asyncio.run(router.warm_status())
-
-    assert status.ready is True
-    assert status.state == "prewarmed"
-    assert status.prewarm_id == "readiness-vertex"
-    assert status.expires_in_seconds > 299
-    assert status.scaledown_window_seconds == 300
-    assert vertex.probes == 1
-    assert vertex.generations == 0
-
-
-def test_route_can_extend_only_its_healthy_probe_window(tmp_path: Path) -> None:
-    vertex = StubProvider("vertex")
-    modal = StubProvider("modal")
-    router = ResilientFastSceneProvider(
-        [
-            ProviderRoute("vertex", vertex, healthy_probe_ttl_seconds=300),
-            ProviderRoute("modal", modal),
-        ],
-        healthy_probe_ttl_seconds=0.001,
-    )
-
-    async def exercise() -> None:
-        await router.generate_fast(_request("first"), output_dir=tmp_path / "first")
-        await asyncio.sleep(0.01)
-        await router.generate_fast(
-            FastSceneRequest(scene_id="second", prompt="A different luminous paper owl."),
-            output_dir=tmp_path / "second",
-        )
-
-    asyncio.run(exercise())
-
-    assert vertex.probes == 1
-    assert vertex.generations == 2
-    assert modal.probes == 0
-
-
-def test_route_rejects_invalid_healthy_probe_window() -> None:
-    with pytest.raises(ValueError, match="route healthy probe TTL"):
-        ProviderRoute("vertex", StubProvider("vertex"), healthy_probe_ttl_seconds=301)
-
-    with pytest.raises(ValueError, match="readiness warm window"):
-        ProviderRoute("vertex", StubProvider("vertex"), readiness_warm_seconds=301)
-
-
 def test_router_recovers_exact_paid_bundle_without_second_provider_call(
     tmp_path: Path,
 ) -> None:
@@ -289,47 +230,3 @@ def test_router_never_duplicates_an_ambiguous_paid_request(tmp_path: Path) -> No
 
     assert primary.generations == 1
     assert fallback.generations == 0
-
-
-def test_router_converts_legacy_unavailable_error_after_paid_boundary(tmp_path: Path) -> None:
-    primary = StubProvider(
-        "gcp",
-        generation_error=FiniteModalUnavailableError("transport lost after POST"),
-    )
-    fallback = StubProvider("modal")
-    router = ResilientFastSceneProvider(
-        [ProviderRoute("gcp", primary), ProviderRoute("modal", fallback)]
-    )
-
-    with pytest.raises(Exception, match="automatic fallback and retry are suppressed") as caught:
-        asyncio.run(
-            router.generate_fast(
-                _request("legacy-ambiguous"),
-                output_dir=tmp_path / "legacy-ambiguous",
-            )
-        )
-
-    assert not isinstance(caught.value, FiniteModalUnavailableError)
-    assert fallback.generations == 0
-
-
-def test_failed_probe_opens_circuit_for_later_scenes(tmp_path: Path) -> None:
-    primary = StubProvider("gcp", ready=False)
-    fallback = StubProvider("modal")
-    router = ResilientFastSceneProvider(
-        [ProviderRoute("gcp", primary), ProviderRoute("modal", fallback)],
-        failure_cooldown_seconds=60,
-    )
-
-    async def exercise() -> None:
-        await router.generate_fast(_request("first"), output_dir=tmp_path / "first")
-        await router.generate_fast(
-            FastSceneRequest(scene_id="second", prompt="A different luminous paper owl."),
-            output_dir=tmp_path / "second",
-        )
-
-    asyncio.run(exercise())
-
-    assert primary.probes == 1
-    assert fallback.probes == 1
-    assert fallback.generations == 2

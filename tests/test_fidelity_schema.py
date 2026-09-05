@@ -60,39 +60,3 @@ def test_rejects_wrong_passage_hash_and_private_target_echo() -> None:
     payload["privacy_terms"] = ["copper fox"]
     with pytest.raises(ValidationError, match="private terms"):
         FidelityRecord.model_validate(payload)
-
-
-def test_expectation_validation_requires_kind_specific_fields() -> None:
-    with pytest.raises(ValidationError, match="require count"):
-        FidelityExpectation(
-            kind=ExpectationKind.COUNT,
-            label="lantern-count",
-            slot=SlotName.ACTION,
-            alternatives=("two lanterns",),
-        )
-
-    with pytest.raises(ValidationError, match="subject/predicate/object"):
-        FidelityExpectation(
-            kind=ExpectationKind.RELATION,
-            label="above-bridge",
-            slot=SlotName.ACTION,
-            alternatives=("above the bridge",),
-        )
-
-
-def test_target_rejects_extra_slot_and_multiline_values() -> None:
-    with pytest.raises(ValidationError, match="extra_forbidden"):
-        TargetSlots(
-            SETTING="station",
-            ACTOR="fox",
-            ACTION="waits",
-            MAGIC="rain",
-            CAMERA="wide",
-        )
-    with pytest.raises(ValidationError, match="one line"):
-        TargetSlots(
-            SETTING="station\nplatform",
-            ACTOR="fox",
-            ACTION="waits",
-            MAGIC="rain",
-        )

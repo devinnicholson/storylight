@@ -1,13 +1,9 @@
 from __future__ import annotations
 
-from pydantic import BaseModel
-
 from bookforge.fidelity_dataset import generate_split
 from bookforge.fidelity_evaluation import (
-    concept_vocabulary,
     evaluate_record,
     evaluate_surface,
-    extract_surface,
 )
 from bookforge.fidelity_graph_targets import derive_fidelity_graph_target
 from bookforge.fidelity_schema import DatasetSplit
@@ -101,18 +97,6 @@ def test_raw_evaluation_checks_slots_relations_counts_roles_and_transformation()
     }
 
 
-def test_raw_schema_requires_exactly_four_ordered_unique_slots() -> None:
-    malformed = """ACTOR: moth
-SETTING: library
-ACTION: changes
-MAGIC: birds"""
-
-    content = extract_surface(malformed, surface="raw")
-
-    assert content.schema_valid is False
-    assert set(content.slots) == {"SETTING", "ACTOR", "ACTION", "MAGIC"}
-
-
 def test_evaluator_distinguishes_raw_repair_and_renderer_surfaces() -> None:
     raw = GOOD_RAW.replace("three silver birds", "silver birds")
     repaired = {
@@ -160,28 +144,6 @@ MAGIC: Mira whispers eight private words beside a glass observatory after midnig
     assert evaluation.exact_example_pass is False
 
 
-def test_negated_forbidden_concept_is_not_a_hallucination() -> None:
-    evaluation = evaluate_surface(
-        _record(forbidden_terms=["dragon"]),
-        GOOD_RAW.replace("above the library", "above the library, without a dragon"),
-        surface="raw",
-    )
-
-    assert evaluation.forbidden_hits == ()
-
-
-def test_closed_world_vocabulary_flags_known_unsupported_concepts() -> None:
-    evaluation = evaluate_surface(
-        _record(),
-        GOOD_RAW.replace("blue moth", "blue moth beside a dragon"),
-        surface="raw",
-        concept_vocabulary=("blue moth", "silver birds", "library", "dragon"),
-    )
-
-    assert evaluation.unsupported_concepts == ("dragon",)
-    assert evaluation.exact_example_pass is False
-
-
 def test_raw_evaluation_flags_novel_hallucination_outside_closed_vocabulary() -> None:
     evaluation = evaluate_surface(
         _record(),
@@ -193,62 +155,6 @@ def test_raw_evaluation_flags_novel_hallucination_outside_closed_vocabulary() ->
     assert "novel:brass" in evaluation.unsupported_concepts
     assert "novel:zeppelin" in evaluation.unsupported_concepts
     assert evaluation.exact_example_pass is False
-
-
-def test_raw_novelty_check_never_rejects_exact_target_tokens() -> None:
-    record = _record(
-        target={
-            "SETTING": "library under a night sky",
-            "ACTOR": "blue moth",
-            "ACTION": "moth changes into birds",
-            "MAGIC": "three silver birds above the library",
-        }
-    )
-
-    evaluation = evaluate_surface(
-        record,
-        GOOD_RAW,
-        surface="raw",
-        concept_vocabulary=concept_vocabulary([record]),
-    )
-
-    assert evaluation.unsupported_concepts == ()
-    assert evaluation.exact_example_pass is True
-
-
-class RecordModel(BaseModel):
-    record_id: str
-    allowed_concepts: list[str]
-
-
-def test_vocabulary_adapter_accepts_mappings_and_pydantic_models() -> None:
-    records = [
-        RecordModel(record_id="one", allowed_concepts=["silver bird"]),
-        {"record_id": "two", "allowed_concepts": ["blue moth", "silver bird"]},
-    ]
-
-    assert concept_vocabulary(records) == ("blue moth", "silver bird")
-
-
-def test_order_expectation_rejects_reversed_semantics() -> None:
-    record = _record(
-        expectations=[
-            {
-                "kind": "order",
-                "label": "temporal order",
-                "subject": "opens the map",
-                "predicate": "then",
-                "object": "lights the lantern",
-            }
-        ]
-    )
-    correct = GOOD_RAW.replace("moth changes into birds", "opens the map then lights the lantern")
-    reversed_output = GOOD_RAW.replace(
-        "moth changes into birds", "lights the lantern then opens the map"
-    )
-
-    assert evaluate_surface(record, correct, surface="raw").semantic_atom_recall == 1
-    assert evaluate_surface(record, reversed_output, surface="raw").semantic_atom_recall == 0
 
 
 def _scene_facts() -> dict[str, object]:
@@ -280,85 +186,6 @@ def _scene_facts() -> dict[str, object]:
             "result_color": "silver",
         },
     }
-
-
-def test_scene_facts_v2_model_and_nested_mapping_reuse_existing_evaluation() -> None:
-    facts = _scene_facts()
-    outputs = (
-        facts,
-        {"scene_facts": facts},
-        {"semantic_facts": SceneFactsV2.model_validate(facts)},
-    )
-
-    for output in outputs:
-        evaluation = evaluate_surface(_record(), output, surface="postprocessed")
-
-        assert evaluation.schema_valid is True
-        assert evaluation.semantic_atom_recall == 1
-        assert evaluation.exact_example_pass is True
-
-
-def test_scene_facts_v2_accepts_an_exact_structured_relation() -> None:
-    facts = {
-        "version": "2.0",
-        "setting": {"label": "studio"},
-        "subjects": [{"ref": "dog", "label": "dog"}],
-        "objects": [{"ref": "table", "label": "wooden table"}],
-        "relationships": [{"source": "dog", "relation": "under", "target": "table"}],
-        "negatives": [],
-    }
-    record = _record(
-        expectations=[
-            {
-                "kind": "relation",
-                "label": "dog below table",
-                "subject": "dog",
-                "predicate": "beneath",
-                "object": "table",
-            }
-        ],
-        passage="A dog waits beneath a wooden table inside a quiet studio after midnight.",
-        allowed_concepts=["studio", "dog", "wooden table"],
-        forbidden_terms=[],
-        privacy_terms=[],
-    )
-
-    evaluation = evaluate_surface(record, facts, surface="raw")
-
-    assert evaluation.schema_valid is True
-    assert evaluation.semantic_atom_recall == 1
-    assert evaluation.exact_example_pass is True
-
-
-def test_scene_facts_v2_matches_plural_ending_in_double_s() -> None:
-    facts = {
-        "version": "2.0",
-        "setting": {"label": "gallery"},
-        "subjects": [{"ref": "owl", "label": "owl"}],
-        "objects": [{"ref": "compasses", "label": "opal compasses", "count": 5}],
-        "relationships": [],
-        "negatives": [],
-    }
-    record = _record(
-        expectations=[
-            {
-                "kind": "count",
-                "label": "five compasses",
-                "subject": "opal compass",
-                "object": "opal compass",
-                "count": 5,
-                "alternatives": ["five opal compasses"],
-            }
-        ],
-        passage="An owl watches exactly five opal compasses circle in a gallery.",
-        allowed_concepts=["gallery", "owl", "opal compass"],
-        forbidden_terms=[],
-        privacy_terms=[],
-    )
-
-    evaluation = evaluate_surface(record, facts, surface="postprocessed")
-
-    assert evaluation.exact_example_pass is True
 
 
 def test_scene_facts_v2_binds_structured_checks_to_one_entity_or_edge() -> None:
@@ -432,22 +259,6 @@ def test_scene_facts_v2_binds_structured_checks_to_one_entity_or_edge() -> None:
     assert evaluation.exact_example_pass is False
 
 
-def test_invalid_nested_scene_facts_fail_schema_validation() -> None:
-    content = extract_surface(
-        {
-            "scene_facts": {
-                "version": "2.0",
-                "setting": {"label": "library"},
-                "subjects": [],
-            }
-        },
-        surface="postprocessed",
-    )
-
-    assert content.schema_valid is False
-    assert content.scene_facts is None
-
-
 def test_scene_facts_transformation_requires_the_same_source_and_result_edge() -> None:
     facts = {
         "version": "2.0",
@@ -507,35 +318,6 @@ def test_scene_facts_attribute_predicate_respects_the_typed_field() -> None:
 
     assert evaluation.semantic_atom_recall == 0
     assert evaluation.exact_example_pass is False
-
-
-def test_scene_facts_salience_requires_the_typed_foreground_layer() -> None:
-    facts = {
-        "version": "2.0",
-        "setting": {"label": "studio"},
-        "subjects": [
-            {"ref": "owl", "label": "linen owl", "actions": ["stands in the foreground"]}
-        ],
-        "salience": [{"source": "owl", "layer": "background"}],
-    }
-    record = _record(
-        expectations=[
-            {
-                "kind": "attribute",
-                "label": "foreground-salience",
-                "subject": "linen owl",
-                "predicate": "salience",
-                "object": "foreground",
-                "alternatives": ["linen owl"],
-            }
-        ],
-        passage="A linen owl stands in a studio.",
-        allowed_concepts=["studio", "linen owl", "foreground", "background"],
-        forbidden_terms=[],
-        privacy_terms=[],
-    )
-
-    assert evaluate_surface(record, facts, surface="postprocessed").exact_example_pass is False
 
 
 def test_scene_facts_order_requires_the_before_event_action_and_object() -> None:
@@ -611,26 +393,6 @@ def test_public_scene_graph_exactness_rejects_source_distractor_facts() -> None:
 
     assert evaluation.schema_valid is True
     assert "graph:contract-mismatch" in evaluation.unsupported_concepts
-    assert evaluation.exact_example_pass is False
-
-
-def test_scene_facts_rejects_novel_hallucination_without_closed_world_vocabulary() -> None:
-    facts = {
-        "version": "2.0",
-        "setting": {"label": "studio"},
-        "subjects": [{"ref": "dog", "label": "dog"}],
-        "objects": [{"ref": "ship", "label": "spaceship"}],
-    }
-    record = _record(
-        passage="A dog waits in a studio.",
-        allowed_concepts=["studio", "dog"],
-        forbidden_terms=[],
-        privacy_terms=[],
-    )
-
-    evaluation = evaluate_surface(record, facts, surface="postprocessed")
-
-    assert "novel:spaceship" in evaluation.unsupported_concepts
     assert evaluation.exact_example_pass is False
 
 

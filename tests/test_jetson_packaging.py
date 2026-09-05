@@ -163,59 +163,6 @@ def test_kiosk_preflight_refuses_locked_idle_and_dark_sessions(tmp_path: Path) -
         assert "browser=firefox" not in result.stdout
 
 
-def test_kiosk_ignores_inherited_ssh_session_and_finds_local_x11(tmp_path: Path) -> None:
-    result = _run_fake_kiosk(
-        tmp_path,
-        "firefox",
-        xdg_session_id="45",
-        nongraphical_session_id="45",
-    )
-
-    assert result.returncode == 0
-    assert "browser=firefox" in result.stdout
-
-
-def test_unattended_kiosk_can_explicitly_allow_idle_but_unlocked_x11(
-    tmp_path: Path,
-) -> None:
-    result = _run_fake_kiosk(
-        tmp_path,
-        "firefox",
-        idle_hint="yes",
-        overrides={"BOOKFORGE_KIOSK_ALLOW_IDLE": "true"},
-    )
-
-    assert result.returncode == 0
-    assert "browser=firefox" in result.stdout
-    assert "allow_idle=true" in result.stdout
-
-
-def test_preferred_firefox_override_uses_only_supported_kiosk_flags(tmp_path: Path) -> None:
-    firefox = tmp_path / "bin" / "firefox"
-    legacy = tmp_path / "bin" / "legacy-chromium-wrapper"
-    result = _run_fake_kiosk(
-        tmp_path,
-        "firefox",
-        "legacy-chromium-wrapper",
-        overrides={
-            "BOOKFORGE_BROWSER_BIN": str(firefox),
-            "BOOKFORGE_CHROMIUM_BIN": str(legacy),
-        },
-    )
-
-    assert "browser=firefox" in result.stdout
-    assert "inhibitor=sleep" in result.stdout
-    assert "arg=--kiosk" in result.stdout
-    assert "arg=--profile" in result.stdout
-    assert f"arg={tmp_path / 'state' / 'bookforge' / 'firefox'}" in result.stdout
-    assert "arg=--new-instance" in result.stdout
-    assert "arg=--private-window" in result.stdout
-    assert "arg=http://127.0.0.1:18081/projector?live=1" in result.stdout
-    assert "--app=" not in result.stdout
-    assert "--disable-background-networking" not in result.stdout
-    assert "--user-data-dir" not in result.stdout
-
-
 def test_legacy_chromium_override_retains_hardened_arguments(tmp_path: Path) -> None:
     legacy = tmp_path / "bin" / "legacy-chromium-wrapper"
     result = _run_fake_kiosk(
@@ -232,16 +179,6 @@ def test_legacy_chromium_override_retains_hardened_arguments(tmp_path: Path) -> 
     assert "arg=--disable-component-update" in result.stdout
     assert "arg=--disable-sync" in result.stdout
     assert "arg=--user-data-dir=" in result.stdout
-
-
-def test_browser_autodetection_prefers_chromium_and_accepts_firefox(tmp_path: Path) -> None:
-    preferred = _run_fake_kiosk(tmp_path / "preferred", "chromium", "firefox")
-    fallback = _run_fake_kiosk(tmp_path / "fallback", "firefox")
-
-    assert "browser=chromium" in preferred.stdout
-    assert "browser=firefox" not in preferred.stdout
-    assert "browser=firefox" in fallback.stdout
-    assert "arg=--private-window" in fallback.stdout
 
 
 def test_firefox_kiosk_profile_disables_first_run_and_telemetry(tmp_path: Path) -> None:

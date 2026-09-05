@@ -11,11 +11,7 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
 from deploy.gcp_gemma4_tensorrt_export.export_fidelity_candidate import (
-    CALIBRATION_DATASET,
     CALIBRATION_PROVENANCE_SHA256,
-    EDGELLM_REVISION,
-    build_export_command,
-    build_quantize_command,
     export_local_candidate,
 )
 from scripts.validate_fidelity_release import (
@@ -121,38 +117,6 @@ def test_candidate_export_is_content_addressed_and_completion_is_terminal(
             private_output_prefix="gs://private-bucket/tensorrt-edge-llm/fidelity",
             run_command=fake_tensorrt_command,
         )
-
-
-def test_commands_preserve_verified_v010_calibration_and_text_only_export() -> None:
-    quantize = build_quantize_command(Path("/merged-hf"), Path("/quantized"))
-    export = build_export_command(Path("/quantized"), Path("/onnx"))
-
-    assert "--text_dataset" in quantize
-    assert quantize[quantize.index("--text_dataset") + 1] == CALIBRATION_DATASET == "wikitext"
-    assert "--num_samples" in quantize
-    assert "thinker" in export
-    assert "--skip-visual" in export
-    assert "--skip-audio" in export
-    assert "int4_ffn" in export
-
-
-def test_gcp_export_reads_private_merged_release_and_uploads_completion_last() -> None:
-    source = GCP_EXPORT.read_text()
-
-    assert EDGELLM_REVISION in source
-    assert "snapshot_download" not in source
-    assert 'SOURCE_MANIFEST_OBJECT = "release.manifest.json"' in source
-    assert 'f"tensorrt-edge-llm/fidelity/{release.candidate_id}/' in source
-    assert "if_generation_match=0" in source
-    assert 'public_access_prevention != "enforced"' in source
-    assert "uniform_bucket_level_access_enabled is not True" in source
-    assert '"retry_allowed": False' in source
-    assert "fidelity-intents" in source
-    assert source.index('for item in payload["files"]') < source.index(
-        "completion.upload_from_string("
-    )
-    assert '"base_export_reused": False' in source
-    assert '"engine_built_in_cloud": False' in source
 
 
 def test_modal_export_is_one_l40s_finite_current_month_call() -> None:

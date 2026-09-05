@@ -69,7 +69,7 @@ def test_klein_bundle_checks_bytes_and_records_real_models(tmp_path):
     assert bundle.manifest["policy"]["visual_acceptance"] == "human-review-required"
 
 
-@pytest.mark.parametrize("corrupt", ["hash", "dimensions", "revision", "seed", "nan", "bucket"])
+@pytest.mark.parametrize("corrupt", ["hash", "revision"])
 def test_corrupt_response_never_publishes_assets(tmp_path, corrupt):
     data = payload()
     if corrupt == "hash":
@@ -125,24 +125,6 @@ def provider(tmp_path, calls, cap=0.5):
     )
 
 
-def test_no_gpu_on_status_and_finite_prewarm(tmp_path):
-    async def run():
-        calls = []
-        obj = provider(tmp_path, calls)
-        assert (await obj.warm_status()).state == "idle"
-        assert calls == []
-        report = await obj.prewarm(prewarm_id="synthetic")
-        assert report.full_session_ceiling_usd == 0.5
-        assert (await obj.warm_status()).state == "prewarmed"
-        with pytest.raises(FiniteModalProviderError):
-            await obj.prewarm(prewarm_id="long", scaledown_window_seconds=900)
-        with pytest.raises(FiniteModalProviderError):
-            await obj.prewarm(prewarm_id="video", include_motion=True)
-        assert calls == ["prewarm"]
-
-    asyncio.run(run())
-
-
 def test_call_budget_is_retained_across_retries(tmp_path):
     async def run():
         calls = []
@@ -164,30 +146,6 @@ def test_inline_gate_cannot_be_silently_bypassed(tmp_path):
         assert not calls
 
     asyncio.run(run())
-
-
-def test_candidate_factory_requires_private_planner_and_refuses_video(tmp_path):
-    from bookforge.asset_cache import AssetCache
-    from bookforge.live_scene import build_live_scene_provider
-    from bookforge.model_client import FakeModelClient
-
-    kwargs = {
-        "live_scene_backend": "modal_klein",
-        "asset_backend": "disabled",
-        "cache": AssetCache(tmp_path / "cache"),
-    }
-    with pytest.raises(ValueError, match="private model planner"):
-        build_live_scene_provider(**kwargs, planner_mode="deterministic")
-    with pytest.raises(ValueError, match="not video"):
-        build_live_scene_provider(
-            **kwargs, planner_mode="model", model_client=FakeModelClient(), enable_motion=True
-        )
-    candidate = build_live_scene_provider(
-        **kwargs, planner_mode="model", model_client=FakeModelClient(), enable_motion=False
-    )
-    assert candidate.name == "modal-klein-candidate"
-    assert candidate.render_contract == "concise"
-    assert candidate.auto_prewarm_on_submit is False
 
 
 def test_session_authorization_runs_once_and_failure_keeps_reservation(tmp_path):

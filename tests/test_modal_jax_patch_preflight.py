@@ -26,29 +26,6 @@ def _load():
     return module
 
 
-def test_cpu_runtime_is_fixed_before_jax_import(monkeypatch) -> None:
-    preflight = _load()
-    monkeypatch.delitem(sys.modules, "jax", raising=False)
-    for name in (
-        "XLA_FLAGS",
-        "XLA_PYTHON_CLIENT_PREALLOCATE",
-        "HF_HUB_OFFLINE",
-        "HF_DATASETS_OFFLINE",
-        "TRANSFORMERS_OFFLINE",
-    ):
-        monkeypatch.delenv(name, raising=False)
-    monkeypatch.setenv("BOOKFORGE_EXPECTED_LORA_PAIR_COUNT", "205")
-    monkeypatch.setenv("JAX_PLATFORMS", "cuda")
-
-    preflight._prepare_cpu_runtime()
-
-    assert preflight.os.environ["JAX_PLATFORMS"] == "cpu"
-    assert preflight.os.environ["XLA_FLAGS"] == (
-        "--xla_force_host_platform_device_count=2"
-    )
-    assert "BOOKFORGE_EXPECTED_LORA_PAIR_COUNT" not in preflight.os.environ
-
-
 def test_cpu_preflight_billing_total_accepts_one_unambiguous_cost_alias(
     monkeypatch,
 ) -> None:

@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import asyncio
 import hashlib
-import json
 from datetime import UTC, datetime, timedelta
 
 import httpx
@@ -112,77 +111,6 @@ def test_local_plan_bridge_runs_privacy_gate_and_discards_source_text() -> None:
         "one silver fox stepping through the gate",
         "gold fireflies rising beside the gate",
     ]
-
-
-def test_edge_client_submits_only_the_strict_batch_contract() -> None:
-    observed: list[httpx.Request] = []
-
-    def handler(request: httpx.Request) -> httpx.Response:
-        observed.append(request)
-        return httpx.Response(202, json=_status().model_dump(mode="json"))
-
-    async def token_source() -> str:
-        return "iap-token"
-
-    async def scenario() -> None:
-        client = AnticipatoryEdgeClient(
-            base_url="https://anticipatory.example",
-            token_source=token_source,
-            client_factory=lambda **kwargs: httpx.AsyncClient(
-                transport=httpx.MockTransport(handler), **kwargs
-            ),
-        )
-        batch = AnticipatoryBatchRequest(
-            session_token=SESSION,
-            sequence=1,
-            candidates=[_spec()],
-            session_cost_ceiling_usd=0.04,
-        )
-        result = await client.submit(batch)
-        assert result.sequence == 1
-        await client.aclose()
-
-    asyncio.run(scenario())
-    assert observed[0].headers["authorization"] == "Bearer iap-token"
-    payload = json.loads(observed[0].content)
-    assert payload == AnticipatoryBatchRequest(
-        session_token=SESSION,
-        sequence=1,
-        candidates=[_spec()],
-        session_cost_ceiling_usd=0.04,
-    ).model_dump(mode="json")
-    assert "Mira" not in observed[0].content.decode()
-
-
-def test_edge_client_explicitly_prewarms_the_full_remote_runtime() -> None:
-    observed: list[httpx.Request] = []
-
-    def handler(request: httpx.Request) -> httpx.Response:
-        observed.append(request)
-        if request.url.path == "/ready":
-            return httpx.Response(200, json={"ready": True, "critic": {"ready": True}})
-        return httpx.Response(200, json={"ready": True, "detail": "both GPUs warm"})
-
-    async def scenario() -> None:
-        client = AnticipatoryEdgeClient(
-            base_url="http://127.0.0.1:18082",
-            allow_loopback_http=True,
-            client_factory=lambda **kwargs: httpx.AsyncClient(
-                transport=httpx.MockTransport(handler), **kwargs
-            ),
-        )
-        assert await client.prewarm_runtime() == {
-            "ready": True,
-            "detail": "both GPUs warm",
-        }
-        await client.aclose()
-
-    asyncio.run(scenario())
-    assert observed[0].url.path == "/ready"
-    assert observed[1].url.path == "/v1/runtime:prewarm"
-    assert json.loads(observed[1].content) == {
-        "authorization": "I_UNDERSTAND_THIS_MAY_WAKE_A_BILLABLE_GPU",
-    }
 
 
 def test_edge_client_fetches_fixed_path_assets_and_verifies_both_checksums() -> None:

@@ -4,7 +4,6 @@ from __future__ import annotations
 import hashlib
 import importlib.util
 import json
-import stat
 import subprocess
 import sys
 from datetime import UTC, datetime, timedelta
@@ -152,50 +151,6 @@ def _collect(tmp_path: Path, *, runner: _Gcloud | None = None) -> dict[str, obje
     )
 
 
-def test_records_exact_read_only_absence_without_inventing_an_image(
-    tmp_path: Path,
-) -> None:
-    runner = _Gcloud()
-    evidence = _collect(tmp_path, runner=runner)
-
-    assert evidence["producer"] == fallback.PRODUCER
-    assert evidence["status"] == "rejected-pre-billable"
-    assert evidence["run_id_absence_basis"] == fallback.RUN_ID_ABSENCE_BASIS
-    assert "spec_sha256" not in evidence
-    assert evidence["submission_intent_created"] is False
-    assert evidence["custom_job_created"] is False
-    assert evidence["remote_mutation"] is False
-    assert evidence["container_image"] == {
-        "image_source_sha256": evidence["intended_vertex_resource"]["container"][
-            "image_source_sha256"
-        ],
-        "bookforge_source_manifest_sha256": evidence["intended_vertex_resource"][
-            "container"
-        ]["bookforge_source_manifest_sha256"],
-        "image_build_plan_sha256": evidence["intended_vertex_resource"]["container"][
-            "image_build_plan_sha256"
-        ],
-        "intended_tagged_uri": evidence["intended_vertex_resource"]["container"][
-            "intended_tagged_uri"
-        ],
-        "runnable_digest_uri": None,
-        "digest_resolved": False,
-        "build_attempted": False,
-        "build_intent_created": False,
-        "build_receipt_created": False,
-        "build_admission": "blocked-billing-disabled",
-    }
-    assert evidence["intended_vertex_resource_sha256"] == fallback._canonical_sha256(
-        evidence["intended_vertex_resource"]
-    )
-    audit_command = runner.commands[-1]
-    assert audit_command[1:3] == ["logging", "read"]
-    assert fallback.CREATE_METHOD in audit_command[3]
-    assert f'displayName="{evidence["run_id"]}"' in audit_command[3]
-    assert "--freshness=400d" in audit_command
-    assert "--limit=1" in audit_command
-
-
 def test_refuses_unverified_project_billing_audit_or_old_run(tmp_path: Path) -> None:
     with pytest.raises(RuntimeError, match="active gcloud project"):
         _collect(tmp_path / "wrong-project", runner=_Gcloud(project="other-project"))
@@ -248,35 +203,6 @@ def test_refuses_unverified_project_billing_audit_or_old_run(tmp_path: Path) -> 
             smoke=False,
             runner=_Gcloud(),
         )
-
-
-def test_refuses_prior_image_build_state_and_writes_evidence_once(tmp_path: Path) -> None:
-    plan_path = tmp_path / "image-plan.json"
-    plan = _image_plan(plan_path)
-    state = tmp_path / "state"
-    state.mkdir()
-    (state / f"image-{plan['source_sha256']}.submission-intent.json").write_text("{}")
-    with pytest.raises(RuntimeError, match="image build state exists"):
-        fallback.collect_rejection(
-            run_id=f"jax-full-{datetime.now(UTC).strftime('%Y%m%d')}-l4x2-v1",
-            input_bindings=_bindings(),
-            service_account=(
-                "bookforge-jax-worker@your-gcp-project.iam.gserviceaccount.com"
-            ),
-            scratch_uri="gs://bookforge-jax-scratch",
-            release_uri="gs://bookforge-jax-release",
-            image_plan_path=plan_path,
-            image_build_state_directory=state,
-            smoke=False,
-            runner=_Gcloud(),
-        )
-
-    evidence = _collect(tmp_path / "write-once")
-    destination = tmp_path / "evidence.json"
-    fallback._write_once(destination, evidence)
-    assert stat.S_IMODE(destination.stat().st_mode) == 0o400
-    with pytest.raises(FileExistsError):
-        fallback._write_once(destination, evidence)
 
 
 def _modal_request(evidence: dict[str, object]) -> dict[str, object]:

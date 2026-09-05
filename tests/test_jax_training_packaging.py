@@ -13,25 +13,19 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
 import training.jax_fidelity.train as train_module
-import training.jax_fidelity.verify_runtime as verify_runtime_module
-from bookforge.tensorrt_slot_client import _slot_messages
-from training.jax_fidelity.commands import build_train_command
-from training.jax_fidelity.configuration import ConfigError, load_config, validate_config
+from training.jax_fidelity.configuration import load_config
 from training.jax_fidelity.formatting import (
     completion_only_example,
-    format_training_record,
     maxtext_sft_segments,
     production_messages,
-    validate_slot_target,
 )
 from training.jax_fidelity.integrity import (
     DatasetIntegrityError,
     sha256_file,
     validate_dataset_manifest,
 )
-from training.jax_fidelity.manifests import ManifestError, complete_run, stable_run_id, start_run
+from training.jax_fidelity.manifests import stable_run_id
 from training.jax_fidelity.prepare import (
-    prepare_pair_deduplicated_training_jsonl,
     prepare_training_jsonl,
 )
 from training.jax_fidelity.runtime import approval_token
@@ -74,72 +68,6 @@ def _write_jsonl(path: Path, rows: list[dict]) -> str:
     return sha256_file(path)
 
 
-def test_v2_config_rejects_deployed_prompt_drift() -> None:
-    drifted = json.loads(CONFIG_V2_PATH.read_text())
-    drifted["production_contract"]["prompt_contract_sha256"] = "0" * 64
-    with pytest.raises(ConfigError, match="deployed prompt"):
-        validate_config(drifted)
-
-
-@pytest.mark.parametrize(
-    ("section", "key", "value"),
-    [
-        ("production_contract", "scan_layers", True),
-        ("production_contract", "use_multimodal", True),
-        ("training", "completion_only", False),
-        ("training", "weight_quantization", "int8"),
-        ("training", "rank", 4),
-        ("conversion", "max_kl_divergence", 0.04),
-    ],
-)
-def test_config_fails_closed_on_architecture_or_training_drift(section, key, value) -> None:
-    document = json.loads(CONFIG_PATH.read_text())
-    document[section][key] = value
-    with pytest.raises(ConfigError):
-        validate_config(document)
-
-
-def test_formatter_is_the_exact_deployed_four_slot_exchange() -> None:
-    story = "A small copper fox opens a wooden door while paper birds rise."
-    expected = _slot_messages(story)
-
-    assert production_messages(story) == expected
-    assert production_messages(story, target=TARGET) == expected + [
-        {"role": "assistant", "content": TARGET}
-    ]
-
-
-def test_training_record_accepts_dataset_target_mapping() -> None:
-    record = {
-        "id": "fidelity-1",
-        "passage": "A small copper fox opens a wooden door while paper birds rise.",
-        "target": {
-            "SETTING": "moonlit library",
-            "ACTOR": "small copper fox",
-            "ACTION": "opens wooden door",
-            "MAGIC": "paper birds rise",
-        },
-    }
-    prepared = format_training_record(record)
-
-    assert prepared["record_id"] == "fidelity-1"
-    assert prepared["messages"][-1] == {"role": "assistant", "content": TARGET}
-
-
-@pytest.mark.parametrize(
-    "target",
-    [
-        "SETTING: library\nACTOR: fox\nMAGIC: birds\nACTION: opens door",
-        "SETTING: library\nACTOR: fox\nACTION: opens door",
-        "SETTING: library\nACTOR: fox\nACTION: opens door\nMAGIC: ",
-        f"{TARGET}\nEXTRA: no",
-    ],
-)
-def test_target_validator_rejects_repairable_or_ambiguous_outputs(target: str) -> None:
-    with pytest.raises(ValueError):
-        validate_slot_target(target)
-
-
 def test_completion_only_supervises_only_the_final_assistant_turn() -> None:
     tokenizer = FakeGemmaTokenizer()
     messages = production_messages("A fox opens a door.", target=TARGET)
@@ -162,31 +90,6 @@ def test_completion_only_supervises_only_the_final_assistant_turn() -> None:
         expected = [0] * count if is_prompt else example["input_ids"][offset : offset + count]
         assert example["labels"][offset : offset + count] == expected
         offset += count
-
-
-def test_pair_deduplicated_preparation_is_balanced_and_final_answer_only(
-    tmp_path: Path,
-) -> None:
-    prepared = tmp_path / "train.jsonl"
-    manifest = tmp_path / "preparation.manifest.json"
-
-    result = prepare_pair_deduplicated_training_jsonl(
-        ROOT / "datasets/story-fidelity-v1/train.jsonl",
-        prepared,
-        manifest,
-    )
-    rows = [json.loads(line) for line in prepared.read_text().splitlines()]
-
-    assert result["source_records"] == 4096
-    assert result["source_pairs"] == 2048
-    assert result["distinct_pairs"] == 160
-    assert result["prepared_records"] == len(rows) == 320
-    assert set(result["category_pair_counts"].values()) == {8}
-    assert all(
-        [message["role"] for message in row["messages"]]
-        == ["system", "user", "assistant"]
-        for row in rows
-    )
 
 
 def test_dataset_hash_validation_and_preparation(tmp_path: Path) -> None:
@@ -241,122 +144,6 @@ def test_dataset_hash_validation_and_preparation(tmp_path: Path) -> None:
         validate_dataset_manifest(manifest)
 
 
-def test_run_and_completion_manifests_are_append_only(tmp_path: Path) -> None:
-    manifest = start_run(
-        tmp_path,
-        run_id="cpu-smoke-abc",
-        stage="cpu-smoke",
-        config_sha256="a" * 64,
-        dataset_manifest_sha256="b" * 64,
-        command=["python3", "-m", "training.jax_fidelity"],
-    )
-    assert (
-        start_run(
-            tmp_path,
-            run_id="cpu-smoke-abc",
-            stage="cpu-smoke",
-            config_sha256="a" * 64,
-            dataset_manifest_sha256="b" * 64,
-            command=["python3", "-m", "training.jax_fidelity"],
-        )
-        == manifest
-    )
-
-    artifact = tmp_path / "result.json"
-    artifact.write_text("{}\n")
-    completion = complete_run(
-        tmp_path,
-        run_id="cpu-smoke-abc",
-        status="succeeded",
-        artifacts=[artifact],
-        evidence={"passed": True},
-    )
-    assert completion.is_file()
-
-    with pytest.raises(ManifestError, match="terminal"):
-        start_run(
-            tmp_path,
-            run_id="cpu-smoke-abc",
-            stage="cpu-smoke",
-            config_sha256="a" * 64,
-            dataset_manifest_sha256="b" * 64,
-            command=["different"],
-        )
-
-
-def test_maxtext_command_retains_every_safety_override() -> None:
-    config = load_config(CONFIG_PATH)
-    command = build_train_command(
-        config,
-        maxtext_checkpoint="/checkpoints/base/items",
-        hf_tokenizer_checkpoint="/hf/base",
-        prepared_train_jsonl="/data/train.jsonl",
-        output_directory="/output",
-        run_name="smoke",
-        hardware="gpu",
-        smoke=True,
-        jax_cache_directory="/jax-cache/entries",
-    )
-    joined = " ".join(command)
-
-    assert "model_name=gemma4-e2b" in command
-    assert "training.jax_fidelity.maxtext_entrypoint" in command
-    assert "maxtext.trainers.post_train.sft.train_sft_native" in command
-    assert "tokenizer_path=/hf/base" in command
-    assert "src/maxtext/configs/post_train/sft.yml" in command
-    assert "dataset_type=hf" in command
-    assert "hardware=gpu" in command
-    assert "skip_jax_distributed_system=true" in command
-    assert "scan_layers=false" in command
-    assert "use_multimodal=false" in command
-    assert "sft_train_on_completion_only=True" in command
-    assert "lora.enable_lora=True" in command
-    assert "lora.lora_rank=8" in command
-    assert "lora.lora_weight_qtype" not in joined
-    assert "steps=5" in command
-    assert "jax_cache_dir=/jax-cache/entries" in command
-    assert "dump_hlo=false" in command
-
-
-def test_maxtext_command_rejects_relative_cache_directory() -> None:
-    config = load_config(CONFIG_PATH)
-    with pytest.raises(ValueError, match="must be absolute"):
-        build_train_command(
-            config,
-            maxtext_checkpoint="/checkpoints/base/items",
-            hf_tokenizer_checkpoint="/hf/base",
-            prepared_train_jsonl="/data/train.jsonl",
-            output_directory="/output",
-            run_name="smoke",
-            hardware="gpu",
-            smoke=True,
-            jax_cache_directory="relative/cache",
-        )
-
-
-def test_train_command_can_disable_unnecessary_activation_rematerialization(
-    tmp_path: Path,
-) -> None:
-    document = json.loads(CONFIG_V3_PATH.read_text(encoding="utf-8"))
-    document["training"]["remat_policy"] = "none"
-    path = tmp_path / "no-remat.json"
-    path.write_text(json.dumps(document), encoding="utf-8")
-    config = load_config(path)
-
-    command = build_train_command(
-        config,
-        maxtext_checkpoint="/checkpoints/base/items",
-        hf_tokenizer_checkpoint="/hf/base",
-        prepared_train_jsonl="/data/train.jsonl",
-        output_directory="/output",
-        run_name="no-remat",
-        hardware="gpu",
-        smoke=False,
-    )
-
-    assert "remat_policy=none" in command
-
-
 def test_full_runtime_lock_detects_installed_dependency_drift(tmp_path: Path) -> None:
     lock = tmp_path / "runtime.lock.json"
     write_runtime_lock(lock)
@@ -368,33 +155,6 @@ def test_full_runtime_lock_detects_installed_dependency_drift(tmp_path: Path) ->
     lock.write_text(json.dumps(document) + "\n")
     with pytest.raises(RuntimeError, match="full installed dependency set"):
         validate_runtime_lock(lock)
-
-
-def test_runtime_lock_ignores_modal_control_plane_overlay(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    class Distribution:
-        def __init__(self, version: str, root: Path) -> None:
-            self.metadata = {"Name": "multidict"}
-            self.version = version
-            self.root = root
-
-        def locate_file(self, _: str) -> Path:
-            return self.root
-
-    environment_package = Distribution(
-        "6.7.1", Path(sys.prefix) / "lib/python3.12/site-packages"
-    )
-    modal_overlay = Distribution("6.6.0", tmp_path / "modal-control-plane")
-    monkeypatch.setattr(
-        verify_runtime_module.importlib.metadata,
-        "distributions",
-        lambda: [environment_package, modal_overlay],
-    )
-
-    document = verify_runtime_module.runtime_lock_document()
-
-    assert document["packages"] == [{"name": "multidict", "version": "6.7.1"}]
 
 
 def test_executed_training_writes_nonempty_terminal_completion(

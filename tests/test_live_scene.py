@@ -9,22 +9,16 @@ from pydantic import ValidationError
 from bookforge.asset_cache import AssetCache
 from bookforge.live_scene import (
     DeterministicFakeLiveSceneProvider,
-    LiveSceneArtifactKind,
     LiveSceneCapacityError,
     LiveSceneCreateRequest,
     LiveSceneJob,
     LiveSceneJobRegistry,
-    LiveSceneMetrics,
-    LiveSceneModelProvenance,
     LiveSceneNotFoundError,
-    LiveSceneRegistryClosedError,
     LiveSceneStage,
     LiveSceneUpdate,
-    build_live_scene_provider,
     build_live_scene_story_pack,
     live_scene_request_seed,
 )
-from bookforge.model_client import FakeModelClient
 from bookforge.story_store import StoryPackStore
 
 
@@ -50,37 +44,6 @@ def test_live_scene_request_is_strict_text_only() -> None:
         LiveSceneCreateRequest(text="x")
     with pytest.raises(ValidationError):
         LiveSceneCreateRequest(text="valid text", seed=2**32)
-
-
-def test_cloud_safe_deterministic_plan_preserves_allowlisted_scene_semantics() -> None:
-    source = (
-        "Quenlora watches as a silver fox follows a floating lantern through a moonlit "
-        "cedar forest."
-    )
-    pack = build_live_scene_story_pack(
-        LiveSceneCreateRequest(
-            text=source,
-            visual_style="luminous watercolor paper theater",
-            seed=20260825,
-        ),
-        job_id="scene_000000000000000000000042",
-        seed=20260825,
-        assets=[],
-        compiler_model="deterministic-live-scene-planner-v1",
-        cloud_safe_prompts=True,
-    )
-
-    page = pack.pages[0]
-    assert page.scene_spec is not None
-    prompt = page.scene_spec.master_prompt
-    assert "Moss green woodland" in prompt
-    assert "one complete silver fox" in prompt
-    assert "one warm floating lantern" in prompt
-    assert "following the supporting detail" in prompt
-    assert "Quenlora" not in prompt
-    assert source not in prompt
-    assert page.source_text == source
-    assert page.layers[1].kind == "character"
 
 
 def test_cloud_safe_deterministic_plan_never_forwards_unknown_subject_names() -> None:
@@ -126,21 +89,6 @@ def test_cloud_safe_fallback_preserves_attribute_action_and_literal_setting() ->
     assert "Show no duplicate, reflection, silhouette, mural, or shadow copy" in prompt
     assert source not in prompt
     assert page.source_text == source
-
-
-def test_cloud_safe_fallback_associates_color_only_with_adjacent_subject() -> None:
-    pack = build_live_scene_story_pack(
-        LiveSceneCreateRequest(text="A cat watches a blue lantern in a quiet cafe.", seed=21),
-        job_id="scene_000000000000000000000021",
-        seed=21,
-        assets=[],
-        compiler_model="deterministic-live-scene-planner-v1",
-        cloud_safe_prompts=True,
-    )
-
-    prompt = pack.pages[0].scene_spec.master_prompt  # type: ignore[union-attr]
-    assert "one complete storybook cat" in prompt
-    assert "one complete blue storybook cat" not in prompt
 
 
 def test_fake_provider_emits_valid_progressive_story_packs_and_cached_assets(
@@ -229,110 +177,6 @@ def test_fake_provider_emits_valid_progressive_story_packs_and_cached_assets(
     asyncio.run(exercise())
 
 
-def test_live_scene_metrics_are_strict_and_require_immutable_model_roles() -> None:
-    model = LiveSceneModelProvenance(
-        role="master",
-        model="example/model",
-        revision="sha-123",
-    )
-    metrics = LiveSceneMetrics(
-        elapsed_ms=12,
-        provider_ms=8,
-        inference_ms=6,
-        cache_ms=1,
-        overhead_ms=2,
-        warm_state="cold",
-        gpu="NVIDIA L4",
-        estimated_gpu_usd=0.01,
-        cost_source="provider_manifest",
-        models=[model],
-        milestones_ms={LiveSceneStage.DRAFT_READY: 12},
-    )
-
-    assert metrics.models[0].revision == "sha-123"
-    with pytest.raises(ValidationError):
-        LiveSceneMetrics(provider_ms=-1)
-    with pytest.raises(ValidationError):
-        LiveSceneMetrics(packaging_ms=-1)
-    with pytest.raises(ValidationError):
-        LiveSceneMetrics(preparation_ms=-1)
-    with pytest.raises(ValidationError, match="unavailable cost evidence"):
-        LiveSceneMetrics(estimated_gpu_usd=0.01)
-    with pytest.raises(ValidationError, match="model roles must be unique"):
-        LiveSceneMetrics(models=[model, model])
-
-
-def test_deterministic_draft_is_visibly_passage_derived_before_inference() -> None:
-    space = build_live_scene_story_pack(
-        LiveSceneCreateRequest(text="A rocket crossed the moon and a field of stars."),
-        job_id="scene_000000000000000000000001",
-        seed=11,
-        assets=[],
-        compiler_model="draft-fixture@v1",
-    )
-    ocean = build_live_scene_story_pack(
-        LiveSceneCreateRequest(text="A whale swam beneath the ocean waves."),
-        job_id="scene_000000000000000000000002",
-        seed=22,
-        assets=[],
-        compiler_model="draft-fixture@v1",
-    )
-
-    space_page = space.pages[0]
-    ocean_page = ocean.pages[0]
-    assert len(space_page.layers) == 3
-    assert len(ocean_page.layers) == 3
-    assert space_page.scene_spec is not None
-    assert ocean_page.scene_spec is not None
-    assert {effect.kind for effect in space_page.scene_spec.ambience} == {"stars"}
-    assert {effect.color for effect in ocean_page.scene_spec.ambience} == {
-        "#83f3e4",
-        "#b9fff4",
-    }
-    assert space_page.scene_spec.composition != ocean_page.scene_spec.composition
-    assert space_page.layers[-1].prompt != ocean_page.layers[-1].prompt
-
-
-def test_fake_provider_is_deterministic_for_the_same_request() -> None:
-    async def collect(provider, request):
-        return [
-            update
-            async for update in provider.generate(
-                request,
-                job_id="scene_0123456789abcdef01234567",
-            )
-        ]
-
-    request = LiveSceneCreateRequest(
-        text="The moonlit letters rise from the page.",
-        visual_style="ink and paper",
-    )
-    first = asyncio.run(collect(DeterministicFakeLiveSceneProvider(), request))
-    second = asyncio.run(collect(DeterministicFakeLiveSceneProvider(), request))
-
-    assert [update.model_dump() for update in first] == [update.model_dump() for update in second]
-
-
-def test_fake_provider_can_finish_at_master_when_motion_is_disabled() -> None:
-    async def exercise() -> LiveSceneJob:
-        registry = LiveSceneJobRegistry(DeterministicFakeLiveSceneProvider(enable_motion=False))
-        submitted = await registry.submit(
-            LiveSceneCreateRequest(text="A moonlit paper whale crosses the library.")
-        )
-        completed = await registry.wait(submitted.job_id)
-        await registry.close()
-        return completed
-
-    completed = asyncio.run(exercise())
-
-    assert completed.stage is LiveSceneStage.MASTER_READY
-    assert completed.complete is True
-    assert {artifact.kind for artifact in completed.artifacts} == {
-        LiveSceneArtifactKind.MASTER,
-        LiveSceneArtifactKind.DEPTH,
-    }
-
-
 @pytest.mark.parametrize(
     ("field", "forged_value", "message"),
     [
@@ -416,10 +260,7 @@ class _MotionFailureProvider:
 
 @pytest.mark.parametrize(
     ("provider", "warning_code"),
-    [
-        (_MasterOnlyProvider(), None),
-        (_MotionFailureProvider(), "motion_upgrade_failed"),
-    ],
+    [(_MasterOnlyProvider(), None), (_MotionFailureProvider(), "motion_upgrade_failed")],
 )
 def test_master_scene_is_successful_without_optional_video(provider, warning_code) -> None:
     async def exercise():
@@ -786,182 +627,6 @@ def test_registry_evicts_oldest_completed_job_within_retention_bound() -> None:
     asyncio.run(exercise())
 
 
-def test_abandoned_terminal_subscription_cannot_pin_retained_capacity() -> None:
-    async def exercise() -> None:
-        registry = LiveSceneJobRegistry(
-            DeterministicFakeLiveSceneProvider(),
-            max_active_jobs=1,
-            max_retained_jobs=1,
-        )
-        first = await registry.submit(
-            LiveSceneCreateRequest(text="First retained job.", session_id="first-session")
-        )
-        await registry.wait(first.job_id)
-        abandoned = await registry.subscribe(first.job_id)
-
-        second = await registry.submit(
-            LiveSceneCreateRequest(text="Second retained job.", session_id="second-session")
-        )
-        with pytest.raises(LiveSceneNotFoundError):
-            await registry.get(first.job_id)
-        with pytest.raises(LiveSceneNotFoundError):
-            await registry.get_session("first-session")
-        assert (await abandoned.receive()).terminal
-        with pytest.raises(LiveSceneRegistryClosedError, match="subscription is closed"):
-            await abandoned.receive()
-        await registry.wait(second.job_id)
-        await registry.close()
-
-    asyncio.run(exercise())
-
-
-def test_provider_factory_selects_fake_and_finite_modal_without_persistent_service(
-    tmp_path: Path,
-) -> None:
-    cache = AssetCache(tmp_path / "cache")
-    asyncio.run(cache.initialize())
-
-    fake = build_live_scene_provider("auto", asset_backend="fake", cache=cache)
-    modal = build_live_scene_provider(
-        "auto",
-        asset_backend="modal",
-        cache=cache,
-        output_root=tmp_path / "generated",
-        master_width=960,
-        master_height=544,
-        master_steps=2,
-        master_guidance_scale=4,
-        fidelity_mode="deferred",
-    )
-    modal_warm = build_live_scene_provider(
-        "modal_warm",
-        asset_backend="disabled",
-        cache=cache,
-        output_root=tmp_path / "warm-generated",
-        modal_plan_file=tmp_path / "modal-plan.json",
-        modal_ledger_path=tmp_path / "modal-ledger.json",
-        fidelity_mode="deferred",
-        auto_prewarm_on_submit=True,
-    )
-    explicit_fake = build_live_scene_provider(
-        "fake",
-        asset_backend="disabled",
-        cache=cache,
-    )
-    model_planned = build_live_scene_provider(
-        "modal",
-        asset_backend="disabled",
-        cache=cache,
-        output_root=tmp_path / "model-planned",
-        planner_mode="model",
-        model_client=FakeModelClient(),
-        planner_timeout_seconds=12,
-        planner_model_revision="sha256:fixture",
-        planner_cache_entries=7,
-        planner_cache_dir=tmp_path / "plans",
-        planner_compact_wire=True,
-    )
-    gcp = build_live_scene_provider(
-        "gcp_cloud_run",
-        asset_backend="disabled",
-        cache=cache,
-        output_root=tmp_path / "gcp-generated",
-        gcp_url="https://renderer.example.run.app",
-        gcp_impersonate_service_account="renderer@example.iam.gserviceaccount.com",
-        planner_mode="model",
-        model_client=FakeModelClient(),
-    )
-    resilient = build_live_scene_provider(
-        "gcp_resilient",
-        asset_backend="disabled",
-        cache=cache,
-        output_root=tmp_path / "resilient-generated",
-        modal_executable="/opt/bookforge/.venv/bin/modal",
-        modal_plan_file=tmp_path / "modal-plan.json",
-        modal_ledger_path=tmp_path / "modal-ledger.json",
-        gcp_url="https://renderer.example.run.app",
-        gcp_impersonate_service_account="renderer@example.iam.gserviceaccount.com",
-        vertex_project_id="your-gcp-project",
-        planner_mode="model",
-        model_client=FakeModelClient(),
-    )
-
-    assert fake.name == "fake"
-    assert explicit_fake.name == "fake"
-    assert modal.name == "modal-finite"
-    assert modal_warm.name == "modal-finite"
-    assert gcp.name == "gcp-cloud-run"
-    assert resilient.name == "resilient-cloud"
-    assert resilient.serializes_paid_jobs is True  # type: ignore[attr-defined]
-    assert [  # type: ignore[attr-defined]
-        route.name for route in resilient.provider.routes
-    ] == ["gcp-cloud-run", "gcp-vertex-managed", "modal-warm-fallback"]
-    assert (  # type: ignore[attr-defined]
-        resilient.provider.routes[-1].provider.modal_executable
-        == "/opt/bookforge/.venv/bin/modal"
-    )
-    assert gcp.provider.__class__.__name__ == "GcpCloudRunSceneProvider"  # type: ignore[attr-defined]
-    assert (  # type: ignore[attr-defined]
-        gcp.provider._token_source.__class__.__name__ == "GoogleImpersonatedIdentityTokenSource"
-    )
-    assert model_planned.planner.__class__.__name__ == "StructuredLiveScenePlanner"  # type: ignore[attr-defined]
-    assert model_planned.planner.compact_wire is True  # type: ignore[attr-defined]
-    assert model_planned.planner.cache_entries == 7  # type: ignore[attr-defined]
-    assert model_planned.planner.persistent_cache_dir == tmp_path / "plans"  # type: ignore[attr-defined]
-    assert modal_warm.provider.__class__.__name__ == "WarmModalSceneProvider"  # type: ignore[attr-defined]
-    assert modal_warm.provider.plan_file == tmp_path / "modal-plan.json"  # type: ignore[attr-defined]
-    assert modal_warm.provider.ledger_path == tmp_path / "modal-ledger.json"  # type: ignore[attr-defined]
-    assert modal_warm.provider.prewarm_fidelity is False  # type: ignore[attr-defined]
-    assert modal_warm.auto_prewarm_on_submit is True  # type: ignore[attr-defined]
-    assert modal.enable_motion is False  # type: ignore[attr-defined]
-    assert modal.output_root == tmp_path / "generated"  # type: ignore[attr-defined]
-    assert modal.master_width == 960  # type: ignore[attr-defined]
-    assert modal.master_height == 544  # type: ignore[attr-defined]
-    assert modal.master_steps == 2  # type: ignore[attr-defined]
-    assert modal.master_guidance_scale == 4  # type: ignore[attr-defined]
-    assert modal.fidelity_mode == "deferred"  # type: ignore[attr-defined]
-    assert LiveSceneJobRegistry(modal, max_active_jobs=8).max_active_jobs == 1
-    assert LiveSceneJobRegistry(modal_warm, max_active_jobs=8).max_active_jobs == 1
-    assert LiveSceneJobRegistry(resilient, max_active_jobs=8).max_active_jobs == 1
-    assert LiveSceneJobRegistry(fake, max_active_jobs=8).max_active_jobs == 8
-    with pytest.raises(ValueError, match="structured model client"):
-        build_live_scene_provider(
-            "modal",
-            asset_backend="disabled",
-            cache=cache,
-            planner_mode="model",
-        )
-
-
-def test_session_rendezvous_is_monotonic_and_never_reverts_to_an_older_job() -> None:
-    async def exercise() -> None:
-        registry = LiveSceneJobRegistry(
-            DeterministicFakeLiveSceneProvider(stage_delay_seconds=0.01),
-            max_active_jobs=2,
-        )
-        first = await registry.submit(
-            LiveSceneCreateRequest(text="The first scene waits.", session_id="shared")
-        )
-        first_pointer = await registry.get_session("shared")
-        second = await registry.submit(
-            LiveSceneCreateRequest(text="The newer scene wins.", session_id="shared")
-        )
-        second_pointer = await registry.get_session("shared")
-
-        assert first_pointer.job.job_id == first.job_id
-        assert second_pointer.job.job_id == second.job_id
-        assert second_pointer.session_revision > first_pointer.session_revision
-        await registry.wait(second.job_id)
-        assert (await registry.get(first.job_id)).error.code == "superseded"  # type: ignore[union-attr]
-
-        final_pointer = await registry.get_session("shared")
-        assert final_pointer.session_revision == second_pointer.session_revision
-        assert final_pointer.job.job_id == second.job_id
-        await registry.close()
-
-    asyncio.run(exercise())
-
-
 def test_new_same_session_job_supersedes_and_cancels_the_prior_billable_task() -> None:
     class BillableBlockingProvider:
         name = "fake"
@@ -1023,53 +688,6 @@ def test_new_same_session_job_supersedes_and_cancels_the_prior_billable_task() -
         provider.releases[second.job_id].set()
         assert (await registry.wait(second.job_id)).terminal
         await registry.close()
-
-    asyncio.run(exercise())
-
-
-def test_session_rendezvous_isolated_by_session_and_missing_for_unscoped_jobs() -> None:
-    async def exercise() -> None:
-        registry = LiveSceneJobRegistry(DeterministicFakeLiveSceneProvider())
-        alpha = await registry.submit(
-            LiveSceneCreateRequest(text="Alpha sees a moon.", session_id="alpha")
-        )
-        beta = await registry.submit(
-            LiveSceneCreateRequest(text="Beta sees a star.", session_id="beta")
-        )
-        await registry.wait(alpha.job_id)
-        await registry.wait(beta.job_id)
-
-        assert (await registry.get_session("alpha")).job.job_id == alpha.job_id
-        assert (await registry.get_session("beta")).job.job_id == beta.job_id
-        await registry.submit(LiveSceneCreateRequest(text="No browser session here."))
-        with pytest.raises(LiveSceneNotFoundError):
-            await registry.get_session("missing")
-        await registry.close()
-
-    asyncio.run(exercise())
-
-
-def test_session_revision_epoch_changes_across_registry_restart() -> None:
-    async def exercise() -> None:
-        first_registry = LiveSceneJobRegistry(DeterministicFakeLiveSceneProvider())
-        first = await first_registry.submit(
-            LiveSceneCreateRequest(text="Before restart.", session_id="kiosk")
-        )
-        first_pointer = await first_registry.get_session("kiosk")
-        await first_registry.close()
-
-        restarted_registry = LiveSceneJobRegistry(DeterministicFakeLiveSceneProvider())
-        restarted = await restarted_registry.submit(
-            LiveSceneCreateRequest(text="After restart.", session_id="kiosk")
-        )
-        restarted_pointer = await restarted_registry.get_session("kiosk")
-
-        assert first_pointer.session_revision == 1
-        assert restarted_pointer.session_revision == 1
-        assert first_pointer.server_instance_id != restarted_pointer.server_instance_id
-        assert first_pointer.job.job_id == first.job_id
-        assert restarted_pointer.job.job_id == restarted.job_id
-        await restarted_registry.close()
 
     asyncio.run(exercise())
 

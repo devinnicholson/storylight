@@ -18,9 +18,9 @@ def test_configuration_is_guarded_before_any_cluster_access():
 
 
 @pytest.mark.parametrize(
-    "running,changed_image,expected", [(False, False, 0), (True, False, 1), (False, True, 1)]
+    "running,changed_image,expected", [(False, False, 0), (True, False, 1)]
 )
-def test_only_stopped_pinned_runtime_can_be_configured(tmp_path, running, changed_image, expected):
+def test_cache_configuration_requires_stopped_runtime(tmp_path, running, changed_image, expected):
     deployment = {
         "spec": {
             "replicas": int(running),

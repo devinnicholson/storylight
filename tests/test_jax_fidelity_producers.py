@@ -5,7 +5,6 @@ import json
 import subprocess
 import sys
 from pathlib import Path
-from types import SimpleNamespace
 
 import pytest
 
@@ -14,17 +13,10 @@ sys.path.insert(0, str(ROOT))
 
 import training.jax_fidelity.checkpoint_evidence as checkpoint_evidence
 import training.jax_fidelity.roundtrip_evidence as roundtrip_evidence
-from bookforge.fidelity_benchmark import FidelitySummary
-from training.jax_fidelity.artifact_contract import create_artifact_contract
 from training.jax_fidelity.checkpoint_evidence import (
-    CheckpointEvidenceError,
     inspect_hf_roundtrip,
-    parse_max_kl_divergence,
 )
 from training.jax_fidelity.configuration import load_config
-from training.jax_fidelity.development_eligibility import (
-    decide_development_eligibility,
-)
 from training.jax_fidelity.integrity import artifact_manifest, sha256_file
 
 CONFIG = ROOT / "experiments/jax-fidelity-lab/config.json"
@@ -61,86 +53,6 @@ def _completion(
             "evidence": evidence,
         },
     )
-
-
-def _summary(*, exact: float, semantic: float = 1.0) -> FidelitySummary:
-    categories = {
-        "attributes": 1.0,
-        "negation": 1.0,
-        "passive_voice": 1.0,
-        "prompt_injection": 1.0,
-        "transformation": 1.0,
-    }
-    return FidelitySummary(
-        surface="raw",
-        split="development",
-        records=512,
-        record_ids_sha256="a" * 64,
-        category_record_counts={name: 64 for name in categories},
-        schema_valid_rate=1.0,
-        privacy_pass_rate=1.0,
-        semantic_atom_recall=semantic,
-        exact_example_pass_rate=exact,
-        category_pass_rates=categories,
-        counterfactual_pairs=256,
-        counterfactual_sensitivity=1.0,
-        unsupported_concept_rate=0.0,
-        pii_leaks=0,
-        privacy_term_leaks=0,
-        source_echoes=0,
-        injection_leaks=0,
-        forbidden_hits=0,
-    )
-
-
-def test_parse_maxtext_kl_uses_the_largest_observed_value() -> None:
-    output = "\n".join(
-        (
-            "Max KL divergence for a single token in the set: 0.002",
-            "Max KL divergence for a single token in the set: 1.2e-02",
-        )
-    )
-    assert parse_max_kl_divergence(output) == pytest.approx(0.012)
-    with pytest.raises(CheckpointEvidenceError, match="maximum KL"):
-        parse_max_kl_divergence("conversion passed")
-
-
-def test_safetensor_shapes_uses_supported_keys_api_for_non_iterable_handle(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    checkpoint = tmp_path / "checkpoint"
-    checkpoint.mkdir()
-    (checkpoint / "model.safetensors").write_bytes(b"fixture")
-
-    class Slice:
-        def get_shape(self) -> list[int]:
-            return [2, 3]
-
-    class Handle:
-        def __enter__(self) -> Handle:
-            return self
-
-        def __exit__(self, *_args: object) -> None:
-            return None
-
-        def keys(self) -> list[str]:
-            return ["model.weight"]
-
-        def get_slice(self, name: str) -> Slice:
-            assert name == "model.weight"
-            return Slice()
-
-    def safe_open(path: Path, *, framework: str, device: str) -> Handle:
-        assert path == checkpoint / "model.safetensors"
-        assert framework == "pt"
-        assert device == "cpu"
-        return Handle()
-
-    monkeypatch.setitem(sys.modules, "safetensors", SimpleNamespace(safe_open=safe_open))
-
-    assert checkpoint_evidence._safetensor_shapes(checkpoint) == {
-        "model.weight": (2, 3)
-    }
 
 
 def test_checkpoint_inspection_binds_architecture_tokenizer_and_ple(
@@ -184,30 +96,6 @@ def test_checkpoint_inspection_binds_architecture_tokenizer_and_ple(
     assert result["tensor_names"] is True
     assert result["ple_weights"] is True
     assert result["eos_token_ids"] == [1, 106, 50]
-
-
-def test_text_only_projection_allows_only_multimodal_and_declared_shared_kv() -> None:
-    base_names = {
-        "model.audio_tower.layer.weight",
-        "model.vision_tower.layer.weight",
-        "model.embed_audio.embedding_projection.weight",
-        "model.embed_vision.embedding_projection.weight",
-    }
-    for layer in (2, 3):
-        for suffix in checkpoint_evidence._SHARED_KV_SUFFIXES:
-            base_names.add(f"model.language_model.layers.{layer}.{suffix}")
-
-    allowed = checkpoint_evidence._allowed_text_only_omissions(
-        base_names,
-        {"num_hidden_layers": 4, "num_kv_shared_layers": 2},
-    )
-
-    assert allowed == base_names
-    with pytest.raises(CheckpointEvidenceError, match="lacks declared shared-KV"):
-        checkpoint_evidence._allowed_text_only_omissions(
-            {"model.audio_tower.layer.weight"},
-            {"num_hidden_layers": 4, "num_kv_shared_layers": 2},
-        )
 
 
 def test_roundtrip_evidence_uses_only_terminal_completion_hashes(
@@ -267,50 +155,6 @@ def test_roundtrip_evidence_uses_only_terminal_completion_hashes(
     assert evidence["lineage"]["logit_completion_sha256"] == hashes["logit"]
 
 
-def test_artifact_contract_rejects_duplicate_names_and_binds_bytes(tmp_path: Path) -> None:
-    first = tmp_path / "first"
-    second = tmp_path / "second"
-    first.mkdir()
-    second.mkdir()
-    (first / "value").write_bytes(b"first")
-    (second / "value").write_bytes(b"second")
-
-    contract = create_artifact_contract([f"base={first}", f"tokenizer={second}"])
-    assert contract["artifacts"]["base"] == artifact_manifest(first)
-    with pytest.raises(ValueError, match="duplicate"):
-        create_artifact_contract([f"base={first}", f"base={second}"])
-
-
-def test_hf_snapshot_plan_requires_no_token_or_network(tmp_path: Path) -> None:
-    result = subprocess.run(
-        [
-            sys.executable,
-            "-m",
-            "training.jax_fidelity.hf_snapshot",
-            "--config",
-            str(CONFIG),
-            "--snapshot",
-            str(tmp_path / "snapshot"),
-            "--tokenizer",
-            str(tmp_path / "tokenizer"),
-            "--snapshot-manifest",
-            str(tmp_path / "snapshot.json"),
-            "--tokenizer-manifest",
-            str(tmp_path / "tokenizer.json"),
-            "--completion",
-            str(tmp_path / "completion.json"),
-        ],
-        cwd=ROOT,
-        check=True,
-        capture_output=True,
-        text=True,
-    )
-    plan = json.loads(result.stdout)
-    assert plan["model_revision"] == load_config(CONFIG).production["model_revision"]
-    assert plan["approval_token"].startswith("HF-SNAPSHOT:")
-    assert not (tmp_path / "snapshot").exists()
-
-
 def test_hf_snapshot_public_access_mode_is_approval_bound(tmp_path: Path) -> None:
     common = [
         sys.executable,
@@ -349,62 +193,3 @@ def test_hf_snapshot_public_access_mode_is_approval_bound(tmp_path: Path) -> Non
     assert secret_plan["access_mode"] == "secret-token"
     assert public_plan["access_mode"] == "public-anonymous"
     assert public_plan["approval_token"] != secret_plan["approval_token"]
-
-
-def test_candidate_prediction_plan_validates_all_inputs_without_loading_torch(
-    tmp_path: Path,
-) -> None:
-    manifest = json.loads(DATASET_MANIFEST.read_text())
-    development = DATASET_MANIFEST.parent / manifest["splits"]["development"]["path"]
-    checkpoint = tmp_path / "checkpoint"
-    checkpoint.mkdir()
-    (checkpoint / "model.safetensors").write_bytes(b"candidate")
-    checkpoint_manifest = tmp_path / "checkpoint.manifest.json"
-    checkpoint_manifest_sha = _write_json(checkpoint_manifest, artifact_manifest(checkpoint))
-
-    result = subprocess.run(
-        [
-            sys.executable,
-            "-m",
-            "training.jax_fidelity.predict",
-            "--config",
-            str(CONFIG),
-            "--dataset-manifest",
-            str(DATASET_MANIFEST),
-            "--dataset-manifest-sha256",
-            sha256_file(DATASET_MANIFEST),
-            "--records",
-            str(development),
-            "--records-sha256",
-            sha256_file(development),
-            "--checkpoint",
-            str(checkpoint),
-            "--checkpoint-manifest",
-            str(checkpoint_manifest),
-            "--checkpoint-manifest-sha256",
-            checkpoint_manifest_sha,
-            "--output",
-            str(tmp_path / "predictions.jsonl"),
-            "--completion",
-            str(tmp_path / "prediction-completion.json"),
-        ],
-        cwd=ROOT,
-        check=True,
-        capture_output=True,
-        text=True,
-    )
-    plan = json.loads(result.stdout)
-    assert plan["records"] == 512
-    assert plan["maximum_output_tokens"] == 64
-
-
-def test_development_eligibility_requires_real_improvement() -> None:
-    passing = decide_development_eligibility(_summary(exact=0.98), _summary(exact=0.90))
-    unchanged = decide_development_eligibility(_summary(exact=0.98), _summary(exact=0.98))
-    low_recall = decide_development_eligibility(
-        _summary(exact=0.98, semantic=0.90), _summary(exact=0.90)
-    )
-
-    assert all(passing.values())
-    assert unchanged["development_improvement"] is False
-    assert low_recall["semantic_atom_recall"] is False

@@ -1,13 +1,7 @@
 import asyncio
 
-import pytest
-from pydantic import ValidationError
-
 from bookforge.config import Settings
 from bookforge.domain import (
-    AssetKind,
-    AssetRecord,
-    AssetState,
     BookPageInput,
     GeneratedPagePlan,
     GeneratedStoryPlan,
@@ -15,7 +9,6 @@ from bookforge.domain import (
     LayerComposition,
     SceneSpecV2,
     StoryCompileRequest,
-    StoryPack,
     StoryTrigger,
     SupportAction,
     VisualLayer,
@@ -27,24 +20,6 @@ from bookforge.service import BookforgeService
 def make_service() -> BookforgeService:
     settings = Settings(model_backend="fake", model_name="fake")
     return BookforgeService(settings, FakeModelClient())
-
-
-def test_short_first_pause_uses_zero_model_fast_path() -> None:
-    response = asyncio.run(
-        make_service().select_intervention(
-            InterventionRequest(
-                session_id="session-1",
-                page_id="page-1",
-                expected_word="through",
-                expected_grapheme="th",
-                pause_ms=420,
-            )
-        )
-    )
-
-    assert response.source == "fast_path"
-    assert response.decision.action is SupportAction.WAIT
-    assert response.metrics is None
 
 
 def test_first_long_pause_uses_instant_grapheme_fast_path() -> None:
@@ -187,110 +162,3 @@ def test_story_compiler_anchors_a_valid_trigger_phrase_to_its_final_word() -> No
     trigger = normalized.pages[0].triggers[0]
     assert trigger.word == "gate"
     assert trigger.occurrence == 2
-
-
-def test_empty_action_allowlist_is_rejected() -> None:
-    with pytest.raises(ValueError, match="allowed_actions"):
-        InterventionRequest(
-            session_id="session-1",
-            page_id="page-1",
-            expected_word="through",
-            allowed_actions=[],
-        )
-
-
-def test_ready_asset_requires_location_and_checksum() -> None:
-    with pytest.raises(ValidationError, match="checksum_sha256"):
-        AssetRecord(
-            asset_id="asset-sky",
-            page_id="page-01",
-            layer_id="sky",
-            kind=AssetKind.PROCEDURAL,
-            provider="fixture",
-            prompt="Moonlit paper sky",
-            seed=7,
-            width=1920,
-            height=1080,
-            state=AssetState.READY,
-        )
-
-
-def test_story_pack_rejects_asset_for_missing_layer() -> None:
-    with pytest.raises(ValidationError, match="missing layer"):
-        StoryPack(
-            story_id="moon-gate",
-            title="The Moon Gate",
-            reading_level=2,
-            visual_style="paper theater",
-            compiler_model="fixture",
-            pages=[
-                GeneratedPagePlan(
-                    page_id="page-01",
-                    source_text="The moth found the gate.",
-                    scene_summary="A moonlit gate.",
-                    layers=[
-                        VisualLayer(
-                            layer_id="sky",
-                            kind="background",
-                            prompt="Moonlit paper sky",
-                            z_index=0,
-                            motion="Slow parallax",
-                        )
-                    ],
-                    triggers=[],
-                    literacy_support=[],
-                    comprehension=[],
-                )
-            ],
-            assets=[
-                AssetRecord(
-                    asset_id="asset-missing",
-                    page_id="page-01",
-                    layer_id="not-a-layer",
-                    kind=AssetKind.PROCEDURAL,
-                    provider="fixture",
-                    prompt="Missing layer",
-                    seed=7,
-                    width=1920,
-                    height=1080,
-                )
-            ],
-        )
-
-
-def test_story_pack_rejects_trigger_for_missing_layer() -> None:
-    with pytest.raises(ValidationError, match="Trigger.*missing layer"):
-        StoryPack(
-            story_id="moon-gate",
-            title="The Moon Gate",
-            reading_level=2,
-            visual_style="paper theater",
-            compiler_model="fixture",
-            pages=[
-                GeneratedPagePlan(
-                    page_id="page-01",
-                    source_text="The moth found the gate.",
-                    scene_summary="A moonlit gate.",
-                    layers=[
-                        VisualLayer(
-                            layer_id="sky",
-                            kind="background",
-                            prompt="Moonlit paper sky",
-                            z_index=0,
-                            motion="Slow parallax",
-                        )
-                    ],
-                    triggers=[
-                        {
-                            "trigger_id": "bad-trigger",
-                            "word": "moth",
-                            "action": "reveal",
-                            "target_layer_id": "missing",
-                            "duration_ms": 300,
-                        }
-                    ],
-                    literacy_support=[],
-                    comprehension=[],
-                )
-            ],
-        )

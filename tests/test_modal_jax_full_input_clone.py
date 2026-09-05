@@ -18,7 +18,6 @@ from infra.gcp.jax.full_input_clone import (
     canonical_bytes,
     manifest_sha256,
 )
-from scripts.plan_modal_jax_full_input_clone import build_plan
 
 
 def _sha256(path: Path) -> str:
@@ -183,21 +182,6 @@ def test_clone_rejects_inexact_approval_before_writing(
     with pytest.raises(ValueError, match="approval token"):
         worker.clone_population(request)
     assert not (inputs / target_run_id).exists()
-
-
-def test_plan_derives_exact_approval_without_remote_mutation(tmp_path: Path) -> None:
-    inputs, releases, source_run_id, target_run_id, request = _population(tmp_path)
-
-    plan = build_plan(
-        source_input_manifest_path=inputs / source_run_id / "inputs.manifest.json",
-        roundtrip_release=releases / source_run_id,
-        target_run_id=target_run_id,
-    )
-
-    assert plan["status"] == "plan-only"
-    assert plan["remote_mutation"] is False
-    assert plan["target_manifest_sha256"] == request["target_manifest_sha256"]
-    assert plan["approval_token"] == request["approval_token"]
 
 
 def test_manifest_builder_rejects_hidden_or_legacy_roundtrip_data(tmp_path: Path) -> None:

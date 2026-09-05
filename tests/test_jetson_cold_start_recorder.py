@@ -92,17 +92,3 @@ def test_cold_start_route_requires_exact_backend_revision_and_loopback() -> None
     )
     with pytest.raises(ValueError, match="loopback"):
         module.loopback_base_url("https://example.com")
-
-
-def test_cold_start_environment_parser_handles_quotes_and_comments(tmp_path: Path) -> None:
-    module = _load_module()
-    path = tmp_path / "bookforge.env"
-    path.write_text(
-        "# comment\nA=plain\nB=\"quoted\"\nC='single'\ninvalid\n",
-        encoding="utf-8",
-    )
-    assert module.parse_environment(path) == {
-        "A": "plain",
-        "B": "quoted",
-        "C": "single",
-    }

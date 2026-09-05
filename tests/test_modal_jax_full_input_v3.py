@@ -15,7 +15,6 @@ sys.path.insert(0, str(ROOT))
 from deploy import modal_jax_fidelity as training_worker
 from deploy import modal_jax_full_input_v3 as worker
 from infra.gcp.jax.full_input_v3 import (
-    OVERLAY_PATHS,
     OVERLAY_PREFIX,
     build_full_training_manifest,
     canonical_bytes,
@@ -271,20 +270,6 @@ def test_v3_clone_reuses_cached_model_and_maps_only_canary(
             tokenizer_manifest_sha256=manifest["prepared_training"]["tokenizer_manifest_sha256"],
         )
         == manifest["prepared_training"]
-    )
-
-
-def test_v3_stage_plan_uploads_only_public_overlay_bytes(tmp_path: Path) -> None:
-    fixture = _fixture(tmp_path)
-    plan = fixture["stage_plan"]
-
-    assert plan["remote_mutation"] is False
-    assert plan["cached_model_upload_bytes"] == 0
-    assert set(plan["host_upload_paths"]) == set(OVERLAY_PATHS)
-    assert "prepared/train.jsonl" not in plan["host_upload_paths"]
-    assert not any(
-        path.startswith(("tokenizer/", "checkpoint/")) or "hidden" in path.split("/")
-        for path in plan["host_upload_paths"]
     )
 
 

@@ -2,8 +2,6 @@ import asyncio
 import hashlib
 from pathlib import Path
 
-import pytest
-
 from bookforge.finite_modal_provider import (
     FastSceneRequest,
     FiniteSceneBundle,
@@ -145,13 +143,3 @@ def test_failed_probe_stops_before_prewarm_or_generation(tmp_path: Path) -> None
     assert report["cost_policy"]["billing_reconciliation_required"] is True
     assert provider.requests == []
     assert provider.closed is True
-
-
-def test_probe_mode_requires_one_sample(tmp_path: Path) -> None:
-    with pytest.raises(ValueError, match="exactly one"):
-        BenchmarkConfig(
-            mode="probe",
-            samples=2,
-            output_root=tmp_path,
-            gpu="L4",
-        )

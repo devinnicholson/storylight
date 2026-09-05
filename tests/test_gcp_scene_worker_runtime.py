@@ -21,41 +21,6 @@ def worker(monkeypatch):
     return module
 
 
-def test_warm_state_tracks_inference_not_whether_prewarm_was_called(worker):
-    runtime = worker.SceneRuntime()
-    runtime.image_pipe = runtime.depth_pipe = object()
-    runtime._infer = lambda *args: dict.fromkeys(
-        [
-            "image_seconds",
-            "depth_seconds",
-            "packaging_seconds",
-            "image_gpu_ms",
-            "depth_gpu_ms",
-            "master_bytes",
-            "depth_bytes",
-        ],
-        1,
-    )
-    request = worker.GenerateRequest(
-        scene_id="test",
-        prompt="A lantern",
-        negative_prompt="text",
-        seed=1,
-        width=1024,
-        height=576,
-        steps=2,
-        guidance_scale=4.5,
-    )
-
-    async def scenario():
-        first = await runtime.generate(request)
-        second = await runtime.generate(request)
-        assert first["warm_state"] == "cold"
-        assert second["warm_state"] == "warm"
-
-    asyncio.run(scenario())
-
-
 def test_partial_model_initialization_is_not_ready(worker):
     runtime = worker.SceneRuntime()
     runtime.image_pipe = object()

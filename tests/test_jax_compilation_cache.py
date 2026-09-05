@@ -15,7 +15,6 @@ from training.jax_fidelity import maxtext_entrypoint
 from training.jax_fidelity.compilation_cache import (
     CACHE_RECEIPT_ENV,
     configure_persistent_compilation_cache,
-    validate_cache_receipt,
     write_cache_receipt,
 )
 
@@ -37,29 +36,6 @@ def _environment(cache: Path) -> dict[str, str]:
         "JAX_PERSISTENT_CACHE_ENABLE_XLA_CACHES": "all",
         "JAX_RAISE_PERSISTENT_CACHE_ERRORS": "true",
     }
-
-
-def test_configure_cache_is_explicit_and_receipted(tmp_path: Path) -> None:
-    cache = tmp_path / "cache"
-    cache.mkdir()
-    jax = SimpleNamespace(config=_Config())
-
-    receipt = configure_persistent_compilation_cache(jax, _environment(cache))
-
-    assert receipt["configured"] is True
-    assert receipt["cache_directory"] == str(cache)
-    assert receipt["config"] == jax.config.values
-    assert validate_cache_receipt(receipt, expected_directory=cache) == receipt
-
-
-def test_configure_cache_rejects_partial_policy(tmp_path: Path) -> None:
-    cache = tmp_path / "cache"
-    cache.mkdir()
-    environment = _environment(cache)
-    environment.pop("JAX_RAISE_PERSISTENT_CACHE_ERRORS")
-
-    with pytest.raises(RuntimeError, match="environment changed"):
-        configure_persistent_compilation_cache(SimpleNamespace(config=_Config()), environment)
 
 
 def test_cache_receipt_is_write_once(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:

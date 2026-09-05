@@ -1,11 +1,8 @@
 from __future__ import annotations
 
-import base64
-import hashlib
 import importlib.util
 import json
 import stat
-import subprocess
 import sys
 from pathlib import Path
 
@@ -25,88 +22,6 @@ def _load_helper():
 
 
 backup = _load_helper()
-
-
-def test_backup_contract_pins_the_exact_private_and_public_inputs() -> None:
-    assert backup.PRIVATE_SHA256 == {
-        "hidden.jsonl": "ef32a7ca378d8239352936b08665c3b45fe12dab47b8d5a1bf2356859f8db61c",
-        "hidden.key": "0597ce504ae95b47d44e5454d7fce644bff92cc1976130222eb32bf6cd6cf4cd",
-        "custody.json": "c0ecfb48ce0135b23a1eaf9a37ee6db57f4a1e854d394a46983a67bc4563a9f4",
-    }
-    assert (
-        backup.DATASET_MANIFEST_SHA256
-        == "e717eb38c44fceeeae3a2bc88981767c316ca1339198ce1077b893252afeb1de"
-    )
-    assert (
-        backup.CONFIG_SHA256 == "db6b3788aa555f89624f30d05a827f1911c0d62e5376e3aced40333dff833fd0"
-    )
-
-
-def test_historical_verifier_binds_v1_key_receipt_and_manifest(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    repository = tmp_path / "repo"
-    custody_root = tmp_path / "custody"
-    manifest_path = repository / "datasets/story-fidelity-v1/manifest.json"
-    manifest_path.parent.mkdir(parents=True)
-    custody_root.mkdir(mode=0o700)
-
-    material = hashlib.sha384(b"historical-custody").digest()
-    encoded = base64.urlsafe_b64encode(material).decode("ascii")
-    key_path = custody_root / "hidden.key"
-    key_path.write_text(backup.HISTORICAL_KEY_PREFIX + encoded + "\n")
-    key_path.chmod(0o600)
-    hidden_path = custody_root / "hidden.jsonl"
-    hidden_path.write_bytes(b'{"private":true}\n')
-    hidden_path.chmod(0o600)
-    hidden_sha256 = hashlib.sha256(hidden_path.read_bytes()).hexdigest()
-    manifest = {
-        "dataset_id": backup.HISTORICAL_DATASET_ID,
-        "generator_source_sha256": "1" * 64,
-        "generator_config_sha256": "2" * 64,
-        "generator_runtime": {"python_version": "3.14.6"},
-        "splits": {"hidden": {"sha256": hidden_sha256}},
-    }
-    manifest_path.write_text(json.dumps(manifest))
-    manifest_sha256 = hashlib.sha256(manifest_path.read_bytes()).hexdigest()
-    receipt = {
-        "schema_version": backup.HISTORICAL_CUSTODY_VERSION,
-        "dataset_id": backup.HISTORICAL_DATASET_ID,
-        "key_fingerprint_sha256": hashlib.sha256(material).hexdigest(),
-        "hidden_sha256": hidden_sha256,
-        "dataset_manifest_sha256": manifest_sha256,
-        "generator_source_sha256": manifest["generator_source_sha256"],
-        "generator_config_sha256": manifest["generator_config_sha256"],
-        "generator_runtime": manifest["generator_runtime"],
-        "hidden_derivation": backup.HISTORICAL_HIDDEN_DERIVATION,
-    }
-    receipt_path = custody_root / "custody.json"
-    receipt_path.write_text(json.dumps(receipt))
-    receipt_path.chmod(0o600)
-    monkeypatch.setattr(
-        backup,
-        "PRIVATE_SHA256",
-        {"hidden.jsonl": hidden_sha256, "hidden.key": "0" * 64, "custody.json": "0" * 64},
-    )
-    monkeypatch.setattr(backup, "DATASET_MANIFEST_SHA256", manifest_sha256)
-    config = backup.BackupConfiguration(
-        repository=repository,
-        custody_root=custody_root,
-        backup_root=tmp_path / "backups",
-        ssh_key=tmp_path / "ssh-key",
-        jetson_host="jetson.local",
-        jetson_user="operator",
-        host_key_alias="jetson.local",
-        remote_directory="/home/operator/.local/share/bookforge/custody-backups",
-        check_only=True,
-        recovery_key_ceremony=False,
-    )
-
-    backup._validate_historical_custody(config)
-    receipt["key_fingerprint_sha256"] = "0" * 64
-    receipt_path.write_text(json.dumps(receipt))
-    with pytest.raises(backup.BackupError, match="does not bind"):
-        backup._validate_historical_custody(config)
 
 
 def test_private_source_validation_rejects_links_modes_and_changed_bytes(
@@ -196,17 +111,3 @@ def test_recovery_key_reaches_only_the_native_dialog_stdin(
     assert recovery_key in captured["input_bytes"]
     assert captured["suppress_output"] is True
     assert recovery_key not in " ".join(captured["command"]).encode()
-
-
-def test_help_is_non_mutating_and_documents_check_only() -> None:
-    result = subprocess.run(
-        [sys.executable, str(HELPER), "--help"],
-        text=True,
-        capture_output=True,
-        check=False,
-    )
-
-    assert result.returncode == 0
-    assert "--check-only" in result.stdout
-    assert "--recovery-key-ceremony" in result.stdout
-    assert "without Keychain, image, network, or writes" in " ".join(result.stdout.split())

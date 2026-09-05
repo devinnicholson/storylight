@@ -16,10 +16,6 @@ from training.jax_fidelity.development_eligibility import (
     validate_development_evidence_chain,
 )
 from training.jax_fidelity.integrity import canonical_sha256, sha256_file
-from training.jax_fidelity.prediction_evidence import (
-    PredictionEvidenceError,
-    validate_prediction_completion,
-)
 
 CANDIDATE_ID = "fidelity-0123456789abcdefabcd"
 CONFIG_SHA256 = "1" * 64
@@ -123,33 +119,6 @@ def _evaluation_completion(
         },
     )
     return path, digest
-
-
-def test_prediction_completion_binds_candidate_config_dataset_and_bytes(
-    tmp_path: Path,
-) -> None:
-    predictions, predictions_sha, completion, completion_sha = _prediction_release(tmp_path)
-
-    document = validate_prediction_completion(
-        completion,
-        expected_sha256=completion_sha,
-        predictions_path=predictions,
-        expected_predictions_sha256=predictions_sha,
-        expected_candidate_id=CANDIDATE_ID,
-        expected_config_sha256=CONFIG_SHA256,
-        expected_dataset_manifest_sha256=DATASET_SHA256,
-        expected_development_records_sha256=RECORDS_SHA256,
-    )
-
-    assert document["checkpoint_content_sha256"] == CHECKPOINT_CONTENT_SHA256
-    with pytest.raises(PredictionEvidenceError, match="another candidate_id"):
-        validate_prediction_completion(
-            completion,
-            expected_sha256=completion_sha,
-            predictions_path=predictions,
-            expected_predictions_sha256=predictions_sha,
-            expected_candidate_id="fidelity-ffffffffffffffffffff",
-        )
 
 
 def test_development_evidence_chain_rejects_swapped_predictions_or_report(

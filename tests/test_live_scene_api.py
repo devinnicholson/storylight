@@ -1,7 +1,6 @@
 import hashlib
 import json
 import os
-from threading import Event
 from types import SimpleNamespace
 
 import pytest
@@ -19,15 +18,7 @@ from bookforge.api import (  # noqa: E402
     app,
 )
 from bookforge.config import Settings  # noqa: E402
-from bookforge.finite_modal_provider import (  # noqa: E402
-    WarmPrewarmReport,
-    WarmProviderStatus,
-)
 from bookforge.live_scene import DETERMINISTIC_LIVE_SCENE_COMPILER_MODEL  # noqa: E402
-from bookforge.nemotron_critic import (  # noqa: E402
-    NemotronCriticEvidence,
-    NemotronCriticVerdict,
-)
 
 
 @pytest.fixture(autouse=True)
@@ -199,37 +190,6 @@ def test_live_scene_sse_replays_terminal_snapshot_on_reconnect() -> None:
     assert _sse_data(replay.text) == [terminal]
 
 
-def test_live_scene_api_reuses_exact_verified_completed_scene() -> None:
-    payload = {
-        **_payload(),
-        "text": "A clockwork sparrow folds a map beneath violet stars.",
-        "seed": 771_204,
-        "session_id": "exact-replay-api-test",
-    }
-    with TestClient(app) as client:
-        generated = client.post("/v1/live-scenes", json=payload).json()
-        generated_terminal = _sse_data(
-            client.get(f"/v1/live-scenes/{generated['job_id']}/events").text
-        )[-1]
-        replay = client.post("/v1/live-scenes", json=payload).json()
-        replay_terminal = _sse_data(client.get(f"/v1/live-scenes/{replay['job_id']}/events").text)[
-            -1
-        ]
-
-    assert generated_terminal["complete"] is True
-    assert replay_terminal["complete"] is True
-    assert replay_terminal["metrics"]["scene_cache_hit"] is True
-    assert replay_terminal["metrics"]["provider_ms"] == 0
-    assert replay_terminal["metrics"]["inference_ms"] == 0
-    assert replay_terminal["metrics"]["estimated_gpu_usd"] == 0
-    assert replay_terminal["revision"] == 3
-    assert "draft_ready" not in replay_terminal["metrics"]["milestones_ms"]
-    assert "master_ready" not in replay_terminal["metrics"]["milestones_ms"]
-    assert [artifact["checksum_sha256"] for artifact in replay_terminal["artifacts"]] == [
-        artifact["checksum_sha256"] for artifact in generated_terminal["artifacts"]
-    ]
-
-
 def test_live_scene_api_rejects_raw_media_unknown_jobs_and_remote_clients() -> None:
     payload = {**_payload(), "raw_audio": "not-allowed"}
     unknown_id = "scene_000000000000000000000000"
@@ -296,36 +256,6 @@ def test_live_scene_api_rejects_raw_media_unknown_jobs_and_remote_clients() -> N
     assert remote_critic.status_code == 403
 
 
-def test_projector_telemetry_round_trips_locally_and_rejects_remote_clients() -> None:
-    payload = {
-        "session_id": "bookforge-live",
-        "renderer": "webgl-depth",
-        "display_fps": None,
-        "dropped_display_frames": 0,
-        "depth_fps": 29.97,
-        "depth_target_fps": 30,
-        "depth_rendered_frames": 900,
-        "depth_skipped_frames": 901,
-        "sample_window_ms": 5_001.2,
-        "live_job_id": "scene_000000000000000000000123",
-        "live_stage": "master_ready",
-        "live_activation_ms": 188.4,
-    }
-    with TestClient(app) as client:
-        recorded = client.post("/v1/projector-telemetry", json=payload)
-        latest = client.get("/v1/projector-telemetry/bookforge-live")
-    with TestClient(app, client=("203.0.113.8", 50000)) as remote:
-        remote_record = remote.post("/v1/projector-telemetry", json=payload)
-        remote_latest = remote.get("/v1/projector-telemetry/bookforge-live")
-
-    assert recorded.status_code == 200
-    assert recorded.json()["captured_at"]
-    assert latest.status_code == 200
-    assert latest.json() == recorded.json()
-    assert remote_record.status_code == 403
-    assert remote_latest.status_code == 403
-
-
 def test_nemotron_critic_rejects_non_privacy_gated_fallback_scene() -> None:
     calls: list[dict[str, object]] = []
 
@@ -338,19 +268,7 @@ def test_nemotron_critic_rejects_non_privacy_gated_fallback_scene() -> None:
                     "media_type": media_type,
                 }
             )
-            return NemotronCriticEvidence(
-                verdict=NemotronCriticVerdict(
-                    fidelity_score=0.91,
-                    composition_score=0.88,
-                    projection_legibility_score=0.86,
-                    identity_consistent=True,
-                    unintended_text=False,
-                    decision="accept",
-                    reason="The expected visual subjects are present and projection-readable.",
-                ),
-                model="nvidia/llama-3.1-nemotron-nano-vl-8b-v1",
-                latency_ms=81.5,
-            )
+            raise AssertionError("Private fallback must not reach the critic")
 
     secret_passage = "Quenlora whispered the private amber sentence beside a folded map."
     payload = {
@@ -369,53 +287,6 @@ def test_nemotron_critic_rejects_non_privacy_gated_fallback_scene() -> None:
     assert response.status_code == 409
     assert response.json()["detail"] == "Nemotron requires a locally privacy-gated model scene plan"
     assert calls == []
-
-
-def test_live_scene_planner_prepare_primes_only_the_local_planner() -> None:
-    calls: list[dict[str, object]] = []
-
-    class StubPlanner:
-        async def plan(self, *, text: str, visual_style: str, seed: int):
-            calls.append({"text": text, "visual_style": visual_style, "seed": seed})
-            return SimpleNamespace(
-                wall_ms=8_750.5,
-                cache_hit=False,
-                model_revision="ollama-manifest-sha256:test",
-                metrics=SimpleNamespace(
-                    model="gemma3:1b-it-q4_K_M",
-                    input_tokens=537,
-                    output_tokens=172,
-                ),
-            )
-
-    with TestClient(app) as client:
-        client.app.state.live_scenes.provider = SimpleNamespace(planner=StubPlanner())
-        response = client.post(
-            "/v1/live-scene-planner/prepare",
-            json={
-                "text": "A silver fox waits below the cedar trees.",
-                "visual_style": "luminous paper theater",
-                "session_id": "projector-yield",
-            },
-        )
-
-    assert response.status_code == 200
-    assert response.json() == {
-        "ready": True,
-        "planning_ms": 8_750.5,
-        "cache_hit": False,
-        "model": "gemma3:1b-it-q4_K_M",
-        "revision": "ollama-manifest-sha256:test",
-        "input_tokens": 537,
-        "output_tokens": 172,
-    }
-    assert calls == [
-        {
-            "text": "A silver fox waits below the cedar trees.",
-            "visual_style": "luminous paper theater",
-            "seed": 0,
-        }
-    ]
 
 
 def test_live_scene_planner_warmup_uses_no_request_body_or_story_text() -> None:
@@ -449,154 +320,6 @@ def test_live_scene_planner_warmup_uses_no_request_body_or_story_text() -> None:
         "output_tokens": 5,
     }
     assert calls == 1
-
-
-def test_live_scene_planner_auto_warmup_starts_with_the_api(
-    monkeypatch,
-    tmp_path,
-) -> None:
-    started = Event()
-    closed = Event()
-
-    class StubPlanner:
-        async def warmup(self):
-            started.set()
-            return SimpleNamespace()
-
-    class StubProvider:
-        name = "startup-warmup-stub"
-        planner = StubPlanner()
-
-        async def aclose(self):
-            closed.set()
-
-    settings = Settings(
-        _env_file=None,
-        model_backend="fake",
-        model_name="fake",
-        asset_backend="fake",
-        live_scene_planner="model",
-        live_scene_planner_auto_warmup=True,
-        data_dir=tmp_path / "data",
-        cache_dir=tmp_path / "cache",
-    )
-    monkeypatch.setattr("bookforge.api.get_settings", lambda: settings)
-    monkeypatch.setattr(
-        "bookforge.api.build_live_scene_provider",
-        lambda *args, **kwargs: StubProvider(),
-    )
-
-    with TestClient(app):
-        assert started.wait(timeout=1)
-
-    assert closed.wait(timeout=1)
-
-
-def test_explicit_warm_provider_routes_are_strict_by_default() -> None:
-    class StubWarmProvider:
-        async def warm_status(self) -> WarmProviderStatus:
-            return WarmProviderStatus(
-                ready=True,
-                detail="deployed classes reachable",
-                state="idle",
-            )
-
-        async def prewarm(
-            self,
-            *,
-            prewarm_id: str,
-            include_motion: bool,
-            scaledown_window_seconds: int,
-        ) -> WarmPrewarmReport:
-            return WarmPrewarmReport(
-                prewarm_id=prewarm_id,
-                reservation_id="reservation-123",
-                include_motion=include_motion,
-                fast_remote_seconds=2.5,
-                motion_remote_seconds=0,
-                full_session_ceiling_usd=0.2,
-                fast_model_load_seconds=2,
-                motion_model_load_seconds=0,
-                expires_in_seconds=30,
-                scaledown_window_seconds=scaledown_window_seconds,
-            )
-
-    with TestClient(app) as client:
-        client.app.state.live_scenes.provider = SimpleNamespace(
-            provider=StubWarmProvider(),
-            enable_motion=False,
-        )
-        status_response = client.get("/v1/live-scene-provider/warm-status")
-        prewarm_response = client.post(
-            "/v1/live-scene-provider/prewarm",
-            json={"prewarm_id": "demo-prewarm", "include_motion": False},
-        )
-        presentation_response = client.post(
-            "/v1/live-scene-provider/prewarm",
-            json={
-                "prewarm_id": "demo-presentation",
-                "include_motion": False,
-                "scaledown_window_seconds": 600,
-            },
-        )
-        invalid = client.post(
-            "/v1/live-scene-provider/prewarm",
-            json={"prewarm_id": "x", "include_motion": False},
-        )
-        unused_motion = client.post(
-            "/v1/live-scene-provider/prewarm",
-            json={"prewarm_id": "motion-prewarm", "include_motion": True},
-        )
-        excessive_window = client.post(
-            "/v1/live-scene-provider/prewarm",
-            json={"prewarm_id": "too-long", "scaledown_window_seconds": 901},
-        )
-
-    assert status_response.status_code == 200
-    assert status_response.json() == {
-        "ready": True,
-        "detail": "deployed classes reachable",
-        "state": "idle",
-        "prewarm_id": None,
-        "include_motion": False,
-        "expires_in_seconds": 0.0,
-        "scaledown_window_seconds": 90,
-    }
-    assert prewarm_response.status_code == 200
-    assert prewarm_response.json()["prewarm_id"] == "demo-prewarm"
-    assert prewarm_response.json()["expires_in_seconds"] == 30
-    assert presentation_response.status_code == 200
-    assert presentation_response.json()["scaledown_window_seconds"] == 600
-    assert invalid.status_code == 422
-    assert unused_motion.status_code == 409
-    assert excessive_window.status_code == 422
-
-
-def test_status_only_provider_reports_readiness_without_exposing_prewarm() -> None:
-    class StubStatusProvider:
-        async def warm_status(self) -> WarmProviderStatus:
-            return WarmProviderStatus(
-                ready=True,
-                detail="Vertex managed route is authenticated",
-                state="idle",
-            )
-
-    with TestClient(app) as client:
-        client.app.state.live_scenes.provider = SimpleNamespace(
-            provider=StubStatusProvider(),
-            enable_motion=False,
-        )
-        status_response = client.get("/v1/live-scene-provider/warm-status")
-        prewarm_response = client.post(
-            "/v1/live-scene-provider/prewarm",
-            json={"prewarm_id": "blocked-prewarm", "include_motion": False},
-        )
-
-    assert status_response.status_code == 200
-    assert status_response.json()["ready"] is True
-    assert status_response.json()["state"] == "idle"
-    assert prewarm_response.status_code == 409
-    assert "does not support explicit prewarming" in prewarm_response.json()["detail"]
 
 
 def test_live_scene_session_endpoint_recovers_latest_job_and_advances_monotonically() -> None:

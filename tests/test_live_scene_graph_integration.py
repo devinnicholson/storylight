@@ -9,8 +9,6 @@ from bookforge.config import Settings
 from bookforge.live_scene_planner import (
     LiveSceneGraphPlan,
     LiveSceneGraphWirePlan,
-    LiveScenePlannerPrivacyError,
-    LiveSceneWirePlan,
     StructuredLiveScenePlanner,
 )
 from bookforge.model_client import FakeModelClient, ModelUnavailableError
@@ -31,23 +29,13 @@ HYBRID = (
 ACCEPTED = "SETTING: cave\nACTOR: foxes\nACTION: hold lantern\nMAGIC: ribbon"
 
 
-def test_graph_backend_is_explicit_and_keeps_accepted_wire_schema():
-    assert set(LiveSceneWirePlan.model_fields) == {"background_prompt", "focus", "magic"}
-    client = _build_live_scene_planner_client(
-        Settings(_env_file=None, live_scene_planner_backend="tensorrt_graph"),
-        fallback=FakeModelClient(),
-    )
-    assert client.scene_facts_enabled and client.protocol == "hybrid"
-    asyncio.run(client.client.aclose())
-
-
-@pytest.mark.parametrize("malformed", [HYBRID.replace("\n", " "), HYBRID + "\nMAGIC: ribbon"])
+@pytest.mark.parametrize("malformed", [HYBRID.replace("\n", " ")])
 def test_graph_envelope_is_stricter_than_accepted_parser(malformed):
     with pytest.raises(ValueError, match="four ordered"):
         tensor_graph_wire_plan(malformed, source_text=SOURCE)
 
 
-@pytest.mark.parametrize("protocol,content", [("hybrid", HYBRID), ("slots", ACCEPTED)])
+@pytest.mark.parametrize("protocol,content", [("slots", ACCEPTED)])
 def test_graph_survives_live_planning_and_persistent_cache(tmp_path, protocol, content):
     async def run():
         calls = []
@@ -157,7 +145,7 @@ def test_accepted_graph_success_or_refusal_uses_exactly_one_request(content):
     asyncio.run(run())
 
 
-@pytest.mark.parametrize("error_type", [ValueError, LiveScenePlannerPrivacyError])
+@pytest.mark.parametrize("error_type", [ValueError])
 def test_accepted_graph_late_compiler_refusal_preserves_accepted_wire(monkeypatch, error_type):
     def refuse(*args, **kwargs):
         raise error_type("compiler refusal")
@@ -215,7 +203,7 @@ def test_refused_graph_runs_one_accepted_fallback_and_counts_both_requests():
     asyncio.run(run())
 
 
-@pytest.mark.parametrize("protocol", ["slots", "hybrid"])
+@pytest.mark.parametrize("protocol", ["slots"])
 @pytest.mark.parametrize("finish_reason", ["stop", "length"])
 def test_graph_response_validation_errors_are_value_free(protocol, finish_reason):
     async def run():

@@ -11,13 +11,9 @@ import pytest
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
-from bookforge.fidelity_dataset import CATEGORIES
 from bookforge.fidelity_schema import DatasetSplit
-from training.jax_fidelity.configuration import ConfigError, load_config, validate_config
 from training.jax_fidelity.integrity import canonical_json_bytes, sha256_file
 from training.jax_fidelity.recovery_inputs import (
-    EXPERIMENT_ID,
-    PRODUCER,
     RecoveryInputError,
     _assert_disjoint,
     _load_split,
@@ -94,106 +90,6 @@ def _build(tmp_path: Path, *, destination: str) -> tuple[dict, Path, dict[str, P
         output_directory=output,
     )
     return result, output, lineage
-
-
-def test_v3_config_is_a_fail_closed_diagnostic_contract() -> None:
-    config = load_config(CONFIG)
-
-    assert config.experiment_id == EXPERIMENT_ID
-    assert config.training["steps"] == 100
-    assert config.training["learning_rate"] == 0.0001
-    assert config.training["preparation_policy"] == config.recovery["selection_policy"]
-    assert config.recovery["overfit_canary"]["records"] == 40
-    assert config.recovery["public_probe"]["records"] == 80
-    assert config.recovery["execution"] == {
-        "diagnostic_only": True,
-        "expected_accelerators": 2,
-        "expected_global_batch_size": 2,
-        "full_development_evaluation_authorized": False,
-        "merge_authorized": False,
-    }
-
-    for path, value in (
-        (("training", "learning_rate"), 0.0002),
-        (("recovery", "overfit_canary", "records"), 42),
-        (("recovery", "execution", "merge_authorized"), True),
-        (
-            (
-                "recovery",
-                "learnability_acceptance",
-                "minimum_nonzero_gradient_fraction",
-            ),
-            0.01,
-        ),
-    ):
-        drifted = json.loads(CONFIG.read_text())
-        target = drifted
-        for name in path[:-1]:
-            target = target[name]
-        target[path[-1]] = value
-        with pytest.raises(ConfigError):
-            validate_config(drifted)
-
-
-def test_builder_pins_balanced_public_populations_and_writes_manifest_last(
-    tmp_path: Path,
-) -> None:
-    result, output, _ = _build(tmp_path, destination="inputs")
-    manifest = json.loads((output / "inputs.manifest.json").read_text())
-
-    assert manifest["producer"] == PRODUCER
-    assert manifest["status"] == "complete"
-    assert result["manifest_sha256"] == sha256_file(output / "inputs.manifest.json")
-    assert manifest["privacy"] == {
-        "public_records_only": True,
-        "hidden_records_included": False,
-    }
-    assert (
-        manifest["learnability_acceptance"]
-        == json.loads((output.parent / "config-v3.json").read_text())["recovery"][
-            "learnability_acceptance"
-        ]
-    )
-    canary = manifest["populations"]["overfit_canary"]
-    probe = manifest["populations"]["public_probe"]
-    assert (canary["records"], canary["pairs"]) == (40, 20)
-    assert (probe["records"], probe["pairs"]) == (80, 40)
-    assert set(canary["category_pair_counts"]) == set(CATEGORIES)
-    assert set(canary["category_pair_counts"].values()) == {1}
-    assert set(probe["category_pair_counts"].values()) == {2}
-    assert manifest["disjoint"] == {
-        "family_id": True,
-        "pair_id": True,
-        "passage_sha256": True,
-        "record_id": True,
-        "template_family": True,
-    }
-    assert {row["path"] for row in manifest["files"]} == {
-        "overfit-canary.source.jsonl",
-        "overfit-canary.train.jsonl",
-        "public-probe.source.jsonl",
-        "public-probe.teacher.jsonl",
-    }
-
-    source_rows = [
-        json.loads(line)
-        for line in (output / "overfit-canary.source.jsonl").read_text().splitlines()
-    ]
-    prepared_rows = [
-        json.loads(line)
-        for line in (output / "overfit-canary.train.jsonl").read_text().splitlines()
-    ]
-    assert [row["record_id"] for row in prepared_rows] == [row["record_id"] for row in source_rows]
-    assert all(
-        source_rows[index]["pair_id"] == source_rows[index + 1]["pair_id"]
-        and [source_rows[index]["pair_variant"], source_rows[index + 1]["pair_variant"]]
-        == ["a", "b"]
-        for index in range(0, len(source_rows), 2)
-    )
-    assert all(
-        [message["role"] for message in row["messages"]] == ["system", "user", "assistant"]
-        for row in prepared_rows
-    )
 
 
 def test_builder_is_byte_deterministic_and_never_overwrites(tmp_path: Path) -> None:

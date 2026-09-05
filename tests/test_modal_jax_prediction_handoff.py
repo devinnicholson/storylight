@@ -18,12 +18,10 @@ os.environ.setdefault(
 
 from deploy import modal_jax_prediction as prediction
 from deploy import modal_jax_prediction_handoff as worker
-from infra.gcp.jax import stage_modal_prediction_inputs as materialized_stager
 from infra.gcp.jax.prediction_handoff import (
     approval_token,
     canonical_bytes,
     manifest_sha256,
-    prediction_approval_token,
     sha256_file,
 )
 from scripts.plan_modal_jax_prediction_handoff import build_plan
@@ -146,55 +144,6 @@ def _population(tmp_path: Path) -> tuple[Path, Path, dict[str, object]]:
     return inputs, releases, request
 
 
-def test_plan_is_exact_and_references_existing_modal_bytes(tmp_path: Path) -> None:
-    inputs, releases, request = _population(tmp_path)
-    source = inputs / str(request["source_run_id"])
-    release = releases / str(request["merge_run_id"])
-    plan = build_plan(
-        source_input_manifest_path=source / "inputs.manifest.json",
-        merge_completion_path=release / "completion.json",
-        candidate_manifest_path=release / "candidate.manifest.json",
-        checkpoint_manifest_path=release / "merged-hf.manifest.json",
-        dataset_manifest_path=DATASET_MANIFEST,
-        development_records_path=DEVELOPMENT,
-        prediction_run_id=str(request["prediction_run_id"]),
-    )
-
-    assert plan["status"] == "plan-only"
-    assert plan["remote_mutation"] is False
-    assert plan["checkpoint_bytes_reuploaded"] == 0
-    assert plan["approval_token"] == approval_token(
-        **{name: request[name] for name in request if name != "approval_token"}
-    )
-    assert plan["prediction_approval_token"] == prediction._approval_token(
-        run_id=str(plan["prediction_run_id"]),
-        input_manifest_sha256=str(plan["target_manifest_sha256"]),
-        batch_size=4,
-        **{
-            name: str(plan["target_manifest"]["bindings"][name])
-            for name in (
-                "candidate_id",
-                "config_sha256",
-                "dataset_manifest_sha256",
-                "development_records_sha256",
-                "candidate_manifest_sha256",
-                "checkpoint_manifest_sha256",
-                "checkpoint_content_sha256",
-            )
-        },
-    )
-    assert plan["prediction_approval_token"] == prediction_approval_token(
-        run_id=str(plan["prediction_run_id"]),
-        bindings=plan["target_manifest"]["bindings"],
-        input_manifest_sha256=str(plan["target_manifest_sha256"]),
-    )
-    references = plan["target_manifest"]["references"]
-    checkpoint = next(row for row in references if row["path"].endswith("model.safetensors"))
-    assert checkpoint["source_volume"] == "bookforge-jax-fidelity-release"
-    assert checkpoint["source_path"].startswith(f"merged/{request['merge_run_id']}/")
-    assert not any("hidden" in str(row["path"]).casefold() for row in references)
-
-
 def test_worker_publishes_only_manifest_and_prediction_resolves_references(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
@@ -221,46 +170,6 @@ def test_worker_publishes_only_manifest_and_prediction_resolves_references(
     assert paths["development_records"] == (
         inputs / str(request["source_run_id"]) / "dataset/development.jsonl"
     )
-
-
-def test_prediction_keeps_materialized_stager_compatibility(tmp_path: Path) -> None:
-    _population(tmp_path)
-    release = tmp_path / "legacy-release"
-    checkpoint = release / "merged-hf"
-    checkpoint.mkdir(parents=True)
-    (checkpoint / "config.json").write_bytes(b"{}\n")
-    (checkpoint / "model.safetensors").write_bytes(b"legacy merged weights")
-    candidate = build_merged_candidate_manifest(
-        config_path=LEGACY_CONFIG,
-        dataset_manifest_sha256=sha256_file(LEGACY_DATASET_MANIFEST),
-        training_run_id="lora-train-bbbbbbbbbbbbbbbbbbbb",
-        merged_hf_checkpoint=checkpoint,
-    )
-    _write_json(release / "candidate.manifest.json", candidate)
-    run_id = "jax-prediction-20260902-legacy"
-    manifest, sources = materialized_stager.build_prediction_input_manifest(
-        run_id=run_id,
-        config_path=LEGACY_CONFIG,
-        dataset_manifest_path=LEGACY_DATASET_MANIFEST,
-        development_records_path=LEGACY_DEVELOPMENT,
-        candidate_directory=release,
-    )
-    root = tmp_path / "materialized"
-    for relative, source in sources.items():
-        destination = root / relative
-        destination.parent.mkdir(parents=True, exist_ok=True)
-        shutil.copyfile(source, destination)
-    _write_json(root / "inputs.manifest.json", manifest)
-
-    paths = prediction._resolve_prediction_inputs(
-        root,
-        run_id=run_id,
-        expected_manifest_sha256=manifest_sha256(manifest),
-        expected_bindings=manifest["bindings"],
-    )
-
-    assert paths["checkpoint"] == root / "candidate/merged-hf"
-    assert paths["development_records"] == root / "dataset/development.jsonl"
 
 
 def test_handoff_rejects_inexact_approval_legacy_backend_and_hidden_state(

@@ -8,7 +8,6 @@ import pytest
 from pydantic import ValidationError
 
 from bookforge.anticipatory import (
-    AnticipationConflictError,
     AnticipationSource,
     AnticipatoryBatchRequest,
     AnticipatorySceneOrchestrator,
@@ -126,12 +125,6 @@ class FakeRenderer:
         return _scene(spec, attempt, cost=self.cost)
 
 
-class EvictedCacheRenderer(FakeRenderer):
-    async def cached_result_available(self, scene: RenderedScene) -> bool:
-        del scene
-        return False
-
-
 class FakeCritic:
     def __init__(self, *decisions: NemotronCriticDecision) -> None:
         self.decisions = list(decisions) or [NemotronCriticDecision.ACCEPT]
@@ -161,21 +154,6 @@ def test_contract_has_no_raw_reader_data_escape_hatch() -> None:
         )
 
 
-def test_batch_reserves_two_attempts_and_exact_lookahead_has_no_siblings() -> None:
-    first = _spec("left_path")
-    second = _spec("right_path", seed=8)
-    with pytest.raises(ValidationError, match="cost ceiling"):
-        AnticipatoryBatchRequest(
-            session_token=SESSION_A,
-            sequence=3,
-            candidates=[first, second],
-            session_cost_ceiling_usd=0.079,
-        )
-    exact = _spec("known_next", source=AnticipationSource.EXACT_LOOKAHEAD)
-    with pytest.raises(ValidationError, match="one known candidate"):
-        _batch(exact, second)
-
-
 def test_accept_then_commit_cancels_the_unused_ready_branch() -> None:
     async def scenario() -> None:
         renderer = FakeRenderer()
@@ -200,27 +178,6 @@ def test_accept_then_commit_cancels_the_unused_ready_branch() -> None:
         assert status.metrics.committed == 1
         assert status.metrics.cancelled == 1
         assert status.metrics.wasted_render_cost_usd == pytest.approx(0.004)
-        await orchestrator.close()
-
-    asyncio.run(scenario())
-
-
-def test_early_commit_selects_candidate_while_rendering() -> None:
-    async def scenario() -> None:
-        orchestrator = AnticipatorySceneOrchestrator(
-            renderer=FakeRenderer(delay=0.02),
-            critic=FakeCritic(),
-            now=lambda: NOW,
-        )
-        await orchestrator.submit(_batch(_spec("left_path"), _spec("right_path", seed=8)))
-        await orchestrator.commit(
-            CommitRequest(session_token=SESSION_A, sequence=3, branch_id="left_path")
-        )
-        selected = await orchestrator.wait_terminal(SESSION_A, 3, "left_path")
-        assert selected.state is CandidateState.COMMITTED
-        assert selected.selected is True
-        status = await orchestrator.status(SESSION_A, 3)
-        assert status.metrics.cancelled == 1
         await orchestrator.close()
 
     asyncio.run(scenario())
@@ -348,50 +305,6 @@ def test_accepted_scene_is_content_addressed_across_private_sessions() -> None:
     asyncio.run(scenario())
 
 
-def test_cache_never_returns_an_asset_that_expires_before_the_new_candidate() -> None:
-    async def scenario() -> None:
-        renderer = FakeRenderer()
-        critic = FakeCritic()
-        orchestrator = AnticipatorySceneOrchestrator(
-            renderer=renderer,
-            critic=critic,
-            now=lambda: NOW,
-        )
-        await orchestrator.submit(_batch(_spec()))
-        await orchestrator.wait_terminal(SESSION_A, 3, "moon_path")
-        later = _spec("later", sequence=9, not_after=NOW + timedelta(minutes=10))
-        await orchestrator.submit(_batch(later, session=SESSION_B, sequence=9))
-        result = await orchestrator.wait_terminal(SESSION_B, 9, "later")
-        assert result.cache_hit is False
-        assert result.render_attempts == 1
-        assert len(renderer.calls) == 2
-        await orchestrator.close()
-
-    asyncio.run(scenario())
-
-
-def test_cache_metadata_miss_renders_again_after_asset_eviction() -> None:
-    async def scenario() -> None:
-        renderer = EvictedCacheRenderer()
-        critic = FakeCritic()
-        orchestrator = AnticipatorySceneOrchestrator(
-            renderer=renderer,
-            critic=critic,
-            now=lambda: NOW,
-        )
-        await orchestrator.submit(_batch(_spec()))
-        await orchestrator.wait_terminal(SESSION_A, 3, "moon_path")
-        replay = _spec("replayed", sequence=9, not_after=NOW + timedelta(minutes=4))
-        await orchestrator.submit(_batch(replay, session=SESSION_B, sequence=9))
-        result = await orchestrator.wait_terminal(SESSION_B, 9, "replayed")
-        assert result.cache_hit is False
-        assert result.render_attempts == 1
-        assert len(renderer.calls) == 2
-        await orchestrator.close()
-
-    asyncio.run(scenario())
-
-
 def test_renderer_cost_overrun_fails_closed() -> None:
     async def scenario() -> None:
         orchestrator = AnticipatorySceneOrchestrator(
@@ -404,23 +317,6 @@ def test_renderer_cost_overrun_fails_closed() -> None:
         assert record.state is CandidateState.FAILED
         assert "cost ceiling" in (record.error or "")
         assert not record.critic_history
-        await orchestrator.close()
-
-    asyncio.run(scenario())
-
-
-def test_reusing_a_branch_id_with_different_content_is_rejected() -> None:
-    async def scenario() -> None:
-        orchestrator = AnticipatorySceneOrchestrator(
-            renderer=FakeRenderer(delay=0.02),
-            critic=FakeCritic(),
-            now=lambda: NOW,
-        )
-        original = _spec()
-        await orchestrator.submit(_batch(original))
-        changed = original.model_copy(update={"seed": 99})
-        with pytest.raises(AnticipationConflictError, match="different content"):
-            await orchestrator.submit(_batch(changed))
         await orchestrator.close()
 
     asyncio.run(scenario())

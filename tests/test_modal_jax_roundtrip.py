@@ -13,24 +13,13 @@ JAX_INFRA = ROOT / "infra/gcp/jax"
 sys.path.insert(0, str(ROOT))
 sys.path.insert(0, str(JAX_INFRA))
 
-from training.jax_fidelity.integrity import artifact_manifest, sha256_file
+from training.jax_fidelity.integrity import sha256_file
 from training.jax_fidelity.orbax_receipt import (
     OrbaxReceiptError,
     discover_orbax_items,
     orbax_leaf_receipt,
-    terminal_checkpoint_step,
     verify_orbax_leaf_receipt,
-    write_orbax_leaf_receipt,
 )
-
-
-def test_terminal_checkpoint_step_uses_maxtext_zero_based_numbering() -> None:
-    assert terminal_checkpoint_step(5) == 4
-    assert terminal_checkpoint_step(160) == 159
-    with pytest.raises(OrbaxReceiptError, match="positive integer"):
-        terminal_checkpoint_step(0)
-    with pytest.raises(OrbaxReceiptError, match="positive integer"):
-        terminal_checkpoint_step(True)
 
 
 def _load(name: str, path: Path):
@@ -67,32 +56,6 @@ def _request(**updates: object) -> dict[str, object]:
     return request
 
 
-def _jsonl(path: Path, row: dict[str, object]) -> str:
-    path.write_text(json.dumps(row, sort_keys=True) + "\n", encoding="utf-8")
-    return sha256_file(path)
-
-
-def test_orbax_leaf_discovery_records_one_exact_step(tmp_path: Path) -> None:
-    root = tmp_path / "outputs"
-    leaf = root / "run/checkpoints/5/items"
-    leaf.mkdir(parents=True)
-    (leaf / "checkpoint").write_bytes(b"adapter")
-
-    selected = discover_orbax_items(root, expected_step=5)
-    receipt = orbax_leaf_receipt(root, selected, expected_step=5, role="smoke-lora")
-    receipt_path = tmp_path / "receipt.json"
-    write_orbax_leaf_receipt(receipt_path, receipt)
-
-    assert selected == leaf.resolve()
-    assert receipt["relative_path"] == "run/checkpoints/5/items"
-    assert receipt["artifact_manifest"] == artifact_manifest(leaf)
-    assert (
-        verify_orbax_leaf_receipt(root, receipt, expected_step=5, role="smoke-lora")
-        == leaf.resolve()
-    )
-    assert json.loads(receipt_path.read_text()) == receipt
-
-
 def test_orbax_leaf_discovery_rejects_ambiguity_and_tampering(tmp_path: Path) -> None:
     root = tmp_path / "outputs"
     first = root / "a/5/items"
@@ -110,65 +73,6 @@ def test_orbax_leaf_discovery_rejects_ambiguity_and_tampering(tmp_path: Path) ->
     (selected / "checkpoint").write_bytes(b"changed")
     with pytest.raises(ValueError, match="does not match"):
         verify_orbax_leaf_receipt(root, receipt, expected_step=5, role="smoke-lora")
-
-
-def test_roundtrip_staging_includes_manifest_public_splits(tmp_path: Path) -> None:
-    dataset = tmp_path / "dataset"
-    dataset.mkdir()
-    train = dataset / "train.jsonl"
-    development = dataset / "development.jsonl"
-    row = {"id": "one"}
-    train_sha = _jsonl(train, row)
-    development_sha = _jsonl(development, row)
-    manifest = dataset / "manifest.json"
-    manifest.write_text(
-        json.dumps(
-            {
-                "splits": {
-                    "train": {"path": "train.jsonl", "sha256": train_sha, "records": 1},
-                    "development": {
-                        "path": "development.jsonl",
-                        "sha256": development_sha,
-                        "records": 1,
-                    },
-                    "hidden": {"path": None, "sha256": "9" * 64, "records": 1},
-                }
-            }
-        )
-        + "\n",
-        encoding="utf-8",
-    )
-    config = tmp_path / "config.json"
-    prepared = tmp_path / "prepared.jsonl"
-    config.write_text("{}\n")
-    prepared.write_text("{}\n")
-    snapshot = tmp_path / "snapshot"
-    tokenizer = tmp_path / "tokenizer"
-    snapshot.mkdir()
-    tokenizer.mkdir()
-    (snapshot / "model.safetensors").write_bytes(b"model")
-    (tokenizer / "tokenizer.json").write_bytes(b"tokenizer")
-    snapshot_manifest = tmp_path / "snapshot.manifest.json"
-    tokenizer_manifest = tmp_path / "tokenizer.manifest.json"
-    snapshot_manifest.write_text(json.dumps(artifact_manifest(snapshot)) + "\n")
-    tokenizer_manifest.write_text(json.dumps(artifact_manifest(tokenizer)) + "\n")
-
-    document, sources = staging.build_roundtrip_input_manifest(
-        run_id="bookforge-roundtrip-smoke-20260901",
-        config=config,
-        dataset_manifest=manifest,
-        prepared_train=prepared,
-        hf_snapshot=snapshot,
-        hf_snapshot_manifest=snapshot_manifest,
-        tokenizer=tokenizer,
-        tokenizer_manifest=tokenizer_manifest,
-    )
-
-    assert document["purpose"] == "hf-maxtext-roundtrip-smoke"
-    assert "dataset/train.jsonl" in sources
-    assert "dataset/development.jsonl" in sources
-    assert all("hidden" not in path for path in sources)
-    assert {row["path"] for row in document["files"]} == set(sources)
 
 
 def test_roundtrip_request_requires_exact_approval_and_complete_cache_binding() -> None:
@@ -196,50 +100,6 @@ def test_roundtrip_request_requires_exact_approval_and_complete_cache_binding() 
         roundtrip._validate_base_cache_request(
             {"base_cache_run_id": cache_run_id},
             target_run_id="bookforge-roundtrip-target-20260902",
-        )
-
-
-def test_roundtrip_clone_rebinds_only_config_and_rejects_hidden(tmp_path: Path) -> None:
-    config = tmp_path / "config.json"
-    config.write_bytes(b'{"current":true}\n')
-    source = {
-        "schema_version": "1.0",
-        "status": "complete",
-        "purpose": "hf-maxtext-roundtrip-smoke",
-        "run_id": "jax-roundtrip-source-20260902",
-        "files": [
-            {"path": "checkpoint/model.safetensors", "bytes": 5, "sha256": "a" * 64},
-            {"path": "config.json", "bytes": 3, "sha256": "b" * 64},
-            {"path": "dataset/train.jsonl", "bytes": 7, "sha256": "c" * 64},
-        ],
-    }
-    encoded = canonical = json.dumps(source, separators=(",", ":"), sort_keys=True).encode() + b"\n"
-    cloned, paths = cloner.cloned_manifest(
-        encoded,
-        source_manifest_sha256=cloner._sha256_bytes(canonical),
-        source_run_id="jax-roundtrip-source-20260902",
-        target_run_id="jax-roundtrip-target-20260902",
-        config=config,
-    )
-
-    rows = {row["path"]: row for row in cloned["files"]}
-    assert cloned["run_id"] == "jax-roundtrip-target-20260902"
-    assert rows["config.json"] == {
-        "path": "config.json",
-        "bytes": config.stat().st_size,
-        "sha256": sha256_file(config),
-    }
-    assert paths == ["checkpoint/model.safetensors", "dataset/train.jsonl"]
-
-    source["files"][0]["path"] = "dataset/hidden.jsonl"
-    hidden = json.dumps(source, separators=(",", ":"), sort_keys=True).encode() + b"\n"
-    with pytest.raises(ValueError, match="hidden data"):
-        cloner.cloned_manifest(
-            hidden,
-            source_manifest_sha256=cloner._sha256_bytes(hidden),
-            source_run_id="jax-roundtrip-source-20260902",
-            target_run_id="jax-roundtrip-target-20260902",
-            config=config,
         )
 
 

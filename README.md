@@ -627,7 +627,9 @@ make test
 
 `make test` runs the Python suite and both JavaScript behavior suites; Node.js is required.
 Full corpus scoring and benchmark reproduction run separately from the unit suite.
-The [test-suite sweep](docs/test-suite-sweep-2026-09-04.md) records removed checks and retained coverage.
+The [test-suite reduction](docs/test-suite-halving-2026-09-04.md) records the 1,496-to-741 cut,
+retained coverage, and deliberate omissions. Add tests for distinct behavior or consequential
+failure modes, and remove superseded cases.
 
 ## Google Cloud
 

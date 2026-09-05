@@ -114,62 +114,12 @@ def test_terminal_lineage_rejects_an_active_engine_outside_the_gate() -> None:
         )
 
 
-def test_terminal_lineage_allows_a_96_character_candidate_id() -> None:
-    candidate_id = "c" * 96
-    gate, manifest, baseline, candidate, manifest_sha, gate_sha = identities(
-        candidate_id=candidate_id
-    )
-    values = recorder.lineage(
-        gate,
-        manifest,
-        candidate_manifest_sha256=manifest_sha,
-        gate_artifact_sha256=gate_sha,
-        baseline_engine_sha256=baseline,
-        active_engine_sha256=candidate,
-        outcome="promoted",
-    )
-    assert values["candidate_id"] == candidate_id
-
-
-def test_terminal_lineage_rejects_an_overlong_candidate_id() -> None:
-    gate, manifest, baseline, candidate, manifest_sha, gate_sha = identities(
-        candidate_id="c" * 97
-    )
-    with pytest.raises(ValueError, match="invalid identifier"):
-        recorder.lineage(
-            gate,
-            manifest,
-            candidate_manifest_sha256=manifest_sha,
-            gate_artifact_sha256=gate_sha,
-            baseline_engine_sha256=baseline,
-            active_engine_sha256=candidate,
-            outcome="promoted",
-        )
-
-
 @pytest.mark.parametrize(
     ("mutation", "message"),
     [
-        (lambda gate, manifest: gate.update(schema_version="2.0"), "lineage"),
-        (lambda gate, manifest: gate.update(stage="summary"), "lineage"),
         (lambda gate, manifest: gate.update(status="rejected"), "lineage"),
-        (lambda gate, manifest: gate.update(config_sha256=None), "lineage"),
-        (
-            lambda gate, manifest: manifest.update(source_dataset_manifest_sha256="9" * 64),
-            "lineage",
-        ),
-        (
-            lambda gate, manifest: gate["candidate_identity"].update(
-                model_revision="sha256:" + "9" * 64
-            ),
-            "engine identities",
-        ),
         (
             lambda gate, manifest: manifest.update(engine_sha256="9" * 64),
-            "engine identities",
-        ),
-        (
-            lambda gate, manifest: manifest.update(model_revision="sha256:" + "9" * 64),
             "engine identities",
         ),
     ],

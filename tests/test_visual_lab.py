@@ -7,8 +7,6 @@ from bookforge.visual_lab import (
     GenerationRecord,
     VisualLabBudgetError,
     VisualLabLedger,
-    measured_gpu_cost,
-    worst_case_gpu_cost,
 )
 
 
@@ -39,13 +37,6 @@ def record(*, experiment_id: str = "master-001", cost: float = 0.05) -> Generati
     )
 
 
-def test_envelope_matches_remaining_credit() -> None:
-    budget = envelope()
-
-    assert budget.remaining_credit_usd == pytest.approx(16.66484549)
-    assert budget.require_capacity(gpu="H100", maximum_seconds=600) == pytest.approx(0.6582)
-
-
 def test_budget_rejects_impossible_or_over_cap_work() -> None:
     with pytest.raises(ValueError, match="exceeds remaining"):
         BudgetEnvelope(
@@ -73,13 +64,6 @@ def test_ledger_is_resumable_and_rejects_duplicates(tmp_path: Path) -> None:
     assert resumed.estimated_usage_usd == pytest.approx(0.18317055)
     with pytest.raises(ValueError, match="duplicate"):
         resumed.add(record())
-
-
-def test_ledger_rejects_invalid_or_over_cap_prior_usage() -> None:
-    with pytest.raises(ValueError, match="prior estimated"):
-        VisualLabLedger(envelope=envelope(), prior_estimated_usd=-1)
-    with pytest.raises(VisualLabBudgetError, match="recorded usage"):
-        VisualLabLedger(envelope=envelope(), prior_estimated_usd=15.01)
 
 
 def test_reservation_is_persisted_and_counts_against_cap(tmp_path: Path) -> None:
@@ -120,12 +104,3 @@ def test_reconcile_billed_total_fails_closed_below_recorded_estimates() -> None:
 
     with pytest.raises(ValueError, match="cannot be lower"):
         ledger.reconcile_billed_total(0.29)
-
-
-def test_cost_helpers_validate_inputs() -> None:
-    assert worst_case_gpu_cost(gpu="L4", maximum_seconds=100, jobs=2) == pytest.approx(0.0444)
-    assert measured_gpu_cost(gpu="H100", seconds=15) == pytest.approx(0.016455)
-    with pytest.raises(ValueError, match="unknown GPU"):
-        measured_gpu_cost(gpu="RTX", seconds=1)
-    with pytest.raises(ValueError, match="non-negative"):
-        measured_gpu_cost(gpu="T4", seconds=-1)

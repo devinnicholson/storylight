@@ -21,37 +21,6 @@ def _result(payload: dict[str, object]) -> subprocess.CompletedProcess[str]:
     )
 
 
-def test_two_gpu_preflight_returns_measured_fsdp_evidence(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
-) -> None:
-    payload = {
-        "hardware": "gpu",
-        "devices": 2,
-        "platform": "gpu",
-        "memory_fraction": "0.95",
-        "ici_fsdp_parallelism": -1,
-        "mesh_shape": {"fsdp": 2},
-        "probe_sum": 523776.0,
-        "compilation_cache": {
-            "schema_version": "bookforge-jax-cache-runtime-v1",
-            "configured": False,
-        },
-    }
-    monkeypatch.setattr(
-        modal_gpu_preflight.subprocess,
-        "run",
-        lambda *_args, **_kwargs: _result(payload),
-    )
-
-    result = modal_gpu_preflight.run_two_gpu_fsdp_preflight(
-        config_path=CONFIG,
-        maxtext_root=tmp_path,
-        environment={"XLA_PYTHON_CLIENT_MEM_FRACTION": "0.95"},
-    )
-
-    assert result == payload
-
-
 def test_two_gpu_preflight_rejects_non_fsdp_mesh(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:

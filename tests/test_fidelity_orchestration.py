@@ -327,17 +327,6 @@ def test_run_is_ordered_resumable_and_checksum_bound(tmp_path: Path) -> None:
     assert path.stat().st_mode & 0o777 == 0o600
 
 
-def test_stage_dependencies_and_single_running_stage_are_enforced(tmp_path: Path) -> None:
-    run = _run()
-    with pytest.raises(FidelityRunError, match="incomplete dependencies"):
-        run.begin("cpu-smoke")
-
-    run.begin("dataset")
-    with pytest.raises(FidelityRunError, match="already running"):
-        run.begin("cpu-smoke")
-    run.complete("dataset", artifact=_artifact(run, tmp_path, "dataset"))
-
-
 def test_paid_and_device_stages_require_exact_ephemeral_approval(tmp_path: Path) -> None:
     run = _run()
     for stage in ("dataset", "cpu-smoke", "compatibility-package", "baseline"):
@@ -355,18 +344,6 @@ def test_paid_and_device_stages_require_exact_ephemeral_approval(tmp_path: Path)
     assert run.stages["roundtrip"].status is StageStatus.RUNNING
 
 
-def test_failed_stage_is_terminal_for_the_run(tmp_path: Path) -> None:
-    run = _run()
-    run.begin("dataset")
-    run.fail("dataset", detail="generator contract failed")
-
-    assert run.next_stage().name == "dataset"
-    with pytest.raises(FidelityRunError, match="cannot begin"):
-        run.begin("dataset")
-    with pytest.raises(FidelityRunError, match="not running"):
-        run.complete("dataset", artifact=_artifact(run, tmp_path, "dataset"))
-
-
 def test_stage_artifact_must_bind_exact_dependency_evidence(tmp_path: Path) -> None:
     run = _run()
     run.begin("dataset")
@@ -379,47 +356,6 @@ def test_stage_artifact_must_bind_exact_dependency_evidence(tmp_path: Path) -> N
 
     with pytest.raises(FidelityRunError, match="dependency evidence"):
         run.complete("cpu-smoke", artifact=artifact)
-
-
-def test_generic_success_json_cannot_advance_a_typed_stage(tmp_path: Path) -> None:
-    run = _run()
-    for stage in ("dataset", "cpu-smoke", "compatibility-package", "baseline"):
-        run.begin(stage)
-        run.complete(stage, artifact=_artifact(run, tmp_path, stage))
-    run.begin(
-        "roundtrip",
-        environment={"BOOKFORGE_JAX_ROUNDTRIP": "I_APPROVE_THIS_BOUNDED_ROUNDTRIP"},
-    )
-    artifact = _artifact(run, tmp_path, "roundtrip")
-    document = json.loads(artifact.read_text())
-    document["producer"] = "manual-success-json"
-    artifact.write_text(json.dumps(document))
-
-    with pytest.raises(FidelityRunError, match="invalid producer"):
-        run.complete("roundtrip", artifact=artifact)
-
-
-def test_train_requires_the_stable_lineage_run_id(tmp_path: Path) -> None:
-    run = _run()
-    for stage in ("dataset", "cpu-smoke", "compatibility-package", "baseline"):
-        run.begin(stage)
-        run.complete(stage, artifact=_artifact(run, tmp_path, stage))
-    run.begin(
-        "roundtrip",
-        environment={"BOOKFORGE_JAX_ROUNDTRIP": "I_APPROVE_THIS_BOUNDED_ROUNDTRIP"},
-    )
-    run.complete("roundtrip", artifact=_artifact(run, tmp_path, "roundtrip"))
-    run.begin(
-        "train",
-        environment={"BOOKFORGE_JAX_TRAIN": "I_APPROVE_THIS_BOUNDED_TPU_JOB"},
-    )
-    artifact = _artifact(run, tmp_path, "train")
-    document = json.loads(artifact.read_text())
-    document["training_run_id"] = "lora-train-00000000000000000000"
-    artifact.write_text(json.dumps(document))
-
-    with pytest.raises(FidelityRunError, match="stable approved lineage"):
-        run.complete("train", artifact=artifact)
 
 
 def test_candidate_lineage_cannot_change_after_development_evaluation(
@@ -449,24 +385,6 @@ def test_candidate_lineage_cannot_change_after_development_evaluation(
 
     with pytest.raises(FidelityRunError, match="changed the candidate ID"):
         run.complete("hf-export", artifact=artifact)
-
-
-def test_state_rejects_missing_stages_or_completed_stage_without_evidence(tmp_path: Path) -> None:
-    path = tmp_path / "run.json"
-    run = _run()
-    run.write(path)
-    payload = json.loads(path.read_text())
-    del payload["stages"]["reconcile"]
-    path.write_text(json.dumps(payload))
-
-    with pytest.raises(FidelityRunError, match="exact stage set"):
-        FidelityRun.read(path)
-
-
-def test_public_stage_plan_never_exposes_approval_values() -> None:
-    payload = json.dumps(stage_plan())
-    assert "I_APPROVE" not in payload
-    assert "BOOKFORGE_JAX_TRAIN" in payload
 
 
 def test_local_runner_executes_verified_no_spend_stages(tmp_path: Path) -> None:

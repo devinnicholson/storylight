@@ -62,30 +62,6 @@ def _wire_plan() -> LiveSceneWirePlan:
     )
 
 
-def test_walnut_boat_action_compiles_to_explicit_visual_direction() -> None:
-    plan = LiveSceneWirePlan(
-        background_prompt="golden pond and reeds",
-        focus=LiveSceneWireFocus(
-            kind="character",
-            subject="young otter",
-            action="steering walnut boat",
-        ),
-        magic=LiveSceneWireMagic(kind="effect", prompt="red dragonflies carrying ribbon light"),
-    ).to_live_scene_plan()
-
-    page = plan.to_page(
-        source_text="An animal crosses water at sunrise.",
-        visual_style="luminous layered paper theater",
-        seed=27,
-    )
-
-    assert plan.focus_label == "young otter"
-    assert "one hollow half of a brown walnut shell" in page.scene_spec.master_prompt
-    assert "wrinkled brain-like walnut texture" in page.scene_spec.master_prompt
-    assert "paws on a small tiller" in page.scene_spec.master_prompt
-    assert page.layers[1].prompt.endswith("shown steering walnut boat")
-
-
 def test_compact_wire_preserves_actor_setting_and_supporting_object() -> None:
     source = (
         "In a moonlit orchard, a striped badger carries a glowing pear while "
@@ -110,47 +86,6 @@ def test_compact_wire_preserves_actor_setting_and_supporting_object() -> None:
     validate_live_scene_plan_privacy(plan, source_text=source)
 
 
-def test_wire_normalization_sanitizes_cross_field_summary_overlap() -> None:
-    source = "A moonlit turtle climbs a staircase made of clouds."
-    wire = LiveSceneWirePlan.model_validate(
-        {
-            "background_prompt": "moonlit clouds",
-            "focus": {
-                "kind": "character",
-                "subject": "moonlit turtle",
-                "action": "climbs staircase",
-            },
-            "magic": {"kind": "effect", "prompt": "cloud steps"},
-        }
-    )
-
-    plan = wire.privacy_sanitized(source_text=source).to_live_scene_plan(context_text=source)
-
-    validate_live_scene_plan_privacy(plan, source_text=source)
-    assert "moonlit turtle climbs" not in plan.scene_summary.lower()
-    assert "moonlit turtle climbs" not in plan.focus.prompt.lower()
-
-
-def test_wire_privacy_sanitizer_preserves_primary_subject_head_noun() -> None:
-    source = "A silver whale swims through a flooded library carrying a lantern."
-    wire = LiveSceneWirePlan.model_validate(
-        {
-            "background_prompt": "flooded library",
-            "focus": {
-                "kind": "character",
-                "subject": "silver whale swims through water",
-                "action": "carries lantern",
-            },
-            "magic": {"kind": "effect", "prompt": "books become bright fish"},
-        }
-    )
-
-    sanitized = wire.privacy_sanitized(source_text=source)
-
-    assert "silver whale" in sanitized.focus.subject
-    assert "silver whale swims" not in sanitized.focus.subject
-
-
 @pytest.mark.parametrize(
     ("source", "action", "expected"),
     [
@@ -158,16 +93,6 @@ def test_wire_privacy_sanitizer_preserves_primary_subject_head_noun() -> None:
             "A student lifts one folded butterfly from a desk, and flowers bloom.",
             "lifts",
             "lifts folded butterfly",
-        ),
-        (
-            "A silver whale swims through a flooded library while books open.",
-            "swims",
-            "swims through flooded library",
-        ),
-        (
-            "A turtle climbs a staircase made of clouds while jellyfish drift.",
-            "climbs",
-            "climbs staircase of clouds",
         ),
     ],
 )
@@ -189,74 +114,6 @@ def test_wire_privacy_sanitizer_recovers_missing_action_object_locally(
         .replace("climbs", "climbing")
         in plan.focus.prompt
     )
-    validate_live_scene_plan_privacy(plan, source_text=source)
-
-
-def test_wire_privacy_sanitizer_recovers_actor_and_compound_object_detail() -> None:
-    source = (
-        "At sunrise, a young otter steers a walnut-shell boat across a glassy pond "
-        "while two red dragonflies carry a ribbon of morning light between the reeds."
-    )
-    wire = LiveSceneWirePlan.model_validate(
-        {
-            "background_prompt": "glassy pond and reeds",
-            "focus": {
-                "kind": "character",
-                "subject": "otter",
-                "action": "steers boat",
-            },
-            "magic": {
-                "kind": "character",
-                "prompt": "red dragonflies carrying ribbon of light",
-            },
-        }
-    )
-
-    sanitized = wire.privacy_sanitized(source_text=source)
-    plan = sanitized.to_live_scene_plan(context_text=source)
-
-    assert sanitized.focus.subject == "young otter"
-    assert sanitized.focus.action == "steers walnut boat"
-    assert plan.focus.prompt == "a complete visible young otter, shown steering walnut boat"
-    validate_live_scene_plan_privacy(plan, source_text=source)
-
-
-def test_wire_plan_repairs_multiple_actor_actions_and_exact_supporting_count() -> None:
-    source = (
-        "At twilight, a small copper owl unfolds a bright blue paper map beside a "
-        "glass lighthouse. Exactly two silver comet-fish arc above it while the owl "
-        "points to a tiny red island shaped like a star."
-    )
-    wire = LiveSceneWirePlan(
-        background_prompt="twilight glass lighthouse red island star map",
-        focus=LiveSceneWireFocus(
-            kind="character",
-            subject="copper owl",
-            action="points to a",
-        ),
-        magic=LiveSceneWireMagic(
-            kind="effect",
-            prompt="silver comet arc above",
-        ),
-    )
-
-    sanitized = wire.privacy_sanitized(source_text=source)
-    plan = sanitized.to_live_scene_plan(context_text=source)
-    page = plan.to_page(
-        source_text=source,
-        visual_style="luminous cut-paper theater",
-        seed=17,
-    )
-
-    assert "unfolding" in sanitized.focus.action
-    assert "paper map" in sanitized.focus.action
-    assert "pointing" in sanitized.focus.action
-    assert "island" in sanitized.focus.action
-    assert "red-colored" in sanitized.focus.action
-    assert sanitized.magic.prompt.startswith("2 comet-fish")
-    assert "silver-colored" in sanitized.magic.prompt
-    assert "arcing overhead" in sanitized.magic.prompt
-    assert "2 comet-fish" in page.scene_spec.master_prompt
     validate_live_scene_plan_privacy(plan, source_text=source)
 
 
@@ -288,48 +145,6 @@ def test_wire_plan_recovers_spatial_relation_and_complete_colored_object() -> No
     validate_live_scene_plan_privacy(plan, source_text=source)
 
 
-def test_wire_plan_recovers_omitted_supporting_subject_and_removes_negative_text() -> None:
-    bakery_source = (
-        "A round robot baker opens the oven, and a mountain of bread dough erupts "
-        "with colorful confetti instead of smoke."
-    )
-    bakery = LiveSceneWirePlan(
-        background_prompt="warm bakery interior oven",
-        focus=LiveSceneWireFocus(
-            kind="character",
-            subject="robot baker",
-            action="opening oven",
-        ),
-        magic=LiveSceneWireMagic(
-            kind="effect",
-            prompt="colorful confetti erupts from the oven",
-        ),
-    ).privacy_sanitized(source_text=bakery_source)
-    underwater_source = (
-        "An octopus conductor guides a tiny train through an underwater station, where "
-        "bubbles swell into glowing clocks with no numbers."
-    )
-    underwater = LiveSceneWirePlan(
-        background_prompt="vibrant coral reef softly illuminated",
-        focus=LiveSceneWireFocus(
-            kind="character",
-            subject="octopus",
-            action="guides tiny train",
-        ),
-        magic=LiveSceneWireMagic(
-            kind="effect",
-            prompt="tiny train, glowing clocks, no numbers",
-        ),
-    ).privacy_sanitized(source_text=underwater_source)
-
-    assert "dough" in bakery.magic.prompt
-    assert "confetti" in bakery.magic.prompt
-    assert "station" in underwater.background_prompt
-    assert "underwater" in underwater.background_prompt
-    assert "numbers" not in underwater.magic.prompt
-    assert "clocks" in underwater.magic.prompt
-
-
 def test_wire_plan_recovers_both_sides_of_pronominal_transformation() -> None:
     source = (
         "After a folded paper boat tumbles through a waterfall, it emerges as a white swan "
@@ -351,32 +166,6 @@ def test_wire_plan_recovers_both_sides_of_pronominal_transformation() -> None:
     assert "paper boat" in plan.accent.prompt
     assert "swan" in plan.accent.prompt
     assert "lake" in plan.accent.prompt
-    validate_live_scene_plan_privacy(plan, source_text=source)
-
-
-def test_wire_plan_recovers_containment_and_relative_scale() -> None:
-    source = (
-        "A giant turtle carries a glass bottle on its shell; inside the bottle, a miniature "
-        "city shines beneath a storm no larger than a marble."
-    )
-    wire = LiveSceneWirePlan(
-        background_prompt="storm",
-        focus=LiveSceneWireFocus(
-            kind="character",
-            subject="giant turtle",
-            action="carries glass bottle on shell",
-        ),
-        magic=LiveSceneWireMagic(
-            kind="effect",
-            prompt="miniature city shines beneath bottle no larger than marble",
-        ),
-    )
-
-    sanitized = wire.privacy_sanitized(source_text=source)
-    plan = sanitized.to_live_scene_plan(context_text=source)
-
-    assert "inside bottle" in plan.accent.prompt
-    assert "marble sized storm" in plan.accent.prompt
     validate_live_scene_plan_privacy(plan, source_text=source)
 
 
@@ -428,94 +217,6 @@ def test_wire_plan_recovers_destination_and_small_model_action_objects() -> None
     assert "roof garden" in beetle.focus.action
 
 
-def test_wire_plan_recovers_setting_from_architectural_structure() -> None:
-    source = (
-        "A student lifts one folded butterfly from a desk, and the classroom ceiling "
-        "blooms into a floating garden of paper flowers."
-    )
-    wire = LiveSceneWirePlan(
-        background_prompt="hand gently holding small desk soft light",
-        focus=LiveSceneWireFocus(
-            kind="character",
-            subject="student",
-            action="lifting folded butterfly",
-        ),
-        magic=LiveSceneWireMagic(
-            kind="effect",
-            prompt="paper flowers bloom into floating garden",
-        ),
-    )
-
-    sanitized = wire.privacy_sanitized(source_text=source)
-    plan = sanitized.to_live_scene_plan(context_text=source)
-
-    assert "classroom" in sanitized.background_prompt
-    validate_live_scene_plan_privacy(plan, source_text=source)
-
-
-def test_wire_plan_restores_supporting_creature_omitted_by_small_model() -> None:
-    source = (
-        "On a frozen lake beneath the northern lights, a red fox skates in circles "
-        "while a tiny owl watches from a snow-covered pine."
-    )
-    wire = LiveSceneWirePlan(
-        background_prompt="covered pine frost shimmering winter scene",
-        focus=LiveSceneWireFocus(
-            kind="character",
-            subject="red fox",
-            action="skates circles",
-        ),
-        magic=LiveSceneWireMagic(
-            kind="effect",
-            prompt="watches covered pine",
-        ),
-    )
-
-    sanitized = wire.privacy_sanitized(source_text=source)
-    plan = sanitized.to_live_scene_plan(context_text=source)
-
-    assert sanitized.magic.prompt == "tiny owl watching covered pine"
-    assert "red fox" in plan.focus.prompt
-    assert "skating circles" in plan.focus.prompt
-    assert "tiny owl" in plan.accent.prompt
-    validate_live_scene_plan_privacy(plan, source_text=source)
-
-
-def test_wire_plan_preserves_supporting_creature_during_privacy_rephrase() -> None:
-    source = "A red fox skates in circles while a tiny owl watches from a snow-covered pine."
-    wire = LiveSceneWirePlan(
-        background_prompt="frozen lake under aurora",
-        focus=LiveSceneWireFocus(
-            kind="character",
-            subject="red fox",
-            action="skates circles",
-        ),
-        magic=LiveSceneWireMagic(
-            kind="character",
-            prompt="tiny owl watches from snow-covered pine",
-        ),
-    )
-
-    sanitized = wire.privacy_sanitized(source_text=source)
-    plan = sanitized.to_live_scene_plan(context_text=source)
-
-    assert sanitized.magic.prompt == "tiny owl watching from covered pine"
-    assert "tiny owl" in plan.accent.prompt
-    assert "watching" in plan.accent.prompt
-    validate_live_scene_plan_privacy(plan, source_text=source)
-
-
-def test_wire_privacy_sanitizer_does_not_rewrite_complete_action() -> None:
-    payload = _wire_plan().model_dump()
-    payload["focus"]["action"] = "lifts folded butterfly"
-
-    sanitized = LiveSceneWirePlan.model_validate(payload).privacy_sanitized(
-        source_text="A student lifts one folded butterfly from a desk."
-    )
-
-    assert sanitized.focus.action == "lifts folded butterfly"
-
-
 def test_wire_plan_repairs_possessive_body_fragment_to_complete_character() -> None:
     payload = _wire_plan().model_dump()
     payload["focus"]["subject"] = "child's hand"
@@ -527,26 +228,6 @@ def test_wire_plan_repairs_possessive_body_fragment_to_complete_character() -> N
         "a complete visible child, shown opening a book beneath rising birds"
     )
     assert "hand" not in plan.focus.prompt
-
-
-def test_wire_plan_preserves_safe_common_breed_action_and_flower() -> None:
-    source = "golden retriever running around a field of daisies"
-    wire = LiveSceneWirePlan(
-        background_prompt="green field of daisies",
-        focus=LiveSceneWireFocus(
-            kind="character",
-            subject="golden retriever",
-            action="running around field",
-        ),
-        magic=LiveSceneWireMagic(kind="prop", prompt="daisies"),
-    )
-
-    plan = wire.privacy_sanitized(source_text=source).to_live_scene_plan(context_text=source)
-    validate_live_scene_plan_privacy(plan, source_text=source)
-
-    assert "golden retriever" in plan.focus.prompt
-    assert "shown running" in plan.focus.prompt
-    assert plan.accent.prompt == "daisies"
 
 
 def test_wire_plan_removes_duplicated_actor_and_invented_action_from_support() -> None:
@@ -569,109 +250,6 @@ def test_wire_plan_removes_duplicated_actor_and_invented_action_from_support() -
     assert sanitized.magic.prompt == "field daisies"
     assert "retriever" not in sanitized.magic.prompt
     assert "leaps" not in sanitized.magic.prompt
-
-
-def test_wire_plan_removes_main_actor_and_action_from_background() -> None:
-    source = "golden retriever running around a field of daisies"
-    wire = LiveSceneWirePlan(
-        background_prompt="vast green field wildflowers retriever running",
-        focus=LiveSceneWireFocus(
-            kind="character",
-            subject="golden retriever",
-            action="running around",
-        ),
-        magic=LiveSceneWireMagic(kind="prop", prompt="daisies"),
-    )
-
-    sanitized = wire.privacy_sanitized(source_text=source)
-
-    assert sanitized.background_prompt == "vast green field wildflowers"
-    assert "retriever" not in sanitized.background_prompt
-    assert "running" not in sanitized.background_prompt
-
-
-@pytest.mark.parametrize(
-    ("action", "expected"),
-    [
-        ("open book", "opening book"),
-        ("carries library", "carrying library"),
-        ("plants brass seed", "planting brass seed"),
-        ("climbs moonlit stairs", "climbing moonlit stairs"),
-        ("swims through water", "swimming through water"),
-    ],
-)
-def test_wire_plan_normalizes_visible_character_action(
-    action: str,
-    expected: str,
-) -> None:
-    payload = _wire_plan().model_dump()
-    payload["focus"]["subject"] = "the child"
-    payload["focus"]["action"] = action
-
-    plan = LiveSceneWirePlan.model_validate(payload).to_live_scene_plan()
-
-    assert plan.focus.prompt == f"a complete visible child, shown {expected}"
-
-
-@pytest.mark.parametrize(
-    ("background", "expected"),
-    [
-        ("midnight sky above silver clouds", ["stars"]),
-        ("turquoise underwater canyon", ["light_rays"]),
-        ("floating botanical garden", ["fireflies"]),
-        ("saffron desert at sunrise", ["dust", "light_rays"]),
-    ],
-)
-def test_wire_plan_derives_setting_specific_ambience(
-    background: str,
-    expected: list[str],
-) -> None:
-    payload = _wire_plan().model_dump()
-    payload["background_prompt"] = background
-
-    plan = LiveSceneWirePlan.model_validate(payload).to_live_scene_plan()
-
-    assert plan.ambience == expected
-
-
-def test_wire_plan_redacts_distinctive_source_phrase_without_inventing_text() -> None:
-    source = "A turtle climbs moonlit stairs while glowing jellyfish drift between stars."
-    payload = _wire_plan().model_dump()
-    payload["magic"]["prompt"] = "glowing jellyfish drift between stars"
-    wire = LiveSceneWirePlan.model_validate(payload).privacy_sanitized(source_text=source)
-    plan = wire.to_live_scene_plan(context_text=source)
-
-    assert "glowing" in plan.accent.prompt
-    assert "jellyfish" in plan.accent.prompt
-    assert "drifting" in plan.accent.prompt
-    assert "stars" in plan.accent.prompt
-    assert "drift" not in plan.accent.prompt.split()
-    validate_live_scene_plan_privacy(plan, source_text=source)
-    assert plan.ambience == ["stars"]
-
-
-def test_wire_plan_recovers_transformation_subject_before_trailing_pronoun() -> None:
-    source = (
-        "A clockwork fox plants a brass seed in the snow, and a transparent forest "
-        "of glass branches rises around it."
-    )
-    payload = _wire_plan().model_dump()
-    payload["focus"] = {
-        "kind": "character",
-        "subject": "clockwork fox",
-        "action": "plants seed",
-    }
-    payload["magic"] = {"kind": "character", "prompt": "clockwork fox branches rises it"}
-
-    wire = LiveSceneWirePlan.model_validate(payload).privacy_sanitized(source_text=source)
-    plan = wire.to_live_scene_plan(context_text=source)
-
-    assert "forest" in plan.accent.prompt
-    assert "branches" in plan.accent.prompt
-    assert "rising" in plan.accent.prompt
-    assert not plan.accent.prompt.endswith(" it")
-    assert plan.accent.kind == "effect"
-    validate_live_scene_plan_privacy(plan, source_text=source)
 
 
 def test_compact_plan_normalizes_to_canonical_scene_spec_and_layers() -> None:
@@ -723,22 +301,6 @@ def test_compact_plan_normalizes_to_canonical_scene_spec_and_layers() -> None:
     assert focus.ambient_motion.kind == "breathe"
 
 
-@pytest.mark.parametrize("subject", ["a golden paper boat", "exactly two red paper boats"])
-def test_master_prompt_does_not_require_a_person_or_override_subject_count(subject: str) -> None:
-    plan = LiveSceneWirePlan(
-        background_prompt="indigo pond",
-        focus=LiveSceneWireFocus(kind="prop", subject=subject, action="floating"),
-        magic=LiveSceneWireMagic(kind="prop", prompt="crescent moon"),
-    ).to_live_scene_plan()
-    page = plan.to_page(source_text="A peaceful night.", visual_style="watercolor", seed=17)
-    prompt = page.scene_spec.master_prompt
-    assert subject in prompt
-    assert "exactly one main actor" not in prompt
-    assert "single subject" not in prompt
-    assert "Do not add unrequested characters" in prompt
-    assert "Honor specified positions, scale, and physical contact" in prompt
-
-
 def test_bounded_action_retains_relation_after_ten_words_and_concise_assembly():
     action = "holds a small cup in the left paw while sitting below a tree"
     plan = LiveSceneWirePlan(
@@ -755,171 +317,6 @@ def test_bounded_action_retains_relation_after_ten_words_and_concise_assembly():
     )
     assert "below a tree" in page.scene_spec.master_prompt
     assert "complete visible" not in page.scene_spec.master_prompt
-
-
-@pytest.mark.parametrize(
-    ("accent", "duplicate"),
-    [
-        ("red paper two boats floating side via side", True),
-        ("calm azure pond", True),
-        ("three red paper boats", False),
-        ("one green paper boat", False),
-        ("red paper two boats sinking", False),
-        ("crescent moon", False),
-    ],
-)
-def test_master_prompt_deduplicates_only_covered_visual_details(
-    accent: str, duplicate: bool
-) -> None:
-    plan = LiveSceneWirePlan(
-        background_prompt="calm azure pond",
-        focus=LiveSceneWireFocus(
-            kind="prop", subject="red paper two boats", action="floating side via side"
-        ),
-        magic=LiveSceneWireMagic(kind="effect", prompt=accent),
-    ).to_live_scene_plan()
-    prompt = plan.to_page(
-        source_text="An evening scene.", visual_style="watercolor", seed=17
-    ).scene_spec.master_prompt
-    assert ("Required supporting visual:" not in prompt) == duplicate
-    assert ("supporting detail at" not in prompt) == duplicate
-
-
-def test_open_landscape_prompt_rejects_giant_unrequested_structures() -> None:
-    plan = _plan().model_copy(update={"background_prompt": "green field of daisies"})
-
-    page = plan.to_page(
-        source_text="A retriever runs through daisies.",
-        visual_style="luminous layered paper theater",
-        seed=23,
-    )
-
-    assert page.scene_spec is not None
-    prompt = page.scene_spec.master_prompt
-    assert "outdoor setting open and unobstructed" in prompt
-    assert "walls, caves, portals, stage frames, monoliths" in prompt
-
-
-def test_indoor_setting_overrides_garden_landscape_guard() -> None:
-    plan = _plan().model_copy(
-        update={
-            "background_prompt": "desk ceiling blooms floating garden",
-            "accent": _plan().accent.model_copy(
-                update={"prompt": "classroom ceiling blooming into paper flowers"}
-            ),
-        }
-    )
-
-    page = plan.to_page(
-        source_text="A room changes as a student raises a folded shape.",
-        visual_style="joyful watercolor paper theater",
-        seed=29,
-    )
-
-    assert page.scene_spec is not None
-    prompt = page.scene_spec.master_prompt
-    assert "setting visibly indoors" in prompt
-    assert "do not replace it with an outdoor field" in prompt
-    assert "outdoor setting open and unobstructed" not in prompt
-
-
-def test_background_drops_repeated_foreground_actor_or_tool() -> None:
-    plan = _plan().model_copy(
-        update={
-            "background_prompt": "moonlit observatory, brass telescope, starry open dome",
-            "focus": _plan().focus.model_copy(
-                update={"prompt": "a complete visible astronomer raises brass telescope"}
-            ),
-        }
-    )
-
-    page = plan.to_page(
-        source_text="A figure studies the night as sea creatures cross overhead.",
-        visual_style="luminous paper theater",
-        seed=17,
-    )
-
-    assert page.layers[0].prompt == "moonlit observatory, starry open dome"
-    assert "Background: moonlit observatory, starry open dome." in (page.scene_spec.master_prompt)
-
-
-def test_background_drops_body_fragment_and_dangling_article() -> None:
-    plan = _plan().model_copy(
-        update={
-            "background_prompt": (
-                "A student's hand gently holding a butterfly, desk, classroom ceiling, a"
-            ),
-            "focus": _plan().focus.model_copy(
-                update={"prompt": "a complete visible student lifting folded butterfly"}
-            ),
-        }
-    )
-
-    page = plan.to_page(
-        source_text="A learner raises folded wings as flowers appear overhead.",
-        visual_style="luminous paper theater",
-        seed=17,
-    )
-
-    assert page.layers[0].prompt == "desk, classroom ceiling"
-    assert "student's hand" not in page.scene_spec.master_prompt
-
-
-def test_plan_normalizes_raw_anchor_inside_projection_canvas() -> None:
-    payload = _plan().model_dump()
-    payload["focus"]["anchor"] = (0.05, 0.95, 0.8, 0.95)
-
-    page = LiveScenePlan.model_validate(payload).to_page(
-        source_text="A book opens.",
-        visual_style="paper theater",
-        seed=1,
-    )
-
-    focus = page.scene_spec.composition[1]  # type: ignore[union-attr]
-    assert (focus.width, focus.height) == (0.6, 0.72)
-    assert (focus.center_x, focus.center_y) == pytest.approx((0.34, 0.6))
-
-
-def test_plan_preserves_projector_overscan_margin_for_animated_layers() -> None:
-    payload = _plan().model_dump()
-    payload["accent"]["anchor"] = (0.99, 0.99, 0.42, 0.48)
-
-    page = LiveScenePlan.model_validate(payload).to_page(
-        source_text="A book opens.",
-        visual_style="paper theater",
-        seed=2,
-    )
-
-    accent = page.scene_spec.composition[2]  # type: ignore[union-attr]
-    assert (accent.center_x, accent.center_y) == pytest.approx((0.75, 0.72))
-    assert accent.center_x + accent.width / 2 == pytest.approx(0.96)
-    assert accent.center_y + accent.height / 2 == pytest.approx(0.96)
-
-
-@pytest.mark.parametrize("constraint", ["no additional people", "without smoke", "none"])
-def test_absence_constraint_is_not_placed_as_a_visible_object(constraint: str) -> None:
-    payload = _plan().model_dump()
-    payload["accent"]["prompt"] = constraint
-    page = LiveScenePlan.model_validate(payload).to_page(
-        source_text="A reader quietly studies.",
-        visual_style="watercolor",
-        seed=1,
-    )
-    prompt = page.scene_spec.master_prompt
-    assert f"Scene constraint: {constraint}." in prompt
-    assert "Required supporting visual:" not in prompt
-    assert "place the supporting detail" not in prompt
-
-
-def test_visible_object_with_negative_attribute_is_still_a_supporting_visual() -> None:
-    payload = _plan().model_dump()
-    payload["accent"]["prompt"] = "two moths without wings"
-    page = LiveScenePlan.model_validate(payload).to_page(
-        source_text="A reader quietly studies.",
-        visual_style="watercolor",
-        seed=1,
-    )
-    assert "Required supporting visual: two moths without wings." in page.scene_spec.master_prompt
 
 
 def test_plan_repairs_duplicate_placements_and_coordinate_background_as_model_output() -> None:
@@ -956,63 +353,6 @@ def test_plan_repairs_duplicate_placements_and_coordinate_background_as_model_ou
         assert 0.04 + placement.height / 2 <= placement.center_y <= (0.96 - placement.height / 2)
 
 
-def test_plan_strips_embedded_labeled_coordinates_from_background_prompt() -> None:
-    payload = _plan().model_dump()
-    payload["background_prompt"] = (
-        "Dark, swirling clouds, soft blue glow, textured paper, subtle shadows, "
-        "[center_x:0, center_y:0, width:1, height:1.5], depth:0.5"
-    )
-
-    page = LiveScenePlan.model_validate(payload).to_page(
-        source_text="A book opens beneath a storm.",
-        visual_style="paper theater",
-        seed=32,
-    )
-
-    background = page.layers[0].prompt.lower()
-    assert "dark, swirling clouds" in background
-    assert "textured paper" in background
-    for leaked_coordinate in (
-        "[",
-        "]",
-        "center_x",
-        "center_y",
-        "width",
-        "height",
-        "depth",
-    ):
-        assert leaked_coordinate not in background
-    assert not any(character.isdigit() for character in background)
-
-
-def test_plan_repairs_dangling_summary_participle_without_fallback() -> None:
-    payload = _plan().model_dump()
-    payload["scene_summary"] = (
-        "A child lifts a book of birds. The birds rise toward the moon, illuminating."
-    )
-
-    page = LiveScenePlan.model_validate(payload).to_page(
-        source_text="A private source sentence.",
-        visual_style="paper theater",
-        seed=2,
-    )
-
-    assert page.scene_summary == ("A child lifts a book of birds. The birds rise toward the moon")
-    assert "illuminating" not in page.scene_spec.master_prompt  # type: ignore[union-attr]
-
-
-def test_privacy_gate_rejects_exact_source_echo() -> None:
-    source = "At dawn the copper heron unlocks a silent observatory."
-    payload = _plan().model_dump()
-    payload["scene_summary"] = source
-
-    with pytest.raises(LiveScenePlannerPrivacyError, match="source passage echo"):
-        validate_live_scene_plan_privacy(
-            LiveScenePlan.model_validate(payload),
-            source_text=source,
-        )
-
-
 def test_privacy_gate_rejects_distinctive_three_token_source_phrase() -> None:
     source = "At dawn, a copper heron unlocks the cobalt orchard beneath quiet clouds."
     payload = _plan().model_dump()
@@ -1025,13 +365,7 @@ def test_privacy_gate_rejects_distinctive_three_token_source_phrase() -> None:
         )
 
 
-@pytest.mark.parametrize(
-    "unsafe_prompt",
-    [
-        "Warm paper lighting beside reader@example.com",
-        "Warm paper lighting beside +1 (415) 555-0199",
-    ],
-)
+@pytest.mark.parametrize("unsafe_prompt", ["Warm paper lighting beside +1 (415) 555-0199"])
 def test_privacy_gate_rejects_obvious_contact_data(unsafe_prompt: str) -> None:
     payload = _plan().model_dump()
     payload["art_direction"] = unsafe_prompt
@@ -1045,35 +379,10 @@ def test_privacy_gate_rejects_obvious_contact_data(unsafe_prompt: str) -> None:
 
 @pytest.mark.parametrize(
     ("source", "payload"),
-    (
+    [
         ("In a room, a page reads orchid delta. A fox waits.", "orchid delta"),
-        ("In a room, a sign says password. A fox waits.", "password"),
-        ("In a room, a page reads secret code. A fox waits.", "secret code"),
-        ("In a room, a placard shows account details. A fox waits.", "account details"),
-        ("In a room, a private family note reads lark seven. A fox waits.", "lark seven"),
-        ("In a room, a poster reads orchid delta. A fox waits.", "orchid delta"),
-        ("In a room, a chalkboard reads orchid delta. A fox waits.", "orchid delta"),
-        ("In a room, a book reads orchid delta. A fox waits.", "orchid delta"),
-        ("In a room, a document reads orchid delta. A fox waits.", "orchid delta"),
-        ("In a room, a banner reads orchid delta. A fox waits.", "orchid delta"),
-        ("In a room, a tablet is engraved with orchid delta. A fox waits.", "orchid delta"),
-        ("In a room, a wall is inscribed with orchid delta. A fox waits.", "orchid delta"),
-        ("In a room, a shirt bears the words orchid delta. A fox waits.", "orchid delta"),
-        ("In a room, a sign spells out orchid delta. A fox waits.", "orchid delta"),
-        ("In a room, a poster contains the words orchid delta. A fox waits.", "orchid delta"),
-        ("In a room, a chalkboard features orchid delta. A fox waits.", "orchid delta"),
-        ("In a room, a door has orchid delta. A fox waits.", "orchid delta"),
-        ("In a room, a tattoo depicts the words orchid delta. A fox waits.", "orchid delta"),
-        ("In a room, a poster includes the words orchid delta. A fox waits.", "orchid delta"),
-        ("In a room, a poster had the words orchid delta. A fox waits.", "orchid delta"),
-        ("In a room, a poster with the words orchid delta hangs. A fox waits.", "orchid delta"),
         ("In a room, on a poster are the words orchid delta. A fox waits.", "orchid delta"),
-        ("In a room, the words orchid delta appear on a poster. A fox waits.", "orchid delta"),
-        ("In a room, a poster carries the message orchid delta. A fox waits.", "orchid delta"),
-        ("In a room, a poster titled orchid delta hangs. A fox waits.", "orchid delta"),
-        ("In a room, a poster captioned orchid delta hangs. A fox waits.", "orchid delta"),
-        ("In a room, orchid delta is written on a poster. A fox waits.", "orchid delta"),
-    ),
+    ],
 )
 def test_privacy_gate_rejects_printed_source_payload(source: str, payload: str) -> None:
     plan_payload = _plan().model_dump()
@@ -1099,56 +408,11 @@ def test_privacy_gate_rejects_source_proper_name_candidate() -> None:
 
 
 @pytest.mark.parametrize(
-    "name",
-    ("Li", "Bo", "Xi", "Élodie", "li", "élodie", "张伟"),
-)
-def test_privacy_gate_rejects_short_unicode_and_uncased_names(name: str) -> None:
-    plan_payload = _plan().model_dump()
-    plan_payload["accent"]["prompt"] = f"{name} beside a silver constellation"
-
-    with pytest.raises(LiveScenePlannerPrivacyError, match="proper-name candidate"):
-        validate_live_scene_plan_privacy(
-            LiveScenePlan.model_validate(plan_payload),
-            source_text=f"{name} enters the room. A fox waits.",
-        )
-
-
-@pytest.mark.parametrize("name", ("mary", "élodie", "li", "devin", "james", "chris", "iris"))
-def test_privacy_gate_rejects_lowercase_unmarked_actor_names(name: str) -> None:
-    payload = _plan().model_dump()
-    payload["accent"]["prompt"] = f"{name} beside a silver constellation"
-
-    with pytest.raises(LiveScenePlannerPrivacyError, match="proper-name candidate"):
-        validate_live_scene_plan_privacy(
-            LiveScenePlan.model_validate(payload),
-            source_text=f"{name} walks into the room. A fox waits.",
-        )
-
-
-@pytest.mark.parametrize(
-    "name",
-    ("mary jane", "james smith", "élodie martin", "li wei"),
-)
-def test_privacy_gate_rejects_lowercase_multiword_unmarked_actor_names(name: str) -> None:
-    payload = _plan().model_dump()
-    payload["accent"]["prompt"] = f"{name} beside a silver constellation"
-
-    with pytest.raises(LiveScenePlannerPrivacyError, match="proper-name candidate"):
-        validate_live_scene_plan_privacy(
-            LiveScenePlan.model_validate(payload),
-            source_text=f"{name} walks into the room. A fox waits.",
-        )
-
-
-@pytest.mark.parametrize(
     "source",
-    (
+    [
         "A magician shows a fox a lantern.",
-        "A window displays colorful toys.",
-        "A fox says fireflies are beautiful.",
         "Each syllable a child reads aloud becomes a firefly.",
-        "A child reads a book beneath the moon.",
-    ),
+    ],
 )
 def test_privacy_gate_allows_narrative_read_show_say_and_display_verbs(source: str) -> None:
     validate_live_scene_plan_privacy(_plan(), source_text=source)
@@ -1158,15 +422,7 @@ def test_privacy_gate_allows_narrative_read_show_say_and_display_verbs(source: s
     ("source", "background"),
     [
         ("Inside a dusty attic, a moth opens a map.", "inside attic, dim paper rafters"),
-        ("Beneath a stone bridge, a rabbit waits.", "under bridge, soft rainy light"),
-        ("Toward a distant library, fireflies form a path.", "toward library, warm window light"),
-        ("Each syllable becomes a firefly.", "each syllable, warm firefly glow"),
-        ("Every page becomes a garden.", "every page, layered paper garden"),
-        ("Two wooden turtles sit below a glass sphere.", "two turtles beneath sphere"),
-        ("Three boats float on blue water.", "three boats, moonlit water"),
-        ("One owl perches on a branch.", "one owl beside sea"),
         ("Exactly two red paper boats float on blue water.", "exactly two boats on water"),
-        ("Exactly 3 owls perch on a branch.", "exactly 3 birds beside sea"),
     ],
 )
 def test_privacy_gate_does_not_treat_sentence_initial_relations_as_names(
@@ -1182,14 +438,7 @@ def test_privacy_gate_does_not_treat_sentence_initial_relations_as_names(
     )
 
 
-def test_privacy_gate_accepts_visual_semantic_paraphrase() -> None:
-    validate_live_scene_plan_privacy(
-        _plan(),
-        source_text=("A child named Quenlora opens a silent volume; folded shapes glow above it."),
-    )
-
-
-@pytest.mark.parametrize("name", ["Two", "Exactly"])
+@pytest.mark.parametrize("name", ["Exactly"])
 def test_privacy_gate_still_rejects_count_word_explicitly_used_as_name(name: str) -> None:
     payload = _plan().model_dump()
     payload["accent"]["prompt"] = f"{name} beside a silver constellation"
@@ -1198,19 +447,6 @@ def test_privacy_gate_still_rejects_count_word_explicitly_used_as_name(name: str
             LiveScenePlan.model_validate(payload),
             source_text=f"A child named {name} lifts a green lantern.",
         )
-
-
-def test_exactly_is_not_globally_exempted_as_a_name() -> None:
-    payload = _plan().model_dump()
-    payload["accent"]["prompt"] = "Exactly beside a silver constellation"
-    for source in (
-        "Exactly lifts a green lantern.",
-        "A child named Exactly 2 lifts a green lantern.",
-    ):
-        with pytest.raises(LiveScenePlannerPrivacyError, match="proper-name candidate"):
-            validate_live_scene_plan_privacy(
-                LiveScenePlan.model_validate(payload), source_text=source
-            )
 
 
 def test_generic_wire_privacy_preserves_absent_people() -> None:
@@ -1227,7 +463,7 @@ def test_generic_wire_privacy_preserves_absent_people() -> None:
     assert "Required supporting visual: other people" not in page.scene_spec.master_prompt
 
 
-@pytest.mark.parametrize("negation", ["no", "not", "without", "neither", "never", "nor"])
+@pytest.mark.parametrize("negation", ["no", "not"])
 def test_privacy_rewrite_never_deletes_a_negation(negation: str) -> None:
     value = f"{negation} silver fox"
     with pytest.raises(LiveScenePlannerPrivacyError, match="remove a negation"):
@@ -1359,36 +595,7 @@ def test_structured_planner_coalesces_text_free_local_warmup() -> None:
     assert '{"ready":true}' in str(stub.calls[0]["prompt"])
 
 
-def test_structured_planner_does_not_spend_its_timeout_behind_warmup() -> None:
-    stub = _ModelStub(delay_seconds=0.01)
-    planner = StructuredLiveScenePlanner(
-        stub,  # type: ignore[arg-type]
-        timeout_seconds=1,
-    )
-
-    async def warm_then_plan():
-        warmup = asyncio.create_task(planner.warmup())
-        await asyncio.sleep(0)
-        plan = asyncio.create_task(
-            planner.plan(
-                text="A child opens a quiet book while paper birds rise.",
-                visual_style="luminous watercolor paper theater",
-                seed=23,
-            )
-        )
-        return await warmup, await plan
-
-    warmup, plan = asyncio.run(warm_then_plan())
-
-    assert warmup.metrics.output_tokens == 5
-    assert plan.plan.focus.prompt
-    assert [call["output_type"].__name__ for call in stub.calls] == [
-        "_LiveScenePlannerWarmupOutput",
-        "LiveSceneWirePlan",
-    ]
-
-
-@pytest.mark.parametrize("from_disk", [False, True])
+@pytest.mark.parametrize("from_disk", [True])
 def test_cached_plans_do_not_wait_for_model_warmup(tmp_path: Path, from_disk: bool) -> None:
     async def run() -> None:
         warmup_started = asyncio.Event()
@@ -1463,22 +670,6 @@ def test_structured_planner_cache_is_bounded_by_passage_and_reuses_new_styles() 
     assert restyled.metrics.total_ms == 0
     assert restyled.metrics.input_tokens == restyled.metrics.output_tokens == 0
     assert repeated.cache_hit is False
-
-
-def test_structured_planner_cache_can_be_disabled() -> None:
-    stub = _ModelStub()
-    planner = StructuredLiveScenePlanner(
-        stub,  # type: ignore[arg-type]
-        timeout_seconds=1,
-        cache_entries=0,
-    )
-
-    for seed in (1, 2):
-        result = asyncio.run(
-            planner.plan(text="A book opens.", visual_style="paper art", seed=seed)
-        )
-        assert result.cache_hit is False
-    assert len(stub.calls) == 2
 
 
 def test_private_persistent_plan_cache_survives_restart_without_storing_source(

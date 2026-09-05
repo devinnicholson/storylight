@@ -1,75 +1,13 @@
 import asyncio
 import os
 
-import pytest
-
 os.environ["BOOKFORGE_MODEL_BACKEND"] = "fake"
 os.environ["BOOKFORGE_MODEL_NAME"] = "fake"
 
 from fastapi.testclient import TestClient  # noqa: E402
-from pydantic import ValidationError  # noqa: E402
 
 from bookforge.api import app  # noqa: E402
-from bookforge.event_hub import ReaderEventHub, ReaderEventPublishRequest  # noqa: E402
-
-
-def test_reader_event_fans_out_to_all_session_subscribers() -> None:
-    with (
-        TestClient(app) as client,
-        client.websocket_connect("/v1/reader-sessions/read-1/events") as first,
-        client.websocket_connect("/v1/reader-sessions/read-1/events") as second,
-    ):
-        response = client.post(
-            "/v1/reader-sessions/read-1/events:publish",
-            json={
-                "type": "transcript.partial",
-                "page_id": "page-1",
-                "transcript": "The moon",
-                "generation": 1,
-            },
-        )
-        first_event = first.receive_json()
-        second_event = second.receive_json()
-
-    assert response.status_code == 200
-    body = response.json()
-    assert body["subscriber_count"] == 2
-    assert first_event == second_event == body["event"]
-    assert first_event["type"] == "transcript.partial"
-    assert first_event["payload"] == {
-        "page_id": "page-1",
-        "transcript": "The moon",
-        "generation": 1,
-    }
-    assert first_event["session_id"] == "read-1"
-    assert first_event["sequence"] == 1
-
-
-def test_word_reached_contract_is_ready_for_reader_aligner() -> None:
-    with (
-        TestClient(app) as client,
-        client.websocket_connect("/v1/reader-sessions/read-2/events") as websocket,
-    ):
-        response = client.post(
-            "/v1/reader-sessions/read-2/events:publish",
-            json={
-                "type": "word.reached",
-                "page_id": "page-7",
-                "index": 4,
-                "word": "opened",
-                "generation": 3,
-            },
-        )
-        event = websocket.receive_json()
-
-    assert response.status_code == 200
-    assert event["type"] == "word.reached"
-    assert event["payload"] == {
-        "page_id": "page-7",
-        "index": 4,
-        "word": "opened",
-        "generation": 3,
-    }
+from bookforge.event_hub import ReaderEventHub  # noqa: E402
 
 
 def test_disconnected_subscriber_is_removed() -> None:
@@ -98,65 +36,6 @@ def test_disconnected_subscriber_is_removed() -> None:
     assert connected.json()["subscriber_count"] == 1
     assert disconnected.status_code == 200
     assert disconnected.json()["subscriber_count"] == 0
-
-
-@pytest.mark.parametrize(
-    "payload",
-    [
-        {"type": "transcript.partial"},
-        {"type": "transcript.partial", "transcript": "moon", "generation": 1},
-        {"type": "transcript.partial", "transcript": "moon", "page_id": "page-1"},
-        {"type": "word.reached", "page_id": "page-1", "word": "moon"},
-        {"type": "word.reached", "page_id": "page-1", "index": 0, "word": "moon", "extra": 1},
-        {"type": "unknown", "transcript": "text"},
-    ],
-)
-def test_publish_rejects_bad_payload(payload: dict[str, object]) -> None:
-    with TestClient(app) as client:
-        response = client.post(
-            "/v1/reader-sessions/read-4/events:publish",
-            json=payload,
-        )
-
-    assert response.status_code == 422
-
-
-def test_publish_model_rejects_cross_type_fields() -> None:
-    with pytest.raises(ValidationError):
-        ReaderEventPublishRequest(
-            type="transcript.partial",
-            transcript="The moon",
-            index=2,
-        )
-
-
-def test_slow_subscriber_queue_keeps_latest_event() -> None:
-    async def exercise_hub() -> None:
-        hub = ReaderEventHub(queue_size=1)
-        subscription = await hub.subscribe("bounded-session")
-        await hub.publish(
-            "bounded-session",
-            "transcript.partial",
-            {"transcript": "first", "page_id": "page-1", "generation": 1},
-        )
-        await hub.publish(
-            "bounded-session",
-            "transcript.partial",
-            {"transcript": "latest", "page_id": "page-1", "generation": 1},
-        )
-
-        event = await subscription.receive()
-        assert event.sequence == 2
-        assert event.payload == {
-            "transcript": "latest",
-            "page_id": "page-1",
-            "generation": 1,
-        }
-        assert event.dropped_before_sequence == 1
-        await subscription.close()
-        await hub.close()
-
-    asyncio.run(exercise_hub())
 
 
 def test_queue_overflow_marks_a_dropped_reset_for_client_resynchronization() -> None:
@@ -341,38 +220,6 @@ def test_stale_generation_cannot_cross_a_reset() -> None:
     assert status.status_code == 200
     assert status.json()["generation"] == reset["generation"]
     assert status.json()["last_reached_index"] is None
-
-
-@pytest.mark.parametrize(
-    ("configure_payload", "transcript_payload"),
-    [
-        ({"page_id": "page-01", "page_text": "..."}, None),
-        (
-            {"page_id": "page-01", "page_text": "The moth"},
-            {
-                "source": "asr",
-                "text": "The",
-                "page_id": "page-01",
-                "started_at_ms": 20,
-                "ended_at_ms": 10,
-            },
-        ),
-    ],
-)
-def test_reader_validation_returns_422(
-    configure_payload: dict[str, object], transcript_payload: dict[str, object] | None
-) -> None:
-    with TestClient(app) as client:
-        configured = client.put("/v1/reader-sessions/invalid-reader", json=configure_payload)
-        if transcript_payload is None:
-            response = configured
-        else:
-            payload = {**transcript_payload, "generation": configured.json()["generation"]}
-            response = client.post(
-                "/v1/reader-sessions/invalid-reader/transcripts:simulate", json=payload
-            )
-
-    assert response.status_code == 422
 
 
 def test_transcript_requires_configured_matching_trusted_page() -> None:

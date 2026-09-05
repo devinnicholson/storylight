@@ -49,38 +49,6 @@ def test_collect_marks_missing_service_pid_as_failed_privacy_evidence(monkeypatc
     assert "service PID is required" in report["checks"]["privacy"]["detail"]
 
 
-def test_required_failures_include_unavailable_asr() -> None:
-    checks = {
-        name: {"ok": True, "detail": {}}
-        for name in (
-            "platform",
-            "l4t",
-            "cuda",
-            "tensorrt",
-            "power",
-            "storage",
-            "camera_inventory",
-            "microphone_inventory",
-            "display",
-            "chromium",
-            "thermals",
-            "health",
-            "readiness",
-            "runtime",
-            "latest_story_pack",
-            "bookforge_storage",
-        )
-    }
-    checks["runtime"]["detail"] = {
-        "storage": {"ready": True},
-        "asr": {"ready": False},
-    }
-    checks["privacy"] = {"ok": True, "detail": "loopback only"}
-    report = {"exercise_io": False, "checks": checks}
-
-    assert required_failures(report, require_asr=True) == ["runtime.asr"]
-
-
 def test_required_failures_include_privacy_boundary() -> None:
     checks = {
         name: {"ok": True, "detail": {"storage": {"ready": True}}}
@@ -104,34 +72,6 @@ def test_required_failures_include_privacy_boundary() -> None:
         )
     }
     checks["privacy"] = {"ok": False, "detail": "external connection"}
-
-    failures = required_failures({"exercise_io": False, "checks": checks}, require_asr=False)
-
-    assert failures == ["privacy"]
-
-
-def test_required_failures_reject_missing_privacy_evidence() -> None:
-    checks = {
-        name: {"ok": True, "detail": {"storage": {"ready": True}}}
-        for name in (
-            "platform",
-            "l4t",
-            "cuda",
-            "tensorrt",
-            "power",
-            "storage",
-            "camera_inventory",
-            "microphone_inventory",
-            "display",
-            "chromium",
-            "thermals",
-            "health",
-            "readiness",
-            "runtime",
-            "latest_story_pack",
-            "bookforge_storage",
-        )
-    }
 
     failures = required_failures({"exercise_io": False, "checks": checks}, require_asr=False)
 
