@@ -27,3 +27,33 @@ separate from any measured effect of the prompt.
 
 The fixture and prompt are frozen before live inference. Supplied-slot and mocked-network checks
 validate the harness; they are not model accuracy measurements.
+
+## Frozen live result
+
+Revision `1d298d12f02a7f17822a12575cbcfbe68351f929` completed all 16 requests with no
+request failures, truncation or missing timings. The candidate passed 3/8 control outcomes;
+the accepted prompt passed 6/8. The decision is **reject**. Candidate median/p95 planning was
+1,015.6/1,193.9 ms, versus 1,005.1/1,289.8 ms accepted. No story-stage or image calls followed.
+
+Four candidate positive controls proved every checked node, binding, action, motion and
+transformation, but failed exact setting representation. Their setting slots began with an
+article. The remaining positive control refused as ungrounded; its value-free slot shape alone
+does not establish the cause. All three candidate refusal controls passed. The original result
+and oracle remain frozen while independent synthetic examples test constructor normalization.
+
+The [sanitized evidence](../benchmarks/scene-prompt-probe-2026-09-04/controls-summary.json)
+includes all per-request checks and before/after provenance. The resident process, engine,
+deployed files, accepted prompt, planner configuration and power mode stayed unchanged.
+
+## Display assembly
+
+`scripts/assemble_fidelity_display.py` reconstructs seven proved model captures locally before
+building the frozen story's eight display pages. It checks source/response hashes, request and
+implementation identity, graph proof and exact renderer prompts. The source-bearing pack stays
+in an owner-only file outside the checkout; only validated visual requests may be exported.
+
+The original accepted baseline produced valid contracts only for story pages 3, 5 and 6.
+The finite comparison therefore contains eight candidate requests and three accepted requests,
+11 images total. Missing accepted pages remain failures. The single accepted still for page 5
+or 6 is reused for comparison with the corresponding two candidate states; it cannot demonstrate
+event order. Assembly remains gated on all seven candidate story constructions passing.
