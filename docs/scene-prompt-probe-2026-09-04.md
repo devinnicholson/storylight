@@ -1,10 +1,11 @@
 # Isolated scene prompt experiment
 
-The accepted prompt requests a magical result. The complete-scene story also contains ordinary
-secondary motion, and its last page still receives an ungrounded model result. The candidate
+The accepted prompt requests a magical result. The initial complete-scene story also contained
+ordinary secondary motion, and its last page received an ungrounded model result. The candidate
 prompt describes the same four fields using explicit visible entities and transformations,
-without assuming magic or causation. It is confined to an experimental script; the production
-prompt and appliance configuration are unchanged.
+without assuming magic or causation. The final source-selected version is available in opt-in
+scene scope; the accepted appliance configuration is unchanged. The
+[latest run](story-display-results-2026-09-04.md) passed construction and awaits image generation.
 
 `scripts/benchmark_scene_prompt_probe.py` freezes eight independent synthetic controls and one
 candidate prompt. It makes exactly 16 matched control requests, alternating which prompt runs
@@ -137,9 +138,17 @@ synthetic routing controls. Its 32 paired requests record route, source hash and
 hash against a frozen schedule. Journal validation also enforces that schedule's execution order.
 All 16 candidate outcomes and the existing latency gates must
 pass before a separate invocation can revisit the seven original story inputs. The fresh controls
-are engineering tests, not a new holdout. This routing candidate has not yet passed live gates.
+are engineering tests, not a new holdout.
 
 Adversarial review tightened the passive-fragment repair: all source passives referring to the
 resolved actor are counted before count/color compatibility. A later bare reference cannot hide a
 second possible patient. This preserves refusal for ambiguous selection even when the complete
 scene could otherwise retain both carried objects.
+
+At revision `ba15b484c3a91ff65ce6f7949fc851669c137298`, all 32 control requests completed.
+The candidate passed 16/16 outcomes (ten positive graphs and six required refusals), versus
+12/16 accepted. Candidate median/p95 was 1,064.1/1,196.3 ms, versus 1,018.6/1,282.8 ms accepted.
+The separately gated story run proved all seven inputs at 1,205.2 ms median and 1,420.9 ms maximum.
+There were no request failures, incomplete generations or missing timings in either stage.
+The frozen story and criteria are unchanged. These results advance to image comparison; they
+do not establish visual fidelity or qualify the routed prompt on the full 512-case split.

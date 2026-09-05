@@ -14,8 +14,9 @@ BOOKFORGE_LIVE_SCENE_PLANNER_BACKEND=tensorrt_accepted_graph
 BOOKFORGE_LIVE_SCENE_PLANNER_SCOPE=scene
 ```
 
-These settings have not been promoted on the appliance. They use the same accepted model request;
-the additional coverage is deterministic reconstruction, not a model improvement. Semantic cache
+These settings have not been promoted on the appliance. Scene scope now selects between the
+accepted and scene prompts from supported source syntax before its single model request;
+additional fact coverage uses deterministic reconstruction. Semantic cache
 identity and completed Story Pack lookup distinguish the two scopes. Packs record their scope.
 Scene refusal cannot return a focal fallback, including when the local model connection fails.
 
@@ -49,8 +50,10 @@ conflict with explicit counts; the accepted plain-slot renderer remains unchange
 
 Private replay of the original seven model responses under complete-scene scope produces six
 proved graphs, including both foxes on the supported pages. Page 6 refuses without a focal fallback.
-Evidence is in `benchmarks/product-fidelity-scene-scope-2026-09-04/`; replay makes no inference calls
-or latency claim. The model-selected result remains the next isolated issue to investigate.
+Evidence is in `benchmarks/product-fidelity-scene-scope-2026-09-04/`; that historical replay made no
+inference calls or latency claim. Subsequent grounding repairs and source-selected prompting passed
+all seven inputs in a fresh live run and assembled the actual eight-page private pack. See
+[current results](story-display-results-2026-09-04.md).
 
 Generated image review and physical playback remain separate acceptance steps. No cloud image or
 hardware success follows from these local checks alone.

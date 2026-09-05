@@ -1,10 +1,10 @@
 # Plan: a short story that projects faithfully
 
-Status: the object-color repair passes the complete 512-case development gate: 38 exact candidate
-contracts versus zero accepted, with no category-total regression. Complete-scene coverage and
-ordered display integration continue before the frozen story's visual comparison. See the
-[latest measurement](product-fidelity-color-repair-2026-09-04.md) and
-[earlier implementation](product-fidelity-results-2026-09-04.md).
+Status: the focal graph repair passed the 512-case development gate. The subsequent complete-scene
+candidate passed 16 control outcomes and all seven frozen story inputs, producing eight display
+states. The 11-image comparison passed local preflight; generation awaits explicit approval for
+the Modal payload and $2.75 batch. See [current results](story-display-results-2026-09-04.md) and
+the separate [512-case measurement](product-fidelity-color-repair-2026-09-04.md).
 
 ## Outcome
 
@@ -141,6 +141,6 @@ credential scanning and deslop before reviewed fast-forward pushes. Preserve use
 
 ## Next action
 
-Validate complete-scene reconstruction against the original model responses and integrate authored
-display steps before rendering the whole story. Keep failed reports and the original story;
-microphone-driven reading follows a faithful typed-story demonstration.
+Run the preflighted 11-image batch after its required approval, verify and install the assets,
+then complete human fact review and cached-playback rehearsal. Keep the failed reports and frozen
+story; microphone-driven reading follows a faithful typed-story demonstration.
