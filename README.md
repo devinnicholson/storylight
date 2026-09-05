@@ -45,6 +45,9 @@ an accepted graph in its 512-record run. The appliance remains on `tensorrt_slot
 Subsequent [construction and scoring repairs](docs/live-scene-underlying-fixes-2026-09-04.md)
 address result clauses, counted transformations, entity binding, and semantic comparison using
 synthetic and fixed training controls. They do not revise the historical live results.
+The subsequent [six-page product fidelity increment](docs/product-fidelity-results-2026-09-04.md)
+adds bounded passive binding, but its seven-request resident smoke still produces no accepted
+graphs. The frozen story remains an unmet product acceptance target.
 
 ## Local setup
 

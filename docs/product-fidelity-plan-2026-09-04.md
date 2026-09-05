@@ -1,6 +1,7 @@
 # Plan: a short story that projects faithfully
 
-Status: story frozen and bounded passive construction implemented; device and visual gates pending.
+Status: story frozen and bounded passive construction implemented; resident smoke rejected with
+zero accepted graphs from seven requests. Development, visual and rehearsal stages did not advance.
 See the [implementation and evidence](product-fidelity-results-2026-09-04.md).
 
 ## Outcome
@@ -20,7 +21,7 @@ new models and renderer replacements follow separately.
   appliance remains on the four-slot planner.
 - Subsequent deterministic repairs produce two graphs from 32 fixed training controls, one
   exact. They have not passed a new live-model gate.
-- The current suite has 741 passing cases. Preserve its focus on public behavior and distinct
+- The baseline suite had 741 passing cases. Preserve its focus on public behavior and distinct
   consequential failures; do not rebuild exhaustive test matrices.
 
 See [current construction and scoring evidence](live-scene-underlying-fixes-2026-09-04.md).
@@ -138,6 +139,6 @@ credential scanning and deslop before reviewed fast-forward pushes. Preserve use
 
 ## Next action
 
-Run the frozen seven-request resident-model smoke after local verification. Advance to the full
-development comparison only if a useful graph survives. Microphone-driven reading becomes the
-next product milestone after the faithful typed-story demonstration passes.
+Diagnose the recorded construction/refusal boundary using value-free stage reasons and separate
+synthetic/public training fixtures before proposing another model run. Preserve the frozen story
+and failed smoke result. Microphone-driven reading follows a faithful typed-story demonstration.
