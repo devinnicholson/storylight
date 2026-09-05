@@ -50,6 +50,7 @@ def story_graphs(args, manifest: dict, cases):
     expected = probe.context(
         argparse.Namespace(
             model=args.model,
+            profile=header.get("profile", "scene-v1"),
             endpoint=args.endpoint,
             memory_pid=header.get("memory_pid"),
             timeout=header.get("timeout_seconds"),

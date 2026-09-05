@@ -27,6 +27,7 @@ from bookforge.live_scene_planner import (
 )
 from bookforge.model_client import ModelUnavailableError, StructuredModelClient
 from bookforge.scene_facts import SceneFactsV2
+from bookforge.scene_prompt_routing import ROUTING_REVISION, scene_messages
 
 _EMAIL = privacy_policy.EMAIL_PATTERN
 _PHONE = privacy_policy.PHONE_PATTERN
@@ -722,14 +723,22 @@ class TensorRTSlotModelClient(StructuredModelClient):
         ).hexdigest()
         if scene_facts_enabled:
             graph_revision = (
-                "accepted-scene-facts-v12" if protocol == "slots" else "live-scene-facts-v12"
+                "accepted-scene-facts-v13" if protocol == "slots" else "live-scene-facts-v13"
             )
             self.cache_identity = hashlib.sha256(
                 f"{self.cache_identity}:{graph_revision}".encode()
             ).hexdigest()
         if planning_scope == "scene":
             self.cache_identity = hashlib.sha256(
-                f"{self.cache_identity}:complete-scene-v1".encode()
+                json.dumps(
+                    {
+                        "accepted_cache": self.cache_identity,
+                        "scope": "complete-scene-v2",
+                        "routing_revision": ROUTING_REVISION,
+                        "scene_messages": scene_messages(""),
+                    },
+                    sort_keys=True,
+                ).encode()
             ).hexdigest()
         self.fallback = fallback
         self.fallback_ready_seconds = fallback_ready_seconds
@@ -825,7 +834,9 @@ class TensorRTSlotModelClient(StructuredModelClient):
                 "/v1/chat/completions",
                 json={
                     "model": self.model,
-                    "messages": _slot_messages(source_text, protocol=self.protocol),
+                    "messages": scene_messages(source_text)
+                    if self.planning_scope == "scene"
+                    else _slot_messages(source_text, protocol=self.protocol),
                     "temperature": 0,
                     "top_p": 1,
                     "max_tokens": self.max_output_tokens,

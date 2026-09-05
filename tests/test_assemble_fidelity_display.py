@@ -60,6 +60,7 @@ def captured_story(tmp_path, monkeypatch):
         )
     )
     context_args = argparse.Namespace(
+        profile="routed-v1",
         model=args.model,
         endpoint=args.endpoint,
         memory_pid=None,
@@ -98,8 +99,7 @@ def captured_story(tmp_path, monkeypatch):
             for key, value in zip(("SETTING", "ACTOR", "ACTION", "MAGIC"), values, strict=True)
         )
         row = probe.ProbeResult(
-            index=index,
-            variant="candidate",
+            **probe.request_identity(source, index, "candidate", args.model, context_args.profile),
             status="ok",
             generation_complete=True,
             raw_sha256=assembly.digest(raw),
@@ -114,7 +114,16 @@ def captured_story(tmp_path, monkeypatch):
         )
         probe.benchmark.append_event(args.story_evidence, row.model_dump(mode="json"))
         baseline = smoke.Result.model_validate_json(
-            row.model_dump_json(exclude={"variant", "checks", "criteria_pass"})
+            row.model_dump_json(
+                exclude={
+                    "variant",
+                    "checks",
+                    "criteria_pass",
+                    "prompt_route",
+                    "source_sha256",
+                    "request_sha256",
+                }
+            )
         )
         if index in {0, 1, 3}:
             baseline.accepted_valid = False

@@ -1,0 +1,283 @@
+{
+  "schema_version": 1,
+  "fixture_kind": "authored synthetic engineering routing controls; not a holdout",
+  "visual_style": "watercolor paper theater",
+  "cases": [
+    {
+      "source": "In a meadow, one purple drum is carried by three white mice. A silver ribbon appears.",
+      "expected_route": "accepted_passive",
+      "expect_refusal": false,
+      "expected": {
+        "setting": {
+          "label": "meadow",
+          "attributes": []
+        },
+        "nodes": [
+          {
+            "label": "mice",
+            "role": "subject",
+            "count": 3,
+            "color": "white",
+            "attributes": [],
+            "actions": [
+              "carries purple drum"
+            ]
+          },
+          {
+            "label": "drum",
+            "role": "object",
+            "count": 1,
+            "color": "purple",
+            "attributes": [],
+            "actions": []
+          },
+          {
+            "label": "ribbon",
+            "role": "object",
+            "count": null,
+            "color": "silver",
+            "attributes": [],
+            "actions": []
+          }
+        ],
+        "relationships": [
+          {
+            "source": 0,
+            "relation": "carries",
+            "target": 1
+          }
+        ]
+      }
+    },
+    {
+      "source": "In a harbor, two green baskets are carried by one brown rabbit. A blue arch appears.",
+      "expected_route": "accepted_passive",
+      "expect_refusal": false,
+      "expected": {
+        "setting": {
+          "label": "harbor",
+          "attributes": []
+        },
+        "nodes": [
+          {
+            "label": "rabbit",
+            "role": "subject",
+            "count": 1,
+            "color": "brown",
+            "attributes": [],
+            "actions": [
+              "carries green baskets"
+            ]
+          },
+          {
+            "label": "baskets",
+            "role": "object",
+            "count": 2,
+            "color": "green",
+            "attributes": [],
+            "actions": []
+          },
+          {
+            "label": "arch",
+            "role": "object",
+            "count": null,
+            "color": "blue",
+            "attributes": [],
+            "actions": []
+          }
+        ],
+        "relationships": [
+          {
+            "source": 0,
+            "relation": "carries",
+            "target": 1
+          }
+        ]
+      }
+    },
+    {
+      "source": "Inside a workshop, one white box was carried by two red otters. A golden kite appears.",
+      "expected_route": "accepted_passive",
+      "expect_refusal": false,
+      "expected": {
+        "setting": {
+          "label": "workshop",
+          "attributes": []
+        },
+        "nodes": [
+          {
+            "label": "otters",
+            "role": "subject",
+            "count": 2,
+            "color": "red",
+            "attributes": [],
+            "actions": [
+              "carries white box"
+            ]
+          },
+          {
+            "label": "box",
+            "role": "object",
+            "count": 1,
+            "color": "white",
+            "attributes": [],
+            "actions": []
+          },
+          {
+            "label": "kite",
+            "role": "object",
+            "count": null,
+            "color": "golden",
+            "attributes": [],
+            "actions": []
+          }
+        ],
+        "relationships": [
+          {
+            "source": 0,
+            "relation": "carries",
+            "target": 1
+          }
+        ]
+      }
+    },
+    {
+      "source": "In a valley, an otter carries one purple cup. Two blue birds fly beside a wooden arch.",
+      "expected_route": "scene_default",
+      "expect_refusal": false,
+      "expected": {
+        "setting": {
+          "label": "valley",
+          "attributes": []
+        },
+        "nodes": [
+          {
+            "label": "otter",
+            "role": "subject",
+            "count": null,
+            "color": null,
+            "attributes": [],
+            "actions": [
+              "carries purple cup"
+            ]
+          },
+          {
+            "label": "birds",
+            "role": "subject",
+            "count": 2,
+            "color": "blue",
+            "attributes": [],
+            "actions": [
+              "fly"
+            ]
+          },
+          {
+            "label": "cup",
+            "role": "object",
+            "count": 1,
+            "color": "purple",
+            "attributes": [],
+            "actions": []
+          },
+          {
+            "label": "arch",
+            "role": "object",
+            "count": null,
+            "color": null,
+            "attributes": [
+              "wooden"
+            ],
+            "actions": []
+          }
+        ],
+        "relationships": [
+          {
+            "source": 0,
+            "relation": "carries",
+            "target": 2
+          },
+          {
+            "source": 1,
+            "relation": "beside",
+            "target": 3
+          }
+        ]
+      }
+    },
+    {
+      "source": "In a courtyard, one green box is carried by a red rabbit. One white drum is carried by the rabbit. A silver ribbon appears.",
+      "expected_route": "scene_default",
+      "expect_refusal": false,
+      "expected": {
+        "setting": {
+          "label": "courtyard",
+          "attributes": []
+        },
+        "nodes": [
+          {
+            "label": "rabbit",
+            "role": "subject",
+            "count": null,
+            "color": "red",
+            "attributes": [],
+            "actions": [
+              "carries green box",
+              "carries white drum"
+            ]
+          },
+          {
+            "label": "box",
+            "role": "object",
+            "count": 1,
+            "color": "green",
+            "attributes": [],
+            "actions": []
+          },
+          {
+            "label": "drum",
+            "role": "object",
+            "count": 1,
+            "color": "white",
+            "attributes": [],
+            "actions": []
+          },
+          {
+            "label": "ribbon",
+            "role": "object",
+            "count": null,
+            "color": "silver",
+            "attributes": [],
+            "actions": []
+          }
+        ],
+        "relationships": [
+          {
+            "source": 0,
+            "relation": "carries",
+            "target": 1
+          },
+          {
+            "source": 0,
+            "relation": "carries",
+            "target": 2
+          }
+        ]
+      }
+    },
+    {
+      "source": "In a meadow, one blue bag is not carried by two yellow goats. A silver arch appears.",
+      "expected_route": "scene_default",
+      "expect_refusal": true
+    },
+    {
+      "source": "In a harbor, a mole says one red drum is carried by two green rabbits. A white ribbon appears.",
+      "expected_route": "scene_default",
+      "expect_refusal": true
+    },
+    {
+      "source": "In a courtyard, one white shell and one blue stone are carried by two black badgers. A golden ribbon appears.",
+      "expected_route": "scene_default",
+      "expect_refusal": true
+    }
+  ]
+}

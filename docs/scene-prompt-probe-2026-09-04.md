@@ -118,3 +118,28 @@ Ordered still states remain in sequence; the original baseline still repeats for
 The mapping key stays outside the gallery in an owner-only file. This hides model labels, but
 different temporal behavior and missing baseline options remain distinguishable. Exported unrated
 fields remain unrated; the tool cannot grant visual acceptance.
+
+## One-request source routing
+
+The next opt-in candidate selects the accepted prompt for exactly one supported, explicit
+carried-by source clause and otherwise uses the unchanged scene prompt. Selection happens before
+generation, from source syntax alone. It never retries a failed response or repairs a conflicting
+model agent. Both full prompts and the routing revision enter the scene cache identity; the focal
+planner keeps its existing request and cache behavior.
+
+The selector checks the original clause against shared assertion filtering before parsing it,
+so removing quoted text cannot create an eligible passive. Negated, reported, hypothetical,
+coordinated, incomplete and pronoun-based clauses do not qualify. Multiple complete passives use
+the scene prompt; downstream grounding still decides whether a particular response is valid.
+
+The `routed-v1` probe profile keeps the original eight controls and adds eight independent
+synthetic routing controls. Its 32 paired requests record route, source hash and exact request
+hash against a frozen schedule. Journal validation also enforces that schedule's execution order.
+All 16 candidate outcomes and the existing latency gates must
+pass before a separate invocation can revisit the seven original story inputs. The fresh controls
+are engineering tests, not a new holdout. This routing candidate has not yet passed live gates.
+
+Adversarial review tightened the passive-fragment repair: all source passives referring to the
+resolved actor are counted before count/color compatibility. A later bare reference cannot hide a
+second possible patient. This preserves refusal for ambiguous selection even when the complete
+scene could otherwise retain both carried objects.

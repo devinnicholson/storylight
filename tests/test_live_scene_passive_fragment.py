@@ -74,3 +74,14 @@ def test_patient_recovery_rejects_active_ambiguous_or_unasserted_source_clauses(
     for source in sources:
         for scope in ("focal", "scene"):
             assert adapt_live_scene_facts(SLOTS, source_text=source, scope=scope).facts is None
+    source = (
+        "In a garden, one red basket is carried by a white badger. "
+        "One blue basket is carried by the badger. A silver kite appears."
+    )
+    for scope in ("focal", "scene"):
+        for agent in ("white badger", "badger"):
+            result = adapt_live_scene_facts(
+                {**SLOTS, "ACTOR": "white badger", "ACTION": f"carried by {agent}"},
+                source_text=source, scope=scope,
+            )
+            assert result.facts is None

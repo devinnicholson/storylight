@@ -605,11 +605,14 @@ def _build(
                     if clause.passive
                     and _key(clause.verb) == ("carry",)
                     and identity(actor) == identity(agent) == identity(clause.subject)
-                    and _compatible(actor, clause.subject)
-                    and _compatible(agent, clause.subject)
                 ]
                 if len(passive_candidates) != 1:
                     raise _Refuse(LiveSceneFactsRefusal.AMBIGUOUS_BINDING)
+                if not (
+                    _compatible(actor, passive_candidates[0].subject)
+                    and _compatible(agent, passive_candidates[0].subject)
+                ):
+                    raise _Refuse(LiveSceneFactsRefusal.UNGROUNDED)
                 requested.append(passive_candidates[0])
                 continue
             match = _PREDICATE.match(value)

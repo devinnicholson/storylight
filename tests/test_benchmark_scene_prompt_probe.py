@@ -10,7 +10,8 @@ from scripts import benchmark_scene_prompt_probe as probe
 
 
 @pytest.fixture
-def control_run(tmp_path, monkeypatch):
+def control_run(tmp_path, monkeypatch, request):
+    profile = getattr(request, "param", "scene-v1")
     provenance = tmp_path / "provenance.json"
     provenance.write_text(
         json.dumps(
@@ -33,7 +34,18 @@ def control_run(tmp_path, monkeypatch):
         ("cave", "badger", "holds lantern", "none"),
         ("cave", "badger", "holds lantern", "two blue birds"),
     )
-    cases = probe.load_controls()["cases"]
+    if profile == "routed-v1":
+        slots += (
+            ("meadow", "three white mice", "carry purple drum", "silver ribbon"),
+            ("harbor", "one brown rabbit", "carry green baskets", "blue arch"),
+            ("workshop", "two red otters", "carry white box", "golden kite"),
+            ("valley", "otter", "carries purple cup", "two blue birds"),
+            ("courtyard", "red rabbit", "carries green box", "silver ribbon"),
+            ("meadow", "two yellow goats", "carry blue bag", "silver arch"),
+            ("harbor", "two green rabbits", "carry red drum", "white ribbon"),
+            ("courtyard", "two black badgers", "carry white shell", "golden ribbon"),
+        )
+    cases = probe.load_controls(profile)["cases"]
     raws = {
         case["source"]: "\n".join(
             f"{key}: {value}"
@@ -83,6 +95,8 @@ def control_run(tmp_path, monkeypatch):
         "--output",
         str(tmp_path / "summary.json"),
     ]
+    if profile == "routed-v1":
+        args += ["--profile", profile]
     assert probe.main(args) == 0
     return args, calls, raws
 
@@ -166,3 +180,56 @@ def test_story_is_explicit_and_private_archive_is_bound(control_run, tmp_path):
         assert "source" not in entry
     assert probe.main(story_args) == 1
     assert len(calls) == 23
+
+
+@pytest.mark.parametrize("control_run", ["routed-v1"], indirect=True)
+def test_routed_profile_preserves_original_controls_and_binds_all_32_requests(
+    control_run, tmp_path
+):
+    args, calls, _ = control_run
+    summary = json.loads((tmp_path / "summary.json").read_text())
+    header = summary["header"]
+    assert summary["decision"] == "advance_to_story"
+    assert summary["criteria_passed"] == {"accepted": 16, "candidate": 16}
+    assert header["schema_version"] == 2 and header["profile"] == "routed-v1"
+    assert header["max_requests"] == 32 and len(calls) == 32
+    assert probe.load_controls("routed-v1")["cases"][:8] == probe.load_controls()["cases"]
+    assert header["request_schedule_sha256"] == probe.benchmark.digest(header["request_schedule"])
+    assert [probe.benchmark.digest(call) for call in calls] == [
+        row["request_sha256"] for row in header["request_schedule"]
+    ]
+    routed = [row for row in header["request_schedule"] if row["variant"] == "candidate"]
+    assert [row["index"] for row in routed if row["prompt_route"] == "accepted_passive"] == [
+        8,
+        9,
+        10,
+    ]
+    assert probe.main(args) == 0 and len(calls) == 32
+    story_args = [*args]
+    story_args[1] = "story"
+    story_args[story_args.index("--evidence") + 1] = str(tmp_path / "routed-story.jsonl")
+    story_args[story_args.index("--output") + 1] = str(tmp_path / "routed-story.json")
+    story_args += ["--controls-evidence", str(tmp_path / "controls.jsonl")]
+    wrong_profile = [*story_args]
+    wrong_profile[wrong_profile.index("--profile") + 1] = "scene-v1"
+    assert probe.main(wrong_profile) == 1 and len(calls) == 32
+    assert probe.main(story_args) == 0 and len(calls) == 39
+    story = probe.smoke.load_manifest(probe.STORY)[1]
+    assert calls[32:] == [
+        probe.request_payload(source, "candidate", "resident", "routed-v1") for source, _ in story
+    ]
+    for case in probe.load_controls("routed-v1")["cases"][8:]:
+        routed_payload = probe.request_payload(case["source"], "candidate", "resident", "routed-v1")
+        variant = "accepted" if case["expected_route"] == "accepted_passive" else "candidate"
+        assert routed_payload == probe.request_payload(case["source"], variant, "resident")
+    journal = tmp_path / "controls.jsonl"
+    entries = [json.loads(line) for line in journal.read_text().splitlines()]
+    reordered = [entries[0], *entries[3:5], *entries[1:3], *entries[5:]]
+    journal.write_text("\n".join(json.dumps(row) for row in reordered) + "\n")
+    assert probe.main([*args, "--aggregate-only"]) == 1
+    assert len(calls) == 39
+    result = next(row for row in entries if row.get("kind") == "result" and row["index"] == 8)
+    result["request_sha256"] = "0" * 64
+    journal.write_text("\n".join(json.dumps(row) for row in entries) + "\n")
+    assert probe.main([*args, "--aggregate-only"]) == 1
+    assert len(calls) == 39
