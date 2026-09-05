@@ -1,8 +1,10 @@
 # Plan: a short story that projects faithfully
 
-Status: story frozen and bounded passive construction implemented; resident smoke rejected with
-zero accepted graphs from seven requests. Development, visual and rehearsal stages did not advance.
-See the [implementation and evidence](product-fidelity-results-2026-09-04.md).
+Status: the object-color repair passes the complete 512-case development gate: 38 exact candidate
+contracts versus zero accepted, with no category-total regression. Complete-scene coverage and
+ordered display integration continue before the frozen story's visual comparison. See the
+[latest measurement](product-fidelity-color-repair-2026-09-04.md) and
+[earlier implementation](product-fidelity-results-2026-09-04.md).
 
 ## Outcome
 
@@ -139,6 +141,6 @@ credential scanning and deslop before reviewed fast-forward pushes. Preserve use
 
 ## Next action
 
-Diagnose the recorded construction/refusal boundary using value-free stage reasons and separate
-synthetic/public training fixtures before proposing another model run. Preserve the frozen story
-and failed smoke result. Microphone-driven reading follows a faithful typed-story demonstration.
+Validate complete-scene reconstruction against the original model responses and integrate authored
+display steps before rendering the whole story. Keep failed reports and the original story;
+microphone-driven reading follows a faithful typed-story demonstration.
