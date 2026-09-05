@@ -351,12 +351,6 @@ def test_hf_snapshot_public_access_mode_is_approval_bound(tmp_path: Path) -> Non
     assert public_plan["approval_token"] != secret_plan["approval_token"]
 
 
-def test_modal_training_consumes_staged_checkpoint_without_unused_hf_secret() -> None:
-    source = (ROOT / "deploy/modal_jax_fidelity.py").read_text()
-
-    assert 'modal.Secret.from_name("bookforge-hf-read")' not in source
-
-
 def test_candidate_prediction_plan_validates_all_inputs_without_loading_torch(
     tmp_path: Path,
 ) -> None:

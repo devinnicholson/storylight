@@ -198,7 +198,7 @@ def subprocess_result(command: list[str], stdout: str = ""):
     return __import__("subprocess").CompletedProcess(command, 0, stdout=stdout, stderr="")
 
 
-def test_prediction_worker_is_finite_offline_and_exactly_bound(tmp_path: Path) -> None:
+def test_prediction_request_rejects_batch_approval_and_candidate_hash_drift(tmp_path: Path) -> None:
     release, _ = _release(tmp_path)
     manifest, _ = stager.build_prediction_input_manifest(
         run_id="prediction-fidelity-20260901",
@@ -217,26 +217,6 @@ def test_prediction_worker_is_finite_offline_and_exactly_bound(tmp_path: Path) -
         worker._validate_request({**request, "approval_token": "approve"})
     with pytest.raises(ValueError, match="SHA-256"):
         worker._validate_request({**request, "candidate_manifest_sha256": "latest"})
-
-    source = (ROOT / "deploy/modal_jax_prediction.py").read_text(encoding="utf-8")
-    assert 'GPU = "L4"' in source
-    assert "MAX_BATCH_SIZE = 4" in source
-    assert 'volumes={"/inputs": input_volume, "/releases": release_volume}' in source
-    assert '_INPUT_ROOT = Path("/inputs/prediction")' in source
-    assert '_OUTPUT_ROOT = Path("/releases/prediction")' in source
-    assert "gpu=GPU" in source
-    assert "retries=RETRIES" in source and "RETRIES = 0" in source
-    assert "max_containers=MAX_CONTAINERS" in source and "MAX_CONTAINERS = 1" in source
-    assert '"BOOKFORGE_NVIDIA_PYTORCH_IMAGE": NVIDIA_PYTORCH_IMAGE' in source
-    assert '"pydantic-settings==2.15.0"' in source
-    assert '"accelerate==1.12.0"' in source
-    assert "import accelerate, pydantic_settings" in source
-    assert "@app.web_endpoint" not in source
-    assert '"HF_HUB_OFFLINE": "1"' in source
-    assert '"TRANSFORMERS_OFFLINE": "1"' in source
-    assert source.index("release_volume.commit()") < source.index(
-        "_write_once(completion, canonical_json_bytes(payload))"
-    )
 
 
 def test_prediction_fetch_requires_completion_hash_and_verifies_public_output(

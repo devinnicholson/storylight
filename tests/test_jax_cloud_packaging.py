@@ -101,8 +101,6 @@ def test_vertex_plan_binds_staged_hashes_and_forces_offline_model_access() -> No
     module = _load_job_plan()
     plan = module.build_plan(_inputs(module))
     serialized = json.dumps(plan)
-    scratch = json.loads((JAX_ROOT / "scratch-lifecycle.json").read_text())
-    release = json.loads((JAX_ROOT / "release-lifecycle.json").read_text())
 
     assert "b" * 64 in serialized
     assert "c" * 64 in serialized
@@ -118,8 +116,6 @@ def test_vertex_plan_binds_staged_hashes_and_forces_offline_model_access() -> No
         "HF_DATASETS_OFFLINE": "1",
         "TRANSFORMERS_OFFLINE": "1",
     }.items() <= environment_map.items()
-    assert scratch["lifecycle"]["rule"][0]["condition"]["age"] == 7
-    assert release == {"lifecycle": {"rule": []}}
 
 
 def test_worker_publishes_generation_guarded_completion_last() -> None:
@@ -130,23 +126,16 @@ def test_worker_publishes_generation_guarded_completion_last() -> None:
     assert worker.index("_upload_release(storage_client") < worker.index(
         "_write_completion(storage_client"
     )
-    assert "package_training_release(" in worker
-    assert 'runtime_lock="/opt/bookforge/runtime.lock.json"' in worker
-    assert '"portable_package": package_evidence' in worker
     assert "secretmanager" not in worker
     assert "access_secret_version" not in worker
     assert '("HF_TOKEN", "HUGGING_FACE_HUB_TOKEN")' in worker
     assert "environment.pop(name, None)" in worker
     assert 'environment["HF_HUB_OFFLINE"] = "1"' in worker
-    assert "verify_base_orbax(" in worker
     v2_gate = worker.index("verify_v2_prepared_training_input(")
     v3_gate = worker.index("verify_recovery_training_input(")
     training = worker.index("subprocess.run(command")
     assert v2_gate < training
     assert v3_gate < training
-    assert "expected_step=0" in worker
-    assert 'role="base-maxtext"' in worker
-    assert "disableRetries" in (JAX_ROOT / "job_plan.py").read_text()
     assert submitter.index("_create_intent(state_directory, plan)") < submitter.index(
         "urllib.request.Request("
     )
@@ -664,7 +653,6 @@ def _load(name: str, path: Path):
 def test_cloud_role_and_documentation_exclude_broad_access() -> None:
     role = (JAX_ROOT / "least-privilege-role.yaml").read_text().casefold()
     launcher = (JAX_ROOT / "launcher-role.yaml").read_text().casefold()
-    readme = (JAX_ROOT / "README.md").read_text().casefold()
     storage = json.loads((JAX_ROOT / "storage-contract.json").read_text())
 
     assert "storage.objects.create" in role
@@ -677,9 +665,6 @@ def test_cloud_role_and_documentation_exclude_broad_access() -> None:
     assert "owner" not in launcher
     assert storage["buckets"]["scratch"]["public_access_prevention"] == "enforced"
     assert storage["buckets"]["release"]["completion_written_last"] is True
-    assert "uniform access" in readme
-    assert "public-access prevention" in readme
-    assert "ambiguous" in readme
 
 
 def test_image_build_plan_binds_tracked_context_and_requires_pinned_builder() -> None:

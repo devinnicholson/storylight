@@ -625,6 +625,10 @@ make dev
 make test
 ```
 
+`make test` runs the Python suite and both JavaScript behavior suites; Node.js is required.
+Full corpus scoring and benchmark reproduction run separately from the unit suite.
+The [test-suite sweep](docs/test-suite-sweep-2026-09-04.md) records removed checks and retained coverage.
+
 ## Google Cloud
 
 The GCP path is documented in [`infra/gcp/README.md`](infra/gcp/README.md). The scripts default to

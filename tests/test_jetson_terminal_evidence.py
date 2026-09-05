@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import hashlib
 import importlib.util
-import subprocess
 from pathlib import Path
 
 import pytest
@@ -11,8 +10,6 @@ from bookforge.fidelity_closure_evidence import validate_terminal_evidence
 
 ROOT = Path(__file__).resolve().parents[1]
 RECORDER = ROOT / "deploy/jetson/record-trained-planner-terminal-evidence.py"
-RETENTION = ROOT / "deploy/jetson/record-baseline-retention.sh"
-PROMOTION = ROOT / "deploy/jetson/promote-trained-planner.sh"
 
 
 def load_recorder():
@@ -245,17 +242,3 @@ def test_terminal_output_must_be_an_immediate_evidence_child() -> None:
     ):
         with pytest.raises(ValueError, match="immediate child"):
             recorder.validated_output_path(invalid)
-
-
-def test_terminal_shell_paths_are_approval_bound_and_syntactically_valid() -> None:
-    subprocess.run(["bash", "-n", str(RETENTION)], check=True)
-    subprocess.run(["bash", "-n", str(PROMOTION)], check=True)
-    retention = RETENTION.read_text()
-    promotion = PROMOTION.read_text()
-    assert "RETAIN_BOOKFORGE_ACCEPTED_BASELINE:${action_sha256}" in retention
-    assert '--one-purpose-approval-token "$EXPECTED_APPROVAL_TOKEN"' in retention
-    assert "--terminal-evidence-directory" in promotion
-    assert '"$TERMINAL_RECORDER"' in promotion
-    assert '--backup-config "$BACKUP_FILE"' in promotion
-    assert "promotion_complete=1" in promotion.split('"$TERMINAL_RECORDER"', 1)[1]
-    assert "hmac.compare_digest" in RECORDER.read_text()

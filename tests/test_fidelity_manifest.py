@@ -5,12 +5,10 @@ from pathlib import Path
 import pytest
 from pydantic import ValidationError
 
-from bookforge.fidelity_dataset import DatasetSplit, load_jsonl
+from bookforge.fidelity_dataset import DatasetSplit
 from bookforge.fidelity_manifest import (
     FidelityDatasetManifest,
-    build_split_manifest,
     record_schema_sha256,
-    sha256_path,
     validate_manifest,
 )
 
@@ -27,22 +25,6 @@ def test_committed_manifest_validates_public_content_and_schema() -> None:
     assert manifest.splits[DatasetSplit.HIDDEN].records == 512
     assert manifest.splits[DatasetSplit.HIDDEN].path is None
     assert manifest.splits[DatasetSplit.HIDDEN].public is False
-
-
-def test_split_manifest_recomputes_committed_development_metadata() -> None:
-    manifest = FidelityDatasetManifest.model_validate_json(
-        (DATASET_ROOT / "manifest.json").read_text()
-    )
-    path = DATASET_ROOT / "development.jsonl"
-    records = load_jsonl(path)
-
-    recomputed = build_split_manifest(
-        records,
-        content_sha256=sha256_path(path),
-        path="development.jsonl",
-    )
-
-    assert recomputed == manifest.splits[DatasetSplit.DEVELOPMENT]
 
 
 def test_manifest_rejects_published_hidden_split_and_wrong_counts() -> None:

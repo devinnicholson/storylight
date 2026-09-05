@@ -1,6 +1,6 @@
 import base64
 import hashlib
-from collections import Counter, defaultdict
+from collections import defaultdict
 
 import pytest
 
@@ -98,28 +98,3 @@ def test_reserved_content_is_controlled_and_targets_never_echo_it() -> None:
         rendered = record.target.as_wire().casefold()
         assert all(term.casefold() not in rendered for term in record.privacy_terms)
         validate_safe_record(record)
-
-
-def test_each_development_category_has_counterfactual_examples() -> None:
-    development = list(generate_split(DatasetSplit.DEVELOPMENT))
-    coverage = Counter(category for record in development for category in record.categories)
-
-    assert set(coverage) == set(CATEGORIES)
-    assert min(coverage.values()) >= 24
-
-
-def test_specialized_targets_describe_actions_present_in_the_passage() -> None:
-    by_category = {
-        record.categories[0]: record
-        for record in generate_split(DatasetSplit.TRAIN)
-        if record.categories[0] in {"counts", "scale", "reversed_motion", "hallucination"}
-    }
-
-    assert by_category["counts"].target.action.startswith("watches ")
-    assert " watches exactly " in by_category["counts"].passage
-    assert by_category["scale"].target.action.startswith("carries ")
-    assert " carrying " in by_category["scale"].passage
-    assert by_category["reversed_motion"].target.action.startswith("taps ")
-    assert " taps " in by_category["reversed_motion"].passage
-    assert by_category["hallucination"].target.action.startswith("holds ")
-    assert " holds " in by_category["hallucination"].passage

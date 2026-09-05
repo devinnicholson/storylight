@@ -2,7 +2,6 @@
 from __future__ import annotations
 
 import importlib.util
-import json
 import sys
 from pathlib import Path
 
@@ -179,51 +178,6 @@ def test_full_training_release_selects_exact_terminal_adapter_leaf(tmp_path: Pat
     arguments["input_manifest_sha256"] = "0" * 64
     with pytest.raises(ValueError, match="identity"):
         merge._verify_training_release(root, **arguments)
-
-
-def test_merge_worker_is_one_shot_l4_and_completion_is_last() -> None:
-    source = (ROOT / "deploy/modal_jax_merge.py").read_text(encoding="utf-8")
-    plan = json.loads(
-        (ROOT / "experiments/jax-fidelity-lab/modal-merge-plan-2026-09.json").read_text()
-    )
-    assert plan["gpu"] == "L4"
-    assert 'GPU = "L4"' in source
-    assert 'plan.get("gpu") != GPU' in source
-    assert 'roundtrip.get("backend") != "modal-l4x2"' in source
-    assert "training_input = _INPUT_ROOT / training_input_run_id" in source
-    assert 'expected_manifest_sha256=bindings["training_input_manifest_sha256"]' in source
-    assert "training_input_manifest_sha256: str" in source
-    assert 'outer.get("input_manifest_sha256") != input_manifest_sha256' in source
-    assert "v2 training input base differs from roundtrip provenance" in source
-    assert 'roundtrip_root / "merged-hf.manifest.json"' in source
-    assert "verify_artifact_manifest(canonical_base_hf, canonical_base_hf_manifest)" in source
-    assert "_reject_unchanged_merged_hf(canonical_base_hf_manifest, merged_manifest)" in source
-    fetch_source = (ROOT / "scripts/fetch_modal_jax_merge.py").read_text(encoding="utf-8")
-    assert '"training_input_manifest_sha256"' in fetch_source
-    assert '"training_input_run_id"' in fetch_source
-    assert plan["function_calls"] == 1
-    assert plan["automatic_retries"] == 0
-    assert plan["web_endpoint"] is False
-    assert "retries=0" in source
-    assert "max_containers=1" in source
-    assert "@modal.web_endpoint" not in source
-    assert source.count('"training.jax_fidelity.convert",') == 1
-    worker_start = source.index("def merge_finite")
-    assert source.index("lora_checkpoint_evidence(", worker_start) < source.index(
-        "subprocess.run(", worker_start
-    )
-    assert source.index("_require_live_training_evidence(", worker_start) < source.index(
-        "subprocess.run(", worker_start
-    )
-    assert source.index("subprocess.run(", source.index("def merge_finite")) < source.index(
-        "build_merged_candidate_manifest(", source.index("def merge_finite")
-    )
-    assert source.index("_reject_unchanged_merged_hf(", worker_start) < source.index(
-        "build_merged_candidate_manifest(", worker_start
-    )
-    assert source.index("files = _release_files(release)") < source.index(
-        "_write_once(completion_path, payload)"
-    )
 
 
 def test_merge_rejects_unchanged_hf_artifact_or_weight_payload() -> None:

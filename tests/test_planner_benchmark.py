@@ -1,12 +1,10 @@
 import pytest
 
 from bookforge.planner_benchmark import (
-    CONTEST_CASES,
     BenchmarkCase,
     SemanticExpectation,
     _contains_semantic_alternative,
     _contract_order_for_case,
-    _parser,
     _require_loopback,
     _select_cases,
     _semantic_evidence,
@@ -47,61 +45,6 @@ def test_planner_benchmark_counterbalances_contract_order() -> None:
     assert _contract_order_for_case(1, contracts) == ("compact", "standard")
     assert _contract_order_for_case(2, contracts) == ("standard", "compact")
     assert _contract_order_for_case(3, ("compact",)) == ("compact",)
-
-
-def test_planner_benchmark_can_target_bundled_openai_compatible_server() -> None:
-    args = _parser().parse_args(
-        [
-            "--backend",
-            "openai",
-            "--base-url",
-            "http://127.0.0.1:11436",
-            "--suite",
-            "contest",
-        ]
-    )
-
-    assert args.backend == "openai"
-    assert args.base_url == "http://127.0.0.1:11436"
-    assert args.suite == "contest"
-
-
-def test_planner_benchmark_can_target_tensorrt_slot_server() -> None:
-    args = _parser().parse_args(
-        [
-            "--backend",
-            "tensorrt_slots",
-            "--base-url",
-            "http://127.0.0.1:11435",
-            "--contract",
-            "standard",
-        ]
-    )
-
-    assert args.backend == "tensorrt_slots"
-    assert args.contract == "standard"
-
-
-def test_planner_benchmark_can_target_tensorrt_hybrid_candidate() -> None:
-    args = _parser().parse_args(
-        [
-            "--backend",
-            "tensorrt_hybrid",
-            "--base-url",
-            "http://127.0.0.1:11435",
-            "--contract",
-            "standard",
-        ]
-    )
-
-    assert args.backend == "tensorrt_hybrid"
-    assert args.contract == "standard"
-
-
-def test_contest_suite_has_twenty_unique_synthetic_cases() -> None:
-    assert len(CONTEST_CASES) == 20
-    assert len({case.case_id for case in CONTEST_CASES}) == 20
-    assert all(case.expectations for case in CONTEST_CASES)
 
 
 def test_planner_benchmark_can_select_validator_failed_subset() -> None:

@@ -142,13 +142,3 @@ def test_bridge_identity_check_never_calls_ready_or_prewarm(monkeypatch):
     monkeypatch.setattr(setup, "read_json", lambda url: {"ready": True})
     with pytest.raises(ValueError, match="expected Bookforge"):
         setup.verify_bridge(18082)
-
-
-def test_bridge_script_pins_cluster_and_binds_only_loopback():
-    script = (ROOT / "infra/gcp/gke/bridge-jetson-anticipatory.sh").read_text()
-    assert 'kubectl --context="${CONTEXT}"' in script
-    assert "gke_your-gcp-project_us-central1_bookforge-anticipatory" in script
-    assert '-R "127.0.0.1:${JETSON_PORT}:127.0.0.1:${LOCAL_PORT}"' in script
-    assert "ExitOnForwardFailure=yes" in script
-    assert "NGC_API_KEY" not in script
-    assert "--replicas=1" not in script

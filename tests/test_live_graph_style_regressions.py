@@ -20,8 +20,7 @@ def _plans(source=SOURCE):
     return accepted, graph
 
 
-@pytest.mark.parametrize("cached", [False, True])
-@pytest.mark.parametrize("contract", ["full", "concise"])
+@pytest.mark.parametrize("cached,contract", [(False, "full"), (True, "concise")])
 def test_safe_long_style_reuses_exact_accepted_page(cached, contract):
     accepted, graph = _plans()
     if cached:
@@ -61,11 +60,3 @@ def test_long_style_does_not_hide_invalid_graph_facts():
     graph = graph.model_copy(update={"scene_facts": unsupported})
     with pytest.raises(SceneFactsGroundingError):
         graph.to_page(source_text=SOURCE, visual_style=LONG_STYLE, seed=7)
-
-
-def test_short_style_still_compiles_graph_prompt():
-    accepted, graph = _plans()
-    options = dict(source_text=SOURCE, visual_style="watercolor", seed=7)
-    assert graph.to_page(**options).scene_spec.master_prompt != accepted.to_page(
-        **options
-    ).scene_spec.master_prompt

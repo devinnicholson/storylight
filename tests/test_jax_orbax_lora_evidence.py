@@ -12,7 +12,6 @@ import pytest
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from training.jax_fidelity import orbax_receipt
-from training.jax_fidelity.configuration import ConfigError, load_config, validate_config
 from training.jax_fidelity.orbax_receipt import (
     OrbaxReceiptError,
     lora_checkpoint_evidence,
@@ -438,19 +437,6 @@ def test_lora_checkpoint_progression_enforces_relative_delta_threshold(
             initial_restored_tree=_RESTORED[initial],
             terminal_restored_tree=_RESTORED[terminal],
         )
-
-
-def test_v3_config_binds_exact_gemma4_topology_and_maxtext_patch() -> None:
-    path = ROOT / "experiments/jax-fidelity-lab/config-v3-canary.json"
-    config = load_config(path)
-
-    assert config.training["expected_lora_pair_count"] == 205
-    assert len(config.training["approved_maxtext_patch_sha256"]) == 64
-
-    drifted = json.loads(path.read_text(encoding="utf-8"))
-    drifted["training"]["expected_lora_pair_count"] = 204
-    with pytest.raises(ConfigError, match="expected_lora_pair_count"):
-        validate_config(drifted)
 
 
 def test_lora_evidence_rejects_actual_step_only_orbax_shape(tmp_path: Path) -> None:

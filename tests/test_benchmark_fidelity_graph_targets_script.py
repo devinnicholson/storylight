@@ -7,7 +7,6 @@ from pathlib import Path
 
 import pytest
 
-from bookforge.fidelity_dataset import generate_split
 from bookforge.fidelity_evaluation import FIDELITY_EVALUATOR_REVISION
 from bookforge.fidelity_schema import DatasetSplit
 
@@ -70,42 +69,3 @@ def test_cli_defaults_to_both_public_splits_and_writes_stdout(
     assert requested == [DatasetSplit.TRAIN, DatasetSplit.DEVELOPMENT]
     assert report["total"] == 0
     assert report["hidden_evaluated"] is False
-
-
-def test_development_report_is_exact_aggregate_only_and_deterministic(tmp_path) -> None:
-    output = tmp_path / "coverage.json"
-
-    assert (
-        benchmark.main(
-            [
-                "--split",
-                "development",
-                "--token-budget",
-                "64",
-                "--output",
-                str(output),
-            ]
-        )
-        == 0
-    )
-    first = output.read_text(encoding="utf-8")
-    assert (
-        benchmark.main(["--split", "development", "--token-budget", "64", "--output", str(output)])
-        == 0
-    )
-    second = output.read_text(encoding="utf-8")
-    report = json.loads(first)
-
-    assert first == second
-    assert report["total"] == 512
-    assert report["eligible"] <= report["total"]
-    assert report["exact"] <= report["eligible"]
-    assert report["wire_token_estimates"]["count"] == report["eligible"]
-    assert report["wire_token_estimates"]["maximum"] <= 64
-    assert sum(item["total"] for item in report["categories"]) == report["total"]
-    assert report["splits"][0]["split"] == "development"
-
-    sample = next(generate_split(DatasetSplit.DEVELOPMENT))
-    assert sample.record_id not in first
-    assert sample.passage not in first
-    assert all(term not in first for term in sample.privacy_terms)

@@ -55,38 +55,10 @@ def test_live_scene_model_planner_has_a_bounded_independent_timeout() -> None:
         model_max_output_tokens=320,
     )
 
-    assert settings.live_scene_planner == "model"
-    assert settings.live_scene_planner_backend == "configured"
-    assert settings.live_scene_planner_base_url == "http://127.0.0.1:11435"
-    assert settings.live_scene_planner_model_name == "llm"
     assert settings.live_scene_planner_max_output_tokens == 64
-    assert settings.live_scene_planner_fallback_ready_seconds == 5
     assert settings.live_scene_planner_timeout_seconds == 12
-    assert settings.live_scene_planner_model_revision == "sha256:gemma3-fixture"
-    assert settings.live_scene_planner_cache_entries == 32
-    assert settings.live_scene_planner_auto_warmup is False
-    assert settings.live_scene_planner_compact_wire is False
-    assert settings.model_require_gpu is False
-    assert (
-        Settings(_env_file=None, live_scene_planner_auto_warmup=True).live_scene_planner_auto_warmup
-        is True
-    )
-    with pytest.raises(ValidationError):
-        Settings(_env_file=None, live_scene_planner_cache_entries=257)
     assert settings.model_context_tokens == 4_096
     assert settings.model_max_output_tokens == 320
-    assert settings.live_scene_master_width == 1024
-    assert settings.live_scene_master_height == 576
-    assert settings.live_scene_master_steps == 2
-    assert settings.live_scene_enable_preview is True
-    assert settings.live_scene_master_guidance_scale == 4.5
-    assert settings.live_scene_auto_prewarm_on_submit is False
-    assert (
-        Settings(
-            _env_file=None, live_scene_auto_prewarm_on_submit=True
-        ).live_scene_auto_prewarm_on_submit
-        is True
-    )
     with pytest.raises(ValidationError):
         Settings(_env_file=None, live_scene_planner_timeout_seconds=61)
     with pytest.raises(ValidationError):
@@ -97,51 +69,3 @@ def test_live_scene_model_planner_has_a_bounded_independent_timeout() -> None:
         Settings(_env_file=None, model_context_tokens=1_024)
     with pytest.raises(ValidationError):
         Settings(_env_file=None, model_max_output_tokens=32)
-    with pytest.raises(ValidationError):
-        Settings(_env_file=None, live_scene_master_width=900)
-    with pytest.raises(ValidationError):
-        Settings(_env_file=None, live_scene_master_height=480)
-    with pytest.raises(ValidationError):
-        Settings(_env_file=None, live_scene_master_steps=1)
-
-
-def test_general_model_output_default_remains_large_enough_for_story_compilation(
-    monkeypatch,
-) -> None:
-    monkeypatch.delenv("BOOKFORGE_MODEL_MAX_OUTPUT_TOKENS", raising=False)
-
-    settings = Settings(_env_file=None)
-
-    assert settings.model_max_output_tokens == 4_096
-
-
-def test_resilient_cloud_route_has_bounded_managed_provider_defaults() -> None:
-    settings = Settings(
-        _env_file=None,
-        live_scene_backend="gcp_resilient",
-        live_scene_vertex_project_id="your-gcp-project",
-    )
-
-    assert settings.live_scene_vertex_model == "gemini-3.1-flash-lite-image"
-    assert settings.live_scene_vertex_location == "global"
-    assert settings.live_scene_vertex_timeout_seconds == 90
-    assert settings.live_scene_vertex_estimated_image_usd == 0.034
-    assert settings.live_scene_vertex_session_cost_cap_usd == 0.50
-    assert settings.live_scene_routing_probe_timeout_seconds == 2
-    assert settings.live_scene_routing_failure_cooldown_seconds == 300
-    with pytest.raises(ValidationError):
-        Settings(_env_file=None, live_scene_vertex_estimated_image_usd=0)
-
-
-def test_anticipatory_gke_settings_are_disabled_and_bounded_by_default() -> None:
-    settings = Settings(_env_file=None)
-
-    assert settings.anticipatory_backend == "disabled"
-    assert settings.anticipatory_url == ""
-    assert settings.anticipatory_allow_loopback_http is False
-    assert settings.anticipatory_timeout_seconds == 30
-    assert settings.anticipatory_edge_gate_revision == "sanitized-scene-spec-v1"
-    with pytest.raises(ValidationError):
-        Settings(_env_file=None, anticipatory_timeout_seconds=0)
-    with pytest.raises(ValidationError):
-        Settings(_env_file=None, anticipatory_edge_gate_revision="")

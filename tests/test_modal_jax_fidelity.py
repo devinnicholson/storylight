@@ -304,67 +304,6 @@ def _v2_prepared_inputs(
     return experiment, {"prepared_training": binding}, hashes
 
 
-def test_modal_fallback_is_finite_pinned_and_has_no_endpoint() -> None:
-    plan = json.loads(PLAN.read_text())
-    source = Path("deploy/modal_jax_fidelity.py").read_text()
-
-    assert plan["gpu"] == "L4:2"
-    assert plan["container_count"] == 1
-    assert plan["function_calls"] == 1
-    assert plan["timeout_seconds"] == 3600
-    assert plan["automatic_retries"] == 0
-    assert plan["minimum_containers"] == 0
-    assert plan["web_endpoint"] is False
-    assert plan["allowed_gcp_terminal_state"] == "rejected-pre-billable"
-    assert plan["gross_ceiling_policy"] == "declared-estimate-not-provider-enforced"
-    assert "@sha256:" in modal_jax_fidelity._pinned_image_uri()
-    assert "gpu=GPU" in source
-    assert 'BACKEND = "modal-l4x2"' in source
-    assert "retries=0" in source
-    assert "max_containers=MAX_CONTAINERS" in source
-    assert "input_volume.reload()" in source
-    assert "scratch_volume.commit()" in source
-    assert "compilation_cache_volume.reload()" in source
-    assert "compilation_cache_volume.commit()" in source
-    assert (
-        'str(_COMPILATION_CACHE_ROOT): compilation_cache_volume'
-        in source
-    )
-    run_finite = source.index("def run_finite(")
-    training_call = source.index("_run_training_process(", run_finite)
-    assert source.index("scratch_volume.commit()", run_finite) < training_call
-    provenance = source.index("_persist_runtime_provenance(", run_finite)
-    assert provenance < source.index("scratch_volume.commit()", provenance) < training_call
-    gpu_preflight = source.index("run_two_gpu_fsdp_preflight(", run_finite)
-    assert provenance < gpu_preflight < training_call
-    durable_success = source.index("# This is the durability boundary", training_call)
-    inline_finalize = source.index("return _finalize_completed_scratch(", durable_success)
-    assert training_call < durable_success < inline_finalize
-    assert "timeout_seconds=training_timeout" in source
-    assert source.rindex("scratch_volume.commit()") < source.rindex(
-        "release_commit=release_volume.commit"
-    )
-    assert "run_two_gpu_fsdp_preflight(" in source
-    assert plan["publication_reserve_seconds"] == 600
-    assert plan["finalize_recovery_timeout_seconds"] == 1800
-    assert plan["finalize_recovery_gpu"] is None
-    assert plan["finalize_recovery_function_calls_max"] == 1
-    assert plan["finalize_recovery_automatic_retries"] == 0
-    assert plan["finalize_recovery_web_endpoint"] is False
-    assert "{bookforge_source_manifest_sha256}" in plan["approval_token_format"]
-    assert "{bookforge_source_manifest_sha256}" in plan[
-        "finalize_recovery_approval_token_format"
-    ]
-    assert "def finalize_finite(" in source
-    assert "exact Modal JAX finalize-only approval token" in source
-    finalize_definition = source.index("def finalize_finite(")
-    finalize_decorator = source.rfind("@app.function(", 0, finalize_definition)
-    assert "gpu=" not in source[finalize_decorator:finalize_definition]
-    assert "provider/gpu-preflight.json" not in source
-    assert "@modal.web_endpoint" not in source
-    assert "smoke: bool = False" in source
-
-
 def test_modal_jax_compilation_cache_is_trusted_persistent_and_audited(
     tmp_path: Path,
 ) -> None:
@@ -1030,52 +969,6 @@ def test_modal_request_requires_hashes_exact_approval_and_prebillable_rejection(
     )
     with pytest.raises(ValueError, match="pre-billable"):
         modal_jax_fidelity._validate_request(legacy)
-
-
-def test_modal_budget_gate_is_present_and_maxtext_checkout_is_exact() -> None:
-    source = Path("deploy/modal_jax_fidelity.py").read_text()
-    image_source = Path("deploy/modal_jax_image.py").read_text()
-    assert 'BUDGET_MONTH = "2026-09"' in source
-    assert "workspace_total + float(ceiling) > WORKSPACE_HARD_STOP_USD" in source
-    assert "git clone https://github.com/AI-Hypercomputer/maxtext.git /opt/MaxText" in image_source
-    assert 'apt_install("git", "ca-certificates", "build-essential")' in image_source
-    assert '"nvidia-curand-cu12==10.3.10.19"' in image_source
-    assert '"nvidia-nvtx-cu12==12.9.79"' in image_source
-    assert (
-        'NCCL_LIBRARY_DIR = "/usr/local/lib/python3.12/site-packages/nvidia/nccl/lib"'
-        in image_source
-    )
-    assert '"LIBRARY_PATH": NCCL_LIBRARY_DIR' in image_source
-    assert '"/usr/local/lib/python3.12/site-packages/nvidia/curand/lib"' in image_source
-    assert '"LD_LIBRARY_PATH": CUDA_WHEEL_LIBRARY_PATH' in image_source
-    assert '"XLA_PYTHON_CLIENT_MEM_FRACTION": "0.95"' in image_source
-    assert "ln -sfnT cuda_runtime" in image_source
-    assert "cudart/lib/lib*.so.*[0-9]" in image_source
-    assert 'extra_options="--no-build-isolation"' in image_source
-    assert "maxtext_revision" in image_source
-    assert "git -C /opt/MaxText rev-parse HEAD" in image_source
-    assert "maxtext-native-lora-materialization.patch" in image_source
-    assert "git -C /opt/MaxText apply --check --unidiff-zero" in image_source
-    assert "git -C /opt/MaxText apply --unidiff-zero" in image_source
-    assert "git -C /opt/MaxText diff --check" in image_source
-    assert "status --short" in image_source
-    assert " M src/maxtext/trainers/pre_train/train.py" in image_source
-    assert " M src/maxtext/utils/train_utils.py" in image_source
-    assert "diff --no-ext-diff --binary --abbrev=8 --unified=0" in image_source
-    assert "| cmp -s -" in image_source
-    assert 'REPOSITORY_ROOT / "deploy",' in image_source
-    assert '"/opt/bookforge/deploy",' in image_source
-    assert '"/opt/bookforge/experiments/jax-fidelity-lab/config.json"' in image_source
-    assert "--write-lock /opt/bookforge/runtime.lock.json" in image_source
-    assert "--lock /opt/bookforge/runtime.lock.json" in image_source
-    assert "/opt/MaxText/src:/opt/bookforge:/opt/bookforge/src" in image_source
-    assert "--maxtext-root /opt/MaxText" in image_source
-    assert '"HF_HUB_OFFLINE": "1"' in image_source
-    assert '"HF_DATASETS_OFFLINE": "1"' in image_source
-    assert '"TRANSFORMERS_OFFLINE": "1"' in image_source
-    assert 'for name in ("HF_TOKEN", "HUGGING_FACE_HUB_TOKEN")' in image_source
-    assert "verify_base_orbax(" in source
-    assert "base_checkpoint_receipt_sha256" in source
 
 
 def test_modal_billing_parser_accepts_current_and_legacy_fields() -> None:

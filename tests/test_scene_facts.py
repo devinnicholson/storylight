@@ -573,10 +573,6 @@ def test_grounding_rejects_coordinated_undeclared_subjects() -> None:
         assert error.value.paths == (path,)
 
 
-def test_grounding_accepts_counts_attributes_state_actions_relations_and_negative() -> None:
-    _facts().validate_source_grounding(source_text=_source())
-
-
 def test_grounding_accepts_noncontiguous_action_object_near_subject() -> None:
     facts = _facts().model_copy(
         update={

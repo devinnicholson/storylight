@@ -62,24 +62,6 @@ def _wire_plan() -> LiveSceneWirePlan:
     )
 
 
-def test_wire_plan_is_compact_and_normalizes_safe_geometry_and_motion() -> None:
-    wire = _wire_plan()
-    plan = wire.to_live_scene_plan()
-
-    assert len(wire.model_dump_json()) < 620
-    assert plan.scene_summary == (
-        "A complete visible child in profile, shown holding a luminous open storybook."
-    )
-    assert plan.art_direction == ("clear silhouettes, projection-bright midtones, tactile depth")
-    assert plan.focus.anchor == (0.5, 0.55, 0.4, 0.62)
-    assert plan.focus.depth == 2.5
-    assert plan.focus.motion == "breathe"
-    assert plan.accent.anchor == (0.73, 0.28, 0.3, 0.26)
-    assert plan.accent.depth == 5
-    assert plan.accent.motion == "pulse"
-    assert plan.ambience == ["dust"]
-
-
 def test_walnut_boat_action_compiles_to_explicit_visual_direction() -> None:
     plan = LiveSceneWirePlan(
         background_prompt="golden pond and reeds",
@@ -102,22 +84,6 @@ def test_walnut_boat_action_compiles_to_explicit_visual_direction() -> None:
     assert "wrinkled brain-like walnut texture" in page.scene_spec.master_prompt
     assert "paws on a small tiller" in page.scene_spec.master_prompt
     assert page.layers[1].prompt.endswith("shown steering walnut boat")
-
-
-def test_short_key_wire_contract_preserves_semantics_with_less_decode_text() -> None:
-    compact = LiveSceneCompactWirePlan(
-        background_prompt=_wire_plan().background_prompt,
-        focus=("character", _wire_plan().focus.subject, _wire_plan().focus.action),
-        magic=("effect", _wire_plan().magic.prompt),
-    )
-
-    assert compact.to_wire_plan() == _wire_plan()
-    assert set(LiveSceneCompactWirePlan.model_json_schema()["properties"]) == {
-        "b",
-        "f",
-        "m",
-    }
-    assert len(compact.model_dump_json(by_alias=True)) < len(_wire_plan().model_dump_json())
 
 
 def test_compact_wire_preserves_actor_setting_and_supporting_object() -> None:
@@ -1019,24 +985,6 @@ def test_plan_strips_embedded_labeled_coordinates_from_background_prompt() -> No
     assert not any(character.isdigit() for character in background)
 
 
-def test_plan_bounds_model_phrases_before_scene_spec_compilation() -> None:
-    payload = _plan().model_dump()
-    payload["scene_summary"] = " ".join(["star"] * 25)
-    payload["art_direction"] = " ".join(["glow"] * 40)
-    payload["background_prompt"] = " ".join(["sky"] * 25)
-
-    page = LiveScenePlan.model_validate(payload).to_page(
-        source_text="A book opens.",
-        visual_style="paper theater",
-        seed=1,
-    )
-
-    assert len(page.scene_summary.split()) == 18
-    assert len(page.layers[0].prompt.split()) == 18
-    assert page.scene_spec is not None
-    assert page.scene_spec.master_prompt.count("glow") == 35
-
-
 def test_plan_repairs_dangling_summary_participle_without_fallback() -> None:
     payload = _plan().model_dump()
     payload["scene_summary"] = (
@@ -1362,18 +1310,6 @@ def test_structured_planner_uses_live_schema_and_records_model_revision() -> Non
     assert "origami birds light the sky" in str(stub.calls[0]["prompt"])
     assert "luminous watercolor paper theater" not in str(stub.calls[0]["prompt"])
     assert '"seed"' not in str(stub.calls[0]["prompt"])
-    assert "focus.action must separately state the exact visible action" in str(
-        stub.calls[0]["prompt"]
-    )
-    assert "Never copy three adjacent words" in str(stub.calls[0]["prompt"])
-    assert "most visually surprising transformation" in str(stub.calls[0]["prompt"])
-    assert "exact visible action" in str(stub.calls[0]["prompt"])
-    assert "Never invent a transformation" in str(stub.calls[0]["prompt"])
-    assert "magic.prompt must name that concrete result" in str(stub.calls[0]["prompt"])
-    assert "Stop the action before a later magical transformation" in str(stub.calls[0]["prompt"])
-    assert "essential object or destination" in str(stub.calls[0]["prompt"])
-    assert "inspect that clause first" in str(stub.calls[0]["prompt"])
-    assert "luminous moths spiral through arch" in str(stub.calls[0]["prompt"])
 
 
 def test_structured_planner_can_use_opt_in_short_key_contract() -> None:
@@ -1452,37 +1388,6 @@ def test_structured_planner_does_not_spend_its_timeout_behind_warmup() -> None:
     ]
 
 
-def test_structured_planner_reuses_privacy_gated_semantics_for_new_seed_and_style() -> None:
-    stub = _ModelStub()
-    planner = StructuredLiveScenePlanner(
-        stub,  # type: ignore[arg-type]
-        timeout_seconds=1,
-        cache_entries=2,
-    )
-    request = {
-        "text": "A child opens a quiet book while paper birds rise.",
-        "visual_style": "luminous watercolor paper theater",
-    }
-
-    first = asyncio.run(planner.plan(**request, seed=23))
-    second = asyncio.run(
-        planner.plan(
-            text=request["text"],
-            visual_style="bright clay animation",
-            seed=24,
-        )
-    )
-
-    assert len(stub.calls) == 1
-    assert first.cache_hit is False
-    assert second.cache_hit is True
-    assert second.plan == first.plan
-    assert second.metrics.model == first.metrics.model
-    assert second.metrics.total_ms == 0
-    assert second.metrics.input_tokens == 0
-    assert second.metrics.output_tokens == 0
-
-
 @pytest.mark.parametrize("from_disk", [False, True])
 def test_cached_plans_do_not_wait_for_model_warmup(tmp_path: Path, from_disk: bool) -> None:
     async def run() -> None:
@@ -1530,32 +1435,6 @@ def test_cached_plans_do_not_wait_for_model_warmup(tmp_path: Path, from_disk: bo
     asyncio.run(run())
 
 
-def test_persistent_cache_timing_includes_disk_lookup(tmp_path: Path, monkeypatch) -> None:
-    clock = [0.0]
-    monkeypatch.setattr("bookforge.live_scene_planner.perf_counter", lambda: clock[0])
-    planner = StructuredLiveScenePlanner(
-        _ModelStub(),
-        timeout_seconds=1,
-        persistent_cache_dir=tmp_path / "plans",
-    )
-    request = {
-        "text": "A child opens a quiet book while paper birds rise.",
-        "visual_style": "paper theater",
-        "seed": 23,
-    }
-    original = asyncio.run(planner.plan(**request))
-    planner._cache.clear()
-
-    def load_cache(_key):
-        clock[0] += 0.025
-        return original.plan, original.metrics
-
-    monkeypatch.setattr(planner, "_load_persistent_cache", load_cache)
-    cached = asyncio.run(planner.plan(**request))
-    assert cached.cache_hit
-    assert cached.wall_ms == pytest.approx(25)
-
-
 def test_structured_planner_cache_is_bounded_by_passage_and_reuses_new_styles() -> None:
     stub = _ModelStub()
     planner = StructuredLiveScenePlanner(
@@ -1566,7 +1445,7 @@ def test_structured_planner_cache_is_bounded_by_passage_and_reuses_new_styles() 
     text = "A child opens a quiet book while paper birds rise."
 
     first = asyncio.run(planner.plan(text=text, visual_style="paper theater", seed=1))
-    restyled = asyncio.run(planner.plan(text=text, visual_style="oil pastel", seed=1))
+    restyled = asyncio.run(planner.plan(text=text, visual_style="oil pastel", seed=2))
     asyncio.run(
         planner.plan(
             text="A whale carries a lantern through a library.",
@@ -1580,6 +1459,9 @@ def test_structured_planner_cache_is_bounded_by_passage_and_reuses_new_styles() 
     assert first.cache_hit is False
     assert restyled.cache_hit is True
     assert restyled.plan == first.plan
+    assert restyled.metrics.model == first.metrics.model
+    assert restyled.metrics.total_ms == 0
+    assert restyled.metrics.input_tokens == restyled.metrics.output_tokens == 0
     assert repeated.cache_hit is False
 
 

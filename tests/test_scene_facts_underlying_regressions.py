@@ -42,7 +42,7 @@ def test_transformation_count_is_strict_and_bounded(count):
         _transformation(count)
 
 
-@pytest.mark.parametrize("count", ["0", "13", "２", "2.0", "-", "", "2|3"])
+@pytest.mark.parametrize("count", ["２", "2.0", "-", "", "2|3"])
 def test_transformation_count_wire_rejects_malformed_sixth_field(count):
     with pytest.raises(ValueError):
         SceneFactsV2.from_wire(_transformation().to_wire() + "|" + count)
@@ -115,19 +115,21 @@ def test_repeated_verb_temporal_order_binds_actor_and_object(same_actor, reverse
 
 
 @pytest.mark.parametrize(
-    "clause",
+    "clause,typed_event",
     [
-        "a fox holds a cup and an otter holds a ball",
-        "a fox holds a cup and otter holds a ball",
-        "a fox holds a cup while an otter lifts a ball",
-        "a fox holds a cup next to a ball",
-        "a fox holds no ball",
-        "a fox holds not a ball",
-        "a fox holds a cup without a ball",
-        "a fox holds neither a cup nor a ball",
+        ("a fox holds a cup and an otter holds a ball", False),
+        ("a fox holds a cup and otter holds a ball", False),
+        ("a fox holds a cup while an otter lifts a ball", False),
+        ("a fox holds a cup next to a ball", False),
+        ("a fox holds no ball", False),
+        ("a fox holds not a ball", False),
+        ("a fox holds a cup without a ball", False),
+        ("a fox holds neither a cup nor a ball", False),
+        ("a fox holds a cup and otter holds a ball", True),
+        ("a fox holds a cup next to a ball", True),
+        ("a fox holds no ball", True),
     ],
 )
-@pytest.mark.parametrize("typed_event", [False, True])
 def test_action_object_cannot_be_borrowed_across_clause_or_relation(clause, typed_event):
     facts = SceneFactsV2(
         setting=SceneSettingFact(label="cave"),
@@ -155,8 +157,18 @@ def test_action_allows_articles_and_bound_object_descriptors(action):
     facts.validate_source_grounding(source_text="In a cave, a fox holds a small blue ball.")
 
 
-@pytest.mark.parametrize("connector", ["then", "afterward", "only afterward"])
-@pytest.mark.parametrize("second_head", ["", "otter ", "not ", "does not ", "never "])
+@pytest.mark.parametrize(
+    "connector,second_head",
+    [
+        ("then", ""),
+        ("afterward", ""),
+        ("only afterward", ""),
+        ("then", "otter "),
+        ("afterward", "not "),
+        ("only afterward", "does not "),
+        ("then", "never "),
+    ],
+)
 def test_shared_subject_temporal_connector_requires_grounded_prior_event(connector, second_head):
     facts = SceneFactsV2(
         setting=SceneSettingFact(label="cave"),

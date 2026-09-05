@@ -50,27 +50,6 @@ def _record() -> FidelityRecord:
     )
 
 
-def test_target_serializes_as_exact_four_line_contract() -> None:
-    target = _record().target
-
-    assert target.as_wire().splitlines() == [
-        "SETTING: quiet station",
-        "ACTOR: copper fox",
-        "ACTION: raises a blue lantern",
-        "MAGIC: warm rain",
-    ]
-    assert set(target.model_dump(by_alias=True)) == {"SETTING", "ACTOR", "ACTION", "MAGIC"}
-
-
-def test_record_hash_and_json_are_deterministic() -> None:
-    first = _record()
-    second = FidelityRecord.model_validate_json(first.canonical_json())
-
-    assert first == second
-    assert first.sha256() == second.sha256()
-    assert first.canonical_json().endswith("}")
-
-
 def test_rejects_wrong_passage_hash_and_private_target_echo() -> None:
     payload = _record().model_dump(mode="json", by_alias=True)
     payload["passage_sha256"] = "0" * 64

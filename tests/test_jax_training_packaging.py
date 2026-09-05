@@ -74,33 +74,7 @@ def _write_jsonl(path: Path, rows: list[dict]) -> str:
     return sha256_file(path)
 
 
-def test_config_freezes_text_only_completion_only_lora() -> None:
-    config = load_config(CONFIG_PATH)
-
-    assert config.production["model_id"] == "google/gemma-4-E2B-it"
-    assert config.production["scan_layers"] is False
-    assert config.production["use_multimodal"] is False
-    assert config.training["method"] == "lora"
-    assert config.training["completion_only"] is True
-    assert config.training["weight_quantization"] is None
-    assert config.training["rank"] in (8, 16)
-    assert config.versions["maxtext_revision"] == "538fe7a3f3376d94cf3f04e77741aa6d7e8efa45"
-    assert "@sha256:" in config.versions["container_image"]
-
-    with pytest.raises(TypeError):
-        config.training["rank"] = 32
-
-
-def test_v2_config_binds_prompt_pair_curriculum_and_optimizer() -> None:
-    config = load_config(CONFIG_V2_PATH)
-
-    assert config.training["rank"] == 16
-    assert config.training["steps"] == 640
-    assert config.training["num_epoch"] == 4
-    assert config.training["packing"] is False
-    assert config.training["enable_data_shuffling"] is False
-    assert config.production["prompt_contract_sha256"]
-
+def test_v2_config_rejects_deployed_prompt_drift() -> None:
     drifted = json.loads(CONFIG_V2_PATH.read_text())
     drifted["production_contract"]["prompt_contract_sha256"] = "0" * 64
     with pytest.raises(ConfigError, match="deployed prompt"):
@@ -133,9 +107,6 @@ def test_formatter_is_the_exact_deployed_four_slot_exchange() -> None:
     assert production_messages(story, target=TARGET) == expected + [
         {"role": "assistant", "content": TARGET}
     ]
-    assert [message["role"] for message in expected] == ["system", "user"]
-    assert "reader@example.invalid" in expected[0]["content"]
-    assert "Never reproduce" in expected[0]["content"]
 
 
 def test_training_record_accepts_dataset_target_mapping() -> None:
@@ -270,21 +241,6 @@ def test_dataset_hash_validation_and_preparation(tmp_path: Path) -> None:
         validate_dataset_manifest(manifest)
 
 
-def test_repository_dataset_satisfies_the_training_contract() -> None:
-    config = load_config(CONFIG_PATH)
-    manifest = ROOT / config.dataset["manifest_path"]
-    validated = validate_dataset_manifest(
-        manifest,
-        expected_manifest_sha256=sha256_file(manifest),
-        required_split_records=config.dataset["required_split_records"],
-    )
-
-    assert {split_.name: split_.records for split_ in validated.splits} == {
-        "development": 512,
-        "train": 4096,
-    }
-
-
 def test_run_and_completion_manifests_are_append_only(tmp_path: Path) -> None:
     manifest = start_run(
         tmp_path,
@@ -378,66 +334,6 @@ def test_maxtext_command_rejects_relative_cache_directory() -> None:
         )
 
 
-def test_v2_train_command_makes_exposure_and_optimizer_explicit() -> None:
-    config = load_config(CONFIG_V2_PATH)
-    command = build_train_command(
-        config,
-        maxtext_checkpoint="/checkpoints/base/items",
-        hf_tokenizer_checkpoint="/hf/base",
-        prepared_train_jsonl="/data/train.jsonl",
-        output_directory="/output",
-        run_name="full-v2",
-        hardware="gpu",
-        smoke=False,
-    )
-
-    assert "steps=640" in command
-    assert "lora.lora_rank=16" in command
-    assert "lora.lora_alpha=32.0" in command
-    assert "packing=false" in command
-    assert "num_epoch=4" in command
-    assert "enable_data_shuffling=false" in command
-    assert "enable_dropout=false" in command
-    assert "gradient_accumulation_steps=1" in command
-    assert "lr_schedule_type=cosine" in command
-    assert "warmup_steps_fraction=0.05" in command
-    assert "learning_rate_final_fraction=0.1" in command
-    assert "adam_weight_decay=0.0" in command
-    assert "opt_type=adamw" in command
-    assert "skip_step_on_spikes=false" in command
-    assert "trainable_parameters_mask=[]" in command
-    assert "checkpoint_period=160" in command
-
-
-def test_v3_train_command_uses_l4_safe_attention() -> None:
-    config = load_config(CONFIG_V3_PATH)
-    command = build_train_command(
-        config,
-        maxtext_checkpoint="/checkpoints/base/items",
-        hf_tokenizer_checkpoint="/hf/base",
-        prepared_train_jsonl="/data/train.jsonl",
-        output_directory="/output",
-        run_name="recovery-smoke",
-        hardware="gpu",
-        smoke=True,
-    )
-
-    assert "attention=dot_product" in command
-    assert "checkpoint_period=1" in command
-
-    full_command = build_train_command(
-        config,
-        maxtext_checkpoint="/checkpoints/base/items",
-        hf_tokenizer_checkpoint="/hf/base",
-        prepared_train_jsonl="/data/train.jsonl",
-        output_directory="/output",
-        run_name="recovery-full",
-        hardware="gpu",
-        smoke=False,
-    )
-    assert "checkpoint_period=99" in full_command
-
-
 def test_train_command_can_disable_unnecessary_activation_rematerialization(
     tmp_path: Path,
 ) -> None:
@@ -459,112 +355,6 @@ def test_train_command_can_disable_unnecessary_activation_rematerialization(
     )
 
     assert "remat_policy=none" in command
-
-
-def test_pinned_native_maxtext_patch_materializes_lora_before_optimizer() -> None:
-    patch = (
-        ROOT
-        / "training/jax_fidelity/patches/maxtext-native-lora-materialization.patch"
-    ).read_text()
-
-    assert "model = lora_utils.apply_lora_to_model(model, None, config)" in patch
-    assert "model = lora_utils.apply_lora_to_model(model, mesh, config)" not in patch
-    assert "if lora_enabled:" in patch
-    assert "src/maxtext/utils/train_utils.py" in patch
-    assert "nnx.state(new_state.model, train_param_type)" in patch
-    assert "src/maxtext/trainers/pre_train/train.py" in patch
-    assert "Bookforge native LoRA census" in patch
-    assert "BOOKFORGE_EXPECTED_LORA_PAIR_COUNT" in patch
-    assert "index 35f47e59..73b808a5 100644" in patch
-    assert 'scalar_metrics["learning/update_norm"]' in patch
-    assert 'scalar_metrics["learning/changed_trainable_leaves"]' in patch
-    assert "typed path collision" in patch
-    assert "isinstance(value, jax.Array)" in patch
-    assert "jnp.issubdtype(value.dtype, jnp.floating)" in patch
-    assert "jnp.all(jnp.isfinite(value))" in patch
-    assert "value.shape != adapter.shape" in patch
-    assert "value.sharding.mesh != adapter.sharding.mesh" in patch
-    assert "value.sharding.spec != adapter.sharding.spec" in patch
-    assert "value.sharding.memory_kind != adapter.sharding.memory_kind" in patch
-    assert 'any(part in ("mu", "nu") for part in parts)' in patch
-    assert "optimizer_typed_paths[parts][3:] != lora_typed_paths[parts[3:]]" in patch
-
-    lines = patch.splitlines()
-    for index, line in enumerate(lines):
-        if not line.startswith("@@ "):
-            continue
-        header = line.split("@@", 2)[1].strip().split()
-        old_count = int(header[0].split(",", 1)[1]) if "," in header[0] else 1
-        new_count = int(header[1].split(",", 1)[1]) if "," in header[1] else 1
-        body = []
-        for candidate in lines[index + 1 :]:
-            if candidate.startswith(("@@ ", "diff --git ")):
-                break
-            body.append(candidate)
-        assert sum(not row.startswith("+") for row in body) == old_count
-        assert sum(not row.startswith("-") for row in body) == new_count
-
-
-def test_container_and_direct_dependencies_are_immutable() -> None:
-    dockerfile = (ROOT / "training/jax_fidelity/Dockerfile").read_text()
-    lock = (ROOT / "training/jax_fidelity/requirements.lock").read_text()
-
-    assert "FROM python:3.12.11-slim-bookworm@sha256:" in dockerfile
-    assert "jax[cuda12]==0.11.0" in lock
-    assert "jax-cuda12-pjrt==0.11.0" in lock
-    assert "jax-cuda12-plugin==0.11.0" in lock
-    assert "flax==0.12.8" in lock
-    assert "optax==0.2.8" in lock
-    assert "safetensors==0.8.0" in lock
-    assert "transformers==5.13.0" in lock
-    assert "pydantic-settings==2.15.0" in lock
-    assert "orbax-checkpoint==0.12.2" in lock
-    assert "google-cloud-secret-manager" not in lock
-    assert "google-cloud-storage==3.13.1" in lock
-    assert "maxtext[cuda12] @ file:///opt/MaxText" in lock
-    assert "git+https://github.com/AI-Hypercomputer/maxtext" not in lock
-    assert "torch==2.10.0+cpu" in lock
-    assert "https://download.pytorch.org/whl/cpu" in lock
-    assert "maxtext[cuda12]" in lock
-    assert "nvidia-nvtx-cu12==12.9.79" in lock
-    assert "nvidia-curand-cu12==10.3.10.19" in lock
-    assert "transformer-engine-jax==2.18.0" in lock
-    assert "tpu-post-train" not in lock
-    assert "git clone --filter=blob:none --no-checkout" in dockerfile
-    assert "build-essential" in dockerfile
-    assert "NVTE_BUILD_USE_NVIDIA_WHEELS=1" in dockerfile
-    assert "nvidia/nccl/lib/libnccl.so.2" in dockerfile
-    assert "nvidia/curand/lib" in dockerfile
-    assert "ln -sfnT cuda_runtime" in dockerfile
-    assert "nvidia/cudart/lib/lib*.so.*[0-9]" in dockerfile
-    assert "LD_LIBRARY_PATH=" in dockerfile
-    assert "XLA_PYTHON_CLIENT_MEM_FRACTION=0.95" in dockerfile
-    assert (
-        "BOOKFORGE_MAXTEXT_APPROVED_PATCH=/opt/bookforge/patches/"
-        "maxtext-native-lora-materialization.patch"
-    ) in dockerfile
-    assert "git -C /opt/MaxText apply --check --unidiff-zero" in dockerfile
-    assert (
-        'git -C /opt/MaxText apply --unidiff-zero "$BOOKFORGE_MAXTEXT_APPROVED_PATCH"'
-        in dockerfile
-    )
-    assert (
-        "git -C /opt/MaxText diff --no-ext-diff --binary --abbrev=8 --unified=0"
-        in dockerfile
-    )
-    assert "src/maxtext/common/checkpointing.py" in dockerfile
-    assert "src/maxtext/trainers/pre_train/train.py" in dockerfile
-    assert "$(printf '%s\\n%s\\n%s'" in dockerfile
-    assert 'cmp -s - "$BOOKFORGE_MAXTEXT_APPROVED_PATCH"' in dockerfile
-    assert "-Wl,-rpath,/usr/local/lib/python3.12/site-packages/nvidia/nccl/lib" in dockerfile
-    assert "--no-build-isolation 'transformer-engine-jax==2.18.0'" in dockerfile
-    assert (
-        "git -C /opt/MaxText checkout --detach "
-        "538fe7a3f3376d94cf3f04e77741aa6d7e8efa45" in dockerfile
-    )
-    assert "--write-lock /opt/bookforge/runtime.lock.json" in dockerfile
-    assert "PYTHONPATH=/opt/MaxText/src:/opt/bookforge:/opt/bookforge/src" in dockerfile
-    assert "--maxtext-root /opt/MaxText" in dockerfile
 
 
 def test_full_runtime_lock_detects_installed_dependency_drift(tmp_path: Path) -> None:

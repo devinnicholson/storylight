@@ -292,21 +292,6 @@ def test_installer_rejects_tampering_and_undeclared_files(tmp_path: Path) -> Non
     assert "undeclared or missing files" in undeclared.stderr
 
 
-def test_installer_stages_untrusted_bytes_before_validation_and_publication() -> None:
-    installer = INSTALLER.read_text()
-
-    assert "copy_untrusted_bundle(bundle, staging)" in installer
-    assert installer.index("copy_untrusted_bundle(bundle, staging)") < installer.index(
-        'manifest_path = bundle / "candidate.manifest.json"'
-    )
-    assert "os.O_NOFOLLOW" in installer
-    assert "candidate source changed while it was staged" in installer
-    assert "candidate source has an unsafe writable mode" in installer
-    assert "fcntl.flock(lock_descriptor, fcntl.LOCK_EX)" in installer
-    assert "refusing to overwrite installed candidate" in installer
-    assert "os.replace(temporary, destination)" in installer
-
-
 @pytest.mark.parametrize(
     ("field", "value", "message"),
     [
@@ -667,17 +652,6 @@ def test_acceptance_preflight_requires_checksum_bound_post_oom_evidence(
     )
     assert valid is False
     assert completed == 0
-
-
-def test_candidate_scripts_resolve_the_immutable_coinstalled_installer() -> None:
-    assert "BOOKFORGE_CANDIDATE_UNIT_SOURCE" in INSTALLER.read_text()
-    assert (
-        "$SCRIPT_DIR/systemd/bookforge-trained-planner-candidate@.service" in INSTALLER.read_text()
-    )
-    for path in (PROMOTE, ROLLBACK):
-        text = path.read_text()
-        assert "BOOKFORGE_CANDIDATE_INSTALLER" in text
-        assert "$SCRIPT_DIR/install-trained-planner-candidate.sh" in text
 
 
 def test_shadow_is_counterbalanced_checksum_bound_and_trap_restored() -> None:

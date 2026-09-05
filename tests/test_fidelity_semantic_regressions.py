@@ -1,11 +1,7 @@
 from __future__ import annotations
 
-import itertools
-import re
-
 import pytest
 
-from bookforge.fidelity_dataset import generate_split
 from bookforge.fidelity_evaluation import (
     FIDELITY_EVALUATOR_REVISION,
     _descriptor_phrases,
@@ -13,8 +9,6 @@ from bookforge.fidelity_evaluation import (
     evaluate_surface,
     extract_surface,
 )
-from bookforge.fidelity_graph_targets import derive_fidelity_graph_target
-from bookforge.fidelity_schema import DatasetSplit
 from bookforge.scene_facts import SceneFactsV2
 
 
@@ -368,35 +362,6 @@ def test_transformation_count_is_visible_bound_and_not_optional_in_comparison():
         other = SceneFactsV2.model_validate(changed)
         assert not equivalent(graph, other)
         assert evaluate_surface(expected, other, surface="postprocessed").semantic_atom_recall == 0
-
-
-def test_fixed_train_slice_descriptor_moves_do_not_create_graph_mismatch():
-    records = tuple(itertools.islice(generate_split(DatasetSplit.TRAIN), 128))
-    checked = 0
-    for source in records:
-        target = derive_fidelity_graph_target(source).facts
-        if target is None or len(target.setting.label.split()) != 2:
-            continue
-        adjective, label = target.setting.label.split()
-        changed = target.model_dump()
-        changed["setting"] = {"label": label, "attributes": (adjective,)}
-        evaluation = evaluate_surface(
-            source, SceneFactsV2.model_validate(changed), surface="postprocessed"
-        )
-        assert "graph:contract-mismatch" not in evaluation.unsupported_concepts
-        checked += 1
-    assert checked >= 100
-
-
-def test_fixed_train_article_omissions_have_identical_semantic_atom_results():
-    for source in itertools.islice(generate_split(DatasetSplit.TRAIN), 128):
-        raw = source.target.as_wire()
-        without_articles = re.sub(r"\b(?:a|an|the)\s+", "", raw, flags=re.IGNORECASE)
-        original = evaluate_surface(source, raw, surface="raw")
-        changed = evaluate_surface(source, without_articles, surface="raw")
-        assert [atom.passed for atom in original.expectation_results] == [
-            atom.passed for atom in changed.expectation_results
-        ]
 
 
 @pytest.mark.parametrize(

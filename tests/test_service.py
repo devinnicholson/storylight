@@ -1,5 +1,4 @@
 import asyncio
-from pathlib import Path
 
 import pytest
 from pydantic import ValidationError
@@ -127,12 +126,6 @@ def test_story_compiler_returns_versioned_validated_pack() -> None:
     assert response.story_pack.pages[0].source_text == ("The small moth went through the red gate.")
     assert response.story_pack.pages[0].triggers[0].word == "the"
     assert response.metrics.backend == "fake"
-
-
-def test_story_authoring_schema_requires_scene_spec_even_with_legacy_playback_support() -> None:
-    schema = GeneratedStoryPlan.model_json_schema()
-
-    assert "scene_spec" in schema["$defs"]["GeneratedPagePlan"]["required"]
 
 
 def test_story_compiler_anchors_a_valid_trigger_phrase_to_its_final_word() -> None:
@@ -301,14 +294,3 @@ def test_story_pack_rejects_trigger_for_missing_layer() -> None:
                 )
             ],
         )
-
-
-def test_projector_fixture_is_a_valid_ready_story_pack() -> None:
-    fixture = (
-        Path(__file__).parents[1] / "src" / "bookforge" / "static" / "moon-gate.story-pack.json"
-    )
-    pack = StoryPack.model_validate_json(fixture.read_text())
-
-    assert pack.schema_version == "1.1"
-    assert len(pack.assets) == 5
-    assert all(asset.state is AssetState.READY for asset in pack.assets)

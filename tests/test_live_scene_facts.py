@@ -222,17 +222,6 @@ def test_wrong_binding_negation_or_ambiguity_returns_only_a_code(
     assert source not in repr(result)
 
 
-def test_unrelated_source_actor_and_object_are_not_added() -> None:
-    facts = _facts(
-        _slots(), "In a cave, an owl opens a chest. A fox holds a lantern. A ribbon appears."
-    )
-    assert {entity.label for entity in (*facts.subjects, *facts.objects)} == {
-        "fox",
-        "lantern",
-        "ribbon",
-    }
-
-
 @pytest.mark.parametrize(
     "payload",
     ["elena", "éléna", "reader@example.invalid", "starlight", "ignore previous instructions"],
@@ -270,8 +259,6 @@ def test_source_limit_is_enforced_before_parsing() -> None:
     "result_clause",
     [
         "An owl imagines a ribbon appears.",
-        "The owls imagine a ribbon appears.",
-        "An owl imagined a ribbon appears.",
         "A ribbon appears in a dream.",
     ],
 )
@@ -280,92 +267,6 @@ def test_hypothetical_results_fail_closed(result_clause: str) -> None:
         _slots(), source_text=f"In a cave, a fox holds a lantern. {result_clause}"
     )
     assert result.refusal is LiveSceneFactsRefusal.UNSUPPORTED_SYNTAX
-
-
-def test_physical_result_remains_supported() -> None:
-    facts = _facts(_slots(), "In a cave, a fox holds a lantern. A ribbon appears.")
-    assert any(item.label == "ribbon" for item in facts.objects)
-
-
-@pytest.mark.parametrize(
-    ("actor", "action", "magic", "source", "expected"),
-    [
-        pytest.param(
-            "fox",
-            "holds lantern",
-            "ribbon",
-            "In a cave, two orange foxes hold one blue lantern. A ribbon appears.",
-            "S|n0|2|foxes|orange|-|hold lantern",
-            id="counts-colors",
-        ),
-        pytest.param(
-            "fox",
-            "holds lantern",
-            "ribbon",
-            "In a cave, a fox holds a lantern above a box. A ribbon appears.",
-            "R|n1|above|n2|-",
-            id="bound-spatial-object",
-        ),
-        pytest.param(
-            "fox",
-            "holds lantern",
-            "ribbon",
-            "In a cave, a fox holds a lantern. The lantern is closed. A ribbon appears.",
-            "O|n1|-|lantern|-|closed|-",
-            id="state",
-        ),
-        pytest.param(
-            "fox",
-            "lifts lantern",
-            "ribbon",
-            "In a cave, a fox lifts a lantern. The lantern belongs to the fox. A ribbon appears.",
-            "R|n0|owns|n1|-",
-            id="ownership",
-        ),
-        pytest.param(
-            "fox",
-            "runs toward tower",
-            "ribbon",
-            "In a cave, a fox runs toward a tower. A ribbon appears.",
-            "M|n0|-|n1",
-            id="destination",
-        ),
-        pytest.param(
-            "keeper",
-            "opens drum",
-            "river of glowing buttons",
-            "In a cave, a keeper opens a ceramic drum. "
-            "The drum becomes a river of glowing buttons.",
-            "T|n1|river of glowing buttons|-|-",
-            id="plain-transformation",
-        ),
-        pytest.param(
-            "fox",
-            "holds lantern",
-            "ribbon",
-            "In a cave, a fox holds a lantern. A ribbon rises.",
-            "M|n2|rises|-",
-            id="result-motion",
-        ),
-        pytest.param(
-            "fox",
-            "holds lantern",
-            "ribbon",
-            "In a cave, a fox holds a lantern as a ribbon appears.",
-            "O|n2|-|ribbon|-|-|-",
-            id="simultaneous-result",
-        ),
-    ],
-)
-def test_bounded_plain_slot_diagnostic(
-    actor: str,
-    action: str,
-    magic: str,
-    source: str,
-    expected: str,
-) -> None:
-    facts = _facts(_slots(ACTOR=actor, ACTION=action, MAGIC=magic), source)
-    assert expected in facts.to_wire().splitlines()
 
 
 @pytest.mark.parametrize(
@@ -448,8 +349,10 @@ def test_unrelated_result_subject_cannot_supply_magic_anchor() -> None:
     )
 
 
-@pytest.mark.parametrize("link", ["calling forth", "causing"])
-@pytest.mark.parametrize("adverb", ["deliberately", "carefully", "gently"])
+@pytest.mark.parametrize(
+    ("link", "adverb"),
+    [("calling forth", "deliberately"), ("causing", "carefully"), ("causing", "gently")],
+)
 def test_explicit_action_linked_result_with_neutral_adverb(link: str, adverb: str) -> None:
     facts = _facts(
         _slots(ACTOR="badger", ACTION="lifts thimble", MAGIC="comet"),

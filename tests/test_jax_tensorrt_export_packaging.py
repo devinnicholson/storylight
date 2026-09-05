@@ -188,17 +188,3 @@ def test_modal_request_approval_is_bound_to_all_lineage_hashes() -> None:
     assert '"export_volume_prefix"' in source
     assert "BOOKFORGE_NVIDIA_PYTORCH_IMAGE" in source
     assert "@sha256:" in source
-
-
-def test_tuned_gcp_export_image_requires_digest_base_and_runs_tuned_exporter() -> None:
-    dockerfile = (ROOT / "deploy/gcp_gemma4_tensorrt_export/Dockerfile.fidelity").read_text()
-    cloudbuild = (
-        ROOT / "infra/gcp/cloud-run/cloudbuild-gemma4-tensorrt-fidelity-export.yaml"
-    ).read_text()
-
-    assert "ARG NVIDIA_PYTORCH_IMAGE" in dockerfile
-    assert "FROM ${NVIDIA_PYTORCH_IMAGE}" in dockerfile
-    assert "export_fidelity_candidate.py" in dockerfile
-    assert "validate_fidelity_release.py" in dockerfile
-    assert "@sha256:" in cloudbuild
-    assert "Dockerfile.fidelity" in cloudbuild

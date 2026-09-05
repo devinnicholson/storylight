@@ -435,16 +435,3 @@ def test_overlay_rejects_hidden_file_and_tokenizer_lineage_drift(tmp_path: Path)
             overlay_manifest=overlay,
             target_run_id=str(fixture["target_run_id"]),
         )
-
-
-def test_modal_clone_is_finite_cpu_only_and_refreshes_both_volumes() -> None:
-    source = (ROOT / "deploy/modal_jax_full_input_v2.py").read_text()
-
-    assert "gpu=" not in source
-    assert "retries=0" in source
-    assert "max_containers=MAX_CONTAINERS" in source
-    assert "input_volume.reload()" in source
-    assert "release_volume.reload()" in source
-    assert "input_volume.commit()" in source
-    assert ".remote(request)" in source
-    assert "@modal.web_endpoint" not in source

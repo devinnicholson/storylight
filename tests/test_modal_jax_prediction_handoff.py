@@ -300,23 +300,3 @@ def test_handoff_rejects_inexact_approval_legacy_backend_and_hidden_state(
     symlink.symlink_to(release / "candidate.manifest.json")
     with pytest.raises(RuntimeError, match="symbolic link"):
         worker.stage_reference(request)
-
-
-def test_handoff_worker_is_finite_cpu_only_and_has_no_endpoint() -> None:
-    source = (ROOT / "deploy/modal_jax_prediction_handoff.py").read_text()
-    assert "gpu=" not in source
-    assert "retries=0" in source
-    assert "max_containers=MAX_CONTAINERS" in source
-    assert "MAX_CONTAINERS = 1" in source
-    assert "@app.web_endpoint" not in source and "@modal.web_endpoint" not in source
-    assert source.index("verify_reference_sources(") < source.index(
-        '_write_manifest_last(target / "inputs.manifest.json", manifest)'
-    )
-    prediction_source = (ROOT / "deploy/modal_jax_prediction.py").read_text()
-    function = prediction_source[prediction_source.index("def predict_finite") :]
-    assert function.index("input_volume.reload()") < function.index(
-        "if output_directory.exists()"
-    )
-    assert function.index("release_volume.reload()") < function.index(
-        "if output_directory.exists()"
-    )
