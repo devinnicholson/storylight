@@ -10,7 +10,7 @@ from __future__ import annotations
 import re
 import unicodedata
 from collections.abc import Mapping
-from dataclasses import dataclass, replace
+from dataclasses import dataclass, field, replace
 from enum import StrEnum
 from typing import Literal
 
@@ -228,6 +228,7 @@ class _Noun:
     color: str | None = None
     states: tuple[str, ...] = ()
     attributes: tuple[str, ...] = ()
+    singular_article: bool = field(default=False, compare=False)
 
 
 def _noun(value: str) -> _Noun:
@@ -235,6 +236,7 @@ def _noun(value: str) -> _Noun:
     if not value or _BOUNDARY.search(value) or not re.fullmatch(r"[a-z0-9 -]+", value):
         raise _Refuse(LiveSceneFactsRefusal.UNSUPPORTED_SYNTAX)
     words = value.split()
+    singular_article = words[0] in {"a", "an"}
     if words[0] in {"the", "a", "an"}:
         words.pop(0)
     if words and words[0] == "exactly":
@@ -266,7 +268,12 @@ def _noun(value: str) -> _Noun:
     ):
         raise _Refuse(LiveSceneFactsRefusal.UNSUPPORTED_SYNTAX)
     return _Noun(
-        " ".join(words), count, colors[0] if colors else None, tuple(states), tuple(attributes)
+        " ".join(words),
+        count,
+        colors[0] if colors else None,
+        tuple(states),
+        tuple(attributes),
+        singular_article=singular_article and _key(words[-1]) == (words[-1],),
     )
 
 
@@ -399,7 +406,11 @@ def _source_clauses(source: str) -> tuple[_Clause, ...]:
 def _compatible(requested: _Noun, actual: _Noun) -> bool:
     return (
         _key(requested.label) == _key(actual.label)
-        and (requested.count is None or requested.count == actual.count)
+        and (
+            requested.count is None
+            or requested.count == actual.count
+            or (requested.count == 1 and actual.count is None and actual.singular_article)
+        )
         and (requested.color is None or requested.color == actual.color)
         and set(requested.states).issubset(actual.states)
         and set(requested.attributes).issubset(actual.attributes)
@@ -640,6 +651,7 @@ def _build(
                 noun.color or prior.color,
                 tuple(dict.fromkeys((*prior.states, *noun.states))),
                 tuple(dict.fromkeys((*prior.attributes, *noun.attributes))),
+                singular_article=noun.singular_article or prior.singular_article,
             )
         nouns[key] = noun
 
@@ -979,6 +991,7 @@ def adapt_live_scene_facts(
             key: unicodedata.normalize("NFKC", value).casefold().strip()
             for key, value in expanded.items()
         }
+        normalized["SETTING"] = re.sub(r"^(?:a|an|the)\s+", "", normalized["SETTING"], count=1)
         source = unicodedata.normalize("NFKC", source_text).casefold()
         facts = _build(normalized, source, scope=scope)
         compile_scene_facts_prompt(facts, source_text=source_text)

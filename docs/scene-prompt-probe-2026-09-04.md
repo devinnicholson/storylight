@@ -41,6 +41,14 @@ article. The remaining positive control refused as ungrounded; its value-free sl
 does not establish the cause. All three candidate refusal controls passed. The original result
 and oracle remain frozen while independent synthetic examples test constructor normalization.
 
+Those independent examples exposed two constructor defects. Setting labels retained a leading
+article, so equivalent locations produced different graphs. Also, an explicit model count of
+one could not match a source noun introduced with “a” or “an.” The repair removes one leading
+setting article and retains noun-local singular evidence across bound references. It preserves
+the source graph's existing count representation; definite mentions, unsupported plurals,
+different counts and borrowed identities still refuse. The prompt, frozen controls and exact
+oracle are unchanged. A fresh matched run will measure this constructor revision separately.
+
 The [sanitized evidence](../benchmarks/scene-prompt-probe-2026-09-04/controls-summary.json)
 includes all per-request checks and before/after provenance. The resident process, engine,
 deployed files, accepted prompt, planner configuration and power mode stayed unchanged.

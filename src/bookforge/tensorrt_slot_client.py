@@ -722,7 +722,7 @@ class TensorRTSlotModelClient(StructuredModelClient):
         ).hexdigest()
         if scene_facts_enabled:
             graph_revision = (
-                "accepted-scene-facts-v10" if protocol == "slots" else "live-scene-facts-v10"
+                "accepted-scene-facts-v11" if protocol == "slots" else "live-scene-facts-v11"
             )
             self.cache_identity = hashlib.sha256(
                 f"{self.cache_identity}:{graph_revision}".encode()
