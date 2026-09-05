@@ -26,6 +26,7 @@ def budget_envelope_from_plan(plan_path: Path) -> tuple[BudgetEnvelope, float]:
             usage_before_lab_usd=float(plan["workspace_usage_before_live_scenes_usd"]),
             reserve_usd=float(plan["billing_delay_reserve_usd"]),
             run_cap_usd=float(plan["maximum_new_spend_usd"]),
+            authorized_paid_usd=float(plan.get("authorized_paid_usd", 0)),
         ),
         0.0,
     )
@@ -107,7 +108,7 @@ def authorize_and_reserve_modal_budget(
     hard_stop = float(
         plan.get(
             "hard_stop_workspace_total_usd",
-            envelope.monthly_credit_usd - envelope.reserve_usd,
+            envelope.funding_limit_usd - envelope.reserve_usd,
         )
     )
     if not math.isfinite(hard_stop) or hard_stop <= 0:

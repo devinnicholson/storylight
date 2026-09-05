@@ -38,7 +38,7 @@ def record(*, experiment_id: str = "master-001", cost: float = 0.05) -> Generati
 
 
 def test_budget_rejects_impossible_or_over_cap_work() -> None:
-    with pytest.raises(ValueError, match="exceeds remaining"):
+    with pytest.raises(ValueError, match="exceeds available"):
         BudgetEnvelope(
             monthly_credit_usd=30,
             usage_before_lab_usd=20,

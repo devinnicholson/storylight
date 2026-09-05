@@ -4,6 +4,11 @@ Last updated: 2026-09-05
 
 ## Latest increment — renderer latency measurement
 
+The [region-controlled follow-up](renderer-region-comparison-2026-09-05.md) is implemented and
+locally tested with an inactive draft. It requires $6.96 reserved funding and explicit approval
+to expand the existing workspace stop; previous reservations remain untouched. No new cloud run
+or provider promotion has occurred.
+
 The [Jetson transport comparison](renderer-latency-results-2026-09-05.md) completed 14 bounded
 operations with identical paired artwork and no failures. HTTP artifact-ready median was 2.586 s
 against SDK 3.154 s, an 18.02% improvement that missed the frozen 25% gate. Different compute

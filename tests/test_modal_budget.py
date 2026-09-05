@@ -16,6 +16,53 @@ from bookforge.modal_budget import (
 from bookforge.visual_lab import GenerationRecord, VisualLabLedger
 
 
+def test_paid_funding_requires_matching_ledger_without_inventing_credits(tmp_path: Path) -> None:
+    plan, path = tmp_path / "plan.json", tmp_path / "ledger.json"
+    data = {
+        "monthly_credit_usd": 30.0,
+        "workspace_usage_before_live_scenes_usd": 13.13786456,
+        "billing_delay_reserve_usd": 2.0,
+        "maximum_new_spend_usd": 14.85,
+    }
+    plan.write_text(json.dumps(data))
+    old, _ = budget_envelope_from_plan(plan)
+    ledger = VisualLabLedger(envelope=old, reservations={"previous": 9.25})
+    ledger.write(path)
+    legacy = json.loads(path.read_text())
+    del legacy["envelope"]["authorized_paid_usd"]
+    path.write_text(json.dumps(legacy))
+    assert VisualLabLedger.read(path, envelope=old).reservations == {"previous": 9.25}
+    original = path.read_bytes()
+    data.update(authorized_paid_usd=7.0, maximum_new_spend_usd=21.85)
+    plan.write_text(json.dumps(data))
+    funded, _ = budget_envelope_from_plan(plan)
+    assert funded.funding_limit_usd == 37
+    assert funded.monthly_credit_usd == 30
+    assert funded.remaining_credit_usd == old.remaining_credit_usd
+    arguments = dict(
+        plan_path=plan,
+        ledger_path=path,
+        authoritative_workspace_usd=13.83,
+        experiment_id="region",
+        full_call_ceiling_usd=6.96,
+    )
+    with pytest.raises(ValueError, match="envelope does not match"):
+        authorize_and_reserve_modal_budget(**arguments)
+    assert path.read_bytes() == original
+    ledger.envelope = funded
+    ledger.write(path)
+    authorize_and_reserve_modal_budget(**arguments)
+    assert VisualLabLedger.read(path, envelope=funded).reservations == {
+        "previous": 9.25,
+        "reservation:region": 6.96,
+    }
+    for paid in (-1, float("inf"), float("nan")):
+        data["authorized_paid_usd"] = paid
+        plan.write_text(json.dumps(data))
+        with pytest.raises(ValueError, match="finite and non-negative"):
+            budget_envelope_from_plan(plan)
+
+
 def _reserve_worker(
     plan_path: str,
     ledger_path: str,

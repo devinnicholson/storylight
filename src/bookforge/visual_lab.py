@@ -29,6 +29,7 @@ class BudgetEnvelope:
     usage_before_lab_usd: float
     reserve_usd: float
     run_cap_usd: float
+    authorized_paid_usd: float = 0.0
 
     def __post_init__(self) -> None:
         values = (
@@ -36,13 +37,20 @@ class BudgetEnvelope:
             self.usage_before_lab_usd,
             self.reserve_usd,
             self.run_cap_usd,
+            self.authorized_paid_usd,
         )
-        if any(not math.isfinite(value) or value < 0 for value in values):
+        if any(not math.isfinite(value) or value < 0 for value in values) or not math.isfinite(
+            self.funding_limit_usd
+        ):
             raise ValueError("budget values must be finite and non-negative")
         if self.usage_before_lab_usd + self.reserve_usd + self.run_cap_usd > (
-            self.monthly_credit_usd + 1e-9
+            self.funding_limit_usd + 1e-9
         ):
-            raise ValueError("run cap plus reserve exceeds remaining monthly credit")
+            raise ValueError("run cap plus reserve exceeds available monthly funding")
+
+    @property
+    def funding_limit_usd(self) -> float:
+        return self.monthly_credit_usd + self.authorized_paid_usd
 
     @property
     def remaining_credit_usd(self) -> float:
