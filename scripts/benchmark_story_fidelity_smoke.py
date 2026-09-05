@@ -424,7 +424,7 @@ def construct_case(result: Result, raw: str, source: str, *, style: str, seed: i
 def aggregate(header: Mapping, started: set[int], results: Sequence[Result]) -> dict:
     complete = len(results) == 7 and all(row.status == "ok" for row in results)
     graphs = sum(
-        row.accepted_valid and row.candidate_valid and row.graph_valid and row.compiler_proof
+        row.candidate_valid and row.graph_valid and row.compiler_proof
         for row in results
     )
     privacy_failures = sum(

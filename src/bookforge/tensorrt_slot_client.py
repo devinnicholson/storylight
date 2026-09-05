@@ -26,6 +26,7 @@ from bookforge.live_scene_planner import (
     validate_live_scene_plan_privacy,
 )
 from bookforge.model_client import ModelUnavailableError, StructuredModelClient
+from bookforge.scene_facts import SceneFactsV2
 
 _EMAIL = privacy_policy.EMAIL_PATTERN
 _PHONE = privacy_policy.PHONE_PATTERN
@@ -592,28 +593,79 @@ def tensor_graph_wire_plan(
 def tensor_accepted_graph_wire_plan(
     output_text: str, *, source_text: str
 ) -> LiveSceneGraphWirePlan:
-    """Enrich one accepted response, preserving its validated wire on refusal."""
+    """Compile a validated graph, retaining the accepted wire when available."""
 
     from bookforge.live_scene_facts import adapt_live_scene_facts
 
-    accepted = tensor_slot_wire_plan(output_text, source_text=source_text)
-    fallback = LiveSceneGraphWirePlan(**accepted.model_dump())
+    accepted = None
+    accepted_error = None
+    try:
+        accepted = tensor_slot_wire_plan(output_text, source_text=source_text)
+    except (ValueError, LiveScenePlannerPrivacyError) as error:
+        accepted_error = error
     try:
         slots = parse_tensor_graph_slots(output_text)
         if any("|" in value or "=" in value for value in slots.values()):
-            return fallback
+            raise ValueError("accepted graph requires plain slots")
         result = adapt_live_scene_facts(slots, source_text=source_text)
         if result.facts is None:
-            return fallback
-        candidate = LiveSceneGraphWirePlan(**accepted.model_dump(), scene_facts=result.facts)
+            raise ValueError("scene graph adapter refused")
+        candidate = (
+            LiveSceneGraphWirePlan(**accepted.model_dump(), scene_facts=result.facts)
+            if accepted is not None
+            else _graph_scaffold(result.facts)
+        )
         plan = candidate.to_live_scene_plan(context_text=source_text)
         validate_live_scene_plan_privacy(plan, source_text=source_text)
-        plan.to_page(
+        page = plan.to_page(
             source_text=source_text, visual_style="luminous storybook illustration", seed=0
         )
+        if page.scene_spec.master_prompt != result.facts.to_renderer_prompt(
+            source_text=source_text
+        ):
+            raise ValueError("compiled graph prompt mismatch")
         return candidate
     except (ValueError, LiveScenePlannerPrivacyError):
-        return fallback
+        if accepted is not None:
+            return LiveSceneGraphWirePlan(**accepted.model_dump())
+        raise accepted_error from None
+
+
+def _graph_scaffold(facts: SceneFactsV2) -> LiveSceneGraphWirePlan:
+    if not facts.subjects:
+        raise ValueError("scene graph has no representable focal subject")
+    subject = facts.subjects[0]
+    if subject.actions:
+        action = subject.actions[0]
+    else:
+        event = next(
+            (
+                event
+                for event in facts.events
+                if event.source == subject.ref
+            ),
+            None,
+        )
+        if event is None:
+            raise ValueError("scene graph has no representable focal action")
+        entities = {item.ref: item for item in (*facts.subjects, *facts.objects)}
+        action = (
+            " ".join((event.action, entities[event.object].label)) if event.object else event.action
+        )
+    if facts.transformation is not None:
+        accent = facts.transformation.result_label
+    elif facts.objects:
+        accent = facts.objects[-1].label
+    else:
+        raise ValueError("scene graph has no representable accent")
+    return LiveSceneGraphWirePlan.model_validate(
+        {
+            "background_prompt": facts.setting.label,
+            "focus": {"kind": "character", "subject": subject.label, "action": action},
+            "magic": {"kind": "prop", "prompt": accent},
+            "scene_facts": facts,
+        }
+    )
 
 
 class TensorRTSlotModelClient(StructuredModelClient):
@@ -662,7 +714,7 @@ class TensorRTSlotModelClient(StructuredModelClient):
         ).hexdigest()
         if scene_facts_enabled:
             graph_revision = (
-                "accepted-scene-facts-v5" if protocol == "slots" else "live-scene-facts-v5"
+                "accepted-scene-facts-v6" if protocol == "slots" else "live-scene-facts-v6"
             )
             self.cache_identity = hashlib.sha256(
                 f"{self.cache_identity}:{graph_revision}".encode()

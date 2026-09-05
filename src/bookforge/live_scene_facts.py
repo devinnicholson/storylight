@@ -115,8 +115,10 @@ _OWNERSHIP = {
     "contain": "contains",
     "touch": "touches",
 }
+_RESULT_MOTION_VERBS = frozenset({"fly", "flies"})
 _RESULT_VERBS = frozenset(
     {
+        *_RESULT_MOTION_VERBS,
         "appear",
         "appears",
         "appeared",
@@ -588,6 +590,8 @@ def _build(slots: dict[str, str], source: str) -> SceneFactsV2:
         if not results and not linked:
             raise _Refuse(LiveSceneFactsRefusal.UNGROUNDED)
         for result in results:
+            if result.verb in _RESULT_MOTION_VERBS:
+                subject_keys.add(_key(result.subject.label))
             for noun in (result.subject, result.anchor, result.secondary):
                 if noun:
                     add(noun)
@@ -681,7 +685,11 @@ def _build(slots: dict[str, str], source: str) -> SceneFactsV2:
             )
             events.append(event)
             requested_events.append(event)
-        elif verb != "be" and requested_action and _key(clause.subject.label) in subject_keys:
+        elif (
+            verb != "be"
+            and (requested_action or clause.verb in _RESULT_MOTION_VERBS)
+            and _key(clause.subject.label) in subject_keys
+        ):
             action = " ".join(
                 v for v in (clause.verb, clause.object.label if clause.object else None) if v
             )

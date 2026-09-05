@@ -185,6 +185,19 @@ def test_strict_raw_refusal_still_measures_tolerant_accepted_fallback():
     assert result.diagnostics[0].stage == "raw_parse"
     assert result.diagnostics[0].outcome == "value_error"
 
+    graph, _ = smoke.construct_case(
+        smoke.Result(index=0, status="ok", generation_complete=True),
+        "SETTING: forest\nACTOR: two foxes\nACTION: carry one blue lantern\n"
+        "MAGIC: golden ribbon appears<turn|>",
+        "In a forest, two foxes carry one blue lantern. A golden ribbon appears.",
+        style="watercolor",
+        seed=90401,
+    )
+    summary = smoke.aggregate({"execution_mode": "replay"}, {0}, [graph])
+    assert summary["accepted_valid_cases"] == 0
+    assert summary["compiler_proved_graph_cases"] == 1
+    assert summary["decision"] == "offline_replay_only"
+
 
 def test_stage_validation_diagnostics_never_include_inputs_or_unknown_field_names(monkeypatch):
     def reject(*args, **kwargs):

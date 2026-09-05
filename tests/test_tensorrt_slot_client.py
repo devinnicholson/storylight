@@ -61,6 +61,74 @@ def test_control_marker_recovery_never_attaches_graph_to_malformed_content(raw, 
     ).model_dump()
 
 
+def test_grounded_graph_survives_legacy_phrase_separator_refusal():
+    source = "In a forest, two foxes carry one blue lantern. A golden ribbon appears."
+    raw = (
+        "SETTING: forest\nACTOR: two foxes\nACTION: carry one blue lantern\n"
+        "MAGIC: golden ribbon appears<turn|>"
+    )
+    with pytest.raises(ValueError, match="protected source phrase"):
+        tensor_slot_wire_plan(raw, source_text=source)
+    wire = tensor_accepted_graph_wire_plan(raw, source_text=source)
+    assert wire.scene_facts is not None
+    assert wire.scene_facts.subjects[0].count == 2
+    lantern = next(item for item in wire.scene_facts.objects if item.label == "lantern")
+    assert lantern.count == 1 and lantern.color == "blue"
+    plan = wire.to_live_scene_plan(context_text=source)
+    validate_live_scene_plan_privacy(plan, source_text=source)
+    assert plan.to_page(
+        source_text=source, visual_style="watercolor", seed=7
+    ).scene_spec.master_prompt == (
+        wire.scene_facts.to_renderer_prompt(source_text=source, visual_style="watercolor")
+    )
+
+
+@pytest.mark.parametrize("failure_stage", ["adapter", "privacy", "render"])
+def test_graph_only_construction_retains_original_error_when_a_graph_gate_refuses(
+    monkeypatch, failure_stage
+):
+    original = ValueError("original accepted refusal")
+
+    def refuse_accepted(*args, **kwargs):
+        raise original
+
+    def refuse_gate(*args, **kwargs):
+        raise ValueError("graph gate refused")
+
+    monkeypatch.setattr(tensorrt_slot_client, "tensor_slot_wire_plan", refuse_accepted)
+    if failure_stage == "adapter":
+        monkeypatch.setattr("bookforge.live_scene_facts.adapt_live_scene_facts", refuse_gate)
+    elif failure_stage == "privacy":
+        monkeypatch.setattr(tensorrt_slot_client, "validate_live_scene_plan_privacy", refuse_gate)
+    else:
+        monkeypatch.setattr("bookforge.live_scene_planner.LiveSceneGraphPlan.to_page", refuse_gate)
+    with pytest.raises(ValueError) as caught:
+        tensor_accepted_graph_wire_plan(_GRAPH_SLOTS, source_text=_GRAPH_SOURCE)
+    assert caught.value is original
+
+
+def test_graph_scaffold_keeps_event_actor_as_focus_when_result_subject_has_an_action(monkeypatch):
+    source = (
+        "In a cave, a badger opens a wooden box then the badger lifts one blue lantern. "
+        "Three golden birds fly above a wooden tower."
+    )
+    raw = (
+        "SETTING: cave\nACTOR: badger\nACTION: opens box then badger lifts lantern\n"
+        "MAGIC: three golden birds"
+    )
+
+    def refuse_accepted(*args, **kwargs):
+        raise ValueError("accepted wire unavailable")
+
+    monkeypatch.setattr(tensorrt_slot_client, "tensor_slot_wire_plan", refuse_accepted)
+    wire = tensor_accepted_graph_wire_plan(raw, source_text=source)
+    assert wire.focus.subject == "badger"
+    assert wire.focus.action == "opens box"
+    assert wire.scene_facts is not None
+    assert wire.scene_facts.subjects[1].actions == ("fly",)
+    assert [event.action for event in wire.scene_facts.events] == ["opens", "lifts"]
+
+
 class StubFallback:
     def __init__(self) -> None:
         self.probes = 0

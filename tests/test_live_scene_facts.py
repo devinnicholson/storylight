@@ -338,6 +338,53 @@ def test_unrelated_result_subject_cannot_supply_magic_anchor() -> None:
     )
 
 
+def test_flying_result_preserves_count_anchor_and_explicit_action_order() -> None:
+    source = (
+        "In a cave, a badger opens a wooden box then the badger lifts one blue lantern. "
+        "Three golden birds fly above a wooden tower."
+    )
+    slots = _slots(
+        ACTOR="badger",
+        ACTION="opens box then badger lifts lantern",
+        MAGIC="three golden birds",
+    )
+    facts = _facts(slots, source)
+    birds = facts.subjects[1]
+    assert (birds.label, birds.count, birds.color, birds.actions) == (
+        "birds",
+        3,
+        "golden",
+        ("fly",),
+    )
+    assert facts.relationships[0].source == birds.ref
+    assert facts.relationships[0].relation.value == "above"
+    assert facts.objects[-1].label == "tower"
+    assert facts.relationships[0].target == facts.objects[-1].ref
+    assert [event.action for event in facts.events] == ["opens", "lifts"]
+    assert (facts.temporal_order[0].before, facts.temporal_order[0].after) == (
+        facts.events[0].ref,
+        facts.events[1].ref,
+    )
+    assert facts == _facts({**slots, "MAGIC": "three golden birds fly above tower"}, source)
+    focal = _facts({**slots, "ACTION": "opens box"}, source)
+    assert not focal.events and not focal.temporal_order
+    assert "lantern" not in {node.label for node in focal.objects}
+
+
+@pytest.mark.parametrize(
+    "result",
+    [
+        "Three golden birds do not fly above a tower.",
+        "An owl says, three golden birds fly above a tower.",
+        "Three golden birds fly. An owl flies above a tower.",
+    ],
+)
+def test_flying_result_requires_its_own_asserted_motion_and_anchor(result: str) -> None:
+    source = f"In a cave, a badger lifts a thimble. {result}"
+    slots = _slots(ACTOR="badger", ACTION="lifts thimble", MAGIC="birds fly above tower")
+    assert adapt_live_scene_facts(slots, source_text=source).facts is None
+
+
 @pytest.mark.parametrize(("link", "adverb"), [("calling forth", "deliberately")])
 def test_explicit_action_linked_result_with_neutral_adverb(link: str, adverb: str) -> None:
     facts = _facts(
