@@ -110,6 +110,37 @@ def test_ambiguous_deployment_is_deleted_and_cleanup_failure_is_visible(tmp_path
     assert closure["late_creation_cleanup_required"] is False
     assert sleeps == [30, 30, 30, 30]
 
+    worker_source = tmp_path / "app.py"
+    worker_source.write_bytes(
+        (trial.ROOT / "experiments/renderer-native-cache/app.py").read_bytes()
+    )
+    candidate["sources"]["worker"] = hashlib.sha256(worker_source.read_bytes()).hexdigest()
+    candidate_manifest.write_text(json.dumps(candidate))
+    client_commands.clear()
+    timeouts = []
+
+    def export_failed(args, timeout):
+        client_commands.append(args)
+        timeouts.append(timeout)
+        return subprocess.CompletedProcess(args, int(len(client_commands) == 2), "", "")
+
+    monkeypatch.setattr(trial, "execute", export_failed)
+    with pytest.raises(RuntimeError, match="export did not complete"):
+        trial.run(
+            image,
+            candidate_manifest,
+            tmp_path / "export-failed",
+            runtime_source=runtime_source,
+            worker_source=worker_source,
+            export_compiler_cache=True,
+        )
+    assert len(client_commands) == 2 and timeouts[1] <= 60
+    assert client_commands[0][-2:] == ["--worker-source", str(worker_source.resolve())]
+    assert "--proof-manifest-sha256" in client_commands[1]
+    assert json.loads((tmp_path / "export-failed/closure.json").read_text())[
+        "service_deleted_and_absent"
+    ]
+
     for invalid in ({}, {**binding, "condition": {"expression": "true"}}):
         binding = invalid
         sleeps.clear()
@@ -158,6 +189,21 @@ def test_existing_service_is_never_replaced_or_deleted(tmp_path, monkeypatch):
             runtime_source=runtime_source,
         )
     assert commands == [] and not (tmp_path / "unmatched").exists()
+    with pytest.raises(ValueError):
+        trial.run(
+            trial.IMAGE_PREFIX + "a" * 64,
+            manifest,
+            tmp_path / "wrong-worker",
+            worker_source=runtime_source,
+        )
+    with pytest.raises(ValueError, match="explicit reviewed worker"):
+        trial.run(
+            trial.IMAGE_PREFIX + "a" * 64,
+            manifest,
+            tmp_path / "missing-worker",
+            export_compiler_cache=True,
+        )
+    assert commands == []
     with pytest.raises(ValueError, match="existing service"):
         trial.run(trial.IMAGE_PREFIX + "a" * 64, manifest, tmp_path / "output", service=service)
     assert commands == [["run", "services", "list", "--region", trial.REGION]]

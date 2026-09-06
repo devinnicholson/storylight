@@ -88,7 +88,14 @@ def schedule(manifest):
     return manifest["cases"] + manifest["cases"][:2]
 
 
-def prepare_manifest(experiment_id, identity, sources, *, runtime_source: Path | None = None):
+def prepare_manifest(
+    experiment_id,
+    identity,
+    sources,
+    *,
+    runtime_source: Path | None = None,
+    worker_source: Path | None = None,
+):
     value = {
         "schema_version": 1,
         "status": "draft",
@@ -99,11 +106,19 @@ def prepare_manifest(experiment_id, identity, sources, *, runtime_source: Path |
         "cases": public_cases(),
         "sources": sources,
     }
-    validate_manifest(value, active=False, runtime_source=runtime_source)
+    validate_manifest(
+        value, active=False, runtime_source=runtime_source, worker_source=worker_source
+    )
     return value
 
 
-def validate_manifest(value, *, active, runtime_source: Path | None = None):
+def validate_manifest(
+    value,
+    *,
+    active,
+    runtime_source: Path | None = None,
+    worker_source: Path | None = None,
+):
     require(
         set(value)
         == {
@@ -127,6 +142,8 @@ def validate_manifest(value, *, active, runtime_source: Path | None = None):
     require(set(value["sources"]) == {"runtime", "worker", "weights"})
     require(all(is_hash(v) for v in value["sources"].values()))
     paths = SOURCE_PATHS if runtime_source is None else SOURCE_PATHS | {"runtime": runtime_source}
+    if worker_source is not None:
+        paths = paths | {"worker": worker_source}
     require(value["sources"] == {k: sha(p.read_bytes()) for k, p in paths.items()})
     identity, _ = cold.frozen_cases()
     if runtime_source is not None:
@@ -295,8 +312,14 @@ async def run(
     client,
     token_source,
     runtime_source: Path | None = None,
+    worker_source: Path | None = None,
 ):
-    validate_manifest(manifest, active=True, runtime_source=runtime_source)
+    validate_manifest(
+        manifest,
+        active=True,
+        runtime_source=runtime_source,
+        worker_source=worker_source,
+    )
     validate_endpoint(endpoint, service, revision)
     require(not output.exists())
     token = await token_source(endpoint)
@@ -478,6 +501,9 @@ def main():
         help="Explicit reviewed runtime source matching both manifest hash pins",
     )
     parser.add_argument("--experiment-id", default="gcp-klein-20260906-a")
+    parser.add_argument(
+        "--worker-source", type=Path, help="Reviewed worker matching the manifest pin"
+    )
     mode = parser.add_mutually_exclusive_group()
     mode.add_argument("--prepare", action="store_true")
     mode.add_argument("--run", action="store_true")
@@ -490,6 +516,7 @@ def main():
                 protocol.decode_json(args.identity.read_bytes()),
                 protocol.decode_json(args.sources.read_bytes()),
                 runtime_source=args.runtime_source,
+                worker_source=args.worker_source,
             )
             write_exclusive(args.manifest, encoded(value))
             print(
@@ -505,7 +532,12 @@ def main():
             return
         raw = args.manifest.read_bytes()
         value = protocol.decode_json(raw)
-        validate_manifest(value, active=args.run, runtime_source=args.runtime_source)
+        validate_manifest(
+            value,
+            active=args.run,
+            runtime_source=args.runtime_source,
+            worker_source=args.worker_source,
+        )
         if args.proof_manifest_sha256:
             require(sha(raw) == args.proof_manifest_sha256)
         if args.run:
@@ -526,6 +558,7 @@ def main():
                             client=client,
                             token_source=GoogleImpersonatedIdentityTokenSource(INVOKER),
                             runtime_source=args.runtime_source,
+                            worker_source=args.worker_source,
                         ),
                         timeout=600,
                     )

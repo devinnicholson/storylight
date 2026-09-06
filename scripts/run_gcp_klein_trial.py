@@ -129,13 +129,24 @@ def run(
     *,
     service: str | None = None,
     runtime_source: Path | None = None,
+    worker_source: Path | None = None,
+    export_compiler_cache: bool = False,
 ) -> None:
     if runtime_source is not None:
         runtime_source = runtime_source.resolve()
+    if worker_source is not None:
+        worker_source = worker_source.resolve()
+    if export_compiler_cache and worker_source is None:
+        raise ValueError("compiler export requires an explicit reviewed worker")
     manifest = benchmark.protocol.decode_json(manifest_path.read_bytes())
-    benchmark.validate_manifest(manifest, active=True, runtime_source=runtime_source)
+    benchmark.validate_manifest(
+        manifest,
+        active=True,
+        runtime_source=runtime_source,
+        worker_source=worker_source,
+    )
     for key, path in {
-        "worker": ROOT / "deploy/gcp_klein_worker/app.py",
+        "worker": worker_source or ROOT / "deploy/gcp_klein_worker/app.py",
         "runtime": runtime_source or ROOT / "deploy/klein_scene_runtime.py",
         "weights": ROOT / "deploy/gcp_klein_worker/klein_weights.py",
     }.items():
@@ -166,9 +177,10 @@ def run(
             "deployment_timeout_seconds": 240,
             "iam_propagation_wait_seconds": 120,
             "maximum_gpu_instances_configured": 1,
-            "cost_allowance_usd": 5,
+            "two_slot_resource_lifecycle_allowance_usd": 1.1684904,
             "cost_is_not_a_hard_platform_cap": True,
             "production_changed": False,
+            "export_compiler_cache": export_compiler_cache,
         },
     )
     started = time.monotonic()
@@ -242,10 +254,42 @@ def run(
         ]
         if runtime_source is not None:
             command.extend(["--runtime-source", str(runtime_source)])
+        if worker_source is not None:
+            command.extend(["--worker-source", str(worker_source)])
         result = execute(command, remaining)
         write(output / "client-exit.json", {"returncode": result.returncode})
         if result.returncode:
             raise RuntimeError("qualification client did not complete")
+        if export_compiler_cache:
+            remaining = LIFETIME_SECONDS - (time.monotonic() - started)
+            if remaining <= 5:
+                raise TimeoutError("insufficient supervised time for compiler export")
+            command = [
+                sys.executable,
+                str(ROOT / "experiments/renderer-native-cache/export_cache.py"),
+                "--manifest",
+                str(manifest_path),
+                "--proof-manifest-sha256",
+                hashlib.sha256(manifest_path.read_bytes()).hexdigest(),
+                "--renders",
+                str(output / "renders"),
+                "--endpoint",
+                url,
+                "--service",
+                service,
+                "--revision",
+                revision,
+                "--worker-source",
+                str(worker_source),
+                "--output",
+                str(output / "compiler-cache"),
+            ]
+            if runtime_source is not None:
+                command.extend(["--runtime-source", str(runtime_source)])
+            result = execute(command, min(60, remaining))
+            write(output / "export-exit.json", {"returncode": result.returncode})
+            if result.returncode:
+                raise RuntimeError("compiler cache export did not complete")
     except BaseException as error:
         failed = type(error).__name__
         raise
@@ -303,6 +347,10 @@ def main() -> None:
         type=Path,
         help="Explicit reviewed runtime source matching both manifest hash pins",
     )
+    parser.add_argument(
+        "--worker-source", type=Path, help="Reviewed worker matching the manifest pin"
+    )
+    parser.add_argument("--export-compiler-cache", action="store_true")
     args = parser.parse_args()
     run(
         args.image,
@@ -310,6 +358,8 @@ def main() -> None:
         args.output.resolve(),
         service=args.service,
         runtime_source=args.runtime_source,
+        worker_source=args.worker_source,
+        export_compiler_cache=args.export_compiler_cache,
     )
 
 
