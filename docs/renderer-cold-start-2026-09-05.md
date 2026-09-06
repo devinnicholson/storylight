@@ -158,3 +158,62 @@ holds retained, projected workspace exposure is $34.38142741 under the unchanged
 The [audit evidence](../benchmarks/renderer-import-audit-2026-09-05) retains the authorization and
 source pins. Implementation and independent review pass; one focused test checks authorization,
 duplicate claims, swallowed CUDA attempts and restoration of the patched functions.
+
+The audit **rejected** the import block: `torch.cuda.is_available()` was called and guarded
+imports did not complete. Torch alone imported in 4.378 seconds; the whole diagnostic stopped
+after 6.677 seconds inside the worker. No GPU or model was requested. The app is stopped with zero
+tasks and no containers. Its reported charge is $0.00172050, provisionally; workspace usage is
+$14.31314791. The full $0.70 hold remains. The checked-in result and cleanup receipt retain hashes.
+
+Pinned Diffusers 0.39.0 imports `peft_utils`, which imports `torch_utils`. That module initializes
+`torch_device = get_device()` at module scope, and `get_device()` calls CUDA availability and caches
+the result. Earlier TorchDynamo imports might trigger the first observed call; the diagnostic
+does not retain its caller. Forcing CUDA availability to false could preserve CPU device state
+across restoration. Restoring patched functions alone is also unsafe because imported libraries
+can retain references to them. See [Diffusers device initialization](https://raw.githubusercontent.com/huggingface/diffusers/v0.39.0/src/diffusers/utils/torch_utils.py)
+and [TorchDynamo callable tables](https://raw.githubusercontent.com/pytorch/pytorch/v2.8.0/torch/_dynamo/variables/torch.py).
+
+The next candidate under review captures framework imports using a GPU-assisted snapshot so
+device discovery runs normally. Model loading, compiler-cache restoration and rendering would
+all run after restoration. This is distinct from the older full-model/compiled snapshot that
+timed out. A successful image alone cannot qualify it: the probe must distinguish captures,
+actual restores and platform fallback, preserve reference hashes, and count the complete
+supervised app lifetime against the existing budget. No snapshot call has run yet.
+
+## Imports-only GPU snapshot qualification
+
+The candidate keeps the baseline 64 GiB request and limit, the same baked image, L4, CPU and
+region. It captures only the existing framework import block. Model construction, compiler-cache
+restoration and all four reference renders execute after restoration. No CUDA function is patched.
+
+One class with no parameters admits at most three snapshot captures and five sequential inputs.
+Each input must produce the same four master/depth pairs as the cold comparison. The run stops
+after two observations reuse an earlier capture ID in a different container with a fresh activation
+ID, or at the first failed input. Initial hardware-specific captures are counted separately.
+Provider logs must corroborate restoration and show no failed restore or fallback. Modal's runtime
+can retry failed GPU restoration without a snapshot even when application retries are zero.
+
+This qualifies snapshot correctness and repeat restoration before a matched speed comparison.
+The retained cold baseline used a Jetson client; this probe uses the Mac. Comparing their absolute
+client times cannot establish a causal speedup or meet the promotion gate.
+
+The full-app watchdog starts before deployment and stops the app after at most 480 seconds, with
+60 seconds allowed for shutdown. The $1.67 reservation budgets two full resource slots for that
+540-second interval, eight extra 30-second teardown allowances, and $0.50 setup: **$1.58311280**.
+Only one max-one pool is declared; the extra slot covers capture/restore overlap. Unexpected
+concurrency stops the probe. This is a conservative engineering envelope, not a provider billing
+cap. There are no builds, endpoints, automatic retries, configuration variants or redeployments.
+
+The closed six-call memory experiment now retains **$1.60**: two full 539-second pool lifetimes,
+six 30-second teardown allowances and full setup total $1.53223932. This releases $1.24 while
+preserving every other hold and the original funding envelope. At current reported usage
+$14.31314791, adding the snapshot reservation projects **$34.81314791** under the $35 stop.
+The [snapshot evidence directory](../benchmarks/renderer-import-snapshot-2026-09-05) retains this
+reconciliation and the eventual frozen authorization and result.
+
+Local qualification passes all 900 Python tests, three JavaScript suites, scoped lint and the
+staged credential scan. Four focused snapshot tests cover lifecycle separation, finite capture
+and request claims, restore evidence, repeated-container rejection, expiry and cancelled
+submissions. Independent review also checked the private supervisor and actual Modal 1.5.5
+configuration offline. The manifest and private authorization are frozen; preflight made zero
+generation calls.

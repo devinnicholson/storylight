@@ -12,10 +12,11 @@ It records framework imports, model loading, cache restore and first-bucket work
 
 The six-call memory comparison completed with 24 reference-identical images and zero failures.
 Cycle median improved only 6.07% (43.535 s to 40.894 s), below the 25% gate, so it is not promoted.
-Measured framework imports take 10–14 seconds. A separate CPU-only import audit is reserved at
-$0.70 before any snapshot experiment; it can expose unsafe CUDA calls but cannot prove restoration
-safety. Reported workspace usage is $14.31142741 and projected usage plus all retained holds is
-$34.38142741 under the unchanged $35 stop. Accepted appliance routing remains unchanged.
+Measured framework imports take 10–14 seconds. The CPU-only audit rejected the import block:
+it calls CUDA availability during import. The app is stopped, with a provisional $0.00172050
+charge and its full $0.70 hold retained. Reported workspace usage is $14.31314791. A GPU-assisted
+snapshot of imports alone is under review; no snapshot call has run. Accepted appliance routing
+remains unchanged.
 
 ## Latest increment — renderer latency measurement
 
@@ -30,7 +31,7 @@ planning or warm reuse can no longer extend displayed readiness. Expiry makes no
 Warm image inference was approximately 1.6 s on either transport, so startup and useful warm
 lifetime are the next performance decision. Promotion and automatic session prewarming remain
 gated. Updated reported usage plus unreleased holds exceeds the $35 conservative stop, so no
-additional paid dispatch was blocked until the subsequent cold-start reconciliation restored
+additional paid dispatch was allowed until the subsequent cold-start reconciliation restored
 headroom using a conservative bound on the completed app lifetimes.
 
 The [corrected regional recovery](renderer-region-recovery-2026-09-05.md) completed its bounded

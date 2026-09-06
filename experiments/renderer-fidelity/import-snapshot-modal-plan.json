@@ -1,0 +1,19 @@
+{
+  "monthly_credit_usd": 30.0,
+  "authorized_paid_usd": 7.0,
+  "workspace_usage_before_live_scenes_usd": 13.13786456,
+  "billing_delay_reserve_usd": 2.0,
+  "hard_stop_workspace_total_usd": 35.0,
+  "maximum_new_spend_usd": 21.85,
+  "experiment_ceiling_usd": 1.67,
+  "maximum_operations": 5,
+  "maximum_captures": 3,
+  "global_deadline_seconds": 480,
+  "shutdown_allowance_seconds": 60,
+  "resource_slots_budgeted": 2,
+  "additional_teardown_seconds": 240,
+  "setup_ceiling_usd": 0.5,
+  "regional_price_multiplier": 1.75,
+  "baked_image_id": "im-WtXer8GjRPdgMqWAAUSMwJ",
+  "note": "One nonparametrized max-one L4 pool with imports-only GPU snapshots. Supervise from before deployment through stop; at most3 capture claims and5 sequential inputs, stop after2 proven restores or first failure. Budget two resource slots for540s plus8x30s teardown and full setup. No builds, retries, pool variants, endpoints or production changes."
+}
