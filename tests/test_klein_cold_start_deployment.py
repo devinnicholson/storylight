@@ -4,8 +4,10 @@ import json
 import shutil
 import subprocess
 import sys
+from pathlib import Path
 
-from scripts import benchmark_klein_cold_start as benchmark
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+from scripts import benchmark_klein_cold_start as benchmark  # noqa: E402
 
 
 def test_isolated_deployment_bounds_resources_and_claims_before_model_import(tmp_path):

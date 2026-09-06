@@ -10,10 +10,12 @@ original deadline and reservation; uncertainty clears readiness. A fixed six-con
 tests a smaller guaranteed host-memory request with the same 64 GiB ceiling and image settings.
 It records framework imports, model loading, cache restore and first-bucket work separately.
 
-The $2.84 comparison is reserved within the existing $35 stop after a reviewed lifetime bound
-reduced the completed C hold to $1.50. Fresh reported usage remains $14.12593674; projected usage
-plus retained holds is $33.49593674. Implementation, 895 Python tests, JavaScript checks and
-independent review pass; live measurement is next. Accepted appliance routing remains unchanged.
+The six-call memory comparison completed with 24 reference-identical images and zero failures.
+Cycle median improved only 6.07% (43.535 s to 40.894 s), below the 25% gate, so it is not promoted.
+Measured framework imports take 10–14 seconds. A separate CPU-only import audit is reserved at
+$0.70 before any snapshot experiment; it can expose unsafe CUDA calls but cannot prove restoration
+safety. Reported workspace usage is $14.31142741 and projected usage plus all retained holds is
+$34.38142741 under the unchanged $35 stop. Accepted appliance routing remains unchanged.
 
 ## Latest increment — renderer latency measurement
 

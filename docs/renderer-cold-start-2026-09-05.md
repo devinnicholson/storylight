@@ -1,5 +1,9 @@
 # Cold-start work
 
+The memory-request comparison completed all six fresh containers and 24 images with unchanged
+reference hashes. Its **6.07%** median improvement fails the frozen 25% gate, so the smaller
+request is not promoted. Framework imports are now measured directly at roughly 10–14 seconds.
+
 The user requested a dedicated cold-start effort after the matched transport comparison failed
 its speed gate. This increment tests cold initialization independently of transport promotion.
 It does not enable automatic session prewarming or change accepted appliance routing.
@@ -102,4 +106,55 @@ declarations, runtime mounts and asynchronous invocation signatures.
 The [evidence directory](../benchmarks/renderer-cold-start-2026-09-05) retains the frozen draft,
 active manifest, authorization receipt and conservative reconciliation. Authorization is private
 and no proxy credential is needed for the SDK-only run. Local preflight validates the active
-manifest with zero generation calls. Status: ready for supervised live measurement.
+manifest with zero generation calls. The memory comparison is now complete; an import-safety
+audit is the next bounded step.
+
+## Memory comparison result
+
+| Boundary | Baseline, 64 GiB requested | Candidate, 16 GiB requested |
+| --- | ---: | ---: |
+| Four-render cycle artifact-ready median | 43.535 s | 40.894 s |
+| Four-render cycle maximum | 52.644 s | 48.725 s |
+| Framework import median | 12.463 s | 10.865 s |
+| Model load median | 5.361 s | 5.113 s |
+| First 128-token render median | 8.686 s | 7.396 s |
+| First 256-token render median | 4.912 s | 4.839 s |
+| Warm 128-token render median | 1.632 s | 1.631 s |
+| Warm 256-token render median | 1.711 s | 1.718 s |
+
+All 48 JPEG files pass size, dimension and hash verification. All three paired sets match, all
+six container hashes differ, and no call failed. Lower requested RAM did not provide the required
+improvement in this sample. Process RSS peaks were 19.567–19.918 GiB, above the candidate's
+guaranteed amount and below its unchanged limit; this does not establish total container memory.
+
+The first pair loaded models in 14.848/11.195 seconds; later load times were much lower. Host or
+storage caching may contribute, but fresh containers do not prove fresh physical hosts or cold
+storage. The 90 source-free phase events have consistent monotonic ordering and agree with the
+response timings. The first 128-token render finished at a median worker offset of 26.183 seconds
+for baseline and 23.570 seconds for candidate; these are not image-delivery measurements.
+
+Independent aggregation reproduces summary SHA-256
+`68e38672e7c75cefbe28012575af073d645ade688ad3bba8e656ea548ddff111` from the retained local
+`.bookforge/renderer-cold-start-20260905-a/results` directory using the pinned manifest and private
+authorization with `scripts/benchmark_klein_cold_start.py --aggregate-only`. All artifact bytes
+are required. The supervisor completed in 265.470 seconds and stopped the app successfully;
+independent inventory confirmed it stopped with zero tasks and no containers. Reported app
+charges are **$0.18549067**, provisionally; workspace usage is **$14.31142741** and the full
+$2.84 comparison hold remains. See the checked-in summary, phase events and cleanup receipt.
+
+## CPU import audit
+
+One CPU-only call audits the exact installed framework imports before attempting any snapshot.
+It installs guards on nine Python-exposed CUDA discovery or initialization functions after
+importing Torch, retains attempted calls even if a library catches the exception, and restores
+the original functions afterward. Initial Torch import remains explicitly unaudited. A clean
+result would be a necessary partial check, not proof that snapshot restoration is safe or fast.
+
+The audit uses the same baked image, CPU request/limit of eight cores and RAM request/limit of
+8/16 GiB, with no GPU or model call. One exact request is bound to a source-pinned manifest and
+durable claim. The $0.70 reservation includes $0.20 for the call and the full $0.50 setup allowance;
+the resource maximum for startup, execution, idle and teardown is $0.06679232. With all existing
+holds retained, projected workspace exposure is $34.38142741 under the unchanged $35 stop.
+The [audit evidence](../benchmarks/renderer-import-audit-2026-09-05) retains the authorization and
+source pins. Implementation and independent review pass; one focused test checks authorization,
+duplicate claims, swallowed CUDA attempts and restoration of the patched functions.

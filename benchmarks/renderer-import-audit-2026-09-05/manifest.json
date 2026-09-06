@@ -1,0 +1,9 @@
+{
+  "deployment_sha256": "8f70491d3e79739e11f8d6f6ca0a5e78360e74f0dc50612c48deef0f4525d99e",
+  "experiment_id": "klein-import-audit-20260905-a",
+  "expires_at": 1788667193,
+  "image_id": "im-WtXer8GjRPdgMqWAAUSMwJ",
+  "request_id": "2ef29962005812f2c5878c31db9ee5b0",
+  "schema_version": 1,
+  "status": "authorized"
+}
