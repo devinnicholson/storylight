@@ -1,0 +1,96 @@
+{
+  "schema_version": 1,
+  "experiment_id": "simple-scenes-20260905-a",
+  "profile": {
+    "width": 1024,
+    "height": 576,
+    "steps": 4,
+    "guidance": 1.0,
+    "max_reference_bytes": 2000000
+  },
+  "controls": [
+    {
+      "id": "carry",
+      "seed": 90501,
+      "before_prompt": "Simple flat illustration with solid colors, clear silhouettes and a plain pale cream background. Exactly one orange fox stands beside exactly one blue lantern resting on the ground. Show the whole fox and lantern clearly. No other characters or objects. No texture, decorative detail or text.",
+      "after_prompt": "Simple flat illustration with solid colors, clear silhouettes and a plain pale cream background. Exactly one orange fox carries exactly one blue lantern by its handle in its mouth. The lantern is lifted off the ground and its handle visibly touches the fox's mouth. Show the whole fox and lantern clearly. No other characters or objects. No texture, decorative detail or text.",
+      "before_checks": [
+        {"id": "actor_count", "text": "Exactly one orange fox is visible."},
+        {"id": "object_count", "text": "Exactly one blue lantern is visible."},
+        {"id": "relation", "text": "The lantern rests on the ground beside the fox."}
+      ],
+      "after_checks": [
+        {"id": "actor_count", "text": "Exactly one orange fox is visible."},
+        {"id": "object_count", "text": "Exactly one blue lantern is visible."},
+        {"id": "action", "text": "The fox's mouth holds the lantern handle and the lantern is off the ground."}
+      ],
+      "continuity_checks": [
+        {"id": "identity", "text": "The fox and lantern retain their recognizable shapes and colors between states."},
+        {"id": "composition", "text": "The viewpoint and background remain consistent between states."}
+      ]
+    },
+    {
+      "id": "two_actors",
+      "seed": 90502,
+      "before_prompt": "Simple flat illustration with solid colors, clear silhouettes and a plain pale cream background. Exactly two rabbits sit side by side: one brown rabbit on the left and one gray rabbit on the right. Exactly one green ball rests between them. Show both whole rabbits and the ball clearly. No other characters or objects. No texture, decorative detail or text.",
+      "after_prompt": "Simple flat illustration with solid colors, clear silhouettes and a plain pale cream background. Exactly two rabbits stand side by side: one brown rabbit on the left and one gray rabbit on the right. Exactly one green ball rests between them. Both rabbits are standing rather than sitting. Show both whole rabbits and the ball clearly. No other characters or objects. No texture, decorative detail or text.",
+      "before_checks": [
+        {"id": "actor_count", "text": "Exactly two rabbits are visible."},
+        {"id": "binding", "text": "The brown rabbit is on the left and the gray rabbit is on the right."},
+        {"id": "object_count", "text": "Exactly one green ball rests between the rabbits."},
+        {"id": "posture", "text": "Both rabbits are sitting."}
+      ],
+      "after_checks": [
+        {"id": "actor_count", "text": "Exactly two rabbits are visible."},
+        {"id": "binding", "text": "The brown rabbit is on the left and the gray rabbit is on the right."},
+        {"id": "object_count", "text": "Exactly one green ball rests between the rabbits."},
+        {"id": "posture", "text": "Both rabbits are standing rather than sitting."}
+      ],
+      "continuity_checks": [
+        {"id": "identity", "text": "Each rabbit retains its own recognizable shape and color between states."},
+        {"id": "composition", "text": "The ball, viewpoint and background remain consistent between states."}
+      ]
+    },
+    {
+      "id": "spatial",
+      "seed": 90503,
+      "before_prompt": "Simple flat illustration with solid colors, clear silhouettes and a plain pale cream background. Exactly one red bird perches on exactly one brown branch above exactly one empty blue basket. Show the whole bird, branch and basket clearly. No other characters or objects. No texture, decorative detail or text.",
+      "after_prompt": "Simple flat illustration with solid colors, clear silhouettes and a plain pale cream background. Exactly one red bird sits inside exactly one blue basket, with its body inside the basket and its head visible above the rim. Exactly one empty brown branch remains above the basket. Show the bird, branch and basket clearly. No other characters or objects. No texture, decorative detail or text.",
+      "before_checks": [
+        {"id": "actor_count", "text": "Exactly one red bird is visible."},
+        {"id": "object_count", "text": "Exactly one brown branch and one blue basket are visible."},
+        {"id": "relation", "text": "The bird perches on the branch above the empty basket."}
+      ],
+      "after_checks": [
+        {"id": "actor_count", "text": "Exactly one red bird is visible."},
+        {"id": "object_count", "text": "Exactly one brown branch and one blue basket are visible."},
+        {"id": "relation", "text": "The bird is inside the basket with its head visible; the branch above is empty."}
+      ],
+      "continuity_checks": [
+        {"id": "identity", "text": "The bird and basket retain their recognizable shapes and colors between states."},
+        {"id": "composition", "text": "The branch, viewpoint and background remain consistent between states."}
+      ]
+    },
+    {
+      "id": "open_box",
+      "seed": 90504,
+      "before_prompt": "Simple flat illustration with solid colors, clear silhouettes and a plain pale cream background. Exactly one brown bear stands beside exactly one blue box closed by exactly one red lid. The red lid rests flat on top of the box and the bear's paws are beside its body. Show the whole bear and box clearly. No other characters or objects. No texture, decorative detail or text.",
+      "after_prompt": "Simple flat illustration with solid colors, clear silhouettes and a plain pale cream background. Exactly one brown bear holds exactly one red lid in its paws above exactly one open blue box. Both paws visibly touch the lifted lid, leaving a clear gap between lid and box. The empty inside of the box is visible. Show the whole bear, lid and box clearly. No other characters or objects. No texture, decorative detail or text.",
+      "before_checks": [
+        {"id": "actor_count", "text": "Exactly one brown bear is visible."},
+        {"id": "object_count", "text": "Exactly one blue box and one red lid are visible."},
+        {"id": "state", "text": "The red lid closes the box and the bear's paws are beside its body."}
+      ],
+      "after_checks": [
+        {"id": "actor_count", "text": "Exactly one brown bear is visible."},
+        {"id": "object_count", "text": "Exactly one blue box and one red lid are visible."},
+        {"id": "action", "text": "The bear's paws hold the lid above the box with a visible gap."},
+        {"id": "state", "text": "The box is open and its empty inside is visible."}
+      ],
+      "continuity_checks": [
+        {"id": "identity", "text": "The bear, lid and box retain their recognizable shapes and colors between states."},
+        {"id": "sequence", "text": "The two states clearly show a closed box followed by the same box opened by the bear."}
+      ]
+    }
+  ]
+}

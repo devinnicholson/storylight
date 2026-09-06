@@ -13,6 +13,32 @@ Deliver a six-page typed-story demonstration whose essential characters, counts,
 actions appear correctly and consistently on the projector. Use the existing workbench,
 Jetson planner, renderer and playback runtime.
 
+### Product priority update — September 5
+
+The user prefers simpler, less crisp or detailed artwork when it improves generation speed and
+reliability. Evaluate candidates in this order:
+
+1. Essential story facts and continuity, plus successful delivery without rerolls.
+2. Time to the first usable scene, including cold preparation; report warm and cached paths separately.
+3. Projection legibility: recognizable subjects, clear actions and sufficient contrast.
+4. Fine texture, sharpness and decorative detail.
+
+Fine detail is not an acceptance requirement. Keep counts, actor/object bindings and event order
+as requirements. Record operational failures separately from incorrect but successfully returned
+images. A simpler style, lower resolution or cheaper profile advances only when a matched test
+shows a useful speed or reliability improvement; cosmetic degradation alone buys nothing.
+
+Existing evidence cautions against reducing settings blindly: the earlier 896×512→768×448 SANA
+comparison saved only 18.8 ms end to end, and one-step SANA saved 65.6 ms while duplicating the
+subject. These are specific historical tests, not a rejection of all simpler rendering methods.
+See the [resolution comparison](../benchmarks/bookforge-resolution-ab-2026-08-24.json) and
+[step comparison](../benchmarks/bookforge-sana-sprint-one-step-ab-2026-08-24.json).
+
+Keep the next two-state reference-image control focused on identity, counts and relationships.
+Use a simple, legible illustration treatment and score decorative appeal separately. Any profile
+comparison must retain the same source facts, controls and seed policy, with preparation, delivery
+and display timing recorded. This preference changes the selection criteria, not historical results.
+
 The first milestone improves scene fidelity. Microphone activation, physical hand tracking,
 new models and renderer replacements follow separately.
 
