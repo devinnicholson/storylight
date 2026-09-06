@@ -1,6 +1,6 @@
 # Native GCP Klein qualification — September 6, 2026
 
-This is a prospective, isolated **$5 gross-cost phase** for Klein 4B on native Cloud Run. It restores the illustrated watercolor target and tests the actual GCP path required for the submission. The existing SANA service, live application routing, GKE workloads, and Modal rollback remain unchanged. Completion of this screen does not promote the candidate.
+Klein 4B completed **10 native Cloud Run requests with 20 verified JPEGs** in attempt G. The eight later client requests had a 0.492-second median; the first request took 72.769 seconds. Assistant inspection passed seven of eight unique scenes but found an extra fox and lantern in the remaining scene. **Human review is pending and the candidate is not promoted.** This record preserves the original protocol and repairs within an isolated **$5 gross-cost phase**, targeting the restored illustrated watercolor appearance and the GCP path required for submission. The existing SANA service, live application routing, GKE workloads, and Modal rollback remain unchanged.
 
 The existing GCP adapter's automatic readiness probe now prepares credentials without requesting `/health`, which could activate a billed GPU before generation. Readiness means credentials are available; paid operations still verify runtime identity. This correction does not select the Klein candidate or change deployed services.
 
@@ -134,3 +134,52 @@ G will add bounded configuration diagnostics and support that explicit device na
 The reviewed image repair is a tiny application/manifest overlay on immutable D, using pinned builder and Dockerfile-frontend images and `COPY --link`. It has no `RUN` step or local image export; BuildKit pushes the resulting image directly. This configuration permits reuse of base layers without downloading them, but the actual build log and image provenance must verify that reuse before GPU dispatch. The CPU build uses eight CPUs, the default 100 GB disk, and a **600-second server timeout**. This remains a prospective build and runtime test. [Docker's `COPY --link` behavior](https://docs.docker.com/reference/dockerfile/#copy---link).
 
 Retain **$0.27** for F, above its two-slot elapsed-rate estimate of $0.268669. Allow **$0.17** for G's CPU overlay build: ten minutes at $0.0156/minute is $0.156, with the remainder covering limited preparation or timeout overhead. The first 100 GB build disk remains included in the published rate. The previously reserved $1.1684904 GPU lifecycle allowance now covers the prospective G trial; it is not added twice. Total allocation becomes **$4.8584904**, leaving **$0.1415096** within the same $5 cap. Any failure or overrun must be reconciled against that remaining margin before further work.
+
+G's [overlay build completed successfully](../benchmarks/gcp-klein-2026-09-06/retry-g/build-final.json), producing image `sha256:e18009ca1785394b84340be7f462bd6cb4ee2b4455484a9f3d7769fbc26ffaa8`. The terminal record reports 15.330 seconds from build start to finish, after 61.110 seconds between submission and build start. The recorded build phase lasted 10.827 seconds; its log reports 0.4 seconds pushing layers and 0.2 seconds publishing the manifest. These are CPU image-build timings, not model or generation performance.
+
+Independent [image verification](../benchmarks/gcp-klein-2026-09-06/retry-g/layer-reuse-verification.json) confirms all 12 of D's compressed layer digests and sizes, plus their uncompressed `diff_ids`, remain an exact prefix. The only added layer is **5,212 compressed bytes**. Runtime user, command, environment, working directory, ports, and other execution fields are preserved. Docker layer media-type labels become their OCI equivalents; omitted empty legacy fields and the intermediate build-image label are recorded separately. The [new layer's content check](../benchmarks/gcp-klein-2026-09-06/retry-g/overlay-content-verification.json) binds the two regular application and manifest files to the frozen context with owner `65532:65532`. No model-layer blobs were downloaded for this verification. G's GPU qualification remains prospective.
+
+## G native GPU result: complete, visually ungraded
+
+G completed **10 of 10 requests on one worker**, with all **20 master/depth JPEGs** passing hash, format, and dimension checks. The [saved summary](../benchmarks/gcp-klein-2026-09-06/retry-g/trial/renders/summary.json) reproduces byte for byte from the journal and artifacts. Observed runtime identity matches the manifest, including `NVIDIA RTX PRO 6000 Blackwell Server Edition`; deployed image, revision, resource limits, and private IAM checks passed. This establishes native GCP rendering and artifact integrity. The recorded decision remains **ungraded**, not a visual-quality acceptance.
+
+| Measurement | Result |
+| --- | ---: |
+| First client request through verified, saved artifacts | 72.768514 s |
+| First worker request | 66.045609 s |
+| Model loading | 47.370640 s |
+| Compile-wrapper setup | 1.784706 s |
+| First image generation, including bucket priming work | 16.243296 s |
+| First 256-token-bucket client request | 6.532509 s |
+| Eight later client requests, mixed buckets: median / maximum | 0.491930 / 0.665431 s |
+| Later 128-token bucket: count, median / maximum | 7; 0.489415 / 0.665431 s |
+| Later 256-token bucket: count, single observation | 1; 0.522899 s |
+
+The 1.784706-second compile-wrapper value is not the full first-use compilation cost: the initial bucket renders still include priming work. The mixed-bucket median is dominated by seven 128-token observations. These results establish neither a p95 nor repeated cold-start reliability. They also exclude token acquisition, the 120-second IAM wait, deployment, browser display, and physical projection. The first request is worker-cold; the evidence does not establish a controlled scale-from-zero latency distribution or explain the client/worker difference as network time alone.
+
+Same-worker repetition was not universally byte-identical. Retained case 0's first and final master/depth images differ despite matching prompt and seed; retained case 1's pair matches exactly. None of the retained outputs matches the historical L4 artifact hashes. Report these findings separately from semantic quality; do not claim universal determinism or cross-GPU pixel equivalence.
+
+The [supervisor closure](../benchmarks/gcp-klein-2026-09-06/retry-g/trial/closure.json) verifies terminal creation, service deletion, and absence after **225.234813 seconds**, with no unresolved late creation. Billing reconciliation remains required. Keep the existing phase allowances until attributable costs are reconciled; the completed render does not itself settle charges. User visual review, five controlled cold starts, and physical end-to-end qualification remain outstanding.
+
+For offline reproduction, use the source commit recorded in [G's execution receipt](../benchmarks/gcp-klein-2026-09-06/retry-g/execution-source.json), `3aadaa8d1ebc830a0d96e75f8bcab4649773dc24`, with the retained G manifest, journal, and all 20 JPEGs copied into the same relative evidence directory. Run the following without a live endpoint; it writes a separate recomputed summary:
+
+```sh
+python scripts/benchmark_gcp_klein.py --aggregate-only \
+  --manifest benchmarks/gcp-klein-2026-09-06/retry-g/manifest.json \
+  --proof-manifest-sha256 d1b37a6842f393a30ce05d6d884881a0dc5a3d80f7f44d8d4285f6d2e78d3a07 \
+  --output benchmarks/gcp-klein-2026-09-06/retry-g/trial/renders \
+  --service bookforge-klein-qualification-20260906-g \
+  --revision bookforge-klein-qualification-20260906-g-trial
+```
+
+The expected summary SHA-256 is `2bc57f313665597c05cadc080e5d2f3756b66c29d1c4e96f71f23cd922412cff`; the journal SHA-256 is `8e97ca7b73973b3f4c6e2299810f9d92c117036da09c0f7baa9da18409e9de44`. Historical source selection matters because aggregation checks its supporting code hashes.
+
+## G visual closeout and unsettled costs
+
+The [assistant's inspection](../benchmarks/gcp-klein-2026-09-06/retry-g/visual-review-agent.json) covered all 20 original JPEGs with prompts and case labels visible; it was neither blind nor a human acceptance review. **Seven of eight unique scenes passed the frozen rubric.** The single-silver-fox case (`retained-1`) failed because an additional upper-right fox carries a second blue lantern. The same defect appears in its repeat. All six original watercolor cases passed their frozen fact checks, and all ten rendered scenes passed the assistant's watercolor-style check.
+
+The two-boat scene and child-with-book scene also contain unrequested theater curtains. The inspection records those additions separately because the frozen rubric did not prohibit curtains; it does not quietly redefine that rubric after seeing the images. The duplicated fox is already a required-fact failure. Human review remains pending, and neither style success nor depth alignment repairs incorrect scene content. **No promotion is recommended.**
+
+The [same-worker repeat comparison](../benchmarks/gcp-klein-2026-09-06/retry-g/same_gpu_repeat-comparison.json) reports 29.679 dB master PSNR and 33.865 dB depth PSNR between retained case 0's first and final images. Retained case 1's pair is byte-identical. These diagnostics leave every prior equivalence gate unchanged.
+
+The phase retains **$4.8584904 in allowances**. The latest saved [project-cost notification](../benchmarks/gcp-klein-2026-09-06/retry-g/billing-after.json) reports **$21.55 at 20:51 UTC**, before G's successful GPU run. It is lagging project-wide data, not G's settled charge. Keep the separate build estimates, closed-service holds, image-retention obligation, and outstanding billing reconciliation visible.
