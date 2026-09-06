@@ -122,13 +122,31 @@ function currentPlanKey() {
   return elements.story.value.trim();
 }
 
-function markRendererReady(expiresInSeconds, planner = null, preparedKey = null) {
+function rendererExpiry(expiresInSeconds) {
+  return Date.now() + Math.max(0, Number(expiresInSeconds) || 0) * 1000;
+}
+
+function expireRendererReadiness() {
+  rendererWarmUntil = 0;
+  elements.prewarmButton.textContent = "Prepare full path";
+  setRendererReadiness(
+    "idle",
+    preparedPlanKey === currentPlanKey() ? "Edge plan cached; renderer may be asleep" : "Renderer may be asleep",
+    "Prepare again before a judged run. Story text stays on the local edge planner.",
+  );
+}
+
+function markRendererReady(expiresAt, planner = null, preparedKey = null) {
   window.clearTimeout(rendererWarmExpiryTimer);
-  const boundedSeconds = Math.max(0, Number(expiresInSeconds) || 0);
-  rendererWarmUntil = Date.now() + boundedSeconds * 1000;
+  const boundedSeconds = Math.max(0, (expiresAt - Date.now()) / 1000);
   const minutes = Math.max(1, Math.ceil(boundedSeconds / 60));
   const planIsCurrent = planner && preparedKey === currentPlanKey();
   if (planIsCurrent) preparedPlanKey = preparedKey;
+  if (!boundedSeconds) {
+    expireRendererReadiness();
+    return false;
+  }
+  rendererWarmUntil = expiresAt;
   elements.prewarmButton.textContent = planIsCurrent ? "Full path ready" : "Prepare edge plan";
   setRendererReadiness(
     "ready",
@@ -138,15 +156,8 @@ function markRendererReady(expiresInSeconds, planner = null, preparedKey = null)
       : "Submit a story now to avoid cold-start delay.",
     {buttonDisabled: Boolean(planIsCurrent)},
   );
-  rendererWarmExpiryTimer = window.setTimeout(() => {
-    rendererWarmUntil = 0;
-    elements.prewarmButton.textContent = "Prepare full path";
-    setRendererReadiness(
-      "idle",
-      preparedPlanKey === currentPlanKey() ? "Edge plan cached; renderer may be asleep" : "Renderer may be asleep",
-      "Prepare again before a judged run. Story text stays on the local edge planner.",
-    );
-  }, boundedSeconds * 1000);
+  rendererWarmExpiryTimer = window.setTimeout(expireRendererReadiness, boundedSeconds * 1000);
+  return true;
 }
 
 async function inspectRendererReadiness() {
@@ -155,8 +166,7 @@ async function inspectRendererReadiness() {
     const payload = await response.json().catch(() => ({}));
     if (!response.ok) throw new Error(payload.detail || `Readiness failed (${response.status})`);
     if (payload.state === "prewarmed") {
-      markRendererReady(payload.expires_in_seconds);
-      return "ready";
+      return markRendererReady(rendererExpiry(payload.expires_in_seconds)) ? "ready" : "idle";
     }
     setRendererReadiness(
       "idle",
@@ -270,14 +280,13 @@ async function prewarmRenderer() {
       if (!response.ok) throw new Error(payload.detail || `Preparation failed (${response.status})`);
       return payload;
     };
-    const remainingWarmSeconds = Math.max(0, (rendererWarmUntil - Date.now()) / 1000);
-    const rendererPreparation = remainingWarmSeconds > 0
-      ? Promise.resolve({expires_in_seconds: remainingWarmSeconds})
+    const rendererPreparation = rendererWarmUntil > Date.now()
+      ? Promise.resolve({expiresAt: rendererWarmUntil})
       : post("/v1/live-scene-provider/prewarm", {
           prewarm_id: `rehearsal-${Date.now().toString(36)}`,
           include_motion: false,
           scaledown_window_seconds: 90,
-        });
+        }).then((renderer) => ({expiresAt: rendererExpiry(renderer.expires_in_seconds)}));
     const [rendererResult, plannerResult] = await Promise.allSettled([
       rendererPreparation,
       post("/v1/live-scene-planner/prepare", {
@@ -288,11 +297,15 @@ async function prewarmRenderer() {
     ]);
     const renderer = rendererResult.status === "fulfilled" ? rendererResult.value : null;
     const planner = plannerResult.status === "fulfilled" ? plannerResult.value : null;
-    if (renderer) markRendererReady(renderer.expires_in_seconds, planner, preparedKey);
+    const rendererReady = renderer && markRendererReady(renderer.expiresAt, planner, preparedKey);
     if (planner && preparedKey === currentPlanKey()) preparedPlanKey = preparedKey;
     if (renderer && !planner) {
-      elements.prewarmButton.textContent = "Retry edge plan";
-      setRendererReadiness("ready", "Renderer ready; edge plan unavailable", plannerResult.reason.message);
+      elements.prewarmButton.textContent = rendererReady ? "Retry edge plan" : "Prepare full path";
+      setRendererReadiness(
+        rendererReady ? "ready" : "idle",
+        rendererReady ? "Renderer ready; edge plan unavailable" : "Renderer may be asleep; edge plan unavailable",
+        plannerResult.reason.message,
+      );
     } else if (!renderer && planner) {
       elements.prewarmButton.textContent = "Retry renderer";
       setRendererReadiness("error", "Edge plan cached; renderer preparation failed", rendererResult.reason.message);

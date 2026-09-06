@@ -4,20 +4,30 @@ Last updated: 2026-09-05
 
 ## Latest increment — renderer latency measurement
 
-The [eastern-region comparison](renderer-region-east-2026-09-05.md) is ready using the verified
-existing image, a $5.96 reservation, and unchanged inference gates. It passed local verification
-and review; explicit temporary credential-transfer approval is pending. Its idle apps are stopped.
+The [eastern-region comparison](renderer-region-east-2026-09-05.md) completed 14 operations in
+matched AWS `us-east-1`, with six byte-identical image/depth pairs and zero request failures.
+HTTP artifact-ready median was 2.200 s versus SDK 2.611 s: 15.72% faster, below the 25% gate.
+SDK container replacement also failed the warm-bucket and stability gates. Both apps are stopped
+and the temporary credential is revoked. Reported C charges are $0.26456376, provisionally.
+
+The workbench now preserves the renderer's original warm deadline while the planner runs; slow
+planning or warm reuse can no longer extend displayed readiness. Expiry makes no extra paid call.
+Warm image inference was approximately 1.6 s on either transport, so startup and useful warm
+lifetime are the next performance decision. Promotion and automatic session prewarming remain
+gated. Updated reported usage plus unreleased holds exceeds the $35 conservative stop, so no
+additional paid dispatch is allowed until billing reconciliation restores headroom.
 
 The [corrected regional recovery](renderer-region-recovery-2026-09-05.md) completed its bounded
-attempt but timed out waiting for GPU capacity. Both apps are stopped; no images completed.
-Closed-run reservation reductions allowed it within the already approved $35 stop. A matched
-eastern-region run is the next availability hypothesis.
+attempt but timed out after a capacity wait and late warmup compilation. Both apps are stopped;
+no images completed. Closed-run reservation reductions allowed the subsequent eastern comparison
+within the already approved $35 stop.
 
 The approved [region-controlled follow-up](renderer-region-comparison-2026-09-05.md) failed before
 model initialization because a shared deployment module was missing from the container. The mount
 is fixed and an isolated import regression reproduces the failure. No images completed; both
-temporary apps are stopped. The $6.96 reservation remains held under the approved $35 workspace
-stop. The repair draft is inactive; no provider promotion or session prewarming has occurred.
+temporary apps are stopped. Its hold was later reduced to $1.89, retaining setup and the sole
+dispatched operation. The repair draft is inactive; no provider promotion or session prewarming
+has occurred.
 
 The [Jetson transport comparison](renderer-latency-results-2026-09-05.md) completed 14 bounded
 operations with identical paired artwork and no failures. HTTP artifact-ready median was 2.586 s
