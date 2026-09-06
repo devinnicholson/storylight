@@ -1,4 +1,4 @@
-"""One finite, isolated comparison of Klein transformer graph replay."""
+"""One finite L40S comparison with unchanged Klein weights and fresh regional compilation."""
 
 import hashlib
 import json
@@ -11,15 +11,14 @@ import modal
 
 DEPLOY = Path(__file__).resolve().parent
 sys.path.insert(0, str(DEPLOY))
-EXPERIMENT = "klein-denoiser-20260906-c"
+EXPERIMENT = "klein-hardware-20260906-c"
 IMAGE_ID = "im-WtXer8GjRPdgMqWAAUSMwJ"
-CACHE_ID = "f305950a0fbb4ecf89acfb80a3990351"
-MANIFEST = Path("/root/denoiser-manifest.json")
+CACHE_ID = None
+MANIFEST = Path("/root/hardware-manifest.json")
 SOURCES = (
     "klein_scene_runtime.py",
-    "klein_denoiser_graph.py",
-    "klein_denoiser_probe.py",
-    "modal_klein_denoiser.py",
+    "klein_hardware_probe.py",
+    "modal_klein_hardware.py",
 )
 
 if modal.is_local():
@@ -27,19 +26,19 @@ if modal.is_local():
     for name in SOURCES[:-1]:
         image = image.add_local_file(DEPLOY / name, f"/root/{name}")
     image = image.add_local_file(
-        DEPLOY.parent / "benchmarks/renderer-denoiser-2026-09-06/manifest.json", str(MANIFEST)
+        DEPLOY.parent / "benchmarks/renderer-hardware-2026-09-06/retry-c/manifest.json",
+        str(MANIFEST),
     )
 else:
     image = None
 
-app = modal.App("bookforge-klein-denoiser-us")
+app = modal.App("bookforge-klein-hardware")
 claims = modal.Dict.from_name(f"bookforge-{EXPERIMENT}-claims", create_if_missing=True)
-cache = modal.Volume.from_name("bookforge-klein-compile-cache-v1")
 
 
 def require(condition):
     if not condition:
-        raise ValueError("denoiser comparison differs from its authorization")
+        raise ValueError("hardware comparison differs from its authorization")
 
 
 def digest(value):
@@ -62,7 +61,7 @@ def configuration():
     )
     require(
         digest(value["expected_identity"])
-        == "91f975f485ed30aba6b85f252be21f183bab402aac441804641649bcf3f6a3f3"
+        == "893db078c92f3299b646d3ccafe1e498922ec8cf9b0d7d8f82ef455681472ca3"
     )
     for name in SOURCES:
         require(hashlib.sha256((DEPLOY / name).read_bytes()).hexdigest() == value["sources"][name])
@@ -74,7 +73,7 @@ def configuration():
 
 @app.function(
     image=image,
-    gpu="L4",
+    gpu="L40S",
     cpu=(8, 8),
     memory=(32768, 65536),
     timeout=120,
@@ -87,7 +86,6 @@ def configuration():
     single_use_containers=True,
     region="us",
     routing_region="us-east",
-    volumes={"/compiled": cache},
     include_source=True,
 )
 @modal.concurrent(max_inputs=1)
@@ -95,17 +93,17 @@ def compare():
     value = configuration()
     require(claims.put("comparison", True, skip_if_exists=True))
     started = time.perf_counter()
-    print(json.dumps({"denoiser_initialization": "start"}), flush=True)
-    from klein_denoiser_probe import run_comparison
+    print(json.dumps({"hardware_initialization": "start"}), flush=True)
+    from klein_hardware_probe import run_comparison
     from klein_scene_runtime import KleinSceneRuntime
 
     runtime = KleinSceneRuntime(Path("/models"))
     require(runtime.identity == value["expected_identity"])
-    cache_seconds = runtime.compile(Path("/compiled") / CACHE_ID)
+    cache_seconds = runtime.compile()
     print(
         json.dumps(
             {
-                "denoiser_initialization": "complete",
+                "hardware_initialization": "complete",
                 "model_load_seconds": runtime.load_seconds,
                 "startup_seconds": time.perf_counter() - started,
             }

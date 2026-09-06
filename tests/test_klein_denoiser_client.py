@@ -50,6 +50,10 @@ def test_denoiser_protocol_and_aggregate_require_exact_artifacts_and_closed_app(
     monkeypatch.setattr(benchmark, "MANIFEST", manifest)
     manifest.write_text(json.dumps(value))
     assert benchmark.manifest() == value
+    stale = {**value, "experiment_id": "klein-denoiser-20260906-a"}
+    manifest.write_text(json.dumps(stale))
+    with pytest.raises(ValueError):
+        benchmark.manifest()
     invalid = copy.deepcopy(value)
     invalid["cases"][0]["seed"] = float(invalid["cases"][0]["seed"])
     manifest.write_text(json.dumps(invalid))
@@ -162,6 +166,8 @@ def test_denoiser_protocol_and_aggregate_require_exact_artifacts_and_closed_app(
                 "case_index": index,
                 "trace_sha256": hashlib.sha256(trace).hexdigest(),
                 "analysis": analyze_trace(trace),
+                "analysis_status": "complete",
+                "analysis_error": None,
             }
         )
         (output / f"{index}-trace.json.gz").write_bytes(gzip.compress(trace, mtime=0))
@@ -169,7 +175,7 @@ def test_denoiser_protocol_and_aggregate_require_exact_artifacts_and_closed_app(
         "image_id": benchmark.cold.IMAGE_ID,
         "resources": {
             "gpu_config": {"count": 1, "gpu_type": "L4"},
-            "memory_mb": 65536,
+            "memory_mb": 32768,
             "memory_mb_max": 65536,
             "milli_cpu": 8000,
             "milli_cpu_max": 8000,
@@ -180,16 +186,16 @@ def test_denoiser_protocol_and_aggregate_require_exact_artifacts_and_closed_app(
         "max_concurrent_inputs": 1,
         "startup_timeout_secs": 30,
         "timeout_secs": 120,
-        "cloud_provider_str": "aws",
+        "cloud_provider_str": "",
         "routing_region": "us-east",
-        "scheduler_placement": {"regions": ["us-east"]},
+        "scheduler_placement": {"regions": ["us"]},
     }
     files = {
         "result.json": result,
         "authorization.json": {
             "manifest_sha256": benchmark.sha(manifest),
-            "reserved_usd": 0.27,
-            "work_seconds": 120,
+            "reserved_usd": 0.25,
+            "work_seconds": 180,
             "cleanup_seconds": 30,
             "ledger_sha256": "a" * 64,
         },
@@ -219,6 +225,59 @@ def test_denoiser_protocol_and_aggregate_require_exact_artifacts_and_closed_app(
     assert summary["verified_jpegs"] == 28 and summary["all_images_exact"] is True
     assert summary["median_runtime_reduction_fraction"] == 0.5
     assert summary["production_promoted"] is False
+    assert summary["diagnostics_complete"] is True
+    incomplete = copy.deepcopy(result)
+    incomplete["profiles"][0].update(
+        trace_sha256=None,
+        analysis=None,
+        analysis_status="incomplete",
+        analysis_error={"stage": "trace_export", "type": "RuntimeError"},
+    )
+    malformed = b'{"traceEvents":[],"traceEvents":[]}'
+    incomplete["profiles"][1].update(
+        trace_sha256=hashlib.sha256(malformed).hexdigest(),
+        analysis=None,
+        analysis_status="incomplete",
+        analysis_error={"stage": "trace_analysis", "type": "ValueError"},
+    )
+    (output / "0-trace.json.gz").unlink()
+    (output / "1-trace.json.gz").write_bytes(gzip.compress(malformed, mtime=0))
+    (output / "result.json").write_text(json.dumps(incomplete))
+    partial_diagnostics = benchmark.aggregate(output)
+    assert partial_diagnostics["diagnostics_complete"] is False
+    assert partial_diagnostics["median_runtime_reduction_fraction"] == 0.5
+    assert partial_diagnostics["verified_jpegs"] == 28
+    unmatched_trace = json.dumps(
+        {
+            "traceEvents": [
+                event
+                for event in events
+                if not (event.get("cat") == "kernel" and event["args"]["correlation"] == 0)
+            ]
+        }
+    ).encode()
+    incomplete_attribution = copy.deepcopy(result)
+    incomplete_attribution["profiles"][0].update(
+        trace_sha256=hashlib.sha256(unmatched_trace).hexdigest(),
+        analysis=analyze_trace(unmatched_trace),
+    )
+    (output / "0-trace.json.gz").write_bytes(gzip.compress(unmatched_trace, mtime=0))
+    (output / "1-trace.json.gz").write_bytes(gzip.compress(trace, mtime=0))
+    (output / "result.json").write_text(json.dumps(incomplete_attribution))
+    assert benchmark.aggregate(output)["diagnostics_complete"] is False
+    for index in range(2):
+        (output / f"{index}-trace.json.gz").write_bytes(gzip.compress(trace, mtime=0))
+    (output / "result.json").write_text(json.dumps(result))
+    for cloud, region in (
+        ("CLOUD_PROVIDER_AWS", "us-west-2"),
+        ("CLOUD_PROVIDER_GCP", "us-central1"),
+        ("CLOUD_PROVIDER_OCI", "us-ashburn-1"),
+    ):
+        alternate = copy.deepcopy(result)
+        alternate["location"].update(cloud=cloud, region=region)
+        (output / "result.json").write_text(json.dumps(alternate))
+        assert benchmark.aggregate(output)["all_images_exact"]
+    (output / "result.json").write_text(json.dumps(result))
     mutations = (
         ("result.json", lambda v: v.update(status="failed", failure_stage="capture")),
         ("result.json", lambda v: v["records"][3].update(case_index=0.0)),
@@ -227,9 +286,14 @@ def test_denoiser_protocol_and_aggregate_require_exact_artifacts_and_closed_app(
         ("result.json", lambda v: v["records"][3]["metrics"].update(total_seconds=float("nan"))),
         ("shutdown.json", lambda v: v["app"].update(state="deployed", tasks="1")),
         ("shutdown.json", lambda v: v.update(active_containers=1)),
-        ("supervisor.json", lambda v: v.update(total_wall_seconds=151)),
+        ("supervisor.json", lambda v: v.update(total_wall_seconds=211)),
         ("deployment-check.json", lambda v: v.update(max_concurrent_inputs=2)),
         ("dispatch.json", lambda v: v.update(calls=2)),
+        ("result.json", lambda v: v["location"].update(region="eu-west-1")),
+        ("deployment-check.json", lambda v: v["resources"].update(memory_mb=16384)),
+        ("deployment-check.json", lambda v: v["resources"].update(memory_mb_max=32768)),
+        ("deployment-check.json", lambda v: v["scheduler_placement"].update(regions=["eu"])),
+        ("deployment-check.json", lambda v: v.update(cloud_provider_str="aws")),
     )
     for name, mutate in mutations:
         changed = copy.deepcopy(files[name])

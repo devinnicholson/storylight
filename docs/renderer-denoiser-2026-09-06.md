@@ -1,89 +1,89 @@
 # Denoiser optimization
 
-Status: implemented and independently reviewed; cloud execution blocked before process start.
-All 941 Python tests and four JavaScript suites pass. There is no GPU timing, capture-success
-or speed-gain result from this candidate yet.
+The whole-transformer CUDA Graph trial completed with **28 exact JPEGs**, but failed the
+5% speed screen: median paired runtime reduction was **0.449%**. No production renderer
+changed. The recovered baseline traces show that matrix multiplication dominates this
+workload, with little idle space between denoiser kernels.
 
-The conditioning trial located the dominant warm cost in the transformer: about 1.35 seconds
-across four calls. This experiment tests whole-transformer CUDA Graph replay around the existing
-regional compiler kernels. It changes neither weights nor the watercolor prompt treatment.
+## Experiment and outcomes
 
-## Why this candidate
+The candidate wraps the existing regional compiler kernels in two independent CUDA Graph
+pools. It updates every input tensor before replay and clones each returned output. Capture
+forbids recompilation; measurements cannot silently recapture or fall back. Weights, BF16,
+1024×576 resolution, four steps, guidance 1.0, and the frozen 128/256-token watercolor cases
+remain fixed. Earlier regional `reduce-overhead` had failed with overwritten output storage;
+regional `default` is the established baseline.
 
-The earlier full-transformer compiler trial already improved on eager execution. Repeating that
-comparison would not establish a gain over today's regional compiler baseline. Regional
-`reduce-overhead` failed with overwritten output storage; regional `default` is already used.
-The new adapter owns two independent graph pools, updates every input tensor before replay,
-and clones each returned output so later replays cannot overwrite it. Capture forbids compiler
-recompilation and measurements cannot silently capture or fall back to ordinary execution.
+The fixed schedule is two baseline warmups, two separately profiled baseline renders, two
+candidate preparation renders, then eight unprofiled measurements: 128 B/C, 256 C/B, 128 C/B,
+256 B/C. Both measured variants run after profiling has stopped. The speed screen requires
+at least 5% median paired runtime reduction, positive median reduction in each bucket, no
+more than 2% regression in the observed maximum, and peak reserved memory below 23 GiB.
+All fourteen master/depth pairs must match historical JPEG hashes exactly.
 
-This follows [PyTorch 2.8's capture and static-storage requirements](https://docs.pytorch.org/docs/2.8/notes/cuda.html#cuda-graphs)
-and [NVIDIA's guidance on graph scope and profiling](https://docs.nvidia.com/dl-cuda-graph/latest/troubleshooting/performance-issues.html).
-Graphs reduce launch overhead; they do not accelerate an already saturated GPU's arithmetic.
-The [Meta/Hugging Face Flux Fast work](https://pytorch.org/blog/presenting-flux-fast-making-flux-go-brrr-on-h100s/)
-combines compilation, graph execution and attention changes. Its Flux.1/H100 results are not
-performance predictions for Klein/L4.
+| Attempt | Observed outcome | Evidence |
+| --- | --- | --- |
+| A | Three renders and six exact JPEGs; failed at trace processing before graph capture. Worker time 39.997 s; supervisor total 67.383 s. Raw traces were lost, so A's exact diagnostic cause remains unknown. | [Result](../benchmarks/renderer-denoiser-2026-09-06/failed-a/result.json), [platform audit](../benchmarks/renderer-denoiser-2026-09-06/failed-a/platform-audit.json) |
+| B | Provider capacity wait consumed the work window. Initialization completed and the first warmup started, but cancellation returned no images. No speed result. | [Platform audit](../benchmarks/renderer-denoiser-2026-09-06/capacity-b/platform-audit.json), [supervisor](../benchmarks/renderer-denoiser-2026-09-06/capacity-b/supervisor.json) |
+| C | Broader US placement obtained one GCP `us-east1` L4. All 14 renders and 28 JPEGs verified; two graphs captured and each replayed 12 times. Peak reserved memory 18.186 GiB. Supervisor total 95.801 s. | [Summary](../benchmarks/renderer-denoiser-2026-09-06/graph-c/summary.json), [result](../benchmarks/renderer-denoiser-2026-09-06/graph-c/result.json) |
 
-Pinned upstream inspection found that Klein's twenty single-stream blocks already combine
-their QKV and MLP projections. Only five dual-stream blocks remain candidates for separate
-QKV fusion. Native SDPA already chooses optimized attention kernels; a kernel profile must
-identify the selected implementation before replacing it. No approximate denoising cache,
-quantization, smaller resolution or fewer steps is included here.
+C's four paired runtime reductions were **3.197%, 0.566%, 0.332%, and −0.270%**.
+Bucket reductions were 1.765% for 128 and 0.148% for 256. Three small wins and one loss
+support neither the frozen speed threshold nor a production promotion. Runtime includes
+conditioning, denoising, VAE, depth and JPEG encoding; planning, transport and display are
+excluded. The supervisor total also includes deployment and cleanup, not per-image latency.
+All three attempts have retained shutdown receipts showing stopped apps and zero containers.
 
-## Frozen screen
+Initial commands were blocked before dispatch by automatic approval review. The user then
+explicitly approved the Modal upload; [that approval](../benchmarks/renderer-denoiser-2026-09-06/approved-dispatch.json)
+and each attempt's separate manifest, funding, dispatch and shutdown receipts remain retained.
+There were no automatic retries or image rerolls. Historical failures were not overwritten.
 
-One isolated AWS us-east-1 L4, the existing baked weights and compiler cache, BF16, 1024×576,
-four steps, guidance 1.0, and the frozen 128/256-token watercolor cases:
+## Trace repair and measured bottleneck
 
-1. Two ordinary warmups, one per token bucket.
-2. Two separately profiled baseline renders, with CPU and CUDA activities, no tensor shapes,
-   values, stack traces or memory profiling.
-3. Two preparation renders, capturing one transformer graph per bucket.
-4. Eight unprofiled measured renders in paired alternating order: 128 B/C, 256 C/B, 128 C/B,
-   256 B/C. Both measured variants run after the profiler has stopped.
+C retained both raw traces even though its online analysis failed. Kineto emits each
+`record_function` name as both a CPU `user_annotation` and an asynchronous
+`gpu_user_annotation`. The old analyzer selected names alone, found eight ranges, and refused
+because it expected four. The repaired offline analyzer selects the four CPU annotations,
+then correlates CUDA runtime/driver launches with kernel events. A synthetic regression now
+includes both annotation types. This establishes C's exact failure; it does not recover A's
+missing trace.
 
-All fourteen master/depth pairs must match historical JPEG hashes exactly. The speed screen
-requires at least 5% median paired runtime reduction, positive median reduction in both buckets,
-no more than 2% regression in the observed maximum, and peak reserved memory below 23 GiB.
-This is a small engineering screen, not a production tail-latency guarantee or reference-image
-qualification. Full runtime includes conditioning, denoising, VAE, depth and JPEG encoding;
-planning, transport and presentation are outside that boundary.
+Both repaired traces attribute **1,708 of 1,708 kernels**, with zero unmatched or ambiguous
+launch correlations. The original C result and summary still say diagnostics incomplete;
+the separate [128-token analysis](../benchmarks/renderer-denoiser-2026-09-06/graph-c/offline-analysis-0.json)
+and [256-token analysis](../benchmarks/renderer-denoiser-2026-09-06/graph-c/offline-analysis-1.json)
+record the offline repair against the original raw hashes.
 
-The profiler correlates launch APIs with kernels in four transformer ranges. Kernel unions,
-spans, launch durations and delayed starts overlap; they must not be added or used to label
-all gaps as CPU overhead. Incomplete correlations remain explicit. Profiles run before capture
-so a failed optimization still returns useful diagnostics. Failed or partial evidence cannot
-produce a passing speed summary.
+| Profiled baseline, four denoiser calls | 128 tokens | 256 tokens |
+| --- | ---: | ---: |
+| Kernel busy time | 1.324681 s | 1.396449 s |
+| Gaps within kernel spans | 0.006064 s | 0.007613 s |
+| Matrix multiplication kernel time | 1.062757 s (80.23%) | 1.107092 s (79.28%) |
+| FlashAttention kernel time | 0.149766 s (11.31%) | 0.172262 s (12.34%) |
 
-## Cost and execution bounds
+The traces contain 100 flash SDPA calls per image; native attention is already using the
+flash path. Kernel families are classified from names, with Triton reduction/pointwise
+prefixes taking precedence over fused-operation names containing “attention.” CPU launches
+queue far ahead of later GPU work. Launch-to-kernel delays therefore indicate queued work,
+not equivalent GPU idle time. The profiled measurements can perturb execution and must not
+be substituted for the unprofiled speed comparison. CPU ranges, launch durations and GPU
+intervals overlap and are not additive.
 
-The existing approved paid allowance stays $8, with the existing $2 reserve and $36 workspace
-stop. A proposed $0.27 hold covers two resource slots for 150 seconds at $0.00082054 per second,
-plus $0.02 extra margin: $0.266162. The slots include the regional pricing margin; this is a
-conservative local bound, not a provider-enforced cap. No image build, new weights, platform
-snapshot, retained GPU or automatic retry is configured.
+The next supported direction is a matched faster-BF16-device comparison or a bounded GEMM
+selection experiment, with the same fidelity checks and separately reported compilation cost.
+More graph launch optimization has little demonstrated headroom. This is consistent with
+[NVIDIA's explanation of graph performance limits](https://docs.nvidia.com/dl-cuda-graph/latest/troubleshooting/performance-issues.html)
+and [PyTorch's capture requirements](https://docs.pytorch.org/docs/2.8/notes/cuda.html#cuda-graphs);
+it is not a prediction of a particular replacement GPU's speed or image equivalence.
 
-The parent starts its 120-second work timer before deployment and allows 30 seconds for cleanup.
-The one-shot deployment has minimum zero, maximum one container, one concurrent input, fixed
-CPU/RAM limits and a durable claim. Existing closed-run receipts and fresh attributed charges
-are reconciled before reserving; they are not described as settled refunds. Shutdown must show
-zero tasks and containers. Exact funding and result receipts accompany any executed run.
+## Retained trace review
 
-## Execution status
-
-Automatic approval review refused the deployment twice, including after the upload scope was
-verified. Its stated reason was that explicit permission to export experiment source and
-benchmark data to Modal was required. The payload consists of the four experiment/runtime
-Python modules and a manifest whose two synthetic prompts match commit `26df35b` exactly;
-it contains no private story passages, audio, user images or credentials. Model weights are
-already present in the existing remote image and are not newly uploaded or downloaded.
-
-Neither command started a process, deployment or GPU call. The $0.27 reservation was released
-using the existing no-dispatch release path. The execution manifest is back in draft state;
-the blocked authorization and source hashes are retained separately. The completed-run billing
-reconciliation remains intact. Further cloud execution needs explicit upload approval; it must
-not be attempted through another command or provider to bypass the rejection.
-
-The [execution receipt](../benchmarks/renderer-denoiser-2026-09-06/execution-status.json) and
-[frozen draft](../benchmarks/renderer-denoiser-2026-09-06/manifest-draft.json) preserve the ready
-experiment. No live renderer or Jetson settings changed.
+The compressed traces total **1,410,507 bytes** (20,488,402 bytes expanded). Inspection found
+kernel/operator names, numeric launch dimensions, timing/correlation identifiers, L4 device
+properties, trace IDs and generated `/tmp/bookforge-denoiser-…/trace.json` names. No prompt
+text, private story source, tensor values, user home paths, email addresses, URLs or credential
+patterns were found. Shapes/stack/memory profiling were disabled; kernel launch dimensions
+remain present. These two synthetic-run traces can be retained for reproducibility, with their
+runtime metadata understood. This review is specific to these artifacts, not a blanket claim
+that arbitrary profiler exports contain no sensitive data.

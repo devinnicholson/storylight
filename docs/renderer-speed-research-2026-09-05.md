@@ -1,8 +1,17 @@
 # Renderer speed: evidence and next experiments
 
-Preserve the restored watercolor paper-theater treatment, Klein 4B, BF16, L4, 1024×576,
+Preserve the restored watercolor paper-theater treatment, Klein 4B, BF16, 1024×576,
 four steps and guidance 1.0. Speed work must preserve factual content, continuity and legibility.
 The flat illustration trial did not qualify the restored style. No optimization below is promoted.
+
+The September 6 [same-noise L40S comparison](../benchmarks/renderer-latents-2026-09-06/README.md)
+measured warm complete renders at **0.55–0.58 seconds**, against the retained L4
+baseline of **1.82–1.87 seconds**. All ten replays verified identical starting
+noise and position IDs. The detailed watercolor treatment and two-fox composition
+were retained in the inspected first case, but every image failed the frozen
+40 dB pixel-similarity gate. L4 remains the live setting. The next decision is a
+broader visual-fidelity qualification of this faster device, rather than claiming
+pixel equivalence or repeating the failed launch-overhead experiments.
 
 ## Measured boundaries
 
@@ -129,8 +138,10 @@ the settled experiment charge. The full reservation remains held.
 
 The [conditioning comparison completed September 6](renderer-conditioning-2026-09-06.md):
 all tensors and images matched, but median paired runtime changed only 0.077%. It is not
-promoted. Stage timing identifies the transformer as the dominant warm computation; investigate
-its kernel and launch costs next. Keep bounded session preparation as the primary defense
+promoted. The subsequent [denoiser graph screen](renderer-denoiser-2026-09-06.md) preserved
+all 28 JPEGs but improved median paired runtime only 0.449%, below its 5% threshold. Recovered
+traces attribute roughly 79–80% of denoiser kernel time to matrix multiplication, with little
+idle space; arithmetic throughput is the next measured target. Keep bounded session preparation as the primary defense
 against cold starts; another snapshot or parallel-loading rollout is not supported here.
 
 Verification: 929 Python tests, all four JavaScript suites, scoped Ruff and diff checks passed.

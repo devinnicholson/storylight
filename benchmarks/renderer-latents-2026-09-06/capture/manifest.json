@@ -1,4 +1,5 @@
 {
+  "artifacts": [],
   "cache_id": "f305950a0fbb4ecf89acfb80a3990351",
   "cases": [
     {
@@ -46,19 +47,21 @@
     "triton": "3.4.0",
     "width": 1024
   },
-  "experiment_id": "klein-denoiser-20260906-c",
-  "expires_at": 1788720020,
+  "experiment_id": "klein-latents-capture-20260906-a",
+  "expires_at": 1788726351,
   "image_id": "im-WtXer8GjRPdgMqWAAUSMwJ",
   "maximum_calls": 1,
+  "phase": "capture",
   "schema_version": 1,
   "sources": {
-    "client": "613fc7d4b69b3fa5cd8c3d9ca0849a2930f0b4c6f7bd2a73d630eff4b2609518",
+    "client": "5f2cf92dad0e320748fc14afae1ce44767d466cb10f7d7fc8ce569e4f634f759",
     "cold_helpers": "944b8f826b126d700090819e3caa4076e4b0462c09bacada723df5991862a3af",
-    "klein_denoiser_graph.py": "909f89e47a581c05f3b14899fd4ec0960cce521c8e28e05842ac1646567c3528",
-    "klein_denoiser_probe.py": "e3864d5a31eab9aefecebdb6290bba1c4f4139011f5ea812b5e0dd79700f2666",
+    "hardware_helpers": "78c819cf29761a30398a7da755c9792cd5ffe71efbe1d2991fde023d9d66f557",
+    "klein_latent_probe.py": "2d018dbcfe5240f57ada44e9c3dfabe2b4da4845e77511735bfbf94b65cff987",
     "klein_scene_runtime.py": "f87ab40c8b6a1ed457a10f1bce6bf92e07075eed40c0fdb224ba3ed18c5c3441",
+    "lifecycle": "186348696164db523a69ccfd33d37f49f016dde439c37d4b6426daed04d06165",
     "loading_helpers": "83bb73eda696052f3690bcb9366067fb9059b770bab91346645faf74e21ff4af",
-    "modal_klein_denoiser.py": "c2bbc08c6b71e791fe0006cfa81bea86b93b8d6687e15a0ec716206eaf490f72",
+    "modal_klein_latents.py": "e267e8b9e55d9ba3ae19b9ed4221c8358b02901dc836f72239f1c6638aed845b",
     "transport": "23b95a6bae7bf376327df4ffab7e41b98fe0dd01038e0e010fe8e278742bf84f"
   },
   "status": "authorized"

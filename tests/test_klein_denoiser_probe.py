@@ -30,6 +30,12 @@ def trace():
     for index in range(4):
         start = index * 1000
         events.append(event(f"{probe.RANGE_PREFIX}{index}", "user_annotation", start, 100))
+        # Kineto mirrors record_function labels onto asynchronous GPU annotations.
+        events.append(
+            event(
+                f"{probe.RANGE_PREFIX}{index}", "gpu_user_annotation", start + 200, 40, device=True
+            )
+        )
         events.append(event(probe.SDPA_OPERATORS[0], "cpu_op", start + 1, 10))
         for offset, (name, category) in enumerate(
             (("cudaLaunchKernel", "cuda_runtime"), ("cuLaunchKernelEx", "cuda_driver"))
@@ -51,6 +57,9 @@ def trace():
 
 
 def test_trace_correlates_asynchronous_driver_launches_without_adding_overlaps():
+    assert (
+        probe.kernel_family("triton_red_fused__scaled_dot_product_flash_attention") == "reduction"
+    )
     raw = trace()
     report = probe.analyze_trace(raw)
     assert report["launch_count"] == 8 and report["launch_attribution_complete"] is True
@@ -92,6 +101,8 @@ def test_fixed_comparison_retains_profiles_on_capture_failure_and_restores_hooks
     class Adapter:
         def __init__(self, target):
             assert target is transformer
+            if state.failure == "setup":
+                raise ValueError("private source setup")
             self.replays = {128: 0, 256: 0}
 
         @contextmanager
@@ -137,7 +148,12 @@ def test_fixed_comparison_retains_profiles_on_capture_failure_and_restores_hooks
 
         def export_chrome_trace(self, path):
             assert not state.profiling
-            Path(path).write_bytes(trace())
+            if state.failure == "export":
+                raise RuntimeError("private source export")
+            data = (
+                b'{"traceEvents":[],"traceEvents":[]}' if state.failure == "analysis" else trace()
+            )
+            Path(path).write_bytes(data)
 
     def profile(**kwargs):
         assert kwargs == {
@@ -210,6 +226,7 @@ def test_fixed_comparison_retains_profiles_on_capture_failure_and_restores_hooks
     assert state.ranges == [f"{probe.RANGE_PREFIX}{i}" for _ in range(2) for i in range(4)]
     for failure, count, retained, stage in (
         ("capture", 4, 2, "render"),
+        ("setup", 4, 2, "graph_setup"),
         ("forward", 3, 0, "render"),
         ("jpeg", 1, 0, "verification"),
     ):
@@ -220,4 +237,25 @@ def test_fixed_comparison_retains_profiles_on_capture_failure_and_restores_hooks
         assert "forward" not in vars(transformer)
         assert transformer.compiled_block is original_block
         assert state.mode is None and state.profiling is False
+    for failure in ("analysis", "export"):
+        state.count, state.failure = 0, failure
+        incomplete = probe.run_comparison(runtime, cases)
+        assert incomplete["status"] == "complete" and state.count == 14
+        assert len(incomplete["records"]) == 14
+        assert [r["replays"] for r in incomplete["graph_report"]["graphs"]] == [12, 12]
+        for row in incomplete["profiles"]:
+            assert row["analysis"] is None and row["analysis_status"] == "incomplete"
+            assert row["analysis_error"] == {
+                "stage": "trace_analysis" if failure == "analysis" else "trace_export",
+                "type": "ValueError" if failure == "analysis" else "RuntimeError",
+            }
+            if failure == "analysis":
+                raw = gzip.decompress(row["trace_gzip"])
+                assert raw == b'{"traceEvents":[],"traceEvents":[]}'
+                assert hashlib.sha256(raw).hexdigest() == row["trace_sha256"]
+                with pytest.raises(ValueError):
+                    probe.analyze_trace(raw)
+            else:
+                assert row["trace_gzip"] is None and row["trace_sha256"] is None
+        assert "forward" not in vars(transformer) and not state.profiling
     assert "private source" not in capsys.readouterr().out

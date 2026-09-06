@@ -11,7 +11,7 @@ from types import SimpleNamespace
 import pytest
 
 
-def test_denoiser_deployment_admits_one_pinned_comparison(tmp_path, monkeypatch):
+def test_hardware_deployment_admits_one_pinned_comparison(tmp_path, monkeypatch):
     options, concurrency, mounts, claimed, imports = {}, {}, [], set(), []
 
     class Image:
@@ -26,7 +26,7 @@ def test_denoiser_deployment_admits_one_pinned_comparison(tmp_path, monkeypatch)
 
     class App:
         def __init__(self, name):
-            assert name == "bookforge-klein-denoiser-us"
+            assert name == "bookforge-klein-hardware"
 
         def function(self, **kwargs):
             options.update(kwargs)
@@ -56,13 +56,13 @@ def test_denoiser_deployment_admits_one_pinned_comparison(tmp_path, monkeypatch)
         ),
     )
     root = Path(__file__).resolve().parents[1]
-    source = root / "deploy/modal_klein_denoiser.py"
+    source = root / "deploy/modal_klein_hardware.py"
     compare = runpy.run_path(str(source))["compare"]
     g = compare.__globals__
     assert concurrency == {"max_inputs": 1}
     assert options == dict(
         image=options["image"],
-        gpu="L4",
+        gpu="L40S",
         cpu=(8, 8),
         memory=(32768, 65536),
         timeout=120,
@@ -76,13 +76,12 @@ def test_denoiser_deployment_admits_one_pinned_comparison(tmp_path, monkeypatch)
         region="us",
         routing_region="us-east",
         include_source=True,
-        volumes={"/compiled": "bookforge-klein-compile-cache-v1"},
     )
     assert mounts == [
         *((root / "deploy" / name, f"/root/{name}") for name in g["SOURCES"][:-1]),
         (
-            root / "benchmarks/renderer-denoiser-2026-09-06/manifest.json",
-            "/root/denoiser-manifest.json",
+            root / "benchmarks/renderer-hardware-2026-09-06/retry-c/manifest.json",
+            "/root/hardware-manifest.json",
         ),
     ]
     frozen = json.loads(
@@ -97,7 +96,7 @@ def test_denoiser_deployment_admits_one_pinned_comparison(tmp_path, monkeypatch)
         maximum_calls=1,
         expires_at=int(time.time()) + 600,
         cases=frozen["cases"],
-        expected_identity=frozen["expected_identity"],
+        expected_identity={**frozen["expected_identity"], "gpu": "NVIDIA L40S"},
         sources={
             name: hashlib.sha256((root / "deploy" / name).read_bytes()).hexdigest()
             for name in g["SOURCES"]
@@ -110,15 +109,27 @@ def test_denoiser_deployment_admits_one_pinned_comparison(tmp_path, monkeypatch)
     monkeypatch.setenv("MODAL_TASK_ID", "synthetic-task")
     original_import = builtins.__import__
 
-    def fail_runtime(model_root):
+    compilation = []
+
+    def fail_comparison(runtime, cases):
+        assert runtime.identity == manifest["expected_identity"] and cases == manifest["cases"]
+        assert compilation == [None]
+        raise RuntimeError("synthetic comparison failure")
+
+    def fresh_compile(cache_path=None):
+        compilation.append(cache_path)
+        return 0.01
+
+    def fake_runtime(model_root):
         assert model_root == Path("/models") and claimed == {"comparison"}
-        raise RuntimeError("synthetic initialization failure")
+        return SimpleNamespace(identity=manifest["expected_identity"], load_seconds=1,
+                               compile=fresh_compile)
 
     def fake_import(name, *args, **kwargs):
-        if name in ("klein_denoiser_probe", "klein_scene_runtime"):
+        if name in ("klein_hardware_probe", "klein_scene_runtime"):
             assert claimed == {"comparison"}
             imports.append(name)
-            return SimpleNamespace(run_comparison=None, KleinSceneRuntime=fail_runtime)
+            return SimpleNamespace(run_comparison=fail_comparison, KleinSceneRuntime=fake_runtime)
         assert name not in ("torch", "diffusers", "transformers")
         return original_import(name, *args, **kwargs)
 
@@ -126,7 +137,7 @@ def test_denoiser_deployment_admits_one_pinned_comparison(tmp_path, monkeypatch)
     invalids = [
         {**manifest, **change}
         for change in (
-            {"experiment_id": "klein-denoiser-20260906-a"},
+            {"experiment_id": "klein-hardware-other"},
             {"expires_at": 1},
             {"expires_at": int(time.time()) + 8000},
             {"status": "draft"},
@@ -164,9 +175,9 @@ def test_denoiser_deployment_admits_one_pinned_comparison(tmp_path, monkeypatch)
         monkeypatch.setenv("MODAL_REGION", region)
         assert g["configuration"]() == manifest
     assert not claimed and not imports
-    with pytest.raises(RuntimeError, match="synthetic initialization failure"):
+    with pytest.raises(RuntimeError, match="synthetic comparison failure"):
         compare()
-    assert imports == ["klein_denoiser_probe", "klein_scene_runtime"]
+    assert imports == ["klein_hardware_probe", "klein_scene_runtime"]
     with pytest.raises(ValueError):
         compare()
     assert len(imports) == 2 and claimed == {"comparison"}

@@ -56,10 +56,10 @@ def union_duration(intervals):
 def kernel_family(name):
     name = name.lower()
     for family, fragments in (
-        ("attention", ("flash", "fmha", "attention")),
-        ("matrix_multiply", ("gemm", "matmul", "cublas", "cutlass")),
         ("reduction", ("triton_red", "reduce", "reduction")),
         ("elementwise", ("triton_poi", "elementwise", "vectorized")),
+        ("attention", ("flash", "fmha", "attention")),
+        ("matrix_multiply", ("gemm", "matmul", "cublas", "cutlass")),
     ):
         if any(fragment in name for fragment in fragments):
             return family
@@ -96,7 +96,11 @@ def analyze_trace(raw):
         )
         complete.append(event)
     ranges = sorted(
-        (event for event in complete if event["name"].startswith(RANGE_PREFIX)),
+        (
+            event
+            for event in complete
+            if event.get("cat") == "user_annotation" and event["name"].startswith(RANGE_PREFIX)
+        ),
         key=lambda event: event["ts"],
     )
     require([event["name"] for event in ranges] == [f"{RANGE_PREFIX}{index}" for index in range(4)])
@@ -239,7 +243,7 @@ def run_comparison(runtime, cases):
 
     require(isinstance(cases, list) and len(cases) == 2)
     require([case["expected_bucket"] for case in cases] == [128, 256])
-    adapter, records, profiles = DenoiserGraphAdapter(runtime.pipe.transformer), [], []
+    adapter, records, profiles = None, [], []
     ordinal, stage = None, "setup"
 
     def event(state):
@@ -267,6 +271,10 @@ def run_comparison(runtime, cases):
                 ):
                     metrics, master, depth = runtime.render(case["prompt"], case["seed"])
             else:
+                if phase == "preparation" and adapter is None:
+                    stage = "graph_setup"
+                    adapter = DenoiserGraphAdapter(runtime.pipe.transformer)
+                    stage = "render"
                 context = (
                     adapter.capture()
                     if phase == "preparation"
@@ -298,21 +306,58 @@ def run_comparison(runtime, cases):
                 }
             )
             if phase == "profiled":
-                stage = "trace"
-                with tempfile.TemporaryDirectory(prefix="bookforge-denoiser-") as directory:
-                    path = Path(directory) / "trace.json"
-                    profiler.export_chrome_trace(str(path))
-                    os.chmod(path, 0o600)
-                    require(path.stat().st_size <= MAX_TRACE_BYTES)
-                    raw = path.read_bytes()
-                profiles.append(
-                    {
-                        "case_index": case_index,
-                        "trace_sha256": hashlib.sha256(raw).hexdigest(),
-                        "trace_gzip": gzip.compress(raw, mtime=0),
-                        "analysis": analyze_trace(raw),
-                    }
-                )
+                profile_row = {
+                    "case_index": case_index,
+                    "trace_sha256": None,
+                    "trace_gzip": None,
+                    "analysis": None,
+                    "analysis_status": "incomplete",
+                    "analysis_error": None,
+                }
+                profiles.append(profile_row)
+                try:
+                    stage = "trace_export"
+                    with tempfile.TemporaryDirectory(prefix="bookforge-denoiser-") as directory:
+                        path = Path(directory) / "trace.json"
+                        profiler.export_chrome_trace(str(path))
+                        stage = "trace_read"
+                        os.chmod(path, 0o600)
+                        require(path.stat().st_size <= MAX_TRACE_BYTES)
+                        raw = path.read_bytes()
+                        # Retain bytes before any interpretation; malformed traces are evidence.
+                        stage = "trace_compress"
+                        profile_row["trace_sha256"] = hashlib.sha256(raw).hexdigest()
+                        profile_row["trace_gzip"] = gzip.compress(raw, mtime=0)
+                    stage = "trace_analysis"
+                    profile_row["analysis"] = analyze_trace(raw)
+                    profile_row["analysis_status"] = "complete"
+                except Exception as error:
+                    error_type = type(error).__name__
+                    if error_type not in {
+                        "ValueError",
+                        "TypeError",
+                        "KeyError",
+                        "IndexError",
+                        "AttributeError",
+                        "JSONDecodeError",
+                        "OSError",
+                        "RuntimeError",
+                        "MemoryError",
+                    }:
+                        error_type = "OtherError"
+                    profile_row["analysis_error"] = {"stage": stage, "type": error_type}
+                    print(
+                        json.dumps(
+                            {
+                                "denoiser_diagnostic_failure": {
+                                    "ordinal": ordinal,
+                                    "stage": stage,
+                                    "type": error_type,
+                                }
+                            }
+                        ),
+                        flush=True,
+                    )
             event("verified")
         stage = "graph_report"
         report = adapter.report()
@@ -330,7 +375,14 @@ def run_comparison(runtime, cases):
             "failure_stage": stage,
             "records": records,
             "profiles": profiles,
-            "graph_report": adapter.report(),
+            "graph_report": adapter.report()
+            if adapter is not None
+            else {
+                "graph_count": 0,
+                "capture_warmup_calls": 0,
+                "captured_forward_calls": 0,
+                "graphs": [],
+            },
         }
     return {
         "status": "complete",

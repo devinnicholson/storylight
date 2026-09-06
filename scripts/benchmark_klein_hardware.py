@@ -1,13 +1,11 @@
 #!/usr/bin/env python3
-"""Preflight, supervise and verify one finite denoiser comparison."""
+"""Preflight, supervise and verify one finite hardware comparison."""
 
 from __future__ import annotations
 
 import argparse
 import asyncio
-import gzip
 import hashlib
-import io
 import json
 import os
 import re
@@ -24,22 +22,14 @@ sys.path[:0] = [str(ROOT), str(ROOT / "src")]
 from bookforge.klein_latency_client import TIMINGS, LatencyClient, finite  # noqa: E402
 from scripts import benchmark_klein_loading as loading  # noqa: E402
 
-APP = "bookforge-klein-denoiser-us"
-EXPERIMENT = "klein-denoiser-20260906-c"
-MANIFEST = ROOT / "benchmarks/renderer-denoiser-2026-09-06/manifest.json"
-DEPLOYMENT = ROOT / "deploy/modal_klein_denoiser.py"
+APP = "bookforge-klein-hardware"
+EXPERIMENT = "klein-hardware-20260906-c"
+MANIFEST = ROOT / "benchmarks/renderer-hardware-2026-09-06/retry-c/manifest.json"
+DEPLOYMENT = ROOT / "deploy/modal_klein_hardware.py"
 LEDGER = loading.LEDGER
 ATTEMPT = LEDGER.parent / f"{EXPERIMENT}-attempt.json"
-WORK_SECONDS, CLEANUP_SECONDS, HOLD_USD = 180, 30, 0.25
-SCHEDULE = (
-    (0, "baseline"), (1, "baseline"),
-    (0, "baseline"), (1, "baseline"),
-    (0, "candidate"), (1, "candidate"),
-    (0, "baseline"), (0, "candidate"),
-    (1, "candidate"), (1, "baseline"),
-    (0, "candidate"), (0, "baseline"),
-    (1, "baseline"), (1, "candidate"),
-)
+WORK_SECONDS, CLEANUP_SECONDS, HOLD_USD = 210, 30, 0.46
+SCHEDULE = (0, 1) * 5
 
 cold, require, sha, save = loading.cold, loading.require, loading.sha, loading.save
 
@@ -74,11 +64,12 @@ def manifest():
     )
     require(value["experiment_id"] == EXPERIMENT and value["image_id"] == cold.IMAGE_ID)
     require(
-        value["cache_id"] == cold.CACHE_ID
+        value["cache_id"] is None
         and type(value["maximum_calls"]) is int
         and value["maximum_calls"] == 1
     )
     identity, cases = cold.frozen_cases()
+    identity = {**identity, "gpu": "NVIDIA L40S"}
     require(
         cold.preparation.encoded([value["expected_identity"], value["cases"]])
         == cold.preparation.encoded([identity, cases])
@@ -87,9 +78,8 @@ def manifest():
         name: ROOT / "deploy" / name
         for name in (
             "klein_scene_runtime.py",
-            "klein_denoiser_graph.py",
-            "klein_denoiser_probe.py",
-            "modal_klein_denoiser.py",
+            "klein_hardware_probe.py",
+            "modal_klein_hardware.py",
         )
     }
     sources.update(
@@ -128,7 +118,7 @@ def validate_metadata(data):
     require(
         function["resources"]
         == {
-            "gpu_config": {"count": 1, "gpu_type": "L4"},
+            "gpu_config": {"count": 1, "gpu_type": "L40S"},
             "memory_mb": 32768,
             "memory_mb_max": 65536,
             "milli_cpu": 8000,
@@ -172,7 +162,6 @@ def validate_metadata(data):
         "retry_policy",
     )
     return {key: function[key] for key in keys if key in function}
-
 
 
 async def metadata(output):
@@ -227,17 +216,10 @@ def validate(payload, value):
         )
     )
     require(len(payload["records"]) == len(SCHEDULE))
-    for i, (row, (case_index, variant)) in enumerate(
-        zip(payload["records"], SCHEDULE, strict=True)
-    ):
+    for i, (row, case_index) in enumerate(zip(payload["records"], SCHEDULE, strict=True)):
         require(type(row["ordinal"]) is int and type(row["case_index"]) is int)
-        require(
-            row["ordinal"] == i and row["case_index"] == case_index and row["variant"] == variant
-        )
-        phase = (
-            "warmup" if i < 2 else "profiled" if i < 4 else "preparation" if i < 6 else "measured"
-        )
-        require(row["phase"] == phase)
+        require(row["ordinal"] == i and row["case_index"] == case_index)
+        require(row["phase"] == ("warmup" if i < 2 else "measured"))
         case, metrics = value["cases"][case_index], row["metrics"]
         require(all(type(metrics[k]) is int for k in ("seed", "sequence_bucket", "token_count")))
         require(0 < metrics["token_count"] <= case["expected_bucket"])
@@ -250,59 +232,17 @@ def validate(payload, value):
         for role in ("master", "depth"):
             content = row[role]
             require(type(content) is bytes and 0 < len(content) <= cold.MAX_ARTIFACT_BYTES)
-            require(
-                hashlib.sha256(content).hexdigest()
-                == metrics[f"{role}_sha256"]
-                == case[f"{role}_sha256"]
-            )
+            require(hashlib.sha256(content).hexdigest() == metrics[f"{role}_sha256"])
             require(cold._jpeg_dimensions(content) == (1024, 576))
 
-    require(len(payload["profiles"]) == 2)
-    from deploy.klein_denoiser_probe import analyze_trace
-    for index, report in enumerate(payload["profiles"]):
-        require(type(report["case_index"]) is int and report["case_index"] == index)
-        require(report["trace_sha256"] is None or (
-            isinstance(report["trace_sha256"], str)
-            and re.fullmatch(r"[a-f0-9]{64}", report["trace_sha256"])
-        ))
-        trace = None
-        if report["trace_gzip"] is not None:
-            require(
-                type(report["trace_gzip"]) is bytes and len(report["trace_gzip"]) <= 16 * 1024**2
-            )
-            with gzip.GzipFile(fileobj=io.BytesIO(report["trace_gzip"])) as stream:
-                trace = stream.read(64 * 1024**2 + 1)
-            require(len(trace) <= 64 * 1024**2)
-            require(hashlib.sha256(trace).hexdigest() == report["trace_sha256"])
-        if report["analysis_status"] == "complete":
-            require(trace is not None and report["analysis_error"] is None)
-            require(analyze_trace(trace) == report["analysis"])
-        else:
-            require(report["analysis_status"] == "incomplete" and report["analysis"] is None)
-            error = report["analysis_error"]
-            require(error["stage"] in {
-                "trace_export", "trace_read", "trace_compress", "trace_analysis"
-            })
-            require(error["type"] in {
-                "ValueError", "TypeError", "KeyError", "IndexError", "AttributeError",
-                "JSONDecodeError", "OSError", "RuntimeError", "MemoryError", "OtherError"
-            })
-            if error["stage"] == "trace_analysis":
-                require(trace is not None)
-            if error["stage"] in {"trace_export", "trace_read"}:
-                require(report["trace_sha256"] is None and trace is None)
-    graph = payload["graph_report"]
-    require(all(type(graph[k]) is int for k in (
-        "graph_count", "capture_warmup_calls", "captured_forward_calls"
-    )))
-    require(graph["graph_count"] == 2 and graph["capture_warmup_calls"] == 6)
-    require(graph["captured_forward_calls"] == 2 and len(graph["graphs"]) == 2)
-    for bucket, row in zip((128, 256), graph["graphs"], strict=True):
-        require(type(row["bucket"]) is int and type(row["replays"]) is int)
-        require(row["bucket"] == bucket and row["replays"] == 12)
-        require(finite(row["capture_seconds"]) and row["capture_seconds"] > 0)
-        require(re.fullmatch(r"[a-f0-9]{64}", row["signature_sha256"]))
-
+    for row in payload["records"]:
+        case = value["cases"][row["case_index"]]
+        exact = all(
+            row["metrics"][f"{role}_sha256"] == case[f"{role}_sha256"]
+            for role in ("master", "depth")
+        )
+        require(type(row["historical_images_exact"]) is bool)
+        require(row["historical_images_exact"] == exact)
 
 
 async def worker(args):
@@ -338,31 +278,22 @@ async def worker(args):
     try:
         timings = dict.fromkeys(TIMINGS, 0.0)
         payload = await client.sdk({}, timings)
-        require(len(payload["records"]) <= len(SCHEDULE) and len(payload["profiles"]) <= 2)
+        require(len(payload["records"]) <= len(SCHEDULE))
         for ordinal, row in enumerate(payload["records"]):
             require(type(row["ordinal"]) is int and row["ordinal"] == ordinal)
             for role in ("master", "depth"):
                 require(type(row[role]) is bytes and len(row[role]) <= cold.MAX_ARTIFACT_BYTES)
-                cold.legacy.write_exclusive(
-                    args.output / f"{ordinal}-{role}.jpg", row[role]
-                )
-        for index, report in enumerate(payload["profiles"]):
-            require(type(report["case_index"]) is int and report["case_index"] == index)
-            if report["trace_gzip"] is None:
-                continue
-            require(
-                type(report["trace_gzip"]) is bytes and len(report["trace_gzip"]) <= 16 * 1024**2
-            )
-            cold.legacy.write_exclusive(
-                args.output / f"{index}-trace.json.gz", report["trace_gzip"]
-            )
-        save(args.output / "result.json", {
-            **payload,
-            "records": [{k: v for k, v in row.items() if k not in {"master", "depth"}}
-                        for row in payload["records"]],
-            "profiles": [{k: v for k, v in row.items() if k != "trace_gzip"}
-                         for row in payload["profiles"]],
-        })
+                cold.legacy.write_exclusive(args.output / f"{ordinal}-{role}.jpg", row[role])
+        save(
+            args.output / "result.json",
+            {
+                **payload,
+                "records": [
+                    {k: v for k, v in row.items() if k not in {"master", "depth"}}
+                    for row in payload["records"]
+                ],
+            },
+        )
         validate(payload, value)
     finally:
         save(args.output / "call-cleanup.json", {"known_calls_cancelled": await client.cleanup()})
@@ -379,8 +310,7 @@ def aggregate(output):
         and supervisor["total_wall_seconds"] <= WORK_SECONDS + CLEANUP_SECONDS
     )
     require(
-        finite(supervisor["work_wall_seconds"])
-        and supervisor["work_wall_seconds"] <= WORK_SECONDS
+        finite(supervisor["work_wall_seconds"]) and supervisor["work_wall_seconds"] <= WORK_SECONDS
     )
     shutdown, metadata = read(output / "shutdown.json"), read(output / "deployment-check.json")
     require(
@@ -397,58 +327,51 @@ def aggregate(output):
     for row in payload["records"]:
         for role in ("master", "depth"):
             row[role] = (output / f"{row['ordinal']}-{role}.jpg").read_bytes()
-    for report in payload["profiles"]:
-        path = output / f"{report['case_index']}-trace.json.gz"
-        report["trace_gzip"] = path.read_bytes() if path.exists() else None
     validate(payload, value)
-    pairs = []
-    for index in (6, 8, 10, 12):
-        a, b = payload["records"][index : index + 2]
-        baseline, candidate = (a, b) if a["variant"] == "baseline" else (b, a)
-        pairs.append(
+    reference_path = ROOT / "benchmarks/renderer-denoiser-2026-09-06/graph-c/result.json"
+    require(
+        sha(reference_path) == "b8ee57e694c3597f275066f264129990d275ae019a623553acea8d1f1aaea717"
+    )
+    reference = read(reference_path)
+    measured = payload["records"][2:]
+    buckets = []
+    for index, bucket in enumerate((128, 256)):
+        current = [r["metrics"]["total_seconds"] for r in measured if r["case_index"] == index]
+        prior = [
+            r["metrics"]["total_seconds"]
+            for r in reference["records"]
+            if r["phase"] == "measured" and r["variant"] == "baseline" and r["case_index"] == index
+        ]
+        buckets.append(
             {
-                "case_index": a["case_index"],
-                "order": a["variant"],
-                "baseline_seconds": baseline["metrics"]["total_seconds"],
-                "candidate_seconds": candidate["metrics"]["total_seconds"],
-
+                "bucket": bucket,
+                "samples": len(current),
+                "runtime_median_seconds": statistics.median(current),
+                "runtime_maximum_seconds": max(current),
+                "historical_l4_median_seconds": statistics.median(prior),
+                "median_reduction_fraction": (
+                    1 - statistics.median(current) / statistics.median(prior)
+                ),
             }
         )
-    reduction = statistics.median(
-        1 - p["candidate_seconds"] / p["baseline_seconds"] for p in pairs
-    )
-    bucket_reductions = {
-        str(bucket): statistics.median(
-            1 - p["candidate_seconds"] / p["baseline_seconds"]
-            for p in pairs if p["case_index"] == index
-        )
-        for index, bucket in enumerate((128, 256))
-    }
-    measured = payload["records"][6:14]
-    peak_reserved = max(row["metrics"]["peak_reserved_gib"] for row in measured)
-    qualifies = (
-        reduction >= 0.05
-        and min(bucket_reductions.values()) > 0
-        and max(p["candidate_seconds"] for p in pairs)
-        <= max(p["baseline_seconds"] for p in pairs) * 1.02
-        and peak_reserved < 23
-    )
+    peak = max(r["metrics"]["peak_reserved_gib"] for r in measured)
+    exact = all(r["historical_images_exact"] for r in payload["records"])
+    speed = all(r["median_reduction_fraction"] >= 0.25 for r in buckets) and peak < 47
     return {
         "manifest_sha256": sha(MANIFEST),
         "result_sha256": sha(output / "result.json"),
-        "renders": 14,
-        "verified_jpegs": 28,
-        "all_images_exact": True,
-        "pairs": pairs,
-        "median_runtime_reduction_fraction": reduction,
-        "bucket_reduction_fractions": bucket_reductions,
-        "peak_reserved_gib": peak_reserved,
-        "speed_screen_passed": qualifies,
-        "diagnostics_complete": all(
-            p["analysis_status"] == "complete" and p["analysis"]["launch_attribution_complete"]
-            for p in payload["profiles"]
+        "reference_l4_sha256": sha(reference_path),
+        "renders": 10,
+        "verified_jpegs": 20,
+        "all_images_exact": exact,
+        "buckets": buckets,
+        "peak_reserved_gib": peak,
+        "speed_screen_passed": speed,
+        "exact_image_speed_screen_passed": speed and exact,
+        "scope": (
+            "unprofiled L40S runtime vs retained L4 baseline on different workers; "
+            "excludes planning, transport and display; not an isolated hardware causal estimate"
         ),
-        "scope": "unprofiled server runtime; excludes planning, transport and display",
         "production_promoted": False,
     }
 
@@ -480,7 +403,7 @@ def supervise(args):
     record, process = {"returncode": 1, "external_app_shutdown_verified": False}, None
 
     def interrupted(*_):
-        raise InterruptedError("denoiser supervisor interrupted")
+        raise InterruptedError("hardware supervisor interrupted")
 
     previous_handler = signal.signal(signal.SIGTERM, interrupted)
     try:
@@ -525,7 +448,12 @@ def supervise(args):
             require(app_id and re.fullmatch(r"ap-[A-Za-z0-9]+", app_id))
             record["app_id"] = app_id
             require(time.monotonic() + 10 < deadline)
-            cli("app", "stop", "--yes", app_id, timeout=10)
+            try:
+                cli("app", "stop", "--yes", app_id, timeout=10)
+                record["stop_returncode"] = 0
+            except subprocess.CalledProcessError as error:
+                # A failed stop can mean already stopped; inventories below must prove closure.
+                record["stop_returncode"] = error.returncode
             if process is not None and process.poll() is None:
                 os.killpg(process.pid, signal.SIGKILL)
                 process.wait(timeout=1)
@@ -567,7 +495,7 @@ def main():
         manifest()
         print(
             json.dumps(
-                {"gpu_calls": 0, "planned_calls": 1, "planned_renders": 14, "hold_usd": HOLD_USD}
+                {"gpu_calls": 0, "planned_calls": 1, "planned_renders": 10, "hold_usd": HOLD_USD}
             )
         )
     elif args.metadata:
