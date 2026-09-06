@@ -3,8 +3,9 @@
 The completed warmed-runtime trial is **rejected**. Its capture hook rendered and internally
 hash-checked four reference images, then Modal failed to create the snapshot. No image payload
 returned to the client, no snapshot restored, and neither correctness nor latency qualified.
-The app is stopped with zero containers. A separate serial-compiler mitigation is prepared but
-has not run; accepted appliance routing and the visual-fidelity gate remain unchanged.
+The app is stopped with zero containers. The separate serial-compiler trial also failed
+qualification: its 180-second deadline expired before any platform snapshot result or restore.
+Both apps are stopped; accepted appliance routing and the visual-fidelity gate remain unchanged.
 
 The [imports-only snapshot](renderer-cold-start-2026-09-05.md) restored twice with identical
 images, but first rendering still took 10–13 seconds. Its cache loader installs compiled wrappers
@@ -85,7 +86,7 @@ place at cleanup. Subsequent reviewed reconciliation bounds this closed run at a
 ceiling**, retaining setup, the observed lifetime, an additional capture-worker allowance and
 teardown allowances for the replacement tasks.
 
-## Pending serial-compiler mitigation
+## Completed serial-compiler trial
 
 The separate `bookforge-klein-serial-snapshot` candidate sets
 `TORCHINDUCTOR_COMPILE_THREADS=1` after authorization and the single capture claim, before any
@@ -108,18 +109,36 @@ container value was not captured in the failed trial. The older full-transformer
 already set one, but used `reduce-overhead` on a different image branch. Its failure neither tests
 nor validates this current regional-compile/cache combination.
 
-The pending trial retains one capture and at most three sequential requests, with the same
-reference-output and two-restore latency gates. Its external watchdog starts before deployment,
-limits work to **180 seconds**, and allows **60 seconds** for shutdown. Continuous platform-log
-monitoring must stop the app on a fatal checkpoint or replacement failure rather than waiting
-for the client or global deadline. There are no automatic application retries or extra captures.
+The serial trial retained one capture and at most three sequential requests, with the same
+reference-output and two-restore latency gates. Its source-free logs verified compiler threads one
+twice, with the original environment unset. The capture hook completed four internal reference
+hash checks at 20:20:52 PDT. No activation or image payload returned. The
+[client summary](../benchmarks/renderer-serial-snapshot-2026-09-05/summary.json) records one started,
+one failed and zero unresolved requests, with zero observed restores.
 
-The frozen reservation is **$1.05**, pending dispatch. The
+The 180-second deadline expired without a native snapshot success, failure or restore message.
+The [supervisor](../benchmarks/renderer-serial-snapshot-2026-09-05/supervisor.json) began stopping
+the app at 180.035 seconds; shutdown succeeded and supervision ended at 181.040 seconds. The
+supervisor correctly reports the experiment's timeout as failure. The immediate inventory
+still showed one task during shutdown; subsequent final inventories verified the app stopped with
+zero tasks and no containers, recorded in the
+[cleanup receipt](../benchmarks/renderer-serial-snapshot-2026-09-05/cleanup-cost.json).
+The continuous fatal-log guard remained active throughout. This
+is a failed bounded qualification, **not proof that serial compilation is incompatible with
+snapshots**: eventual checkpoint completion remains unknown.
+
+The serial charge is provisionally **$0.04028130**, and reported workspace usage is
+**$14.51014746**. Its original **$1.05 gross ceiling remains retained**. The accounting rule in the
 [closed-run reconciliation](../benchmarks/renderer-serial-snapshot-2026-09-05/closed-run-reconciliation.json)
-separates each reviewed gross ceiling into charges already included in the same workspace report
-and a remaining pending hold. It credits $0.75897931 already reported across closed apps, avoiding
-double counting; it does not declare those bills settled or repeatedly subtract credits from a
-residual hold. The reconciled workspace-plus-holds projection is $33.91088685 before this trial,
-or **$34.96088685** including its reservation, under the unchanged $35 stop. Fresh billing is
-unchanged. All 910 Python tests, three JavaScript suites, scoped lint, source pins and independent
-implementation/supervisor review pass. The external supervisor remains required for dispatch.
+separates each gross ceiling into charges already included in the workspace report and a remaining
+pending hold. Refreshing the floor and crediting the serial charge against that same gross ceiling
+leaves the projection at **$34.96088685** under the unchanged $35 stop. This accounting update is
+complete; these reports do not establish settled bills or release the gross allowance.
+Credits are never subtracted again from a residual hold.
+
+The practical path remains preserving useful warm-session lifetime and preparing the renderer
+ahead of demand: warm inference is measured, whereas this warmed snapshot has not delivered an
+image after restore. Explicit prewarm reuse already avoids duplicate work without extending its
+original deadline. Automatic session prewarming and default promotion remain gated. Another
+snapshot trial would require a separately bounded, longer qualification and funding review;
+there is no automatic retry or further paid call from this result.

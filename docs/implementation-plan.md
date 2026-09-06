@@ -24,20 +24,24 @@ heavy work. Emergency shutdown and subsequent cleanup verified the app stopped w
 containers. All completed temporary cold-start apps are stopped; accepted appliance routing and
 the unresolved visual-fidelity gate remain unchanged.
 
-One separately bounded serial-compiler mitigation is prepared but has not run. It sets
-`TORCHINDUCTOR_COMPILE_THREADS=1` before imports and verifies the effective configuration before
-compile and after restore, retaining the same runtime/cache and exact reference checks. Modal
-documents this as a possible checkpoint mitigation; the failure's cause is not proven. The trial
-allows one capture and three requests, with a 180-second external watchdog, 60-second shutdown
-allowance and continuous fatal-platform-log stop. Its proposed $1.05 reservation remains pending
-final dispatch checks.
+The separate serial-compiler trial verified `TORCHINDUCTOR_COMPILE_THREADS=1` and completed
+four internal warmup hash checks, but its 180-second deadline expired before any native snapshot
+result, activation or returned image. The supervisor initiated shutdown at 180.035 seconds and
+finished at 181.040 seconds; final inventories verified zero tasks and containers. It failed the
+bounded qualification. Eventual snapshot compatibility remains unknown, rather than disproved.
 
-The failed warmed trial reports a provisional $0.04543025 charge and workspace usage of
-$14.46986616. Reviewed reconciliation separates already reported app charges from the remaining
-portion of each gross hold, avoiding double counting without treating bills as settled. Including
-the proposed serial trial projects $34.96088685 under the unchanged $35 stop; fresh billing and
-supervision checks remain required. Full evidence and the separate 2.5-second first-render and
-15-second restored-cycle gates are in the warmed-runtime report.
+The warmed and serial trials report provisional charges of $0.04543025 and $0.04028130; reported
+workspace usage is now $14.51014746. The serial trial's original $1.05 gross ceiling remains
+retained. Updating the workspace floor and separating already reported charges from the remaining
+hold preserves the $34.96088685 projection under the unchanged $35 stop. The completed accounting
+split does not treat bills as settled.
+
+Preserving useful warm-session lifetime and preparing ahead of demand remain the measured path.
+Explicit prewarm reuse already avoids duplicate work while preserving the original deadline;
+automatic session prewarming and default promotion remain gated. A further snapshot experiment
+requires a separately bounded, longer qualification and funding review. No automatic retry or new
+paid call follows these results. The warmed-runtime report retains the evidence and unmet
+2.5-second first-render and 15-second restored-cycle gates.
 
 ## Latest increment — renderer latency measurement
 
