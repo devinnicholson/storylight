@@ -169,15 +169,17 @@ class GcpCloudRunSceneProvider:
 
     async def probe(self) -> tuple[bool, str]:
         try:
-            # Cloud Run reserves some paths ending in "z", including common
-            # healthz variants, before requests reach the container.
-            payload, _ = await self._request("GET", "/health")
-            _require_equal(payload, "provider", PROVIDER_NAME)
-            _require_equal(payload, "fast_model_revision", FAST_MODEL_REVISION)
-            _require_equal(payload, "depth_model_revision", DEPTH_MODEL_REVISION)
-        except Exception as error:
-            return False, f"private Cloud Run renderer is unreachable: {error}"
-        return True, (f"Private Cloud Run {self.gpu} renderer is reachable with pinned models")
+            # Even /health can allocate a Cloud Run GPU. Readiness checks only
+            # prepare credentials; paid operations verify the renderer identity.
+            token = await self._token_source(self.audience)
+            if not isinstance(token, str) or not token.strip():
+                raise ValueError("identity token unavailable")
+        except Exception:
+            return False, "Cloud Run identity token is unavailable; renderer not contacted"
+        return True, (
+            f"Cloud Run {self.gpu} is configured and an identity token is available; "
+            "renderer availability and model identity are unverified"
+        )
 
     async def prewarm(
         self,

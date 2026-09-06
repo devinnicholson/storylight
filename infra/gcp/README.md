@@ -83,9 +83,10 @@ briefs, records only prompt hashes, performs no automatic retry, and refuses to 
   --report benchmarks/gcp-scene-benchmark-YYYYMMDD.json
 ```
 
-Cloud Run reserves some URL paths ending in `z`, so the worker intentionally exposes `/health`
-rather than `/healthz`. Do not prewarm or generate until authenticated `GET /health` reaches the
-worker. Evidence and the exact immutable revision are recorded in
+The adapter's `probe` mode checks credential readiness without contacting the renderer. It does
+not prove service reachability or model identity. An explicit `/health` call can activate a billed
+GPU, so include it in supervised resource accounting if used. Paid prewarm and generation verify
+the runtime identity. Historical deployment evidence and the exact immutable revision are recorded in
 [`benchmarks/gcp-rtx-cloud-run-deployment-2026-08-25.json`](../../benchmarks/gcp-rtx-cloud-run-deployment-2026-08-25.json).
 SANA Sprint uses its native two-step SCM path; the Bookforge GCP adapter rejects any other step
 count locally before a paid request, and the worker validates the same constraint.

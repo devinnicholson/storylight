@@ -74,12 +74,20 @@ def test_private_cloud_run_provider_writes_checksum_bound_bundle(tmp_path: Path)
             transport=httpx.MockTransport(handler), **kwargs
         ),
     )
-    bundle = asyncio.run(
-        provider.generate_fast(
+    async def probe_and_generate():
+        ready, detail = await provider.probe()
+        assert ready and "identity token is available" in detail
+        assert "renderer availability and model identity are unverified" in detail
+        status = await provider.warm_status()
+        assert status.ready and status.state == "idle"
+        assert status.expires_in_seconds == 0
+        assert observed == [] and provider._client is None
+        return await provider.generate_fast(
             FastSceneRequest(scene_id="gcp-scene", prompt="A luminous paper fox."),
             output_dir=tmp_path / "scene",
         )
-    )
+
+    bundle = asyncio.run(probe_and_generate())
 
     assert [request.url.path for request in observed] == ["/v1/generate"]
     assert bundle.scene_id == "gcp-scene"
@@ -93,6 +101,36 @@ def test_private_cloud_run_provider_writes_checksum_bound_bundle(tmp_path: Path)
     assert bundle.estimated_gpu_usd > 0
     assert asyncio.run(provider.is_prewarmed()) is False
     assert asyncio.run(provider.is_renderer_likely_warm()) is True
+
+
+def test_cloud_run_auth_readiness_failure_never_contacts_renderer_or_reflects_errors():
+    async def token_source(audience):
+        raise RuntimeError("private-token-and-upstream-error-payload")
+
+    def unexpected_renderer(**kwargs):
+        pytest.fail("readiness must not create a renderer HTTP client")
+
+    provider = GcpCloudRunSceneProvider(
+        base_url="https://renderer.example.run.app",
+        audience="https://renderer.example.run.app",
+        token_source=token_source,
+        client_factory=unexpected_renderer,
+    )
+
+    async def exercise():
+        expected = "Cloud Run identity token is unavailable; renderer not contacted"
+        assert await provider.probe() == (False, expected)
+        status = await provider.warm_status()
+        assert not status.ready and status.detail == expected
+        assert status.state == "idle" and status.expires_in_seconds == 0
+
+        async def empty_token(audience):
+            return ""
+
+        provider._token_source = empty_token
+        assert await provider.probe() == (False, expected)
+
+    asyncio.run(exercise())
 
 
 def test_cloud_run_provider_rejects_tampered_artifacts_without_writing(tmp_path: Path) -> None:

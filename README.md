@@ -155,9 +155,10 @@ credentials and the private renderer URL never enter browser state. The output i
 dimension-checked, and SHA-256-verified before it becomes a Story Pack asset. See
 `infra/gcp/README.md` for the quota-first guarded deployment and teardown details.
 
-Cloud Run reserves some URL paths ending in `z`, so the private renderer uses `/health`, not
-`/healthz`, for its authenticated endpoint gate. Enable `gcp_cloud_run` only after that gate and one
-bounded synthetic generation pass. The accepted RTX path generated a checksum-bound 1024x576
+GCP readiness checks prepare credentials without contacting the renderer. They do not establish
+service availability or model identity; even a `/health` request can activate a billed GPU.
+Enable `gcp_cloud_run` only after a bounded synthetic generation verifies the deployed identity
+and artifacts. The accepted SANA RTX path generated a checksum-bound 1024x576
 master and depth map in 0.627 seconds authenticated client wall time (0.277 seconds inside Cloud
 Run); the exact revisions, failure history, visual review, and cost scopes are recorded in the GCP
 benchmark below.
