@@ -1,9 +1,9 @@
 {
   "monthly_credit_usd": 30.0,
-  "authorized_paid_usd": 7.0,
+  "authorized_paid_usd": 8.0,
   "workspace_usage_before_live_scenes_usd": 13.13786456,
   "billing_delay_reserve_usd": 2.0,
-  "hard_stop_workspace_total_usd": 35.0,
-  "maximum_new_spend_usd": 21.85,
-  "note": "September 5: user approved $7 additional paid funding and the $6.96 regional comparison. Credits remain $30; reserve remains $2. Preserve every prior canonical ledger reservation. Reservations are spending ceilings, not actual charges or provider-enforced caps."
+  "hard_stop_workspace_total_usd": 36.0,
+  "maximum_new_spend_usd": 22.85,
+  "note": "User approved one additional dollar for the bounded simple-scene comparison: paid allowance rises from $7 to $8. Credits remain $30 and reserve remains $2. Preserve prior canonical ledger reservations. Reservations are spending ceilings, not actual charges or provider-enforced caps."
 }

@@ -11,7 +11,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from scripts import run_simple_scene_trial as supervisor  # noqa: E402
 
 
-def test_metadata_requires_exact_non_snapshot_resources():
+def test_metadata_requires_exact_non_snapshot_resources(tmp_path):
     function = {
         "image_id": supervisor.harness.cold.IMAGE_ID,
         "resources": {
@@ -22,7 +22,8 @@ def test_metadata_requires_exact_non_snapshot_resources():
             "milli_cpu_max": 8000,
         },
         "autoscaler_settings": {"max_containers": 1, "scaledown_window": 90},
-        "max_inputs": 1,
+        # Modal 1.5.5 omits zero max_inputs: it is the single-use lifetime cap.
+        "max_concurrent_inputs": 1,
         "startup_timeout_secs": 120,
         "timeout_secs": 60,
         "routing_region": "us-east",
@@ -30,8 +31,14 @@ def test_metadata_requires_exact_non_snapshot_resources():
         "is_class": True,
     }
     data = {"ranked_functions": [{"function": function}]}
-    assert supervisor.validate_metadata(data)["max_inputs"] == 1
+    assert supervisor.validate_metadata(data)["max_concurrent_inputs"] == 1
+    function.update(max_inputs=0, target_concurrent_inputs=0, single_use_containers=False)
+    assert supervisor.validate_metadata(data)["max_inputs"] == 0
     for changes in (
+        {"max_concurrent_inputs": 2},
+        {"max_concurrent_inputs": 0},
+        {"single_use_containers": True},
+        {"max_inputs": 1},
         {"max_inputs": 2},
         {"checkpointing_enabled": True},
         {"experimental_options": {"enable_gpu_snapshot": "True"}},
@@ -43,6 +50,14 @@ def test_metadata_requires_exact_non_snapshot_resources():
         invalid["ranked_functions"][0]["function"].update(changes)
         with pytest.raises(ValueError):
             supervisor.validate_metadata(invalid)
+    function.update(max_concurrent_inputs=2, source="private text must not be recorded")
+    evidence = tmp_path / "observed.json"
+    with pytest.raises(ValueError):
+        supervisor.record_metadata(data, evidence, "ap-Test", "fu-Test")
+    observed = json.loads(evidence.read_bytes())
+    assert observed["functions"][0]["max_concurrent_inputs"] == 2
+    assert "private text" not in evidence.read_text()
+    assert evidence.stat().st_mode & 0o777 == 0o600
 
 
 @pytest.mark.parametrize("mode", ["complete", "timeout", "deployment_failure"])

@@ -1,0 +1,18 @@
+{
+  "monthly_credit_usd": 30.0,
+  "authorized_paid_usd": 8.0,
+  "workspace_usage_before_live_scenes_usd": 13.13786456,
+  "billing_delay_reserve_usd": 2.0,
+  "hard_stop_workspace_total_usd": 36.0,
+  "maximum_new_spend_usd": 22.85,
+  "experiment_ceiling_usd": 1.75,
+  "maximum_operations": 12,
+  "maximum_initializations": 1,
+  "global_deadline_seconds": 600,
+  "shutdown_allowance_seconds": 60,
+  "resource_slots_budgeted": 2,
+  "additional_teardown_seconds": 120,
+  "setup_ceiling_usd": 0.5,
+  "maximum_resource_rate_usd_per_second": 0.00082054,
+  "note": "One supervised text/reference comparison; four fixed controls, twelve images, no rerolls or retries. User approved paid allowance $7 to $8 with the $2 reserve unchanged."
+}

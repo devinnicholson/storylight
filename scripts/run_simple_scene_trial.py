@@ -48,7 +48,8 @@ def validate_metadata(data):
     scale = function["autoscaler_settings"]
     require(scale["max_containers"] == 1 and scale.get("min_containers", 0) == 0)
     require(scale.get("buffer_containers", 0) == 0 and scale["scaledown_window"] == 90)
-    require(function["max_inputs"] == 1 and not function.get("single_use_containers", False))
+    require(function["max_concurrent_inputs"] == 1)
+    require(function.get("max_inputs", 0) == 0 and not function.get("single_use_containers", False))
     require(function["startup_timeout_secs"] == 120 and function["timeout_secs"] == 60)
     require(not function.get("cloud_provider_str") and function["routing_region"] == "us-east")
     require(function["scheduler_placement"]["regions"] == ["us"])
@@ -63,6 +64,8 @@ def validate_metadata(data):
         "resources",
         "autoscaler_settings",
         "max_inputs",
+        "max_concurrent_inputs",
+        "target_concurrent_inputs",
         "startup_timeout_secs",
         "timeout_secs",
         "routing_region",
@@ -74,7 +77,41 @@ def validate_metadata(data):
     return {key: function[key] for key in keys if key in function}
 
 
-async def metadata(app_id):
+def record_metadata(data, path, app_id, function_id):
+    keys = (
+        "image_id",
+        "resources",
+        "autoscaler_settings",
+        "max_inputs",
+        "max_concurrent_inputs",
+        "target_concurrent_inputs",
+        "single_use_containers",
+        "startup_timeout_secs",
+        "timeout_secs",
+        "cloud_provider_str",
+        "routing_region",
+        "scheduler_placement",
+        "retry_policy",
+        "checkpointing_enabled",
+        "enable_gpu_snapshot",
+        "_experimental_enable_gpu_snapshot",
+        "is_class",
+    )
+    observed = []
+    for ranked in data.get("ranked_functions", []):
+        function = ranked.get("function", {})
+        observed.append(
+            {
+                **{key: function[key] for key in keys if key in function},
+                "has_web_url": bool(function.get("web_url")),
+                "has_experimental_options": bool(function.get("experimental_options")),
+            }
+        )
+    write(path, {"app_id": app_id, "function_id": function_id, "functions": observed})
+    return {**validate_metadata(data), "app_id": app_id, "function_id": function_id}
+
+
+async def metadata(app_id, evidence_path):
     from google.protobuf.json_format import MessageToDict
     from modal.client import _Client
     from modal_proto import api_pb2
@@ -90,8 +127,12 @@ async def metadata(app_id):
     )
     layout = await client.stub.AppGetLayout(api_pb2.AppGetLayoutRequest(app_id=app_id))
     require(response.function_id in layout.app_layout.function_ids.values())
-    result = validate_metadata(MessageToDict(response.function, preserving_proto_field_name=True))
-    return {**result, "app_id": app_id, "function_id": response.function_id}
+    return record_metadata(
+        MessageToDict(response.function, preserving_proto_field_name=True),
+        evidence_path,
+        app_id,
+        response.function_id,
+    )
 
 
 def preflight(args):
@@ -405,7 +446,8 @@ def main(argv=None):
     argv = sys.argv[1:] if argv is None else argv
     if argv[:1] == ["--metadata"]:
         require(len(argv) == 3)
-        write(Path(argv[2]), asyncio.run(metadata(argv[1])))
+        path = Path(argv[2])
+        write(path, asyncio.run(metadata(argv[1], path.with_name("deployment-observed.json"))))
         return 0
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--manifest", type=Path, default=MANIFEST)

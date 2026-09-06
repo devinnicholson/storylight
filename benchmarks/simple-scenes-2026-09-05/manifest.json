@@ -32,7 +32,7 @@
     "width": 1024
   },
   "experiment_id": "simple-scenes-20260905-a",
-  "expires_at": null,
+  "expires_at": 1788676348,
   "fixture_sha256": "fc0a6ab8585aa7c71111fac50e02edd6787b6d436feb6393696429e4c8d29bba",
   "maximum_operations": 12,
   "operations": [
@@ -148,5 +148,5 @@
   "reference_runtime_sha256": "44c56fa3c201ffbc0a935aafd55a0af7b458e6b4d27340e8e80dacfe1043a3be",
   "runtime_sha256": "f87ab40c8b6a1ed457a10f1bce6bf92e07075eed40c0fdb224ba3ed18c5c3441",
   "schema_version": 1,
-  "status": "draft"
+  "status": "authorized"
 }
