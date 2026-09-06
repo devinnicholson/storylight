@@ -122,7 +122,7 @@ def verify_deployment(value: dict, service: str, image: str) -> tuple[str, str]:
     return value["status"]["url"], revision
 
 
-def run(image: str, manifest_path: Path, output: Path) -> None:
+def run(image: str, manifest_path: Path, output: Path, *, service: str | None = None) -> None:
     manifest = benchmark.protocol.decode_json(manifest_path.read_bytes())
     benchmark.validate_manifest(manifest, active=True)
     for key, path in {
@@ -132,7 +132,7 @@ def run(image: str, manifest_path: Path, output: Path) -> None:
     }.items():
         if manifest["sources"][key] != hashlib.sha256(path.read_bytes()).hexdigest():
             raise ValueError("qualification source differs from the manifest")
-    service = manifest["experiment_id"]
+    service = service or manifest["experiment_id"]
     if not re.fullmatch(r"bookforge-klein-qualification-20260906-[a-z]", service):
         raise ValueError("qualification service name is outside this experiment")
     if not re.fullmatch(re.escape(IMAGE_PREFIX) + r"[0-9a-f]{64}", image):
@@ -149,6 +149,7 @@ def run(image: str, manifest_path: Path, output: Path) -> None:
             "project": PROJECT,
             "region": REGION,
             "service": service,
+            "experiment_id": manifest["experiment_id"],
             "image": image,
             "manifest_sha256": hashlib.sha256(manifest_path.read_bytes()).hexdigest(),
             "maximum_service_seconds": LIFETIME_SECONDS,
@@ -170,7 +171,7 @@ def run(image: str, manifest_path: Path, output: Path) -> None:
     failed = None
     try:
         attempted = True
-        bounded(deployment_args(service, image), 120)
+        bounded(deployment_args(service, image), 240)
         deployment_completed = True
         observed = bounded(["run", "services", "describe", service, "--region", REGION])
         write(output / "deployment.json", observed)
@@ -271,8 +272,9 @@ def main() -> None:
     parser.add_argument("--image", required=True)
     parser.add_argument("--manifest", type=Path, required=True)
     parser.add_argument("--output", type=Path, required=True)
+    parser.add_argument("--service", help="Fresh service name for an explicit deployment attempt")
     args = parser.parse_args()
-    run(args.image, args.manifest.resolve(), args.output.resolve())
+    run(args.image, args.manifest.resolve(), args.output.resolve(), service=args.service)
 
 
 if __name__ == "__main__":

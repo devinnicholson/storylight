@@ -40,14 +40,19 @@ def test_ambiguous_deployment_is_deleted_and_cleanup_failure_is_visible(tmp_path
         return []
 
     monkeypatch.setattr(trial, "gcloud", control)
+    service = "bookforge-klein-qualification-20260906-e"
     with pytest.raises(RuntimeError, match="deletion could not be verified"):
-        trial.run(image, manifest, tmp_path / "closed")
+        trial.run(image, manifest, tmp_path / "closed", service=service)
     closure = json.loads((tmp_path / "closed/closure.json").read_text())
     assert closure["service_deleted_and_absent"] is False
     assert closure["service_absent_at_observation"] is True
     assert closure["late_creation_cleanup_required"] is True
     assert closure["failure"] == "TimeoutExpired"
-    assert any(command[:3] == ["run", "services", "delete"] for command in commands)
+    assert any(command[:3] == ["run", "deploy", service] for command in commands)
+    assert any(command[:4] == ["run", "services", "delete", service] for command in commands)
+    scope = json.loads((tmp_path / "closed/scope.json").read_text())
+    assert scope["service"] == service
+    assert scope["experiment_id"] == "bookforge-klein-qualification-20260906-a"
 
     def failed_delete(args, timeout=30):
         if args[:3] == ["run", "services", "delete"] or (
@@ -79,7 +84,7 @@ def test_ambiguous_deployment_is_deleted_and_cleanup_failure_is_visible(tmp_path
 
 
 def test_existing_service_is_never_replaced_or_deleted(tmp_path, monkeypatch):
-    service = "bookforge-klein-qualification-20260906-a"
+    service = "bookforge-klein-qualification-20260906-e"
     manifest = manifest_file(tmp_path)
     commands = []
 
@@ -89,5 +94,5 @@ def test_existing_service_is_never_replaced_or_deleted(tmp_path, monkeypatch):
 
     monkeypatch.setattr(trial, "gcloud", control)
     with pytest.raises(ValueError, match="existing service"):
-        trial.run(trial.IMAGE_PREFIX + "a" * 64, manifest, tmp_path / "output")
+        trial.run(trial.IMAGE_PREFIX + "a" * 64, manifest, tmp_path / "output", service=service)
     assert commands == [["run", "services", "list", "--region", trial.REGION]]
