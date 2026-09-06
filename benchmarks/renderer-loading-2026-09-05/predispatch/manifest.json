@@ -1,0 +1,79 @@
+{
+  "cache_id": "f305950a0fbb4ecf89acfb80a3990351",
+  "cases": [
+    {
+      "depth_sha256": "b28b08bb60409bffd3cad5b2ead5baf31f3dd3609672839704f8fb7d64f9d549",
+      "expected_bucket": 128,
+      "master_sha256": "ee8ec16c083cfe04f80463715aa824d224489758b69803c8950f39982cae664d",
+      "prompt": "Style: watercolor paper theater. Setting: forest. Subject: exactly 2 foxes; action: carry blue lantern. Object: exactly one blue lantern. Object: golden ribbon. Relations: foxes carries lantern. One continuous full-bleed scene; no captions, labels, signs, or readable text.",
+      "seed": 90401
+    },
+    {
+      "depth_sha256": "a67e88183db0a51eb4fa45633a48921f76017e968365f27b86a8c9ad3e8c7dc6",
+      "expected_bucket": 256,
+      "master_sha256": "5b3eaccb32e2d5aefebd241a73b30f9d96ab04f1bf2c53551f6c11eb4020f9b7",
+      "prompt": "watercolor paper theater. clear silhouettes, projection-bright midtones, tactile depth. Background: forest. Required foreground subject: a complete visible silver fox, shown carrying blue lantern. Required supporting visual: golden ribbon. Preserve the stated subject counts and actions; depict each subject once. Do not add unrequested characters or duplicate objects. Show all required visuals simultaneously. Honor specified positions, scale, and physical contact. Only for unspecified placement: place the main subject at mid-frame center, clearly larger and nearer; place the supporting detail at upper right, smaller and separated within the same continuous scene. Never use an inset, panel, cutaway, collage, or split screen. Full-bleed cinematic 16:9 storybook projection with clear foreground/background depth, clean silhouettes, and no readable text, captions, logos, borders, or UI.",
+      "seed": 90403
+    }
+  ],
+  "client_sha256": "46af08c14ca7e05a16b203c179cd653a86610fcb28827219f21dc4060c998b51",
+  "deployment_sha256": "e9b1621b5bc35c3b41ccf42e3fda96e11b1763a37f1022c011b7d9c1d3abef28",
+  "expected_identity": {
+    "buckets": [
+      128,
+      256,
+      512
+    ],
+    "capability": [
+      8,
+      9
+    ],
+    "compile_mode": "default",
+    "contract": "klein-regional-default-v1",
+    "cuda": "12.8",
+    "depth_model": "depth-anything/Depth-Anything-V2-Small-hf",
+    "depth_revision": "b4769fd619394250528294b658587285526fab1c",
+    "diffusers": "0.39.0",
+    "dtype": "bfloat16",
+    "fullgraph": true,
+    "gpu": "NVIDIA L4",
+    "guidance": 1.0,
+    "height": 576,
+    "model": "black-forest-labs/FLUX.2-klein-4B",
+    "model_revision": "e7b7dc27f91deacad38e78976d1f2b499d76a294",
+    "runtime_sha256": "f87ab40c8b6a1ed457a10f1bce6bf92e07075eed40c0fdb224ba3ed18c5c3441",
+    "steps": 4,
+    "torch": "2.8.0+cu128",
+    "transformers": "4.57.1",
+    "triton": "3.4.0",
+    "width": 1024
+  },
+  "experiment_id": "klein-loading-20260905-a",
+  "expires_at": 1788680279,
+  "image_id": "im-WtXer8GjRPdgMqWAAUSMwJ",
+  "operations": [
+    {
+      "ordinal": 0,
+      "request_id": "6f1ff3053c39c4820c61627ffd801744",
+      "variant": "baseline"
+    },
+    {
+      "ordinal": 1,
+      "request_id": "a30ebb276a3fa04739f00fa5f8155212",
+      "variant": "candidate"
+    },
+    {
+      "ordinal": 2,
+      "request_id": "90e86a33114cc4a3c4f529c69c253694",
+      "variant": "candidate"
+    },
+    {
+      "ordinal": 3,
+      "request_id": "4fd6d710dc68db6de98db778740d1b39",
+      "variant": "baseline"
+    }
+  ],
+  "runtime_sha256": "f87ab40c8b6a1ed457a10f1bce6bf92e07075eed40c0fdb224ba3ed18c5c3441",
+  "schema_version": 1,
+  "status": "authorized"
+}

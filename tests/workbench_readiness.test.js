@@ -111,8 +111,57 @@ async function warmReuseDoesNotPrewarmOrExtendExpiry() {
   assert.deepEqual(expired.requests, ["/v1/live-scene-planner/prepare"]);
 }
 
+async function generateDoesNotWaitForBackgroundPlannerWarmup() {
+  const app = harness();
+  const {context, elements, requests} = app;
+  let finishWarmup;
+  const warmup = new Promise((resolve) => { finishWarmup = resolve; });
+  const submitted = [];
+  elements.compileButton = {dataset: {}};
+  elements.error = {classList: {add() {}, remove() {}}};
+  elements.interim = {};
+  Object.assign(context, {
+    edgePlannerWarmUntil: 0, EDGE_PLANNER_KEEP_WARM_MS: 480000,
+    edgePlanPreparationTimer: null, listening: false, liveRequestEpoch: 0,
+    performance: {now: () => 0},
+    stopLiveJobTransport() {}, setSceneInputsDisabled() {},
+    renderGenerationProgress() {}, updateElapsedClock() {}, ensureProjectionPreview() {},
+    setStatus() {},
+    acceptedLiveScenePointer: (_response, snapshot) => snapshot,
+    handleLiveSceneSessionPointer(snapshot) { context.activeLiveJobId = snapshot.job_id; },
+    async fetch(url, options) {
+      requests.push(url);
+      if (url.endsWith("/warmup")) return warmup;
+      assert.equal(url, "/v1/live-scenes");
+      submitted.push(JSON.parse(options.body));
+      return {status: 202, json: async () => ({job_id: "scene-cached"})};
+    },
+  });
+  context.window.setInterval = () => 1;
+  const source = fs.readFileSync("src/bookforge/static/workbench.js", "utf8");
+  for (const [start, end] of [
+    ["async function warmEdgePlanner(", "function scheduleEdgePlanPreparation("],
+    ["async function compileStory(", "async function loadLatestScene("],
+  ]) vm.runInContext(source.slice(source.indexOf(start), source.indexOf(end)), context);
+
+  const background = context.warmEdgePlanner();
+  const generation = context.compileStory();
+  await new Promise(setImmediate);
+  assert.deepEqual(requests, ["/v1/live-scene-planner/warmup", "/v1/live-scenes"]);
+  assert.deepEqual(submitted, [{
+    text: elements.story.value, visual_style: elements.style.value, session_id: context.readerSessionId,
+  }]);
+  await generation;
+  assert.equal(context.activeLiveJobId, "scene-cached");
+  assert.equal(context.edgePlannerWarmUntil, 0);
+  finishWarmup({ok: true, json: async () => ({ready: true})});
+  assert.equal(await background, true);
+  assert.equal(context.edgePlannerWarmUntil, context.EDGE_PLANNER_KEEP_WARM_MS);
+}
+
 (async () => {
   await slowPlannerPreservesRendererExpiry();
   await warmReuseDoesNotPrewarmOrExtendExpiry();
-  console.log("Workbench readiness: delayed planning and warm reuse preserve renderer expiry.");
+  await generateDoesNotWaitForBackgroundPlannerWarmup();
+  console.log("Workbench readiness: expiry preserved; Generate does not await background warmup.");
 })().catch((error) => { console.error(error); process.exitCode = 1; });

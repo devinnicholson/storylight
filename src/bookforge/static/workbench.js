@@ -1111,11 +1111,6 @@ async function compileStory() {
   ensureProjectionPreview();
 
   try {
-    if (text !== preparedPlanKey && Date.now() >= edgePlannerWarmUntil) {
-      elements.compileButton.textContent = "Warming local Gemma…";
-      await warmEdgePlanner();
-      elements.compileButton.textContent = "Starting live generation…";
-    }
     const response = await fetch("/v1/live-scenes", {
       method: "POST",
       headers: {"Content-Type": "application/json"},
