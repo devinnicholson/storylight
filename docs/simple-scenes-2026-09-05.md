@@ -1,7 +1,9 @@
 # Simple scenes and reference continuity
 
 Status: twelve of twelve image requests completed, with all 24 master/depth JPEGs verified.
-The reference path failed the speed gate. Human correctness and continuity remain ungraded.
+The reference path failed the speed gate. The user rejected the flat visual treatment and
+requested restoration of the previous watercolor illustrations. Human correctness and continuity
+remain ungraded; that preference is not a per-image correctness rating.
 Both temporary apps are stopped with zero workers; no production setting changed.
 
 The first supervision attempt stopped before inference because its metadata validator confused
@@ -45,15 +47,16 @@ initialization and twelve ordered render start/end pairs, without observed platf
 failure. The corrected supervisor completed in 124.749 seconds including shutdown. Transient
 stopping states were retained before final zero-task/zero-container verification.
 
-The blind gallery is served locally at `http://127.0.0.1:18762/`. Rate both states, including the
-individual facts, then export the review JSON. Human ratings remain empty; neither a successful
-RPC nor the assistant's visual inspection supplies human acceptance. The reference method stays
-outside the fast path. The text-only method remains a candidate pending visual review and its
-slightly missed maximum-time gate.
+The experimental gallery remains available at `http://127.0.0.1:18762/` as historical evidence.
+The previous watercolor gallery at `http://127.0.0.1:18761/` is restored as the visual reference.
+Human ratings for the flat illustration trial remain empty; neither a successful RPC nor the
+assistant's visual inspection supplies human acceptance. The reference method stays outside the
+fast path. The flat style will not be carried forward, and its measured timings do not qualify
+the restored style.
 
-The user prefers reliable, fast, legible artwork over fine detail. This experiment uses simple
-flat illustrations to test essential counts, bindings, actions and continuity. It is a small
-engineering comparison, not an accuracy estimate for arbitrary stories.
+This experiment used simple flat illustrations to test essential counts, bindings, actions and
+continuity. It is a small engineering comparison, not an accuracy estimate for arbitrary stories.
+Its frozen prompts and artifacts are retained unchanged to preserve the measurements.
 
 ## Fixed comparison
 

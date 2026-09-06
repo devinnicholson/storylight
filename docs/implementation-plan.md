@@ -5,16 +5,19 @@ Last updated: 2026-09-05
 The [system audit](system-audit-2026-09-05.md) reconciles current implementation, live appliance
 configuration, benchmark scopes and outstanding gates. Earlier milestone tables below are historical.
 
-Current product preference: prioritize correct, reliably delivered scenes and generation speed
-over crispness, texture and decorative detail. Projection legibility remains required. The
+Current art direction: restore the previous watercolor paper-theater illustrations. The user
+rejected the flat, sparse trial images; preserve texture, lighting and depth while improving
+cold preparation, bounded warm-worker reuse and scene caching. Correct facts and projection
+legibility remain required. The
 [fidelity plan](product-fidelity-plan-2026-09-04.md#product-priority-update--september-5) records
 the revised selection criteria and relevant lower-resolution/step experiments.
 
 The [simple-scene comparison](simple-scenes-2026-09-05.md) completed twelve image requests and
 verified all 24 image/depth JPEGs on one worker. Text targets took 2.488 seconds median/2.574
 maximum; later reference targets took 4.768/4.983 seconds. Both missed the strict 2.5-second
-maximum. Cold first image took 49.287 seconds. The blind gallery is ready; human correctness
-and continuity remain ungraded. The user approved a $1 funding increase, preserving the $2
+maximum. Cold first image took 49.287 seconds. The user rejected the simple visual treatment;
+human correctness and continuity remain ungraded. The previous illustrated gallery is restored
+as the visual reference. The user approved a $1 funding increase, preserving the $2
 reserve. Both trial apps are stopped; the closed lifecycle supports a $0.85 gross hold and
 $34.66088685 workspace exposure under the new $36 stop. This is reserved exposure, not the bill.
 The cold-start accounting figures below describe the earlier closeout.
