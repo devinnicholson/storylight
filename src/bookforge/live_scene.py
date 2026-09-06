@@ -1065,8 +1065,6 @@ class LiveSceneJobRegistry:
                 raise LiveSceneProviderProtocolError(
                     "Provider ended before emitting a usable master scene"
                 )
-        except asyncio.CancelledError:
-            raise
         except Exception as error:  # Providers are an explicit failure boundary.
             current = await self.get(job_id)
             if current.stage is LiveSceneStage.MASTER_READY:
@@ -1113,11 +1111,6 @@ class LiveSceneJobRegistry:
             story_prefix = request.session_id or "live-scene"
             pack = pack.model_copy(update={"story_id": f"{story_prefix}-{job_id[-12:]}"})
             artifacts = _cached_live_scene_artifacts(pack, provider=self.provider.name)
-        except Exception:
-            # A stale/corrupt/incompatible cache is only a missed optimization.
-            return False
-
-        try:
             cache_ms = max(0.0, (perf_counter() - started) * 1000)
             master_artifacts = [
                 artifact
@@ -1191,6 +1184,7 @@ class LiveSceneJobRegistry:
                     metrics=motion_metrics,
                 )
         except Exception:
+            # A stale/corrupt/incompatible cache is only a missed optimization.
             return False
 
         if motion_artifact is None:

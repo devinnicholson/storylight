@@ -182,10 +182,6 @@ class ResilientFastSceneProvider:
                     f"{route.name} failed after its paid boundary; automatic fallback "
                     "and retry are suppressed"
                 ) from error
-            except BaseException:
-                # Cancellation and ambiguous paid failures must never cascade to
-                # another provider. The original request may still finish remotely.
-                raise
             await self._mark_healthy(route)
             attempts.append(
                 {

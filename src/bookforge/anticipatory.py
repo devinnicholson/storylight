@@ -545,8 +545,6 @@ class AnticipatorySceneOrchestrator:
                     "candidate failed the visual critic after its single allowed repair",
                     critic_history=history,
                 )
-        except asyncio.CancelledError:
-            raise
         except Exception as error:
             await self._fail(key, _bounded_error(error))
 

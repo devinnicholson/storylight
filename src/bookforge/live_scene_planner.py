@@ -2062,8 +2062,6 @@ class StructuredLiveScenePlanner:
             raise LiveScenePlannerTimeoutError(
                 f"local planner warmup exceeded {self.timeout_seconds:g} seconds"
             ) from error
-        except asyncio.CancelledError:
-            raise
         except Exception as error:
             detail = (str(error) or error.__class__.__name__)[:300]
             raise LiveScenePlannerError(f"local planner warmup failed: {detail}") from error
@@ -2182,8 +2180,6 @@ class StructuredLiveScenePlanner:
             raise LiveScenePlannerTimeoutError(
                 f"local scene planning exceeded {self.timeout_seconds:g} seconds"
             ) from error
-        except asyncio.CancelledError:
-            raise
         except Exception as error:
             detail = (str(error) or error.__class__.__name__)[:300]
             raise LiveScenePlannerError(

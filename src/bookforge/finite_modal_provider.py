@@ -2008,8 +2008,6 @@ class FiniteModalLiveSceneProvider:
         started = time.perf_counter()
         try:
             result = await probe()
-        except asyncio.CancelledError:
-            raise
         except Exception as error:
             raise LiveSceneProviderUnavailableError(
                 f"Cloud scene route readiness failed before billing: {error}"

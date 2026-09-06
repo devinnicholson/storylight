@@ -50,12 +50,8 @@ def locked_modal_budget_ledger(
             ledger = VisualLabLedger.read(ledger_path, envelope=envelope)
         else:
             ledger = VisualLabLedger(envelope=envelope, prior_estimated_usd=baseline)
-        try:
-            yield ledger
-        except BaseException:
-            raise
-        else:
-            ledger.write(ledger_path)
+        yield ledger
+        ledger.write(ledger_path)
     finally:
         try:
             fcntl.flock(descriptor, fcntl.LOCK_UN)

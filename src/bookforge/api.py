@@ -154,8 +154,6 @@ async def _warm_live_scene_planner_at_startup(registry: LiveSceneJobRegistry) ->
         return
     try:
         await warmup()
-    except asyncio.CancelledError:
-        raise
     except Exception:
         # Generation still fails closed before a paid render if the local
         # planner is unavailable. A best-effort latency optimization must not
