@@ -88,7 +88,7 @@ def schedule(manifest):
     return manifest["cases"] + manifest["cases"][:2]
 
 
-def prepare_manifest(experiment_id, identity, sources):
+def prepare_manifest(experiment_id, identity, sources, *, runtime_source: Path | None = None):
     value = {
         "schema_version": 1,
         "status": "draft",
@@ -99,11 +99,11 @@ def prepare_manifest(experiment_id, identity, sources):
         "cases": public_cases(),
         "sources": sources,
     }
-    validate_manifest(value, active=False)
+    validate_manifest(value, active=False, runtime_source=runtime_source)
     return value
 
 
-def validate_manifest(value, *, active):
+def validate_manifest(value, *, active, runtime_source: Path | None = None):
     require(
         set(value)
         == {
@@ -126,8 +126,11 @@ def validate_manifest(value, *, active):
     require(encoded(value["cases"]) == encoded(public_cases()))
     require(set(value["sources"]) == {"runtime", "worker", "weights"})
     require(all(is_hash(v) for v in value["sources"].values()))
-    require(value["sources"] == {k: sha(p.read_bytes()) for k, p in SOURCE_PATHS.items()})
+    paths = SOURCE_PATHS if runtime_source is None else SOURCE_PATHS | {"runtime": runtime_source}
+    require(value["sources"] == {k: sha(p.read_bytes()) for k, p in paths.items()})
     identity, _ = cold.frozen_cases()
+    if runtime_source is not None:
+        identity = identity | {"runtime_sha256": sha(runtime_source.read_bytes())}
     require(set(value["expected_identity"]) == set(identity))
     for key, expected in identity.items():
         if key not in {"gpu", "capability"}:
@@ -139,10 +142,7 @@ def validate_manifest(value, *, active):
         "NVIDIA RTX PRO 6000 Blackwell Server Edition": [12, 0],
     }
     require(value["expected_identity"]["gpu"] in gpus)
-    require(
-        value["expected_identity"]["capability"]
-        == gpus[value["expected_identity"]["gpu"]]
-    )
+    require(value["expected_identity"]["capability"] == gpus[value["expected_identity"]["gpu"]])
     capability = value["expected_identity"]["capability"]
     require(
         isinstance(capability, list)
@@ -284,8 +284,19 @@ def validate_endpoint(endpoint, service, revision):
     require(all(re.fullmatch(r"[a-z][a-z0-9-]{0,100}", v) for v in (service, revision)))
 
 
-async def run(manifest, raw_manifest, output, endpoint, service, revision, *, client, token_source):
-    validate_manifest(manifest, active=True)
+async def run(
+    manifest,
+    raw_manifest,
+    output,
+    endpoint,
+    service,
+    revision,
+    *,
+    client,
+    token_source,
+    runtime_source: Path | None = None,
+):
+    validate_manifest(manifest, active=True, runtime_source=runtime_source)
     validate_endpoint(endpoint, service, revision)
     require(not output.exists())
     token = await token_source(endpoint)
@@ -461,6 +472,11 @@ def main():
     parser.add_argument("--proof-manifest-sha256")
     parser.add_argument("--identity", type=Path)
     parser.add_argument("--sources", type=Path)
+    parser.add_argument(
+        "--runtime-source",
+        type=Path,
+        help="Explicit reviewed runtime source matching both manifest hash pins",
+    )
     parser.add_argument("--experiment-id", default="gcp-klein-20260906-a")
     mode = parser.add_mutually_exclusive_group()
     mode.add_argument("--prepare", action="store_true")
@@ -473,6 +489,7 @@ def main():
                 args.experiment_id,
                 protocol.decode_json(args.identity.read_bytes()),
                 protocol.decode_json(args.sources.read_bytes()),
+                runtime_source=args.runtime_source,
             )
             write_exclusive(args.manifest, encoded(value))
             print(
@@ -488,7 +505,7 @@ def main():
             return
         raw = args.manifest.read_bytes()
         value = protocol.decode_json(raw)
-        validate_manifest(value, active=args.run)
+        validate_manifest(value, active=args.run, runtime_source=args.runtime_source)
         if args.proof_manifest_sha256:
             require(sha(raw) == args.proof_manifest_sha256)
         if args.run:
@@ -508,6 +525,7 @@ def main():
                             args.revision,
                             client=client,
                             token_source=GoogleImpersonatedIdentityTokenSource(INVOKER),
+                            runtime_source=args.runtime_source,
                         ),
                         timeout=600,
                     )

@@ -161,6 +161,20 @@ def test_failure_stops_without_retry_and_boundary_refusals(tmp_path, monkeypatch
         mutation(changed)
         with pytest.raises(ValueError):
             bench.validate_manifest(changed, active=True)
+    runtime_source = tmp_path / "klein_scene_runtime.py"
+    runtime_source.write_bytes(bench.SOURCE_PATHS["runtime"].read_bytes() + b"\n# reviewed fork\n")
+    with pytest.raises(ValueError):
+        bench.validate_manifest(manifest, active=True, runtime_source=runtime_source)
+    candidate = copy.deepcopy(manifest)
+    candidate["sources"]["runtime"] = bench.sha(runtime_source.read_bytes())
+    candidate["expected_identity"]["runtime_sha256"] = candidate["sources"]["runtime"]
+    with pytest.raises(ValueError):
+        bench.validate_manifest(candidate, active=True)
+    bench.validate_manifest(candidate, active=True, runtime_source=runtime_source)
+    changed = copy.deepcopy(candidate)
+    changed["expected_identity"]["guidance"] = 2.0
+    with pytest.raises(ValueError):
+        bench.validate_manifest(changed, active=True, runtime_source=runtime_source)
     sent = []
 
     async def handler(request):
@@ -173,20 +187,21 @@ def test_failure_stops_without_retry_and_boundary_refusals(tmp_path, monkeypatch
     async def execute():
         async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
             await bench.run(
-                manifest,
-                bench.encoded(manifest),
+                candidate,
+                bench.encoded(candidate),
                 tmp_path / "failed",
                 "https://renderer.run.app",
                 "renderer",
                 "renderer-00001-a",
                 client=client,
                 token_source=token,
+                runtime_source=runtime_source,
             )
 
     asyncio.run(execute())
     assert len(sent) == 1 and not list((tmp_path / "failed").glob("*.jpg"))
     summary = bench.aggregate(
-        manifest, bench.encoded(manifest), tmp_path / "failed", "renderer", "renderer-00001-a"
+        candidate, bench.encoded(candidate), tmp_path / "failed", "renderer", "renderer-00001-a"
     )
     assert summary["decision"] == "reject" and summary["completed_cases"] == 0
     assert "secret" not in (tmp_path / "failed/journal.jsonl").read_text()

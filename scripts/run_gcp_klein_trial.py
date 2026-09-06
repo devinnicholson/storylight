@@ -122,12 +122,21 @@ def verify_deployment(value: dict, service: str, image: str) -> tuple[str, str]:
     return value["status"]["url"], revision
 
 
-def run(image: str, manifest_path: Path, output: Path, *, service: str | None = None) -> None:
+def run(
+    image: str,
+    manifest_path: Path,
+    output: Path,
+    *,
+    service: str | None = None,
+    runtime_source: Path | None = None,
+) -> None:
+    if runtime_source is not None:
+        runtime_source = runtime_source.resolve()
     manifest = benchmark.protocol.decode_json(manifest_path.read_bytes())
-    benchmark.validate_manifest(manifest, active=True)
+    benchmark.validate_manifest(manifest, active=True, runtime_source=runtime_source)
     for key, path in {
         "worker": ROOT / "deploy/gcp_klein_worker/app.py",
-        "runtime": ROOT / "deploy/klein_scene_runtime.py",
+        "runtime": runtime_source or ROOT / "deploy/klein_scene_runtime.py",
         "weights": ROOT / "deploy/gcp_klein_worker/klein_weights.py",
     }.items():
         if manifest["sources"][key] != hashlib.sha256(path.read_bytes()).hexdigest():
@@ -231,6 +240,8 @@ def run(image: str, manifest_path: Path, output: Path, *, service: str | None = 
             "--output",
             str(output / "renders"),
         ]
+        if runtime_source is not None:
+            command.extend(["--runtime-source", str(runtime_source)])
         result = execute(command, remaining)
         write(output / "client-exit.json", {"returncode": result.returncode})
         if result.returncode:
@@ -287,8 +298,19 @@ def main() -> None:
     parser.add_argument("--manifest", type=Path, required=True)
     parser.add_argument("--output", type=Path, required=True)
     parser.add_argument("--service", help="Fresh service name for an explicit deployment attempt")
+    parser.add_argument(
+        "--runtime-source",
+        type=Path,
+        help="Explicit reviewed runtime source matching both manifest hash pins",
+    )
     args = parser.parse_args()
-    run(args.image, args.manifest.resolve(), args.output.resolve(), service=args.service)
+    run(
+        args.image,
+        args.manifest.resolve(),
+        args.output.resolve(),
+        service=args.service,
+        runtime_source=args.runtime_source,
+    )
 
 
 if __name__ == "__main__":

@@ -82,11 +82,29 @@ def test_ambiguous_deployment_is_deleted_and_cleanup_failure_is_visible(tmp_path
 
     monkeypatch.setattr(trial, "gcloud", completed_control)
     monkeypatch.setattr(trial, "verify_deployment", lambda *args: ("https://test.run.app", "trial"))
-    monkeypatch.setattr(trial, "execute", lambda *args: subprocess.CompletedProcess([], 1, "", ""))
+    client_commands = []
+
+    def execute(args, timeout):
+        client_commands.append(args)
+        return subprocess.CompletedProcess(args, 1, "", "")
+
+    monkeypatch.setattr(trial, "execute", execute)
     sleeps = []
     monkeypatch.setattr(trial.time, "sleep", sleeps.append)
+    runtime_source = tmp_path / "klein_scene_runtime.py"
+    runtime_source.write_bytes(
+        (trial.ROOT / "deploy/klein_scene_runtime.py").read_bytes() + b"\n# reviewed fork\n"
+    )
+    candidate = json.loads(manifest.read_bytes())
+    candidate["sources"]["runtime"] = hashlib.sha256(runtime_source.read_bytes()).hexdigest()
+    candidate["expected_identity"]["runtime_sha256"] = candidate["sources"]["runtime"]
+    candidate_manifest = tmp_path / "candidate-manifest.json"
+    candidate_manifest.write_text(json.dumps(candidate))
     with pytest.raises(RuntimeError, match="client did not complete"):
-        trial.run(image, manifest, tmp_path / "client-failed")
+        trial.run(
+            image, candidate_manifest, tmp_path / "client-failed", runtime_source=runtime_source
+        )
+    assert client_commands[0][-2:] == ["--runtime-source", str(runtime_source.resolve())]
     closure = json.loads((tmp_path / "client-failed/closure.json").read_text())
     assert closure["service_deleted_and_absent"] is True
     assert closure["late_creation_cleanup_required"] is False
@@ -129,6 +147,17 @@ def test_existing_service_is_never_replaced_or_deleted(tmp_path, monkeypatch):
         return [{"metadata": {"name": service}}]
 
     monkeypatch.setattr(trial, "gcloud", control)
+    runtime_source = tmp_path / "changed-runtime.py"
+    runtime_source.write_bytes(b"unmatched runtime")
+    with pytest.raises(ValueError):
+        trial.run(
+            trial.IMAGE_PREFIX + "a" * 64,
+            manifest,
+            tmp_path / "unmatched",
+            service=service,
+            runtime_source=runtime_source,
+        )
+    assert commands == [] and not (tmp_path / "unmatched").exists()
     with pytest.raises(ValueError, match="existing service"):
         trial.run(trial.IMAGE_PREFIX + "a" * 64, manifest, tmp_path / "output", service=service)
     assert commands == [["run", "services", "list", "--region", trial.REGION]]
