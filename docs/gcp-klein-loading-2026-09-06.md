@@ -1,6 +1,8 @@
 # Native GCP cold-loading comparison — September 6, 2026
 
-This is a **new, separate $5 maximum phase** to test one loading change on Klein 4B. It has not run. G's first client request took 72.769 seconds, including 47.371 seconds of model loading; later client requests had a 0.492-second median. Loading is therefore worth measuring separately from warm rendering. G still failed one of eight assistant-reviewed scene cases, and human review remains pending. This experiment does not waive those quality requirements. See the [completed qualification record](gcp-klein-qualification-2026-09-06.md).
+The four-service comparison completed all **40 requests and 80 verified JPEGs**, but **rejected eager loading** under the frozen screen. Median first-request time improved by 8.84%, below the required 15%; only one paired load comparison improved, and 38 of 40 paired image comparisons differed. The candidate is not promoted. The prospective protocol and separate $5 maximum allowance below remain unchanged; measured results follow it.
+
+G's first client request took 72.769 seconds, including 47.371 seconds of model loading; later client requests had a 0.492-second median. That motivated this loading experiment. G still failed one of eight assistant-reviewed scene cases, and human review remains pending. This experiment does not waive those quality requirements. See the [completed qualification record](gcp-klein-qualification-2026-09-06.md).
 
 ## One candidate, four fresh services
 
@@ -45,3 +47,28 @@ The GPU allowance uses the reviewed $0.00088522/second for one RTX GPU, 20 vCPUs
 Build only the small candidate runtime/application/manifest overlay on G's immutable image, using the pinned BuildKit approach. Reuse all existing model-layer digests and verify the layer prefix and runtime configuration before dispatch. No model rebuild, new model download, or duplicate full model layer is included in this allowance. The original phase retains the shared base image; the new $0.02 covers only small incremental overlays for at most seven days. The build's ten-minute CPU rate is $0.156, rounded to $0.17; the first 100 GB disk is included. [Cloud Build pricing](https://cloud.google.com/build/pricing), [Artifact Registry storage](https://cloud.google.com/artifact-registry/pricing).
 
 Closeout must retain all four attempted service identities, terminal operations and absence checks, request journals, successful artifacts, image/source proofs, and attributable cost metrics. Report rate-based estimates separately from settled charges, and carry unresolved liabilities forward. No further build or service is automatically authorized by unused margin.
+
+## Completed comparison
+
+The [recomputed summary](../benchmarks/gcp-klein-loading-2026-09-06/summary.json) verifies ten requests per service, four distinct workers, eight nonpriming requests per worker, all 80 JPEGs, and clean supervisor closure for every service. It reports no verification errors. Each row below is one fresh service, in execution order.
+
+| Service | Loading | First client artifact-ready | Model-factory load | Later worker median | Supervised lifetime, including cleanup |
+| --- | --- | ---: | ---: | ---: | ---: |
+| H | Default mmap | 88.248 s | 59.463 s | 0.346633 s | 237.023 s |
+| I | Eager | 69.139 s | 43.941 s | 0.346636 s | 220.448 s |
+| J | Eager | 63.269 s | 39.709 s | 0.349132 s | 212.791 s |
+| K | Default mmap | 56.995 s | 38.149 s | 0.346515 s | 204.928 s |
+
+Default-loading median first-request time was **72.622 seconds**, versus **66.204 seconds** for eager loading: an **8.837% reduction**, which fails the 15% threshold. I loaded faster than H, but J loaded slower than K, so the requirement that both paired model-load times improve also failed. The candidate's median of later-worker medians regressed by **0.378%**, within the permitted 5%.
+
+The strict output-preservation check also failed: **38 of 40** paired master/depth comparisons differed. H versus I differed at every ordinal for both roles. K versus J matched only ordinal zero's master and depth. All files passed their own response-hash and JPEG validation; that integrity result does not establish equality between variants or visual correctness. The earlier G/H baseline variability remains a separate observation, and the frozen paired equality gate has not been relaxed.
+
+The default-loading first request varied from 88.248 to 56.995 seconds across its two runs. Host and storage cache state were not controlled, so these four measurements do not establish that eager loading causes a reliable improvement. Neither an aggregate timing reduction nor the successful transport of all images repairs the failed image-preservation or outstanding semantic and human-review gates.
+
+The candidate image is `sha256:930b37035208b3dd2c670794bcdbca9d960af3a09b5bcc55562097fe346b0270`. Its overlay build succeeded, and independent inspection confirmed all 13 G base layers and the full runtime configuration were preserved. The new 7,235-byte compressed layer contains only the exact frozen application, manifest, and candidate runtime files, owned by UID/GID 65532, with no links or special entries. See the [image verification](../benchmarks/gcp-klein-loading-2026-09-06/image-verification.json).
+
+All four supervisor receipts report terminal creation, service deletion and observed absence, with no cleanup error or unresolved late creation. The combined supervised lifetime was **875.190 seconds**; these local receipts are not settled provider billing. Preserve the phase allowances and billing uncertainty until attributable closeout evidence is reconciled.
+
+The final regional service inventory contains only the existing renderer and billing guard; all four experiment services are absent. The latest project notification reports **$21.92 gross at 21:43 UTC**, up from $21.59 before this phase. That delayed project-wide difference is not an attributable experiment charge. The [closeout receipt](../benchmarks/gcp-klein-loading-2026-09-06/closeout.json) retains both phase allowances without releasing liabilities and separates a two-slot rate estimate from settled billing.
+
+To reproduce the result offline, run `python benchmarks/gcp-klein-loading-2026-09-06/summarize.py` from a checkout containing the retained artifacts and the two execution-source files at their pinned `bd1e3096304dc85f058ece995290dcd31093abee` bytes. The reporter checks those source pins, both plans, manifests, deployed metadata, journals, all images, and closure receipts before calculating the gates. Independent recomputation matched the saved summary, whose SHA-256 is `76ce41f81f68a0021ffdafdaa2439736f45f5f2ad0e67b9a0b7386ed07880cba`.
