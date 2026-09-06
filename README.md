@@ -1,5 +1,9 @@
 # Bookforge
 
+For the current implementation, live Jetson configuration, measured results and limitations, see
+the [September 5 system audit](docs/system-audit-2026-09-05.md). Measurements below document
+different historical configurations; prepared, warm and cold timings are not interchangeable.
+
 Bookforge is the cloud/edge foundation for **The Book That Listens Back**. The live system keeps
 audio, video, reading behavior, and intervention decisions on the Jetson. Google Cloud compiles
 publisher-supplied book pages into validated, projection-ready Story Packs.
@@ -8,7 +12,7 @@ This repository now contains working model-facing services rather than only a vi
 
 - a structured Gemma client verified on both the development Mac and an NVIDIA Jetson Orin Nano;
 - the same client contract for vLLM or NVIDIA NIM-compatible cloud endpoints;
-- a deterministic sub-900 ms intervention fast path;
+- a deterministic intervention fast path;
 - schema-constrained Gemma intervention decisions;
 - a Story Compiler that returns validated SceneSpec v2 composition, motion, triggers, scaffolds,
   and questions;

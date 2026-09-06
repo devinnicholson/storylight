@@ -2,6 +2,9 @@
 
 Last updated: 2026-09-05
 
+The [system audit](system-audit-2026-09-05.md) reconciles current implementation, live appliance
+configuration, benchmark scopes and outstanding gates. Earlier milestone tables below are historical.
+
 ## Latest increment — cold starts
 
 The [cold-start effort](renderer-cold-start-2026-09-05.md) takes priority over transport tuning.
@@ -306,7 +309,7 @@ projected world with no perceptible delay. Gemma compiles the book into a valida
 Cosmos turns selected page art into coherent motion; Google Cloud prepares and distributes assets;
 the Jetson controls the live experience without sending raw audio or video to the cloud.
 
-## Current system
+## Original system snapshot (superseded)
 
 | Capability | Status | Evidence |
 | --- | --- | --- |
@@ -508,9 +511,9 @@ Status: pending
 Exit criterion: a reviewer can understand the value in ten seconds and reproduce the technical
 core from the repository.
 
-## Performance budgets
+## Original performance budgets
 
-| Interaction | Target | Current evidence |
+| Interaction | Target | Evidence at the original milestone |
 | --- | --- | --- |
 | Recording-state feedback | Under 100 ms | Immediate UI state change observed |
 | Local ASR, short page | Under 4 s warm | Synthetic sentence transcribed correctly in about 3 s |

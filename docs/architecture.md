@@ -1,5 +1,10 @@
 # Architecture
 
+This is an early architecture snapshot, not the current deployment inventory. The
+[September 5 system audit](system-audit-2026-09-05.md) describes the implemented flows and live
+configuration. In particular, the current audio path uses cumulative clips and monotonic text
+alignment; automatic camera page tracking is not implemented, and GCP live providers now exist.
+
 Bookforge has two deliberately separate planes.
 
 ## Private live plane

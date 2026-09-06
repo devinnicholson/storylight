@@ -1,5 +1,9 @@
 # Bookforge GCP handoff
 
+This records an earlier offline-package milestone. For current cloud providers, deployed
+configuration and privacy boundaries, use the [September 5 system audit](system-audit-2026-09-05.md).
+The live renderer receives a sanitized visual contract, not the raw source passage.
+
 The Modal milestone produces a cloud-neutral artifact, not a Modal-dependent runtime. The accepted
 deliverable is the self-contained `silver-fox-lost-words` handoff directory. It contains one
 validated Story Pack, six still masters, six motion loops, and a checksum manifest. A clean machine
