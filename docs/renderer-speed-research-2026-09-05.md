@@ -127,10 +127,11 @@ reservation under the conservative combined bound. No additional funding or refu
 Reported workspace usage remained $14.56522654 afterward; this is a delayed billing floor, not
 the settled experiment charge. The full reservation remains held.
 
-The next inference experiment should time each pipeline stage and eliminate unused Qwen
-vocabulary projection, checking embedding and image equality. That targets work performed on
-every new prompt. Keep bounded session preparation as the primary defense against cold starts;
-another snapshot or parallel-loading rollout is not supported by these results.
+The [conditioning comparison completed September 6](renderer-conditioning-2026-09-06.md):
+all tensors and images matched, but median paired runtime changed only 0.077%. It is not
+promoted. Stage timing identifies the transformer as the dominant warm computation; investigate
+its kernel and launch costs next. Keep bounded session preparation as the primary defense
+against cold starts; another snapshot or parallel-loading rollout is not supported here.
 
 Verification: 929 Python tests, all four JavaScript suites, scoped Ruff and diff checks passed.
 The public summary reproduces byte-for-byte, and independent review verified all 32 artifacts.
