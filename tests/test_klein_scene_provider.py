@@ -1,11 +1,13 @@
 import asyncio
 import hashlib
 import json
+from dataclasses import replace
 from types import SimpleNamespace
 
 import pytest
 from test_finite_modal_provider import _jpeg
 
+from bookforge import klein_scene_provider as klein
 from bookforge.finite_modal_provider import (
     DEPTH_MODEL,
     DEPTH_MODEL_REVISION,
@@ -148,8 +150,19 @@ def test_inline_gate_cannot_be_silently_bypassed(tmp_path):
     asyncio.run(run())
 
 
-def test_session_authorization_runs_once_and_failure_keeps_reservation(tmp_path):
+def test_session_authorization_runs_once_and_failure_keeps_reservation(tmp_path, monkeypatch):
+    now = 1000.0
+    monkeypatch.setattr(
+        klein,
+        "time",
+        SimpleNamespace(
+            monotonic=lambda: now,
+            perf_counter=klein.time.perf_counter,
+        ),
+    )
+
     async def run():
+        nonlocal now
         calls, reservations = [], []
         obj = provider(tmp_path, calls, cap=1)
 
@@ -159,11 +172,17 @@ def test_session_authorization_runs_once_and_failure_keeps_reservation(tmp_path)
 
         obj._reserve_against_current_billing = reserve
         await obj.prewarm(prewarm_id="first")
+        now += 30
         await obj.generate_fast(request(), output_dir=tmp_path / "first")
+        assert obj.warm_deadline == 1090
         assert len(reservations) == 1
         assert reservations[0]["full_call_ceiling_usd"] == 1
+        now = 1090
+        assert (await obj.warm_status()).state == "idle"
+        assert calls == ["prewarm", "generate"]
 
         async def fail(operation, **kwargs):
+            calls.append(operation)
             raise RuntimeError("remote failure")
 
         obj.invoker.invoke = fail
@@ -172,7 +191,73 @@ def test_session_authorization_runs_once_and_failure_keeps_reservation(tmp_path)
         assert obj.reserved_usd == 0.75
         with pytest.raises(FiniteModalBudgetError, match="already attempted"):
             await obj.prewarm(prewarm_id="failed")
+        assert (await obj.warm_status()).state == "idle"
+        assert obj.prewarm_id is None and obj.warm_deadline == 0
+        assert calls == ["prewarm", "generate", "prewarm"]
         assert len(reservations) == 1
+
+    asyncio.run(run())
+
+
+def test_concurrent_explicit_prewarm_reuses_original_receipt_and_remaining_time(
+    tmp_path, monkeypatch
+):
+    now = 0.0
+    monkeypatch.setattr(
+        klein,
+        "time",
+        SimpleNamespace(
+            monotonic=lambda: now,
+            perf_counter=klein.time.perf_counter,
+        ),
+    )
+
+    async def run():
+        nonlocal now
+        calls = []
+        obj = provider(tmp_path, calls, cap=1)
+        await obj.generate_fast(request(), output_dir=tmp_path / "first")
+        assert (await obj.warm_status()).state == "idle"  # One image does not warm both buckets.
+        started, release = asyncio.Event(), asyncio.Event()
+        original = obj.invoker.invoke
+
+        async def invoke(operation, **kwargs):
+            started.set()
+            await release.wait()
+            return await original(operation, **kwargs)
+
+        obj.invoker.invoke = invoke
+        first = asyncio.create_task(obj.prewarm(prewarm_id="first"))
+        await started.wait()
+        second = asyncio.create_task(obj.prewarm(prewarm_id="second"))
+        now = 20
+        release.set()
+        initial, reused = await asyncio.gather(first, second)
+        assert initial == reused and reused.prewarm_id == "first"
+        assert obj.warm_deadline == 110
+        now = 30
+        later = await obj.prewarm(prewarm_id="third")
+        assert later.expires_in_seconds == 80 and obj.warm_deadline == 110
+        assert later.reservation_id == initial.reservation_id
+        assert calls == ["generate", "prewarm"] and obj.reserved_usd == 0.5
+        assert obj.operations == {("generate", "scene-test"), ("prewarm", "first")}
+
+        async def cancelled(operation, **kwargs):
+            calls.append(operation)
+            raise asyncio.CancelledError
+
+        obj.invoker.invoke = cancelled
+        with pytest.raises(asyncio.CancelledError):
+            await obj.generate_fast(
+                replace(request(), scene_id="cancelled"), output_dir=tmp_path / "cancelled"
+            )
+        assert (await obj.warm_status()).state == "idle"
+        assert obj.reserved_usd == 0.75 and obj._prewarm_report is None
+        obj.invoker.invoke = original
+        recovered = await obj.prewarm(prewarm_id="explicit-recovery")
+        assert recovered.prewarm_id == "explicit-recovery"
+        assert calls == ["generate", "prewarm", "generate", "prewarm"]
+        assert obj.reserved_usd == 1
 
     asyncio.run(run())
 

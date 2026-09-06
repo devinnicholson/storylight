@@ -1,0 +1,15 @@
+{
+  "monthly_credit_usd": 30.0,
+  "authorized_paid_usd": 7.0,
+  "workspace_usage_before_live_scenes_usd": 13.13786456,
+  "billing_delay_reserve_usd": 2.0,
+  "hard_stop_workspace_total_usd": 35.0,
+  "maximum_new_spend_usd": 21.85,
+  "experiment_ceiling_usd": 2.84,
+  "maximum_operations": 6,
+  "operation_ceiling_usd": 0.39,
+  "setup_ceiling_usd": 0.5,
+  "regional_price_multiplier": 1.75,
+  "baked_image_id": "im-WtXer8GjRPdgMqWAAUSMwJ",
+  "note": "Cold-start memory-request comparison authorized by the user cold-start focus. Six sequential single-use SDK calls, four fixed renders per call. L4 CPU8 memory hardlimit64GiB, request64 versus16GiB, same AWSus-east1/image/runtime/cache. Full setup and all unrelated liability holds retained. No retry or automatic fallback."
+}

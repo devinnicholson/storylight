@@ -7,7 +7,7 @@ import hashlib
 import importlib
 import math
 import time
-from dataclasses import asdict
+from dataclasses import asdict, replace
 from pathlib import Path
 from uuid import uuid4
 
@@ -65,6 +65,7 @@ class KleinSceneProvider(FiniteModalSceneProvider):
         self.reserved_usd = 0.0
         self.warm_deadline = 0.0
         self.prewarm_id = None
+        self._prewarm_report = None
         self.session_id = uuid4().hex
         self.reservation_id = None
         self.operations = set()
@@ -92,7 +93,16 @@ class KleinSceneProvider(FiniteModalSceneProvider):
         # No billing-lag refunds and no implicit retry of a paid call.
         self.reserved_usd += CALL_CEILING_USD
         self.operations.add(key)
-        return self.reservation_id, await self.invoker.invoke(operation, **arguments)
+        try:
+            return self.reservation_id, await self.invoker.invoke(operation, **arguments)
+        except BaseException:
+            self._forget_prewarm()
+            raise
+
+    def _forget_prewarm(self):
+        self._prewarm_report = None
+        self.warm_deadline = 0.0
+        self.prewarm_id = None
 
     async def prewarm(self, *, prewarm_id, include_motion=False, scaledown_window_seconds=90):
         if include_motion or scaledown_window_seconds != 90:
@@ -100,11 +110,13 @@ class KleinSceneProvider(FiniteModalSceneProvider):
                 "Klein preview supports only a 90-second idle window and no video"
             )
         async with self.operation_lock:
+            remaining = self.warm_deadline - time.monotonic()
+            if self._prewarm_report is not None and remaining > 0:
+                return replace(self._prewarm_report, expires_in_seconds=remaining)
+            self._forget_prewarm()
             started = time.perf_counter()
             reservation, report = await self._call("prewarm", prewarm_id)
-            self.warm_deadline = time.monotonic() + 90
-            self.prewarm_id = prewarm_id
-            return WarmPrewarmReport(
+            result = WarmPrewarmReport(
                 prewarm_id=prewarm_id,
                 reservation_id=reservation,
                 include_motion=False,
@@ -116,6 +128,10 @@ class KleinSceneProvider(FiniteModalSceneProvider):
                 expires_in_seconds=90,
                 fast_inference_warmup_seconds=report["warmup_seconds"],
             )
+            self.warm_deadline = time.monotonic() + 90
+            self.prewarm_id = prewarm_id
+            self._prewarm_report = result
+            return result
 
     async def warm_status(self):
         ready, detail = await self.probe()
@@ -153,8 +169,14 @@ class KleinSceneProvider(FiniteModalSceneProvider):
                 seed=request.seed,
             )
             elapsed = time.perf_counter() - started
-            self.warm_deadline = time.monotonic() + 90
-            return write_bundle(request, output_dir, payload, elapsed, reservation)
+            try:
+                bundle = write_bundle(request, output_dir, payload, elapsed, reservation)
+            except Exception:
+                self._forget_prewarm()
+                raise
+            if payload["warm_state"] == "cold":
+                self._forget_prewarm()
+            return bundle
 
 
 def write_bundle(request, output_dir, payload, elapsed, reservation):

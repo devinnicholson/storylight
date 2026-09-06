@@ -2,6 +2,19 @@
 
 Last updated: 2026-09-05
 
+## Latest increment — cold starts
+
+The [cold-start effort](renderer-cold-start-2026-09-05.md) now takes priority over transport tuning.
+The Klein service shares a valid explicit prewarm across overlapping callers, preserving its
+original deadline and reservation; uncertainty clears readiness. A fixed six-container comparison
+tests a smaller guaranteed host-memory request with the same 64 GiB ceiling and image settings.
+It records framework imports, model loading, cache restore and first-bucket work separately.
+
+The $2.84 comparison is reserved within the existing $35 stop after a reviewed lifetime bound
+reduced the completed C hold to $1.50. Fresh reported usage remains $14.12593674; projected usage
+plus retained holds is $33.49593674. Implementation, 895 Python tests, JavaScript checks and
+independent review pass; live measurement is next. Accepted appliance routing remains unchanged.
+
 ## Latest increment — renderer latency measurement
 
 The [eastern-region comparison](renderer-region-east-2026-09-05.md) completed 14 operations in
@@ -15,7 +28,8 @@ planning or warm reuse can no longer extend displayed readiness. Expiry makes no
 Warm image inference was approximately 1.6 s on either transport, so startup and useful warm
 lifetime are the next performance decision. Promotion and automatic session prewarming remain
 gated. Updated reported usage plus unreleased holds exceeds the $35 conservative stop, so no
-additional paid dispatch is allowed until billing reconciliation restores headroom.
+additional paid dispatch was blocked until the subsequent cold-start reconciliation restored
+headroom using a conservative bound on the completed app lifetimes.
 
 The [corrected regional recovery](renderer-region-recovery-2026-09-05.md) completed its bounded
 attempt but timed out after a capacity wait and late warmup compilation. Both apps are stopped;
