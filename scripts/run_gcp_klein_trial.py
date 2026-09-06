@@ -260,6 +260,15 @@ def run(
         write(output / "client-exit.json", {"returncode": result.returncode})
         if result.returncode:
             raise RuntimeError("qualification client did not complete")
+        summary = benchmark.protocol.decode_json((output / "renders/summary.json").read_bytes())
+        if not (
+            summary.get("completed_cases") == summary.get("declared_cases") == 10
+            and summary.get("worker_count") == 1
+            and summary.get("decision") == "ungraded"
+            and len(summary.get("cases", [])) == 10
+            and all(row.get("status") == "ok" for row in summary["cases"])
+        ):
+            raise RuntimeError("qualification workload was rejected")
         if export_compiler_cache:
             remaining = LIFETIME_SECONDS - (time.monotonic() - started)
             if remaining <= 5:

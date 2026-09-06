@@ -122,6 +122,20 @@ def test_ambiguous_deployment_is_deleted_and_cleanup_failure_is_visible(tmp_path
     def export_failed(args, timeout):
         client_commands.append(args)
         timeouts.append(timeout)
+        if len(client_commands) == 1:
+            renders = tmp_path / "export-failed/renders"
+            renders.mkdir()
+            (renders / "summary.json").write_text(
+                json.dumps(
+                    {
+                        "completed_cases": 10,
+                        "declared_cases": 10,
+                        "worker_count": 1,
+                        "decision": "ungraded",
+                        "cases": [{"status": "ok"}] * 10,
+                    }
+                )
+            )
         return subprocess.CompletedProcess(args, int(len(client_commands) == 2), "", "")
 
     monkeypatch.setattr(trial, "execute", export_failed)
@@ -140,6 +154,29 @@ def test_ambiguous_deployment_is_deleted_and_cleanup_failure_is_visible(tmp_path
     assert json.loads((tmp_path / "export-failed/closure.json").read_text())[
         "service_deleted_and_absent"
     ]
+
+    def rejected_workload(args, timeout):
+        renders = tmp_path / "workload-rejected/renders"
+        renders.mkdir()
+        (renders / "summary.json").write_text(
+            json.dumps(
+                {
+                    "completed_cases": 0,
+                    "declared_cases": 10,
+                    "worker_count": 0,
+                    "decision": "reject",
+                    "cases": [{"status": "failed"}],
+                }
+            )
+        )
+        return subprocess.CompletedProcess(args, 0, "", "")
+
+    monkeypatch.setattr(trial, "execute", rejected_workload)
+    with pytest.raises(RuntimeError, match="workload was rejected"):
+        trial.run(image, manifest, tmp_path / "workload-rejected")
+    closure = json.loads((tmp_path / "workload-rejected/closure.json").read_text())
+    assert closure["service_deleted_and_absent"] and closure["failure"] == "RuntimeError"
+    assert not (tmp_path / "workload-rejected/export-exit.json").exists()
 
     for invalid in ({}, {**binding, "condition": {"expression": "true"}}):
         binding = invalid
