@@ -68,19 +68,55 @@ def test_ambiguous_deployment_is_deleted_and_cleanup_failure_is_visible(tmp_path
     assert closure["service_deleted_and_absent"] is False
     assert closure["cleanup_error"] == "RuntimeError"
 
+    binding = {
+        "role": "roles/run.invoker",
+        "members": [f"serviceAccount:{trial.ACCOUNT}"],
+    }
+
     def completed_control(args, timeout=30):
         if args[:3] == ["run", "services", "list"]:
             return []
+        if args[:3] == ["run", "services", "get-iam-policy"]:
+            return {"bindings": [binding] if binding else []}
         return {}
 
     monkeypatch.setattr(trial, "gcloud", completed_control)
     monkeypatch.setattr(trial, "verify_deployment", lambda *args: ("https://test.run.app", "trial"))
     monkeypatch.setattr(trial, "execute", lambda *args: subprocess.CompletedProcess([], 1, "", ""))
+    sleeps = []
+    monkeypatch.setattr(trial.time, "sleep", sleeps.append)
     with pytest.raises(RuntimeError, match="client did not complete"):
         trial.run(image, manifest, tmp_path / "client-failed")
     closure = json.loads((tmp_path / "client-failed/closure.json").read_text())
     assert closure["service_deleted_and_absent"] is True
     assert closure["late_creation_cleanup_required"] is False
+    assert sleeps == [30, 30, 30, 30]
+
+    for invalid in ({}, {**binding, "condition": {"expression": "true"}}):
+        binding = invalid
+        sleeps.clear()
+        output = tmp_path / ("conditional" if invalid else "missing-grant")
+        with pytest.raises(ValueError, match="invoker grant is missing"):
+            trial.run(image, manifest, output)
+        assert sleeps == []
+        assert not (output / "client-exit.json").exists()
+        assert json.loads((output / "closure.json").read_text())["service_deleted_and_absent"]
+
+    binding = {"role": "roles/run.invoker", "members": [f"serviceAccount:{trial.ACCOUNT}"]}
+    elapsed = [0]
+    monkeypatch.setattr(trial.time, "monotonic", lambda: elapsed[0])
+
+    def delayed_sleep(seconds):
+        sleeps.append(seconds)
+        elapsed[0] = trial.LIFETIME_SECONDS - 30
+
+    monkeypatch.setattr(trial.time, "sleep", delayed_sleep)
+    with pytest.raises(TimeoutError, match="IAM propagation"):
+        trial.run(image, manifest, tmp_path / "deadline")
+    assert sleeps == [30]
+    assert not (tmp_path / "deadline/client-exit.json").exists()
+    closure = json.loads((tmp_path / "deadline/closure.json").read_text())
+    assert closure["service_deleted_and_absent"]
 
 
 def test_existing_service_is_never_replaced_or_deleted(tmp_path, monkeypatch):

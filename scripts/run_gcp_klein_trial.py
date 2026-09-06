@@ -154,6 +154,8 @@ def run(image: str, manifest_path: Path, output: Path, *, service: str | None = 
             "manifest_sha256": hashlib.sha256(manifest_path.read_bytes()).hexdigest(),
             "maximum_service_seconds": LIFETIME_SECONDS,
             "cleanup_reserve_seconds": CLEANUP_SECONDS,
+            "deployment_timeout_seconds": 240,
+            "iam_propagation_wait_seconds": 120,
             "maximum_gpu_instances_configured": 1,
             "cost_allowance_usd": 5,
             "cost_is_not_a_hard_platform_cap": True,
@@ -197,6 +199,18 @@ def run(image: str, manifest_path: Path, output: Path, *, service: str | None = 
             for member in binding["members"]
         ):
             raise ValueError("qualification service is not private")
+        if not any(
+            binding.get("role") == "roles/run.invoker"
+            and f"serviceAccount:{ACCOUNT}" in binding.get("members", [])
+            and not binding.get("condition")
+            for binding in policy.get("bindings", [])
+        ):
+            raise ValueError("qualification invoker grant is missing")
+        # A returned IAM policy does not mean the invocation frontend has received it.
+        for _ in range(4):
+            if LIFETIME_SECONDS - (time.monotonic() - started) <= 30:
+                raise TimeoutError("insufficient supervised time for IAM propagation")
+            time.sleep(30)
         remaining = LIFETIME_SECONDS - (time.monotonic() - started)
         if remaining <= 30:
             raise TimeoutError("insufficient supervised time for inference")
