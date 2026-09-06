@@ -178,7 +178,7 @@ device discovery runs normally. Model loading, compiler-cache restoration and re
 all run after restoration. This is distinct from the older full-model/compiled snapshot that
 timed out. A successful image alone cannot qualify it: the probe must distinguish captures,
 actual restores and platform fallback, preserve reference hashes, and count the complete
-supervised app lifetime against the existing budget. No snapshot call has run yet.
+supervised app lifetime against the existing budget. Its completed qualification is recorded below.
 
 ## Imports-only GPU snapshot qualification
 
@@ -209,7 +209,7 @@ six 30-second teardown allowances and full setup total $1.53223932. This release
 preserving every other hold and the original funding envelope. At current reported usage
 $14.31314791, adding the snapshot reservation projects **$34.81314791** under the $35 stop.
 The [snapshot evidence directory](../benchmarks/renderer-import-snapshot-2026-09-05) retains this
-reconciliation and the eventual frozen authorization and result.
+reconciliation, frozen authorization and result.
 
 Local qualification passes all 900 Python tests, three JavaScript suites, scoped lint and the
 staged credential scan. Four focused snapshot tests cover lifecycle separation, finite capture
@@ -217,3 +217,45 @@ and request claims, restore evidence, repeated-container rejection, expiry and c
 submissions. Independent review also checked the private supervisor and actual Modal 1.5.5
 configuration offline. The manifest and private authorization are frozen; preflight made zero
 generation calls.
+
+## Snapshot result
+
+The imports-only snapshot **qualifies for further comparison**. One capture was reused in two
+later, distinct containers with fresh activation IDs. All 12 images and 24 JPEG files match the
+frozen references. Full platform logs corroborate capture and restoration without a failed
+checkpoint, retry or fallback. The supervisor stopped after the third input, in 377.156 seconds;
+separate inventory confirms the app stopped with zero tasks and no containers.
+
+| Boundary | Initial capture | First later restore | Second later restore |
+| --- | ---: | ---: | ---: |
+| Complete four-render client cycle | 258.686 s | 76.608 s | 35.767 s |
+| Post-restore worker work | 36.713 s | 40.786 s | 27.192 s |
+| Model loading | 15.626 s | 18.428 s | 5.795 s |
+| First 128-token render, including depth/encoding | 11.381 s | 12.749 s | 10.346 s |
+
+Imports took 14.692 seconds once, before capture. The two later containers skipped that work;
+the returned import duration is captured metadata, not time spent again. This does not establish
+a 14.692-second net latency improvement: restoration, placement and storage costs still apply.
+The second restore's client cycle also includes 4.479 seconds of intentional scale-to-zero
+waiting. None of these cycle times measures first-image display.
+
+Three provider messages explicitly report waiting for L4 capacity under the fixed AWS/eastern
+placement and 64 GiB request. This confirms capacity waiting occurred, without assigning every
+second outside the worker to queueing. Model loading and first-bucket execution also vary widely.
+The candidate is not promoted and no causal speed gate has passed.
+
+Independent aggregation reproduces summary SHA-256
+`59bc68bf5cdaa8f300da4128fffefa0c5c312db9a9e90c902a5d07b0c712e7e2`, including actual validation
+of all 24 local JPEGs. The 44 phase events agree with request/activation bindings and render
+durations. The final cleanup receipt resolves the raw summary's pending platform-log audit.
+Reported probe charges are $0.11128800 and workspace usage is $14.42443591, provisionally;
+the full $1.67 probe hold remains at this closeout.
+
+The next initialization target is first execution. The unchanged runtime's `compile()` restores
+cached artifacts and installs wrappers without running a forward pass. Warm controls remain
+about 1.6–1.7 seconds, while the first bucket still spends roughly 10–13 seconds rendering after
+imports have been restored. A snapshot containing the current default-compiled, warmed runtime
+could remove that setup, but roughly 17 GiB of GPU state and compiler subprocesses introduce
+additional checkpoint risk. It needs its own finite correctness and latency qualification.
+The [warmed-runtime probe](renderer-warmed-snapshot-2026-09-05.md) now implements that next step,
+with broader US placement, one capture, three requests and a separate $1.15 ceiling.

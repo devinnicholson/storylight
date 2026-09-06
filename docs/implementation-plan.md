@@ -14,9 +14,18 @@ The six-call memory comparison completed with 24 reference-identical images and 
 Cycle median improved only 6.07% (43.535 s to 40.894 s), below the 25% gate, so it is not promoted.
 Measured framework imports take 10–14 seconds. The CPU-only audit rejected the import block:
 it calls CUDA availability during import. The app is stopped, with a provisional $0.00172050
-charge and its full $0.70 hold retained. Reported workspace usage is $14.31314791. A GPU-assisted
-snapshot of imports alone is under review; no snapshot call has run. Accepted appliance routing
-remains unchanged.
+charge and its full $0.70 hold retained. The GPU-assisted imports-only snapshot then passed two
+confirmed restores with all 12 images reference-identical and no platform fallback. Complete
+four-render cycles took 258.686, 76.608 and 35.767 seconds; capacity waits, model loading and
+first-execution setup remain substantial. Correctness is qualified; a causal speed improvement
+is not. Reported workspace usage is $14.42443591. Both temporary apps are stopped and accepted
+appliance routing remains unchanged.
+
+The next [warmed-runtime snapshot qualification](renderer-warmed-snapshot-2026-09-05.md) captures
+the model after both token buckets have run twice, then restores without loading or compiling.
+It allows one capture and three requests in broader US placement, with separate 2.5-second
+first-render and 15-second four-render delivery gates. Reviewed closed-run bounds fund its $1.15
+ceiling within the existing $35 stop; no further funding increase is required.
 
 ## Latest increment — renderer latency measurement
 

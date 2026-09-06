@@ -1,0 +1,19 @@
+{
+  "monthly_credit_usd": 30.0,
+  "authorized_paid_usd": 7.0,
+  "workspace_usage_before_live_scenes_usd": 13.13786456,
+  "billing_delay_reserve_usd": 2.0,
+  "hard_stop_workspace_total_usd": 35.0,
+  "maximum_new_spend_usd": 21.85,
+  "experiment_ceiling_usd": 1.15,
+  "maximum_operations": 3,
+  "maximum_captures": 1,
+  "global_deadline_seconds": 240,
+  "shutdown_allowance_seconds": 60,
+  "resource_slots_budgeted": 2,
+  "additional_teardown_seconds": 120,
+  "setup_ceiling_usd": 0.5,
+  "regional_price_multiplier": 1.75,
+  "baked_image_id": "im-WtXer8GjRPdgMqWAAUSMwJ",
+  "note": "One US max-one L4 pool with a warmed-runtime GPU snapshot. Supervise from before deployment; one capture and three sequential inputs, no retries or builds. Budget two resource slots for 300 seconds, four 30-second teardown allowances and full setup. Qualification only; broader placement and snapshot scope differ from the prior diagnostic."
+}
