@@ -4,28 +4,40 @@ Last updated: 2026-09-05
 
 ## Latest increment — cold starts
 
-The [cold-start effort](renderer-cold-start-2026-09-05.md) now takes priority over transport tuning.
+The [cold-start effort](renderer-cold-start-2026-09-05.md) takes priority over transport tuning.
 The Klein service shares a valid explicit prewarm across overlapping callers, preserving its
-original deadline and reservation; uncertainty clears readiness. A fixed six-container comparison
-tests a smaller guaranteed host-memory request with the same 64 GiB ceiling and image settings.
-It records framework imports, model loading, cache restore and first-bucket work separately.
+original deadline and reservation; uncertainty clears readiness. The six-call memory comparison
+completed with 24 reference-identical images and zero failures, but its 6.07% cycle improvement
+(43.535 s to 40.894 s) missed the 25% gate and was not promoted.
 
-The six-call memory comparison completed with 24 reference-identical images and zero failures.
-Cycle median improved only 6.07% (43.535 s to 40.894 s), below the 25% gate, so it is not promoted.
-Measured framework imports take 10–14 seconds. The CPU-only audit rejected the import block:
-it calls CUDA availability during import. The app is stopped, with a provisional $0.00172050
-charge and its full $0.70 hold retained. The GPU-assisted imports-only snapshot then passed two
-confirmed restores with all 12 images reference-identical and no platform fallback. Complete
+Measured framework imports take 10–14 seconds. The CPU-only audit rejected the import block
+because it calls CUDA availability. The GPU-assisted imports-only snapshot then passed two
+confirmed restores with all 12 images reference-identical and no platform fallback. Its complete
 four-render cycles took 258.686, 76.608 and 35.767 seconds; capacity waits, model loading and
-first-execution setup remain substantial. Correctness is qualified; a causal speed improvement
-is not. Reported workspace usage is $14.42443591. Both temporary apps are stopped and accepted
-appliance routing remains unchanged.
+first-execution setup remained substantial. It qualified correctness, not a causal speed gain.
 
-The next [warmed-runtime snapshot qualification](renderer-warmed-snapshot-2026-09-05.md) captures
-the model after both token buckets have run twice, then restores without loading or compiling.
-It allows one capture and three requests in broader US placement, with separate 2.5-second
-first-render and 15-second four-render delivery gates. Reviewed closed-run bounds fund its $1.15
-ceiling within the existing $35 stop; no further funding increase is required.
+The [warmed-runtime trial](renderer-warmed-snapshot-2026-09-05.md) then internally hash-checked
+four warmup images, but Modal failed to create the platform snapshot. No images returned and no
+restores completed, so correctness and latency both remain unqualified. Five platform replacement
+tasks started despite application retries being disabled; the single-capture claim blocked their
+heavy work. Emergency shutdown and subsequent cleanup verified the app stopped with zero
+containers. All completed temporary cold-start apps are stopped; accepted appliance routing and
+the unresolved visual-fidelity gate remain unchanged.
+
+One separately bounded serial-compiler mitigation is prepared but has not run. It sets
+`TORCHINDUCTOR_COMPILE_THREADS=1` before imports and verifies the effective configuration before
+compile and after restore, retaining the same runtime/cache and exact reference checks. Modal
+documents this as a possible checkpoint mitigation; the failure's cause is not proven. The trial
+allows one capture and three requests, with a 180-second external watchdog, 60-second shutdown
+allowance and continuous fatal-platform-log stop. Its proposed $1.05 reservation remains pending
+final dispatch checks.
+
+The failed warmed trial reports a provisional $0.04543025 charge and workspace usage of
+$14.46986616. Reviewed reconciliation separates already reported app charges from the remaining
+portion of each gross hold, avoiding double counting without treating bills as settled. Including
+the proposed serial trial projects $34.96088685 under the unchanged $35 stop; fresh billing and
+supervision checks remain required. Full evidence and the separate 2.5-second first-render and
+15-second restored-cycle gates are in the warmed-runtime report.
 
 ## Latest increment — renderer latency measurement
 

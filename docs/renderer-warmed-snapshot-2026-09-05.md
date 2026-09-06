@@ -1,5 +1,11 @@
 # Warmed renderer snapshot qualification
 
+The completed warmed-runtime trial is **rejected**. Its capture hook rendered and internally
+hash-checked four reference images, then Modal failed to create the snapshot. No image payload
+returned to the client, no snapshot restored, and neither correctness nor latency qualified.
+The app is stopped with zero containers. A separate serial-compiler mitigation is prepared but
+has not run; accepted appliance routing and the visual-fidelity gate remain unchanged.
+
 The [imports-only snapshot](renderer-cold-start-2026-09-05.md) restored twice with identical
 images, but first rendering still took 10–13 seconds. Its cache loader installs compiled wrappers
 without executing the model. This probe captures the unchanged renderer after its two token
@@ -36,7 +42,7 @@ explicit L4 capacity waits under fixed AWS/eastern constraints, while the applia
 candidate already permits broad placement. This change and the larger snapshot are qualified
 together; their individual latency effects are not isolated by this test.
 
-## Execution and funding
+## Original execution and funding
 
 One L4, eight CPU cores and 64 GiB requested/maximum RAM remain fixed. The nonparametrized class
 has minimum/buffer zero, maximum one, a two-second idle window, single-use containers, a
@@ -50,16 +56,70 @@ allowances, and $0.50 setup: **$1.09078880** at the conservative 1.75× regional
 selection currently uses a lower 1.15× premium.
 [Modal region pricing](https://modal.com/docs/guide/region-selection).
 
-Independently reviewed closeout bounds retain $1.15 for the completed memory comparison, $0.57 for
-the CPU import audit and $1.05 for the imports-only snapshot. These release $1.20 without changing
-any unrelated hold or the funding envelope. Full setup allowances remain included, and reported
-charges are not treated as settled bills. At reported workspace usage $14.42443591, adding this
-probe projects **$34.87443591** under the existing $35 stop. Fresh billing must still pass before
-dispatch. The [evidence directory](../benchmarks/renderer-warmed-snapshot-2026-09-05) retains the
-reconciliation and frozen authorization.
+The frozen authorization and original funding calculation remain in the
+[evidence directory](../benchmarks/renderer-warmed-snapshot-2026-09-05). Before dispatch, local
+qualification passed 904 Python tests, all three JavaScript suites, scoped lint and independent
+review. Offline Modal 1.5.5 validation made no generation calls.
 
-Local qualification passes 904 Python tests, all three JavaScript suites, scoped lint and
-independent implementation review. Four focused tests cover capture-before-restore work, reference
-bytes, current GPU identity, finite claims, cancellation, and separate correctness/latency failures.
-The exact declaration also passes offline validation against Modal 1.5.5. Manifest and private
-authorization are frozen; preflight made zero generation calls.
+## Completed trial and stop verification
+
+The [phase events](../benchmarks/renderer-warmed-snapshot-2026-09-05/phase-events.jsonl) show the
+capture hook completed all four warmups and their internal master/depth checks. Imports took
+12.452 seconds. The images were discarded inside the capture hook as designed; none were
+independently downloaded or returned. The subsequent platform checkpoint failed, so the client
+[summary](../benchmarks/renderer-warmed-snapshot-2026-09-05/summary.json) correctly records one
+failed request, zero observed captures and zero restores. A completed capture hook is not a
+successfully created platform snapshot.
+
+Despite application `retries=0`, Modal started five replacement tasks after the first task failed.
+The durable single-capture claim refused their heavy work before imports. This demonstrates that
+application retry settings do not prevent platform replacement attempts. An emergency app stop
+succeeded; the supervisor's later stop found it already stopped. The
+[cleanup record](../benchmarks/renderer-warmed-snapshot-2026-09-05/cleanup-cost.json) verifies all
+six observed tasks ended, the app is stopped, and no containers remain. The earlier client summary
+could not verify external shutdown; the later cleanup record supplies that proof.
+
+The app-attributed charge is provisionally **$0.04543025**, with reported workspace usage
+**$14.46986616**. These are reported charges, not settled bills. The initial $1.15 hold stayed in
+place at cleanup. Subsequent reviewed reconciliation bounds this closed run at a **$0.90 gross
+ceiling**, retaining setup, the observed lifetime, an additional capture-worker allowance and
+teardown allowances for the replacement tasks.
+
+## Pending serial-compiler mitigation
+
+The separate `bookforge-klein-serial-snapshot` candidate sets
+`TORCHINDUCTOR_COMPILE_THREADS=1` after authorization and the single capture claim, before any
+Torch or Diffusers import. It refuses an already imported Torch runtime and verifies effective
+Inductor configuration after imports, immediately before compile, and after restore. Logs expose
+only the previous environment category (`unset`, `one`, or `other`) and the checked value one.
+The response schema, reference hashes, baked image, model, precision, regional `default` compile
+mode, compiler cache, placement and resource limits remain unchanged.
+
+Modal documents this setting as a mitigation for some Torch Compiler snapshot failures, not a
+guarantee. [Modal memory snapshot limitations](https://modal.com/docs/guide/memory-snapshots).
+In pinned Torch 2.8, one compiler thread bypasses persistent Inductor thread/process pools and
+executes compile submissions synchronously. This is a concrete hypothesis for the failed
+checkpoint; the platform error does not identify its cause, and transient native compiler
+subprocesses may still exist.
+[PyTorch 2.8 compiler implementation](https://github.com/pytorch/pytorch/blob/v2.8.0/torch/_inductor/async_compile.py).
+
+The current baked image's recorded source lineage does not set this variable; its effective
+container value was not captured in the failed trial. The older full-transformer snapshot did
+already set one, but used `reduce-overhead` on a different image branch. Its failure neither tests
+nor validates this current regional-compile/cache combination.
+
+The pending trial retains one capture and at most three sequential requests, with the same
+reference-output and two-restore latency gates. Its external watchdog starts before deployment,
+limits work to **180 seconds**, and allows **60 seconds** for shutdown. Continuous platform-log
+monitoring must stop the app on a fatal checkpoint or replacement failure rather than waiting
+for the client or global deadline. There are no automatic application retries or extra captures.
+
+The frozen reservation is **$1.05**, pending dispatch. The
+[closed-run reconciliation](../benchmarks/renderer-serial-snapshot-2026-09-05/closed-run-reconciliation.json)
+separates each reviewed gross ceiling into charges already included in the same workspace report
+and a remaining pending hold. It credits $0.75897931 already reported across closed apps, avoiding
+double counting; it does not declare those bills settled or repeatedly subtract credits from a
+residual hold. The reconciled workspace-plus-holds projection is $33.91088685 before this trial,
+or **$34.96088685** including its reservation, under the unchanged $35 stop. Fresh billing is
+unchanged. All 910 Python tests, three JavaScript suites, scoped lint, source pins and independent
+implementation/supervisor review pass. The external supervisor remains required for dispatch.
