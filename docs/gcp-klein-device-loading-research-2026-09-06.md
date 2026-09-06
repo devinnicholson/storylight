@@ -120,3 +120,47 @@ Finer timing of Qwen, transformer, VAE or individual depth components is future,
 unimplemented work, not a prerequisite for this bounded screen. Add such wrappers or
 CUDA profiling only if the four-stage result warrants them, with the same instrumentation
 in both comparison arms.
+
+## Ruled-out head payload and next import diagnostic
+
+The exact Klein revision's Qwen configuration sets `tie_word_embeddings=true`.
+Its checkpoint index has 398 tensor keys, including the required input embedding,
+and no `lm_head` tensor. Transformers 4.57.1 declares the output head as tied.
+A backbone-only loader therefore cannot remove separately stored head weights from
+this checkpoint. This rules out that payload-saving hypothesis, without claiming
+zero Python-object overhead. The [retained proof](../experiments/renderer-device-loading/research/qwen-head-proof.json)
+binds the exact public configuration and index bytes; no model blobs were downloaded.
+[Pinned Qwen implementation](https://raw.githubusercontent.com/huggingface/transformers/v4.57.1/src/transformers/models/qwen3/modeling_qwen3.py).
+
+The retained G image configuration confirms `PYTHONDONTWRITEBYTECODE=1`; its build
+history uses `pip install --no-cache-dir`, without `--no-compile`. Python's flag stops
+writing bytecode during imports; it does not demonstrate that dependency bytecode is
+absent. Pip's download cache and bytecode compilation are separate controls. The base
+image history removes Python bytecode before the later dependency installation, so a
+targeted standard-library/app precompile is conceivable, but first inventory the actual
+image's usable `.pyc` files. There is no evidence yet for a blanket dependency
+`compileall` repair or a speed estimate.
+[Retained image configuration](../benchmarks/gcp-klein-2026-09-06/retry-g/image-config.json),
+[Python bytecode and import timing options](https://docs.python.org/3.12/using/cmdline.html),
+[pip compilation options](https://pip.pypa.io/en/stable/cli/pip_install/).
+
+A more specific diagnostic is the constructor's `from transformers import pipeline`.
+The pinned package maps this lazy export to `pipelines`, whose initializer imports
+all task pipeline modules. Importing `pipelines.depth_estimation` directly still
+executes that parent initializer. This gives a concrete dependency path to measure,
+not an attribution of P's 12.47-second constructor import/synchronization stage.
+Use `-X importtime` in a fresh process in the actual immutable image, following the
+worker's earlier imports, and retain the enclosing wall timer. This profiling is
+proposed, not run here.
+[Pinned task imports](https://raw.githubusercontent.com/huggingface/transformers/v4.57.1/src/transformers/pipelines/__init__.py).
+
+If that path dominates, a later narrow depth adapter could use the existing model
+and image processor directly. It must reproduce image conversion, FP16 input casting,
+device placement, no-grad execution, the pipeline's CPU output transfer, processor
+postprocessing at the original image size, and min/max uint8 normalization before
+the existing JPEG encoding. Compare intermediate depth tensors and exact depth JPEGs;
+simply calling the model is not equivalent. No adapter is implemented, and moving
+depth preparation later would shift work rather than remove it from artifact-ready
+latency.
+[Pinned depth pipeline](https://raw.githubusercontent.com/huggingface/transformers/v4.57.1/src/transformers/pipelines/depth_estimation.py),
+[pinned pipeline execution](https://raw.githubusercontent.com/huggingface/transformers/v4.57.1/src/transformers/pipelines/base.py).

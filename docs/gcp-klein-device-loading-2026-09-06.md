@@ -1,5 +1,27 @@
 # Native GCP direct-device loading comparison — September 6, 2026
 
+## Execution observations
+
+Both reviewed overlay builds succeeded and preserve all 13 model-image layers and the
+runtime configuration. Each adds only the exact reviewed worker, runtime and manifest.
+The frozen execution plan is committed in `8f62cbe`.
+
+P completed ten requests and verified twenty JPEGs on one worker. Its first client
+artifact-ready time was 82.491 seconds; the eight later requests had a 0.489-second
+median. External factory time was 51.048 seconds. Matched constructor stage times were
+12.474 seconds for constructor imports/CUDA initialization, 10.084 for pipeline loading, 19.413 for
+the existing move to CUDA, and 0.453 for depth construction. These stages do not exhaust
+the enclosing factory timer and do not isolate I/O from transfer or allocation.
+
+P's service deletion audit completed at 23:20:41.258944 UTC. Its release guard passed at
+23:30:41.402453, after ten retained reads; the final complete zero samples were at
+23:29 and 23:30. The frozen reporter independently reproduced the result before Q
+started. P's agent visual review passed seven of eight unique fact sets; the single-fox
+scene still adds an extra fox and lantern. Human quality acceptance remains pending.
+The comparison is incomplete; no candidate speed verdict follows from P.
+
+## Frozen protocol
+
 This is a prospective **P/Q/R/S ABBA screen**, prepared offline. It compares the current
 CPU-first loading sequence with `device_map="cuda"` during Klein pipeline loading. Both
 arms have the same four synchronized timing stages. Root activated the reviewed plan
