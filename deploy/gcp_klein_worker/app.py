@@ -8,6 +8,7 @@ import hashlib
 import importlib.metadata
 import json
 import os
+import re
 import time
 import uuid
 from contextlib import suppress
@@ -25,7 +26,11 @@ PACKAGES = {
     "accelerate": "1.10.1",
     "Pillow": "11.1.0",
 }
-GPUS = {"NVIDIA L4": [8, 9], "NVIDIA RTX PRO 6000 Blackwell": [12, 0]}
+GPUS = {
+    "NVIDIA L4": [8, 9],
+    "NVIDIA RTX PRO 6000 Blackwell": [12, 0],
+    "NVIDIA RTX PRO 6000 Blackwell Server Edition": [12, 0],
+}
 
 
 def require(condition):
@@ -115,17 +120,78 @@ def read_manifest(path):
 
 def load_runtime(identity):
     # Package/device checks precede all model loading and compilation.
-    for package, version in PACKAGES.items():
-        require(importlib.metadata.version(package) == version)
+    versions = {}
+    for package in PACKAGES:
+        try:
+            versions[package] = importlib.metadata.version(package)
+        except importlib.metadata.PackageNotFoundError:
+            versions[package] = None
+    version_pattern = r"[0-9]+(?:\.[0-9]+)*(?:\.?(?:a|b|rc|post|dev)[0-9]+)?(?:\+(?:cu[0-9]+|cpu))?"
+
+    def safe_version(value):
+        return (
+            value
+            if isinstance(value, str) and len(value) <= 64 and re.fullmatch(version_pattern, value)
+            else None
+        )
+
+    def check(ok, stage):
+        if not ok:
+            print(
+                json.dumps({"event": "qualification.preflight_rejected", "stage": stage}),
+                flush=True,
+            )
+        require(ok)
+
+    print(
+        json.dumps(
+            {
+                "event": "qualification.preflight",
+                "stage": "packages",
+                "versions": {key: safe_version(value) for key, value in versions.items()},
+            }
+        ),
+        flush=True,
+    )
+    check(versions == PACKAGES, "packages")
     import torch
     from klein_scene_runtime import KleinSceneRuntime
 
-    require(torch.cuda.is_available() and torch.version.cuda == identity["cuda"])
-    require(torch.cuda.get_device_name(0) == identity["gpu"])
-    require(list(torch.cuda.get_device_capability(0)) == identity["capability"])
-    require(
-        f"sm_{identity['capability'][0]}{identity['capability'][1]}" in torch.cuda.get_arch_list()
+    available = torch.cuda.is_available()
+    name = torch.cuda.get_device_name(0) if available else None
+    capability = list(torch.cuda.get_device_capability(0)) if available else None
+    arches = torch.cuda.get_arch_list()
+    print(
+        json.dumps(
+            {
+                "event": "qualification.preflight",
+                "stage": "device",
+                "cuda_available": bool(available),
+                "cuda_version": safe_version(torch.version.cuda),
+                "gpu": name
+                if isinstance(name, str)
+                and re.fullmatch(r"(?:NVIDIA|Tesla) [A-Za-z0-9 -]{1,96}", name)
+                else None,
+                "capability": capability
+                if isinstance(capability, list)
+                and len(capability) == 2
+                and all(type(v) is int and 0 <= v <= 99 for v in capability)
+                else None,
+                "compiled_arches": [
+                    arch
+                    for arch in arches[:32]
+                    if isinstance(arch, str)
+                    and re.fullmatch(r"(?:sm|compute)_[0-9]{2,3}[af]?", arch)
+                ],
+            }
+        ),
+        flush=True,
     )
+    check(available and torch.version.cuda == identity["cuda"], "cuda")
+    check(name == identity["gpu"], "gpu")
+    check(capability == identity["capability"], "capability")
+    check(f"sm_{identity['capability'][0]}{identity['capability'][1]}" in arches, "compiled_arches")
+    print(json.dumps({"event": "qualification.load", "stage": "model_load"}), flush=True)
     return KleinSceneRuntime(Path("/models"))
 
 

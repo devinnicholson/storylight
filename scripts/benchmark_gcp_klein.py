@@ -133,12 +133,15 @@ def validate_manifest(value, *, active):
         if key not in {"gpu", "capability"}:
             require(encoded(value["expected_identity"][key]) == encoded(expected))
     require(value["sources"]["runtime"] == identity["runtime_sha256"])
-    require(value["expected_identity"]["gpu"] in {"NVIDIA L4", "NVIDIA RTX PRO 6000 Blackwell"})
+    gpus = {
+        "NVIDIA L4": [8, 9],
+        "NVIDIA RTX PRO 6000 Blackwell": [12, 0],
+        "NVIDIA RTX PRO 6000 Blackwell Server Edition": [12, 0],
+    }
+    require(value["expected_identity"]["gpu"] in gpus)
     require(
         value["expected_identity"]["capability"]
-        == {"NVIDIA L4": [8, 9], "NVIDIA RTX PRO 6000 Blackwell": [12, 0]}[
-            value["expected_identity"]["gpu"]
-        ]
+        == gpus[value["expected_identity"]["gpu"]]
     )
     capability = value["expected_identity"]["capability"]
     require(

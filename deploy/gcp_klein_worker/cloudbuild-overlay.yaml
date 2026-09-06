@@ -1,0 +1,16 @@
+steps:
+  - name: gcr.io/cloud-builders/docker@sha256:d1797996867921778f1adbb7e493baaaf2f6b21e107599c0aab48c2ec06ff311
+    entrypoint: bash
+    args:
+      - -ceu
+      - |
+        docker version
+        docker buildx version
+        docker buildx create --name qualification --driver docker-container --driver-opt image=moby/buildkit@sha256:040d34121c27906c4ff9ac152a30d52bf2c5d328d3bb748916bb3d2743c02528 --use
+        docker buildx inspect --bootstrap
+        docker buildx build --platform linux/amd64 --provenance=false --sbom=false --output type=image,name=${_IMAGE},push=true --metadata-file /workspace/image-metadata.json .
+        cat /workspace/image-metadata.json
+timeout: 600s
+options:
+  machineType: E2_HIGHCPU_8
+  diskSizeGb: 100

@@ -85,7 +85,7 @@ def setup_worker(tmp_path, monkeypatch):
     return module, path, manifest, Runtime, calls
 
 
-def test_fixed_admission_identity_and_cold_warm_receipts(setup_worker, monkeypatch):
+def test_fixed_admission_identity_and_cold_warm_receipts(setup_worker, monkeypatch, capsys):
     module, path, manifest, runtime, calls = setup_worker
     monkeypatch.setenv("K_SERVICE", "klein-test")
     monkeypatch.setenv("K_REVISION", "klein-test-00001")
@@ -128,14 +128,54 @@ def test_fixed_admission_identity_and_cold_warm_receipts(setup_worker, monkeypat
     monkeypatch.setattr(module.importlib.metadata, "version", lambda name: module.PACKAGES[name])
     fake = SimpleNamespace(
         version=SimpleNamespace(cuda="12.8"),
-        cuda=SimpleNamespace(is_available=lambda: True, get_device_name=lambda _: "NVIDIA L4"),
+        cuda=SimpleNamespace(
+            is_available=lambda: True,
+            get_device_name=lambda _: "NVIDIA L4",
+            get_device_capability=lambda _: (8, 9),
+            get_arch_list=lambda: ["sm_89", "sm_120"],
+        ),
     )
     monkeypatch.setitem(sys.modules, "torch", fake)
     with pytest.raises(ValueError, match="qualification rejected"):
         module.load_runtime(manifest["expected_identity"])
-    monkeypatch.setattr(module.importlib.metadata, "version", lambda _: "wrong")
+    records = [json.loads(line) for line in capsys.readouterr().out.splitlines()]
+    assert records[0]["versions"] == module.PACKAGES
+    assert records[1] == {
+        "event": "qualification.preflight",
+        "stage": "device",
+        "cuda_available": True,
+        "cuda_version": "12.8",
+        "gpu": "NVIDIA L4",
+        "capability": [8, 9],
+        "compiled_arches": ["sm_89", "sm_120"],
+    }
+    assert records[2]["stage"] == "gpu"
+    monkeypatch.setattr(
+        module.importlib.metadata, "version", lambda _: "private-token\nerror-payload"
+    )
     with pytest.raises(ValueError, match="qualification rejected"):
         module.load_runtime(manifest["expected_identity"])
+    output = capsys.readouterr().out
+    assert "private-token" not in output and "error-payload" not in output
+    assert json.loads(output.splitlines()[0])["versions"] == dict.fromkeys(module.PACKAGES)
+    assert json.loads(output.splitlines()[1])["stage"] == "packages"
+
+    import klein_scene_runtime
+
+    loaded = []
+    monkeypatch.setattr(klein_scene_runtime, "KleinSceneRuntime", lambda path: loaded.append(path))
+    monkeypatch.setattr(module.importlib.metadata, "version", lambda name: module.PACKAGES[name])
+    fake.cuda.get_device_name = lambda _: "NVIDIA RTX PRO 6000 Blackwell Server Edition"
+    fake.cuda.get_device_capability = lambda _: (12, 0)
+    with pytest.raises(ValueError, match="qualification rejected"):
+        module.load_runtime(manifest["expected_identity"])
+    assert loaded == []  # An alias never weakens the exact manifest match.
+    manifest["expected_identity"]["gpu"] = fake.cuda.get_device_name(0)
+    manifest["expires_at"] = int(time.time()) + 600
+    path.write_text(json.dumps(manifest))
+    assert module.read_manifest(path)[0] == manifest
+    module.load_runtime(manifest["expected_identity"])
+    assert loaded == [Path("/models")]
 
 
 def test_cancellation_retains_inference_lock_and_failed_attempt(setup_worker):

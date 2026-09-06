@@ -19,7 +19,11 @@ from scripts import benchmark_gcp_klein as bench  # noqa: E402
 
 def setup_manifest():
     identity, _ = bench.cold.frozen_cases()
-    identity = {**identity, "gpu": "NVIDIA RTX PRO 6000 Blackwell", "capability": [12, 0]}
+    identity = {
+        **identity,
+        "gpu": "NVIDIA RTX PRO 6000 Blackwell Server Edition",
+        "capability": [12, 0],
+    }
     sources = {k: bench.sha(p.read_bytes()) for k, p in bench.SOURCE_PATHS.items()}
     manifest = bench.prepare_manifest("test-gcp", identity, sources)
     manifest.update(status="authorized", expires_at=int(time.time()) + 600)
