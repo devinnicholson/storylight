@@ -1,5 +1,53 @@
 # Native GCP startup diagnostic — September 7, 2026
 
+## V3 loader results
+
+Build `9d357b30-bb1c-4ad2-972a-6ad1ec3ed2e8` and its one diagnostic child completed.
+All four generation-pinned artifacts, totaling 204,025 bytes, were retrieved and
+verified against provider hashes and child-output SHA-256 hashes. Both ordinary
+mixed BF16/FP16/F32/I64 cases preserved names, values, shapes, strides, dtypes,
+requires-grad flags and the destination's train/eval state exactly.
+
+The six boundary checks explain why this loader needs a narrow integration:
+
+| Boundary | Observed result |
+| --- | --- |
+| Eval source, train destination | Destination stays in training mode. |
+| Scalar I64 buffer | Value survives; shape changes from `[]` to `[1]`. |
+| Noncontiguous parameter | Packing refuses with `RuntimeError`. |
+| Tied parameter | Strict assignment refuses with `ValueError`. |
+| Wrong destination shape | Assignment silently replaces the declared shape. |
+| Wrong destination dtype | Assignment silently replaces the declared dtype. |
+
+These are real Torch 2.8 CPU observations with FlashPack 0.4.4, not model or GPU
+qualification. The existing VAE contains an integer scalar, whereas the pinned
+transformer headers contain 169 non-scalar BF16 tensors. Proceed with a checked
+transformer-only candidate, explicit evaluation mode, and full offline tensor
+verification. Keep the VAE, Qwen, depth and inference settings unchanged. The small
+direct-depth import saving does not justify prioritizing that GPU experiment over
+model loading; its reviewed correctness harness remains offline.
+
+The [v3 summary](../benchmarks/gcp-klein-cpu-startup-v3-2026-09-07/summary.json)
+retains every boundary outcome. No model weights were converted, no GPU was called,
+and no rendering speed improvement or production promotion is claimed.
+
+## Corrected tiny-loader follow-up
+
+The separate [v3 plan](../benchmarks/gcp-klein-cpu-startup-v3-2026-09-07/plan.json)
+limits work to **one tiny CPU FlashPack child**, with a 90-second probe deadline
+inside one 600-second CPU8 build. It uses the same immutable image and audited wheel.
+The only tensor-fixture change is the non-conflicting `half_weight` name. All eight
+checks remain, including strict failure observations for scalar, alias, shape, dtype
+and mode boundaries. Child failures preserve a traceback in the private stderr
+artifact. The completed import trials are not repeated; the pinned depth adapter is
+not used. No checkpoint is opened and no model conversion or GPU work is performed.
+
+The separately announced allowance is $0.50: $0.17 build, $0.01 small source/evidence
+storage and $0.32 margin. Earlier reserved holds total $26.5539592, including both CPU
+attempts; none is released. The context contains 94,943 bytes. A successful build
+still only means evidence export succeeded; examine each tensor check independently.
+One attempt only, with no automatic retry or production promotion.
+
 ## Retained v2 results
 
 Build `a17d69c0-c433-409d-85e8-4abe9813d152` completed and exported all twelve
