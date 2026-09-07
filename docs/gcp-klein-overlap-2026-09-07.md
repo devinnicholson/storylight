@@ -52,3 +52,38 @@ release checks succeeded. It reports no candidate timing ratios.
 Local verification passed 960 Python tests, both JavaScript suites, eight focused
 qualification tests, scoped Ruff and exact reproduction of the current public
 graph-coverage artifact.
+
+## Separate continuation
+
+Fresh service g completed all ten renders and 169 CUDA tensor checks using the
+unchanged candidate code. Its separate $3.50 allowance raises unreconciled
+reservations to $51.9750504. The original f failure remains in the report.
+
+| Measurement | Serial e | Overlap g |
+| --- | ---: | ---: |
+| Whole factory | 50.213 s | 55.215 s |
+| First verified client artifact | 76.331 s | 85.645 s |
+| First 128-bucket image work | 15.547 s | 19.795 s |
+| First 256-bucket image work | 6.392 s | 6.158 s |
+| Later-eight client median | 0.504 s | 0.493 s |
+
+This interrupted comparison fails both cold-speed thresholds. The transformer
+read took 11.492 seconds and completed before the join, which waited 9.33
+microseconds. Setup took 1.333 seconds. These observations show that the scheduled
+overlap occurred; they do not measure time saved against a counterfactual startup.
+There is no exact import timer in this candidate. The earlier import diagnostics
+also varied substantially between fresh workers without a code change.
+
+One of ten paired masters and one of ten paired depth JPEGs matched exactly.
+Agent inspection again found eight rich scenes and seven with core prompt facts;
+the known extra fox and lantern remained. Similar appearance does not waive the
+failed byte-equivalence check. Human acceptance and promotion remain pending.
+Service deletion is verified; the separate release check passed at 05:39:36 UTC.
+The [complete continuation report](../benchmarks/gcp-klein-overlap-continuation-2026-09-07/comparison.json)
+replays both completed arms and the intervening failed attempt. It keeps the
+original phase incomplete and reports no speed-screen pass or promotion.
+
+The next local candidate adds compiler-cache export and restoration to this exact
+runtime, with initial-noise and tensor proofs in both arms. The earlier cache
+experiment showed shorter first-bucket execution but was incomplete and had
+different images. Its cache belongs to another runtime and cannot be reused.
