@@ -1,47 +1,75 @@
-# Native GCP transformer loading triage — September 7, 2026
+# Native GCP transformer loading — September 7, 2026
 
-At the execution receipt frozen at **02:58:51 UTC**, the common packed image and both application overlays were verified; GPU qualification had not begun. There is no measured loading improvement or CUDA equivalence result for this phase yet. The [frozen plan](../benchmarks/gcp-klein-transformer-loading-2026-09-07/plan.json) and [execution receipt](../benchmarks/gcp-klein-transformer-loading-2026-09-07/execution-receipt.json) bind the prospective runs, source files, manifests, builds and actual image digests.
+Transformer-only FlashPack loading passed the actual CUDA weight checks, but its
+first sequential comparison missed the speed thresholds. Production is unchanged.
+The next experiment will time the loading stages before another optimization is
+chosen. A four-service ABBA reporter is prepared but has not been used.
 
-The comparison is one baseline service followed by one candidate service in `your-gcp-project`, `us-central1`. Both use RTX PRO 6000 Blackwell, 20 CPUs and 80 GiB RAM, with minimum zero and maximum one instance. Each receives the unchanged ten-request public watercolor schedule: two retained references, six broader synthetic scenes, then the retained pair again. There is no health check or prewarm generation before the first request, and no retry or fallback.
+| Measurement | Baseline | Candidate |
+| --- | ---: | ---: |
+| First client artifact ready | 90.880 s | 86.217 s |
+| Whole worker factory | 61.100 s | 54.267 s |
+| Compile-wrapper setup | 2.385 s | 2.055 s |
+| First 128-token-bucket image | 19.569 s | 22.080 s |
+| First 256-token-bucket image | 6.584 s | 6.349 s |
+| Later eight client requests, median | 0.478 s | 0.485 s |
+| Post-render tensor oracle | 4.274 s | 4.142 s |
+| Verified renders / CUDA tensor hashes | 10 / 169 | 10 / 169 |
 
-The baseline uses the original runtime. The candidate constructs only the transformer on the meta device, assigns the verified FlashPack tensors directly to CUDA without casting, explicitly sets evaluation mode, and supplies that object to the original pipeline loader. Qwen, VAE, depth, BF16 image generation, four steps, dimensions, render and compile methods remain unchanged. All candidate inspection, imports, construction and assignment remain inside the enclosing worker factory timer. The [runtime source proof](../experiments/renderer-transformer-flashpack/runtime/source-proof.json) records the limited constructor change.
+The first-client reduction was **5.13%**, below the frozen 10% threshold. Factory
+time fell **11.18%**, below 15%. The later-request median regressed **1.49%**,
+within the 5% allowance. First-client timing ends after verified JPEGs are saved;
+it excludes deployment and prior token acquisition. Factory time includes imports
+and all model initialization, not just transformer loading. First-bucket timings
+include priming work. Two sequential workers do not establish a causal speed gain,
+a cold-start distribution, p95 or physical host-cache state.
 
-The [CPU producer proof](../benchmarks/gcp-klein-transformer-pack-2026-09-07/proof.json) established exact source → pack → assigned CPU bytes for all 169 transformer tensors. That is preparation evidence, not proof of CUDA assignment or rendered-image equivalence. The candidate performs bounded metadata checks at startup; it deliberately avoids reading and hashing the entire 7.75 GB pack before loading it. Deployment integrity relies on the verified immutable image and producer proof.
+Both runs used RTX PRO 6000 Blackwell, 20 CPUs, 80 GiB RAM, minimum zero and maximum
+one instance. Model revision, BF16, 1024×576 dimensions, four steps, guidance 1,
+prompts, seeds and request order were identical. Each worker completed ten renders
+before one bounded oracle hashed all 169 resident transformer parameters. Every
+hash matched the [CPU producer proof](gcp-klein-transformer-pack-2026-09-07.md).
 
-Both arms inherit the same packed base, including the original checkpoints and the extra pack. Baseline does not load the pack before its ten renders. This controls image contents and size more closely than placing the pack only in the candidate image; it does not control physical host caches or image streaming state.
+Only **1/10 master and 1/10 depth JPEG pairs** matched byte-for-byte. In the
+unblinded agent screen, both variants retained rich watercolor treatment in 8/8
+unique scenes and satisfied core prompt facts in 7/8. Both retained the extra
+silver fox and lantern in the same failing prompt. This is not human acceptance,
+exact image equivalence or physical projector validation. See the
+[baseline](../benchmarks/gcp-klein-transformer-loading-2026-09-07/baseline-visual-review.json)
+and [candidate](../benchmarks/gcp-klein-transformer-continuation-2026-09-07/candidate-visual-review.json)
+screens.
 
-| Verified artifact | Immutable SHA-256 digest | New compressed layer |
-| --- | --- | ---: |
-| Common packed base | `42acfcdbb13dde3af9864afe7c5b1a0b8c1740b6eb39adea7abae4dbc4321eda` | 6,087,237,044 bytes |
-| Baseline overlay | `ced765e732c00a4843e34f84a7db400ec7e6da6e99fb9b772e5f036302857033` | 11,799 bytes |
-| Candidate overlay | `3a8c47aa8ceba871521c37a033392bd0c3431ef4a07d8516512cee08684d2028` | 11,827 bytes |
+## Image and execution evidence
 
-The [common verification](../benchmarks/gcp-klein-packed-verify-v2-2026-09-07/results/verification.json) checked compressed digest, decompressed diffID and all four added file hashes while preserving the original 13 layers. The [baseline](../benchmarks/gcp-klein-transformer-loading-2026-09-07/baseline-image-verification/verification.json) and [candidate](../benchmarks/gcp-klein-transformer-loading-2026-09-07/candidate-image-verification/verification.json) checks preserved all 14 common layers and config and verified the six exact overlay files. The full pack stayed in GCP. The overlay checks downloaded no inherited layer bytes; that does not describe what Cloud Run may later transfer to start a worker. Both overlay builds reported `SUCCESS` in their retained build JSON.
+Both small application overlays inherit the same
+[verified common image](gcp-klein-packed-image-2026-09-07.md), containing original
+checkpoints plus the extra 7.75 GB transformer pack. Baseline loads the original
+transformer; candidate assigns the pack to CUDA. Qwen, VAE, depth and rendering
+remain unchanged. This controls image contents between arms but does not prove a
+startup advantage over the original smaller image. The
+[execution receipt](../benchmarks/gcp-klein-transformer-loading-2026-09-07/execution-receipt.json)
+pins both actual images, manifests, source files and verification receipts.
 
-After each service completes ten verified renders, one finite oracle hashes all 169 actual resident CUDA parameters in bounded CPU chunks. It binds the instance, manifest, producer proof and ordered ten-render receipt digest. It generates no additional images. Both oracles must pass before tensor correctness is reported. Master/depth JPEG equality counts and human visual review remain separate; equal model tensors do not guarantee equal generated images.
+The first phase stopped after baseline release exposed a replay-clock bug: the
+checker sampled its decision and enclosing receipt 311 microseconds apart. The
+reviewed repair uses one decision timestamp, preserves the deadline, and supports
+only the exact original source version when replaying its recorded decision time.
+Every raw observation and final predicate is rechecked. The
+[original failure](../benchmarks/gcp-klein-transformer-loading-2026-09-07/release-replay-diagnostic/diagnostic.json)
+and incomplete phase outcome remain unchanged. A separately reviewed
+[continuation](../benchmarks/gcp-klein-transformer-continuation-2026-09-07/plan.json)
+then ran the unchanged candidate.
 
-The offline reporter retains first-client artifact-ready time, whole factory time, compile-wrapper time, first 128/256-bucket timings and the median of the later eight client times. Prospective screening thresholds are at least 15% lower factory time, at least 10% lower first-client time and no more than 5% regression in the later-eight median. Meeting them would justify a separately funded counterbalanced repeat, not promotion. Two sequential fresh services provide neither a balanced ABBA comparison nor a cold-start reliability distribution, p95, host-cold proof or physical-display latency.
+Both supervisors completed successfully and deleted their services. Both release
+results passed offline replay, including the exact legacy compatibility for the
+baseline. The [paired report](../benchmarks/gcp-klein-transformer-continuation-2026-09-07/summary.json)
+reproduces the results and full admission/deletion chronology. Historical zero
+samples and scoped service absence do not reserve quota, prove current GPU count
+or settle billing.
 
-The separate gross allowance is **$6.50**: $5.5237728 for conservatively reserved lifecycle/release capacity, $0.34 for two bounded builds, $0.05 for small storage/network operations and $0.5862272 margin. Prior phase holds of **$28.5099592 remain unreleased**. These are prospective allowances, not invoices or a platform-enforced spending cap. Each service has a 600-second work deadline including the oracle, 60 seconds for cleanup and up to 900 seconds for release observation; the budget allows two GPU slots per service despite the configured maximum of one.
-
-Fresh historical-R bootstrap evidence must replay before baseline creation. Successful baseline deletion/release evidence must replay before candidate creation. Each closure must follow that service's exact terminal deletion audit event. Missing or uncertain admission stops the phase. Historical zero samples and current service absence do not prove current GPU count, reserve quota or settle billing. The reporter requires pinned deployment metadata and replayable bootstrap plus both release directories before reporting closure evidence; absent receipts remain incomplete.
-
-The retained [bootstrap summary](../benchmarks/gcp-klein-transformer-loading-2026-09-07/bootstrap/summary.json) subsequently reported `historical_zero_and_current_absence` at **03:00:11 UTC**; this is first-service admission evidence with the limitations above. The [pre-GPU billing refresh](../benchmarks/gcp-klein-transformer-loading-2026-09-07/preflight/billing-before-gpu.json) contains a **$23.58 gross project** report timestamped **02:43:31 UTC**. It is lagging project-wide information, not this phase's invoice or a release of prior holds. GPU results remain pending at this preparation checkpoint.
-
-## Baseline result
-
-The baseline service was created at **03:01:44.912652 UTC**, after bootstrap completion, and reported the pinned `bookforge-klein-qualification-20260907-a-trial` revision. Its [retained summary](../benchmarks/gcp-klein-transformer-loading-2026-09-07/baseline-trial/renders/summary.json) contains **10 successful renders, 20 verified JPEG artifacts and one worker**. The post-render CUDA oracle matched **169/169** parameter hashes to the producer proof in **4.274 seconds**, binding the same worker, manifest and ordered render receipts. The client exited successfully. These results establish baseline tensor integrity; candidate assignment remains untested.
-
-| Baseline measurement | Seconds |
-| --- | ---: |
-| First client artifact ready | 90.880 |
-| Whole worker factory load | 61.100 |
-| Compile-wrapper setup | 2.385 |
-| First 128-bucket image generation | 19.569 |
-| First 256-bucket image generation | 6.584 |
-| First 256-bucket client artifact ready | 6.886 |
-| Later eight client requests, median | 0.478 |
-
-Factory, compile setup and first generation are distinct stages; first-client timing includes their work and response handling but excludes prior deployment and token acquisition. The 256-bucket request primes that bucket despite reusing the process. The first two retained images are not byte-identical to the historical references, so successful tensor checks must not be presented as image equivalence or visual acceptance.
-
-The [supervisor closure](../benchmarks/gcp-klein-transformer-loading-2026-09-07/baseline-trial/closure.json) reports terminal creation observed, service deleted and absent, no cleanup error, and **392.115 seconds** for its full deployment/work/cleanup run. Service absence does not prove zero remaining GPU charges. Prospective release evidence is still required before candidate admission. Candidate timing, paired image comparison, both-arm correctness and final phase closure remain pending; no speed gain is claimed.
+The initial allowance was $6.50. The separate candidate continuation allowed
+$3.25: $2.7618864 for lifecycle/release capacity, $0.02 for small operations and
+$0.4681136 margin. Each service had 600 seconds for work, 60 for cleanup and 900
+for release observation, with two resource slots conservatively reserved.
+Unreconciled reservations total $37.2056184; this is not reported spend. The latest
+retained gross-project report was $23.58 at 03:27:30 UTC and can lag actual usage.
