@@ -18,7 +18,45 @@ P's service deletion audit completed at 23:20:41.258944 UTC. Its release guard p
 23:29 and 23:30. The frozen reporter independently reproduced the result before Q
 started. P's agent visual review passed seven of eight unique fact sets; the single-fox
 scene still adds an extra fox and lantern. Human quality acceptance remains pending.
-The comparison is incomplete; no candidate speed verdict follows from P.
+No candidate speed verdict follows from P alone.
+
+Q also completed ten requests. First client delivery took 92.737 seconds, with a
+63.401-second external factory and a 0.504-second later-client median. Constructor
+imports took 14.277 seconds; pipeline loading took 41.499 seconds; the trailing move
+to CUDA took 0.012 seconds; depth construction took 0.339 seconds. Moving placement
+into loading therefore did not improve this first pair: the combined stage increased
+from 29.497 to 41.511 seconds. Reverse-order R/S results are still required by the frozen
+comparison. Q's service deletion audit completed at 23:35:55.359549 UTC. Its release
+proof passed at 23:46:27.931471 using complete zero samples at 23:44 and 23:45. The
+frozen verifier reproduced the full result before R started. Q again passed seven of
+eight agent fact checks; all twenty same-ordinal P/Q JPEG pairs differ. No runtime or
+gate was changed in response to this result.
+
+R completed ten requests on the same candidate image, with first delivery at 61.317
+seconds and factory time at 35.149 seconds. Constructor stages were 12.052 seconds for
+imports, 16.763 for loading, 0.012 for the trailing placement call, and 0.345 for depth.
+Later-client median was 0.483 seconds. The loading-plus-placement difference between
+Q and R (41.511 versus 16.775 seconds) occurred without a code change; its cause has
+not been isolated. R's deletion audit is 23:51:04.858133 UTC. Its release guard ended
+`unknown` after fifteen reads, so the frozen stop rule left S unrun. The last complete
+zero samples were 23:57 and 23:58. They were observed fresh before the ten-minute
+floor, but were already 185 seconds old at the first eligible read, beyond the frozen
+180-second freshness limit. The service had been deleted; this was a monitoring
+admission failure, not a new GPU quota rejection or a rendering failure.
+
+The retained result is **30 successful requests, 60 verified JPEGs and an incomplete
+ABBA comparison**. R again passed seven of eight agent fact checks and retained the
+rich watercolor style; human acceptance remains pending. The first factory-time pair
+already fails a required speed gate. No balanced arm statistic, strict-equivalence
+pass, speed qualification or product promotion is claimed. A future guard may retain
+fresh observations across a stopped series with independent lifecycle checks; it
+cannot retroactively admit S under this frozen protocol. Reproduce this report with
+the unchanged source pins from `8f62cbe`. All phase cost holds remain unreconciled.
+
+The closeout service list contains only the existing SANA and billing-guard services.
+The latest retained billing-guard observation reports $22.39 gross project cost at
+2026-09-07 00:15:15 UTC, versus $21.99 before this phase. That delayed project-wide
+difference is not an attributable phase invoice or a reason to release cost holds.
 
 ## Frozen protocol
 
