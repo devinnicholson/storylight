@@ -5,27 +5,28 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <meta name="theme-color" content="#07110f" />
     <title>Bookforge Live Scene Foundry</title>
-    <link rel="stylesheet" href="/workbench-assets/workbench.css?v=0.2.0-live8" />
+    <link rel="stylesheet" href="/workbench-assets/workbench.css?v=0.2.0-mic1" />
   </head>
   <body>
     <main class="shell">
       <header class="hero">
         <div>
           <p class="eyebrow">Bookforge · Live Scene Foundry</p>
-          <h1>Turn one line of story into a living world.</h1>
-          <p class="lede">
+          <h1 class="generation-heading">Turn one line of story into a living world.</h1>
+          <h1 class="demo-only">The book that listens back.</h1>
+          <p class="demo-only lede">The artwork is prepared. Press Start reading and watch the page respond to your voice.</p>
+          <p class="lede generation-heading">
             Type a passage and watch the actual projector improve in place: an immediate animated
-            draft, provider artwork, depth motion, then an optional cinematic loop.
-            Make the story react as you read later—today we are proving live scene generation.
+            draft, provider artwork, and depth motion. Then read aloud and let the scene follow your words.
           </p>
         </div>
-        <div class="privacy-chip"><span></span> Text only · no microphone required</div>
+        <div class="privacy-chip"><span></span> Voice stays on this device</div>
       </header>
 
-      <ol class="journey" aria-label="How the demo works">
+      <ol class="journey generation-heading" aria-label="How the demo works">
         <li><b>1</b><span><strong>Add a page</strong><small>Type the scene you want to see</small></span></li>
         <li><b>2</b><span><strong>Create its scene</strong><small>Draft appears while the generation provider works</small></span></li>
-        <li><b>3</b><span><strong>Watch it evolve</strong><small>Artwork and motion arrive live</small></span></li>
+        <li><b>3</b><span><strong>Read it aloud</strong><small>Your words drive the scene</small></span></li>
       </ol>
 
       <section class="grid">
@@ -33,7 +34,7 @@
           <div class="card-heading">
             <div>
               <p class="section-label">Step 1</p>
-              <h2>Describe the story moment</h2>
+              <h2>Your story page</h2>
             </div>
           </div>
 
@@ -47,6 +48,39 @@
             <span>Story text</span>
             <textarea id="storyInput" rows="7">At dusk, a silver fox carried a golden lantern beneath the enormous cedar trees.</textarea>
           </label>
+
+          <section class="try-live deferred-reader" id="tryLive" aria-labelledby="readerHeading">
+            <section class="deferred-reader-body">
+            <div>
+              <p class="section-label">Read aloud</p>
+              <h3 id="readerHeading">Make the page listen.</h3>
+              <p>
+                Press “Start reading” and read the page above. The scene follows your words.
+                Use the projection view for a second screen.
+              </p>
+            </div>
+            <div class="live-actions">
+              <a
+                class="button projector-link disabled"
+                id="projectorLink"
+                href="/projector?pack=latest&amp;session=bookforge-live&amp;present=1&amp;live=1"
+                target="_blank"
+                aria-disabled="true"
+              >Open projection view ↗</a>
+              <button class="button read-button" id="micButton" disabled>
+                <span class="mic-dot"></span><span id="micButtonText">Start reading</span>
+              </button>
+            </div>
+            <div class="listening-row">
+              <div class="level" aria-hidden="true"><i id="micLevel"></i></div>
+              <p class="interim" id="interimText" role="status" aria-live="polite">Create a scene before starting the reader.</p>
+            </div>
+            <p class="browser-note" id="browserNote">
+              Your microphone recording is processed by local Whisper and discarded. Raw audio is
+              not sent to Bookforge's generation providers or Google Cloud.
+            </p>
+            </section>
+          </section>
 
           <details class="options">
             <summary>Optional scene settings</summary>
@@ -110,7 +144,7 @@
           <div class="card-heading">
             <div>
               <p class="section-label">Live output</p>
-              <h2>See the actual projection evolve</h2>
+              <h2>Watch the page respond.</h2>
             </div>
             <div class="status" id="status" data-state="idle"><span></span> Waiting for a page</div>
           </div>
@@ -219,48 +253,15 @@
 
           <div class="error hidden" id="errorBox"></div>
 
-          <details class="try-live deferred-reader" id="tryLive">
-            <summary>Later: Read it aloud and trigger the scene</summary>
-            <section class="deferred-reader-body">
-            <div>
-              <p class="section-label">Reader integration · later milestone</p>
-              <h3>Try reading it aloud</h3>
-              <p>
-                First open the projection view and leave it visible. Then come back here, press
-                “Start reading,” and read the exact page text above.
-              </p>
-            </div>
-            <div class="live-actions">
-              <a
-                class="button projector-link disabled"
-                id="projectorLink"
-                href="/projector?pack=latest&amp;session=bookforge-live&amp;present=1&amp;live=1"
-                target="_blank"
-                aria-disabled="true"
-              >Open projection view ↗</a>
-              <button class="button read-button" id="micButton" disabled>
-                <span class="mic-dot"></span><span id="micButtonText">Start reading</span>
-              </button>
-            </div>
-            <div class="listening-row">
-              <div class="level" aria-hidden="true"><i id="micLevel"></i></div>
-              <p class="interim" id="interimText">Create a scene before starting the reader.</p>
-            </div>
-            <p class="browser-note" id="browserNote">
-              Your microphone recording is processed by local Whisper and discarded. Raw audio is
-              not sent to Bookforge's generation providers or Google Cloud.
-            </p>
-            </section>
-          </details>
+
         </article>
       </section>
 
       <footer>
-        Every visual upgrade carries its provider, revision, and measured latency. Audio remains a
-        separate local-only milestone after the live generation path is proven.
+        Artwork can be prepared ahead of time. Microphone audio is transcribed locally and discarded.
       </footer>
     </main>
     <script src="/workbench-assets/anticipatory-workbench.js?v=1"></script>
-    <script src="/workbench-assets/workbench.js?v=0.2.0-live19"></script>
+    <script src="/workbench-assets/workbench.js?v=0.2.0-mic3"></script>
   </body>
 </html>

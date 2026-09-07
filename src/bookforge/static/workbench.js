@@ -57,8 +57,11 @@ let recordingEpoch = 0;
 let readerGeneration = null;
 let activePageText = null;
 let starting = false;
+let finalizing = false;
 let sceneReady = false;
 const workbenchQuery = new URLSearchParams(window.location.search);
+const demoMode = workbenchQuery.get("demo") === "1";
+document.body.dataset.demo = String(demoMode);
 const readerSessionId = workbenchQuery.get("session") || "bookforge-live";
 const restoreLatestScene = !workbenchQuery.has("session")
   || workbenchQuery.get("restore") === "latest";
@@ -336,20 +339,24 @@ function setSceneReady(ready) {
   elements.projectorLink.classList.toggle("disabled", !ready);
   elements.projectorLink.setAttribute("aria-disabled", String(!ready));
   elements.projectorLink.tabIndex = ready ? 0 : -1;
-  elements.micButton.disabled = !ready || !canRecordAudio;
+  elements.micButton.disabled = starting || finalizing || (!listening && (!ready || !canRecordAudio));
   elements.projectionPreview.classList.toggle("hidden", !ready);
-  if (ready && !listening && !starting) {
-    elements.interim.textContent = "Open the projection view, then press Start reading.";
+  if (ready && !listening && !starting && !finalizing) {
+    elements.interim.textContent = "Press Start reading and read the page aloud.";
   }
 }
 
 function ensureProjectionPreview() {
   if (!elements.projectorFrame.src) {
-    elements.projectorFrame.src = `/projector?pack=latest&session=${readerSessionId}&present=1&live=1&reader=0`;
+    elements.projectorFrame.src = projectorUrl();
   }
 }
 
-elements.projectorLink.href = `/projector?pack=latest&session=${encodeURIComponent(readerSessionId)}&present=1&live=1`;
+function projectorUrl() {
+  return `/projector?pack=latest&session=${encodeURIComponent(readerSessionId)}&present=1&reader=1${demoMode ? "" : "&live=1"}`;
+}
+
+elements.projectorLink.href = projectorUrl();
 
 // Kept as the public preview hook; it initializes once and never reloads during stage upgrades.
 function reloadProjectionPreview() {
@@ -364,7 +371,21 @@ function safeText(value) {
 
 async function startAudioMeter() {
   if (stream) return;
-  stream = await navigator.mediaDevices.getUserMedia({audio: true, video: false});
+  stream = await new Promise((resolve, reject) => {
+    let expired = false;
+    const timer = window.setTimeout(() => {
+      expired = true;
+      reject(new Error("Microphone permission timed out. Allow microphone access, then try again."));
+    }, 20000);
+    navigator.mediaDevices.getUserMedia({audio: true, video: false}).then((capture) => {
+      window.clearTimeout(timer);
+      if (expired) capture.getTracks().forEach((track) => track.stop());
+      else resolve(capture);
+    }, (error) => {
+      window.clearTimeout(timer);
+      reject(error);
+    });
+  });
   const Context = window.AudioContext || window.webkitAudioContext;
   audioContext = new Context();
   analyser = audioContext.createAnalyser();
@@ -397,7 +418,7 @@ function releaseMicrophone() {
 }
 
 async function startSpeaking() {
-  if (starting || listening) return;
+  if (starting || listening || finalizing) return;
   if (!sceneReady) {
     elements.interim.textContent = "Create the scene before starting the reader.";
     return;
@@ -410,9 +431,12 @@ async function startSpeaking() {
   elements.micButton.disabled = true;
   elements.micButtonText.textContent = "Starting…";
   elements.compileButton.disabled = true;
+  setSceneInputsDisabled(true);
   try {
     const pageText = elements.story.value.trim();
     if (!pageText) throw new Error("Enter the trusted page text before starting the reader.");
+    const runtime = await readerRequest("/v1/runtime:status", {cache: "no-store"}, 10000);
+    if (runtime.asr?.ready !== true) throw new Error("Local transcription is disabled or unavailable. Enable the local ASR backend before reading.");
     activePageText = pageText;
     await configureReaderSession(pageText);
     readerGeneration = (await resetReaderSession()).generation;
@@ -458,6 +482,8 @@ async function startSpeaking() {
 }
 
 function stopSpeaking() {
+  if (finalizing) return;
+  finalizing = true;
   listening = false;
   elements.micButton.classList.remove("listening");
   elements.micButton.disabled = true;
@@ -467,13 +493,17 @@ function stopSpeaking() {
   partialTimer = null;
   if (mediaRecorder?.state === "recording") mediaRecorder.stop();
   else resetMicControls();
+  releaseMicrophone();
 }
 
 function resetMicControls() {
+  listening = false;
+  finalizing = false;
   elements.micButton.classList.remove("listening");
   elements.micButton.disabled = !sceneReady || !canRecordAudio;
   elements.micButtonText.textContent = "Start reading";
-  elements.compileButton.disabled = false;
+  elements.compileButton.disabled = demoMode || Boolean(activeLiveJobId);
+  setSceneInputsDisabled(Boolean(activeLiveJobId));
   window.clearInterval(partialTimer);
   partialTimer = null;
   activePageText = null;
@@ -481,22 +511,36 @@ function resetMicControls() {
   releaseMicrophone();
 }
 
+async function readerRequest(url, options, timeoutMs = 45000) {
+  const controller = new AbortController();
+  const timer = window.setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    const response = await fetch(url, {...options, signal: controller.signal});
+    const payload = await response.json();
+    if (!response.ok) throw new Error(typeof payload.detail === "string"
+      ? payload.detail : `Local reader request failed (${response.status}).`);
+    return payload;
+  } catch (error) {
+    if (controller.signal.aborted) throw new Error("The local reader timed out. Start reading again to retry.");
+    throw error;
+  } finally {
+    window.clearTimeout(timer);
+  }
+}
+
 async function transcribeBlob(recording, mimeType) {
-  const response = await fetch("/v1/audio:transcribe", {
+  return readerRequest("/v1/audio:transcribe", {
       method: "POST",
       headers: {"Content-Type": mimeType},
       body: recording,
   });
-  const payload = await response.json();
-  if (!response.ok) throw new Error(payload.detail || `Transcription failed (${response.status})`);
-  return payload;
 }
 
 async function publishReaderTranscript(text, isFinal, generation = readerGeneration) {
   if (!activePageText || generation === null) {
     throw new Error("The reader session changed; stop and start this reading again.");
   }
-  const response = await fetch(`/v1/reader-sessions/${readerSessionId}/transcripts:simulate`, {
+  await readerRequest(`/v1/reader-sessions/${readerSessionId}/transcripts:simulate`, {
     method: "POST",
     headers: {"Content-Type": "application/json"},
     body: JSON.stringify({
@@ -508,34 +552,20 @@ async function publishReaderTranscript(text, isFinal, generation = readerGenerat
       generation,
     }),
   });
-  if (!response.ok) {
-    const payload = await response.json().catch(() => ({}));
-    throw new Error(payload.detail || `Reader event failed (${response.status})`);
-  }
 }
 
 async function configureReaderSession(pageText) {
-  const configureResponse = await fetch(`/v1/reader-sessions/${readerSessionId}`, {
+  return readerRequest(`/v1/reader-sessions/${readerSessionId}`, {
     method: "PUT",
     headers: {"Content-Type": "application/json"},
     body: JSON.stringify({page_id: "page-01", page_text: pageText}),
   });
-  if (!configureResponse.ok) {
-    const payload = await configureResponse.json().catch(() => ({}));
-    throw new Error(payload.detail || `Reader setup failed (${configureResponse.status})`);
-  }
-  return configureResponse.json();
 }
 
 async function resetReaderSession() {
-  const response = await fetch(`/v1/reader-sessions/${readerSessionId}:reset`, {
+  return readerRequest(`/v1/reader-sessions/${readerSessionId}:reset`, {
     method: "POST",
   });
-  if (!response.ok) {
-    const payload = await response.json().catch(() => ({}));
-    throw new Error(payload.detail || `Reader reset failed (${response.status})`);
-  }
-  return response.json();
 }
 
 async function transcribePartialRecording(epoch) {
@@ -561,6 +591,9 @@ async function transcribePartialRecording(epoch) {
 }
 
 async function transcribeRecording() {
+  listening = false;
+  finalizing = true;
+  releaseMicrophone();
   const mimeType = mediaRecorder?.mimeType || "audio/webm";
   const recording = new Blob(audioChunks, {type: mimeType});
   const generation = readerGeneration;
@@ -776,8 +809,9 @@ function startLivePollingFallback() {
 }
 
 function setSceneInputsDisabled(disabled) {
-  elements.story.disabled = disabled;
-  elements.style.disabled = disabled;
+  const locked = disabled || demoMode || starting || listening || finalizing;
+  elements.story.disabled = locked;
+  elements.style.disabled = locked;
 }
 
 function finishLiveJob(snapshot) {
@@ -1172,6 +1206,7 @@ async function recoverLiveSceneSession() {
 }
 
 async function restoreInitialScene() {
+  if (demoMode) return loadLatestScene();
   if (await recoverLiveSceneSession()) return;
   if (restoreLatestScene) await loadLatestScene();
 }
@@ -1184,7 +1219,7 @@ function invalidateScene() {
 }
 
 elements.micButton.addEventListener("click", () => {
-  if (starting) return;
+  if (starting || finalizing) return;
   if (listening) stopSpeaking();
   else startSpeaking();
 });
@@ -1210,34 +1245,43 @@ if (!canRecordAudio) {
   elements.browserNote.textContent = "The scene creator still works here. Chrome on localhost supports the private local microphone flow.";
 }
 
-window.BookforgeAnticipation.init({
-  sessionId: readerSessionId,
-  visualStyle: () => elements.style.value.trim(),
-  currentProjection: () => ({
-    server_instance_id: liveServerInstanceId,
-    session_revision: liveSessionRevision,
-  }),
-  onShow: (pointer) => {
-    handleLiveSceneSessionPointer(pointer, {restoreInputs: true});
-    ensureProjectionPreview();
-  },
-});
-connectLiveSceneSessionEvents();
+let edgePlannerKeepWarmTimer = null;
+if (!demoMode) {
+  window.BookforgeAnticipation.init({
+    sessionId: readerSessionId,
+    visualStyle: () => elements.style.value.trim(),
+    currentProjection: () => ({
+      server_instance_id: liveServerInstanceId,
+      session_revision: liveSessionRevision,
+    }),
+    onShow: (pointer) => {
+      handleLiveSceneSessionPointer(pointer, {restoreInputs: true});
+      ensureProjectionPreview();
+    },
+  });
+  connectLiveSceneSessionEvents();
+  void warmEdgePlanner();
+  edgePlannerKeepWarmTimer = window.setInterval(() => {
+    if (document.visibilityState === "visible") void warmEdgePlanner();
+  }, EDGE_PLANNER_KEEP_WARM_MS);
+  document.addEventListener("visibilitychange", () => {
+    if (document.visibilityState === "visible" && Date.now() >= edgePlannerWarmUntil) {
+      void warmEdgePlanner();
+    }
+  });
+  void inspectRendererReadiness();
+}
+setSceneInputsDisabled(false);
+if (demoMode) {
+  elements.compileButton.disabled = true;
+  elements.prewarmButton.disabled = true;
+}
 restoreInitialScene();
-void warmEdgePlanner();
-const edgePlannerKeepWarmTimer = window.setInterval(() => {
-  if (document.visibilityState === "visible") void warmEdgePlanner();
-}, EDGE_PLANNER_KEEP_WARM_MS);
-document.addEventListener("visibilitychange", () => {
-  if (document.visibilityState === "visible" && Date.now() >= edgePlannerWarmUntil) {
-    void warmEdgePlanner();
-  }
-});
-void inspectRendererReadiness();
 window.addEventListener("beforeunload", () => {
   window.clearInterval(edgePlannerKeepWarmTimer);
   window.clearTimeout(rendererWarmExpiryTimer);
   window.clearTimeout(edgePlanPreparationTimer);
   liveSessionEventSource?.close();
   stopLiveJobTransport();
+  releaseMicrophone();
 });

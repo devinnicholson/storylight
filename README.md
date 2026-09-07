@@ -92,8 +92,9 @@ Interactive API documentation is available at `http://127.0.0.1:8080/docs`.
 The workbench is available at `http://127.0.0.1:8080/workbench`. Its primary path is now typed story
 text becoming the exact moving projector output in progressive stages: an immediate procedural
 draft, generated artwork with depth-aware WebGL movement, and an optional cinematic loop. Stage,
-revision, provider, latency, and artifact provenance remain visible throughout. The microphone is
-intentionally a later, collapsed milestone; GCP is not required to exercise the typed-text flow.
+revision, provider, latency, and artifact provenance remain visible throughout. Read-aloud controls
+sit beside the passage and use local Whisper to drive the projector. See the
+[microphone rehearsal](docs/microphone-demo.md) for a prepared-artwork demo without cloud waiting.
 
 The accepted edge path runs a real 1B Gemma 3 instruction model on the Orin Nano, emits a strict
 semantic SceneSpec, and sends only that visual direction to the remote image renderer. The first
