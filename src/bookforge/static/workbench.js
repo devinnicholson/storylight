@@ -706,6 +706,7 @@ function offerVoiceTranscript(text, {final = false, epoch = recordingEpoch} = {}
     key, text, style, epoch,
     observations: previous?.key === key ? previous.observations + 1 : 1,
     final: final || (previous?.key === key && previous.final),
+    refusal: previous?.key === key ? previous.refusal : null,
   };
   elements.story.value = text;
   delete elements.compileButton.dataset.visualVariation;
@@ -848,7 +849,12 @@ async function transcribeRecording() {
       const text = typeof payload.text === "string" ? payload.text.trim() : "";
       if (!text) throw new Error("No speech was recognized. Describe the scene again, or type it below.");
       offerVoiceTranscript(text, {final: true});
-      elements.interim.textContent = "Finishing the scene for your latest description…";
+      if (voiceGeneration.latest?.refusal) {
+        elements.voiceReview.textContent = voiceGeneration.latest.refusal;
+        elements.interim.textContent = "The description could not be verified. Your previous scene is unchanged; edit it or describe the scene again.";
+      } else {
+        elements.interim.textContent = "Finishing the scene for your latest description…";
+      }
     } else {
       await publishReaderTranscript(payload.text, true, generation);
       elements.interim.textContent = `Finished in ${(payload.total_ms / 1000).toFixed(1)} s. Whisper heard: ${payload.text}`;
@@ -1595,6 +1601,10 @@ async function compileStory(options = {}) {
         submission.request.visual_fact_digest = checked.visual_fact_digest;
       }
     } catch (error) {
+      if (automatic && voiceGeneration.latest?.key === voiceIntent.key
+        && voiceGeneration.latest.epoch === voiceIntent.epoch) {
+        voiceGeneration.latest.refusal = error.message;
+      }
       elements.voiceReview.textContent = error.message;
       elements.interim.textContent = automatic && listening
         ? "Still listening for a clear scene description. No image was requested for this partial transcript."

@@ -924,5 +924,54 @@ async function recorderFlush() {
   timeout.context.resetMicControls();
 }
 
-(async () => { await lifecycle(); await voiceToScene(); await partialScheduling(); await adaptiveCadence(); await timingIsolation(); await recorderFlush(); })().then(() => console.log("Workbench microphone: cleanup, recorder flush, adaptive ASR cadence, latest-only presentation and no duplicate paid requests passed."))
+async function finalRefusalStatus() {
+  const h = generationHarness();
+  const c = h.context;
+  const text = "The English cream golden retriever ran down the cobblestone path in the city of Paris.";
+  const detail = "reviewed_description_unsupported: Clarify the actor, action and place.";
+  const respond = c.respond;
+  let refuse = true;
+  c.respond = (url, options) => {
+    if (url === "/v1/audio:transcribe") return h.response(200, {text, total_ms: 50});
+    if (url === "/v1/live-scene-planner/prepare" && refuse) {
+      h.checks.push(JSON.parse(options.body));
+      return h.response(422, {detail: {message: detail}});
+    }
+    return respond(url, options);
+  };
+  await c.startSpeaking();
+  const recorder = c.mediaRecorder;
+  recorder.handlers.dataavailable({data: new Blob(["a".repeat(1200)])});
+  await c.transcribePartialRecording(c.recordingEpoch);
+  await h.advance(350);
+  assert.equal(h.checks.length, 1);
+  assert.equal(h.submitted.length, 0);
+  assert.equal(c.voiceGeneration.latest.refusal, detail);
+  // Another identical partial keeps the same refusal and does not recheck it.
+  recorder.handlers.dataavailable({data: new Blob(["b".repeat(100)])});
+  await c.transcribePartialRecording(c.recordingEpoch);
+  await h.advance(350);
+  assert.equal(h.checks.length, 1);
+  c.stopSpeaking();
+  await recorder.handlers.stop();
+  await flush();
+  assert.equal(c.finalizing, false);
+  assert.equal(h.checks.length, 1);
+  assert.equal(h.submitted.length, 0);
+  assert.deepEqual(h.displayed, []);
+  assert.equal(h.elements.voiceReview.textContent, detail);
+  assert.match(h.elements.interim.textContent, /could not be verified.*previous scene is unchanged/i);
+  assert.doesNotMatch(h.elements.interim.textContent, /Finishing/);
+  assert.equal(h.elements.compileButton.textContent, "Check description again");
+  assert.equal(h.elements.compileButton.disabled, false);
+  refuse = false;
+  c.offerVoiceTranscript("A dog chasing a ball.", {final: true});
+  await flush();
+  assert.equal(c.voiceGeneration.latest.refusal, null);
+  assert.equal(h.checks.length, 2);
+  assert.equal(h.submitted.length, 1);
+  assert.equal(h.submitted[0].text, "A dog chasing a ball.");
+}
+
+(async () => { await lifecycle(); await voiceToScene(); await partialScheduling(); await adaptiveCadence(); await timingIsolation(); await recorderFlush(); await finalRefusalStatus(); })().then(() => console.log("Workbench microphone: cleanup, recorder flush, adaptive ASR cadence, latest-only presentation and no duplicate paid requests passed."))
   .catch((error) => { console.error(error); process.exitCode = 1; });
