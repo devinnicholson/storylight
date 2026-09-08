@@ -749,6 +749,30 @@ async def present_live_scene(
         raise HTTPException(status_code=503, detail=str(error)) from error
 
 
+@app.post("/v1/live-scene-provider/preconnect")
+async def preconnect_live_scene_provider(payload: dict[str, object], request: Request) -> dict:
+    """Optional, nonbillable readiness for the preferred managed Vertex route."""
+    from bookforge.provider_router import ResilientFastSceneProvider
+
+    if not _is_local_connection(request):
+        raise HTTPException(status_code=403, detail="Connection preparation is local-only")
+    if payload:
+        raise HTTPException(
+            status_code=422, detail="Connection preparation accepts only an empty object",
+        )
+    provider = getattr(request.app.state.live_scenes.provider, "provider", None)
+    if type(provider) is not ResilientFastSceneProvider:
+        raise HTTPException(status_code=409, detail="Safe connection preparation is unsupported")
+    try:
+        ready, remaining = await provider.prepare_connection()
+    except ValueError as error:
+        raise HTTPException(
+            status_code=409, detail="Safe connection preparation is unsupported",
+        ) from error
+    return {"supported": True, "ready": ready, "expires_in_seconds": remaining,
+            "inference_started": False}
+
+
 def _configured_warm_status_provider(registry: LiveSceneJobRegistry):
     adapter = registry.provider
     provider = getattr(adapter, "provider", None)

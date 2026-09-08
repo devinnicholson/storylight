@@ -425,6 +425,20 @@ function voiceTimingEvent(type, details = {}, epoch = recordingEpoch) {
   if (voiceTiming.events.length > 256) voiceTiming.events.shift();
 }
 
+async function preconnectVoiceProvider(epoch) {
+  voiceTimingEvent("provider_preconnect_started", {}, epoch);
+  try {
+    const result = await readerRequest("/v1/live-scene-provider/preconnect", {
+      method: "POST", headers: {"Content-Type": "application/json"}, body: "{}",
+    }, 10000);
+    voiceTimingEvent("provider_preconnect_completed", {
+      failed: result?.ready !== true || result?.inference_started !== false,
+    }, epoch);
+  } catch (_) {
+    voiceTimingEvent("provider_preconnect_completed", {failed: true}, epoch);
+  }
+}
+
 function nextVoicePartialDelay(durationMs) {
   if (partialSchedule?.lastActivityAt == null
     || performance.now() - partialSchedule.lastActivityAt > 1200) return 2000;
@@ -566,8 +580,10 @@ async function startSpeaking() {
     elements.interim.textContent = voiceMode
       ? "Listening locally. Generation starts as your description becomes clear; only completed scenes will appear."
       : "Listening locally—read the exact page text above.";
-    if (voiceMode) scheduleVoicePartial(epoch);
-    else partialTimer = window.setInterval(() => {
+    if (voiceMode) {
+      scheduleVoicePartial(epoch);
+      void preconnectVoiceProvider(epoch);
+    } else partialTimer = window.setInterval(() => {
       if (!partialBusy) partialInFlight = transcribePartialRecording(epoch);
     }, 2000);
   } catch (error) {

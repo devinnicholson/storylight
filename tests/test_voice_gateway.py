@@ -140,3 +140,33 @@ def test_loopback_scope_limits_and_single_attempt_errors():
     ):
         with pytest.raises(ValueError):
             create_voice_gateway(scene_url=url)
+
+
+def test_preconnect_only_routes_empty_request_to_scene_api_without_inference():
+    calls = []
+
+    def handle(request):
+        calls.append(request)
+        assert str(request.url) == "http://127.0.0.1:18768/v1/live-scene-provider/preconnect"
+        assert request.method == "POST" and request.content == b"{}"
+        return httpx.Response(
+            200,
+            headers={"content-type": "application/json"},
+            stream=Stream(
+                b'{"supported":true,"ready":true,"expires_in_seconds":300,'
+                b'"inference_started":false}'
+            ),
+        )
+
+    app = create_voice_gateway(transport=httpx.MockTransport(handle))
+    with TestClient(app, base_url="http://127.0.0.1:18767", client=("127.0.0.1", 50000)) as client:
+        response = client.post("/v1/live-scene-provider/preconnect", json={})
+        assert response.status_code == 200 and response.json()["inference_started"] is False
+        for method, path in (
+            ("GET", "/v1/live-scene-provider/preconnect"),
+            ("POST", "/v1/live-scene-provider/preconnect/extra"),
+            ("POST", "/v1/live-scene-provider/prewarm"),
+            ("POST", "/v1/prepared-projections:prewarm"),
+        ):
+            assert client.request(method, path).status_code == 403
+        assert len(calls) == 1

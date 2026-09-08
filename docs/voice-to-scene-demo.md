@@ -20,6 +20,8 @@ Transcription and submission have timeouts. If a submission response is lost, th
 
 ### Speech scheduling and timing
 
+Recording also starts a nonbillable Vertex connection check in the background. Submission reuses the active router's existing readiness cache or joins the same in-flight check, including cache publication. This sends no scene or audio and never warms fallback GPUs. An optional preparation failure leaves recording available; submission retains its normal checks. The [connection measurements](../benchmarks/voice-preconnect-2026-09-08/README.md) record 871 ms for the first live check and 11 ms for cached readiness, without generating an image. Reload the workbench to receive the recording hook.
+
 The voice frontend starts its first partial transcription check after 1.2 seconds.
 Subsequent checks wait for the previous request to finish. While audio is active,
 the next check has at least a 350 ms completion gap and 750 ms start spacing;

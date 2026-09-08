@@ -238,6 +238,11 @@ function generationHarness() {
   h.state = {rejectCheck: false, ready};
   c.respond = async (url, options = {}) => {
     if (url === "/v1/runtime:status") return response(200, {asr: {ready: true}});
+    if (url === "/v1/live-scene-provider/preconnect") {
+      assert.equal(options.method, "POST");
+      assert.equal(options.body, "{}");
+      return response(200, {supported: true, ready: true, expires_in_seconds: 300, inference_started: false});
+    }
     if (url === "/v1/live-scene-planner/prepare") {
       const request = JSON.parse(options.body);
       assert.deepEqual(Object.keys(request).sort(), [
@@ -1044,5 +1049,64 @@ async function staticPartialAdmission() {
   assert.equal(during.context.voiceGeneration.attempted.size, 0);
 }
 
-(async () => { await lifecycle(); await voiceToScene(); await partialScheduling(); await adaptiveCadence(); await timingIsolation(); await recorderFlush(); await finalRefusalStatus(); await staticPartialAdmission(); })().then(() => console.log("Workbench microphone: cleanup, recorder flush, adaptive ASR cadence, latest-only presentation and no duplicate paid requests passed."))
+async function providerPreconnect() {
+  const route = "/v1/live-scene-provider/preconnect";
+  const h = generationHarness();
+  const c = h.context;
+  const respond = c.respond;
+  const pending = [];
+  c.respond = (url, options) => {
+    if (url === route) {
+      assert.equal(c.mediaRecorder.state, "recording");
+      assert.equal(c.listening, true);
+      assert.equal(options.body, "{}");
+      return new Promise((resolve, reject) => {
+        pending.push({resolve, reject});
+        options.signal.addEventListener("abort", () => reject(new Error("aborted")));
+      });
+    }
+    if (url === "/v1/audio:transcribe") return h.response(200, {text: "", total_ms: 10});
+    return respond(url, options);
+  };
+  await c.startSpeaking(); // A held HEAD/auth response must not hold microphone startup.
+  assert.equal(c.listening, true);
+  assert.equal(c.starting, false);
+  assert.equal(pending.length, 1);
+  await c.startSpeaking();
+  assert.equal(pending.length, 1);
+  assert.equal(h.submitted.length, 0);
+  assert.equal(h.checks.length, 0);
+  const recorder = c.mediaRecorder;
+  recorder.handlers.dataavailable({data: new Blob(["a".repeat(1200)])});
+  c.stopSpeaking();
+  await recorder.handlers.stop(); // Final transcription also does not wait for preconnect.
+  assert.equal(h.requests.filter((url) => url === "/v1/audio:transcribe").length, 1);
+  assert.equal(c.finalizing, false);
+  await c.startSpeaking();
+  assert.equal(pending.length, 2);
+  const before = JSON.stringify(c.voiceTiming.events);
+  const status = h.elements.interim.textContent;
+  pending[0].reject(new Error("private stale upstream failure"));
+  await flush();
+  assert.equal(JSON.stringify(c.voiceTiming.events), before);
+  assert.equal(h.elements.interim.textContent, status);
+  await h.advance(10000); // Optional failure has a finite lifetime and never retries.
+  assert.equal(h.requests.filter((url) => url === route).length, 2);
+  assert.equal(c.listening, true);
+  assert.equal(h.elements.interim.textContent, status);
+  assert.equal(c.voiceTiming.events.filter((event) =>
+    event.type === "provider_preconnect_completed" && event.failed).length, 1);
+  c.mediaRecorder.handlers.dataavailable({data: new Blob(["b".repeat(1200)])});
+  await c.transcribePartialRecording(c.recordingEpoch);
+  assert.equal(h.requests.filter((url) => url === "/v1/audio:transcribe").length, 2);
+  assert.equal(h.submitted.length, 0);
+  assert.equal(h.checks.length, 0);
+  assert.ok(!JSON.stringify(c.voiceTiming.events).includes("private stale"));
+
+  const read = harness();
+  await read.context.startSpeaking();
+  assert.ok(!read.requests.includes(route));
+}
+
+(async () => { await lifecycle(); await voiceToScene(); await partialScheduling(); await adaptiveCadence(); await timingIsolation(); await recorderFlush(); await finalRefusalStatus(); await staticPartialAdmission(); await providerPreconnect(); })().then(() => console.log("Workbench microphone: cleanup, recorder flush, adaptive ASR cadence, optional preconnect, latest-only presentation and no duplicate paid requests passed."))
   .catch((error) => { console.error(error); process.exitCode = 1; });

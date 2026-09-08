@@ -10,6 +10,7 @@ import struct
 import time
 import zlib
 from collections.abc import Awaitable, Callable, Mapping
+from contextlib import suppress
 from datetime import UTC, datetime
 from email.utils import parsedate_to_datetime
 from pathlib import Path
@@ -108,6 +109,8 @@ class VertexGeminiImageSceneProvider:
         self._token_deadline = 0.0
         self._operation_lock = asyncio.Lock()
         self._reserved_usd = 0.0
+        self._probe_task: asyncio.Task[tuple[bool, str]] | None = None
+        self._closed = False
 
     @property
     def endpoint(self) -> str:
@@ -117,10 +120,28 @@ class VertexGeminiImageSceneProvider:
         )
 
     async def probe(self) -> tuple[bool, str]:
+        if self._closed:
+            return False, "Vertex provider is closed"
+        # The recording preconnect and submission share one bounded HEAD owner.
+        # Cancelling either waiter cannot cancel readiness used by the other.
+        if self._probe_task is None or self._probe_task.done():
+            self._probe_task = asyncio.create_task(self._bounded_probe())
+        return await asyncio.shield(self._probe_task)
+
+    async def _bounded_probe(self) -> tuple[bool, str]:
+        try:
+            async with asyncio.timeout(10):
+                return await self._probe_connection()
+        except TimeoutError:
+            return False, "Vertex connection preparation timed out"
+        except Exception:
+            return False, "Vertex connection preparation failed"
+
+    async def _probe_connection(self) -> tuple[bool, str]:
         try:
             token = await self._access_token()
-        except Exception as error:
-            return False, f"Vertex credentials are unavailable: {error}"
+        except Exception:
+            return False, "Vertex credentials are unavailable"
         if not token:
             return False, "Vertex credentials returned no access token"
         try:
@@ -132,11 +153,13 @@ class VertexGeminiImageSceneProvider:
                 self.endpoint,
                 headers={"Authorization": f"Bearer {token}"},
             )
-        except (httpx.TimeoutException, httpx.TransportError) as error:
-            return False, f"Vertex preconnect failed: {error}"
+        except (httpx.TimeoutException, httpx.TransportError):
+            return False, "Vertex preconnect failed"
         if response.status_code in {401, 403}:
+            self._cached_token = ""
+            self._token_deadline = 0.0
             return False, f"Vertex preconnect rejected credentials with HTTP {response.status_code}"
-        if response.status_code >= 500:
+        if response.status_code not in {200, 204, 400, 404, 405}:
             return False, f"Vertex preconnect returned HTTP {response.status_code}"
         return True, (
             f"Vertex managed image route is configured for {self.model} in {self.location}; "
@@ -175,6 +198,9 @@ class VertexGeminiImageSceneProvider:
                     retry_after_seconds=_retry_after_seconds(response.headers.get("retry-after")),
                 )
             if response.status_code >= 400:
+                if response.status_code in {401, 403}:
+                    self._cached_token = ""
+                    self._token_deadline = 0.0
                 # Vertex pricing documents charge successful (200) predictions;
                 # an explicit non-2xx response is therefore safe to route onward.
                 raise SafeProviderFallbackError(
@@ -221,6 +247,12 @@ class VertexGeminiImageSceneProvider:
         )
 
     async def aclose(self) -> None:
+        self._closed = True
+        task = self._probe_task
+        if task is not None and not task.done():
+            task.cancel()
+            with suppress(asyncio.CancelledError):
+                await task
         async with self._client_lock:
             client = self._client
             self._client = None
@@ -228,9 +260,13 @@ class VertexGeminiImageSceneProvider:
             await client.aclose()
 
     async def _get_client(self) -> httpx.AsyncClient:
+        if self._closed:
+            raise VertexSceneProviderError("Vertex provider is closed")
         if self._client is not None:
             return self._client
         async with self._client_lock:
+            if self._closed:
+                raise VertexSceneProviderError("Vertex provider is closed")
             if self._client is None:
                 self._client = self._client_factory(
                     timeout=httpx.Timeout(self.timeout_seconds),

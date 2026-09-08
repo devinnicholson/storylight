@@ -148,6 +148,7 @@ def create_voice_gateway(
             or not (
                 local
                 or _route_allowed(request.method, route)
+                or (request.method == "POST" and route == "/v1/live-scene-provider/preconnect")
                 or (request.method == "POST" and route == "/v1/projector-telemetry")
             )
         ):

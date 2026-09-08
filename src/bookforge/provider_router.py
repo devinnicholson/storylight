@@ -8,6 +8,7 @@ import re
 import shutil
 import time
 from collections.abc import Mapping, Sequence
+from contextlib import suppress
 from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import Any, Protocol
@@ -112,6 +113,9 @@ class ResilientFastSceneProvider:
         self._unavailable_until: dict[str, float] = {}
         self._healthy_until: dict[str, float] = {}
         self._last_detail: dict[str, str] = {}
+        self._readiness_epoch: dict[str, int] = {}
+        self._connection_task: asyncio.Task[tuple[bool, float]] | None = None
+        self._closed = False
         self._lock = asyncio.Lock()
 
     async def probe(self) -> tuple[bool, str]:
@@ -121,6 +125,40 @@ class ResilientFastSceneProvider:
             if ready:
                 return True, f"resilient route selected {route.name}: {detail}"
         return False, self._unavailable_message(attempts)
+
+    async def prepare_connection(self) -> tuple[bool, float]:
+        """Prime only a preferred Vertex HEAD, never another route or inference."""
+        from bookforge.vertex_scene_provider import VertexGeminiImageSceneProvider
+
+        route = self.routes[0]
+        if type(route.provider) is not VertexGeminiImageSceneProvider:
+            raise ValueError("Preferred provider does not support safe connection preparation")
+        if self._closed:
+            return False, 0.0
+        if self._connection_task is None or self._connection_task.done():
+            self._connection_task = asyncio.create_task(self._prepare_connection_route(route))
+        return await asyncio.shield(self._connection_task)
+
+    async def _prepare_connection_route(self, route: ProviderRoute) -> tuple[bool, float]:
+        now = time.monotonic()
+        async with self._lock:
+            if self._unavailable_until.get(route.name, 0.0) > now:
+                return False, 0.0
+            remaining = self._healthy_until.get(route.name, 0.0) - now
+            if remaining > 0:
+                return True, remaining
+            epoch = self._readiness_epoch.get(route.name, 0)
+        ready, detail = await route.provider.probe()
+        # An optional failed preconnect does not open a negative-cache circuit.
+        if not ready or not await self._mark_healthy(route, detail=detail, expected_epoch=epoch):
+            return False, 0.0
+        async with self._lock:
+            now = time.monotonic()
+            if (self._closed or self._readiness_epoch.get(route.name, 0) != epoch
+                    or self._unavailable_until.get(route.name, 0.0) > now):
+                return False, 0.0
+            remaining = max(0.0, self._healthy_until.get(route.name, 0.0) - now)
+            return remaining > 0, remaining
 
     async def warm_status(self) -> WarmProviderStatus:
         """Expose route readiness without prewarming or starting paid work."""
@@ -191,6 +229,7 @@ class ResilientFastSceneProvider:
                 await self._mark_unavailable(route.name, detail, cooldown_seconds=cooldown)
                 continue
             except FiniteModalUnavailableError as error:
+                await self._invalidate_readiness(route.name)
                 # The readiness gate passed and generation started. Older
                 # providers classify transport failures as "unavailable", but
                 # they are billably ambiguous at this point. Convert them to a
@@ -200,6 +239,11 @@ class ResilientFastSceneProvider:
                     f"{route.name} failed after its paid boundary; automatic fallback "
                     "and retry are suppressed"
                 ) from error
+            except BaseException:
+                # No fallback follows an ambiguous paid attempt. Discard only
+                # its readiness claim so a later deliberate request rechecks.
+                await self._invalidate_readiness(route.name)
+                raise
             await self._mark_healthy(route)
             attempts.append(
                 {
@@ -235,6 +279,11 @@ class ResilientFastSceneProvider:
             return any(deadline > now for deadline in self._healthy_until.values())
 
     async def aclose(self) -> None:
+        self._closed = True
+        if self._connection_task is not None and not self._connection_task.done():
+            self._connection_task.cancel()
+            with suppress(asyncio.CancelledError):
+                await self._connection_task
         for route in self.routes:
             close = getattr(route.provider, "aclose", None)
             if callable(close):
@@ -246,28 +295,36 @@ class ResilientFastSceneProvider:
         *,
         attempts: list[dict[str, Any]],
     ) -> tuple[bool, str, float]:
-        now = time.monotonic()
-        async with self._lock:
-            unavailable_until = self._unavailable_until.get(route.name, 0.0)
-            healthy_until = self._healthy_until.get(route.name, 0.0)
-            last_detail = self._last_detail.get(route.name, "")
-        if unavailable_until > now:
-            attempts.append(
-                {
-                    "provider": route.name,
-                    "outcome": "circuit_open",
-                    "retry_in_seconds": round(unavailable_until - now, 3),
-                    "detail": last_detail,
-                }
-            )
-            return False, last_detail, 0.0
-        if healthy_until > now:
-            detail = last_detail or "recent readiness probe passed"
-            return True, detail, 0.0
-
         started = time.perf_counter()
+        joined_connection = False
         try:
             async with asyncio.timeout(self.probe_timeout_seconds):
+                connection = self._connection_task
+                if route is self.routes[0] and connection is not None and not connection.done():
+                    # Join through cache publication, not just completion of the
+                    # underlying HEAD. A canceled observer never owns this work.
+                    joined_connection = True
+                    await asyncio.shield(connection)
+                now = time.monotonic()
+                async with self._lock:
+                    unavailable_until = self._unavailable_until.get(route.name, 0.0)
+                    healthy_until = self._healthy_until.get(route.name, 0.0)
+                    last_detail = self._last_detail.get(route.name, "")
+                    epoch = self._readiness_epoch.get(route.name, 0)
+                waited_ms = (time.perf_counter() - started) * 1_000 if joined_connection else 0.0
+                if unavailable_until > now:
+                    attempts.append(
+                        {
+                            "provider": route.name,
+                            "outcome": "circuit_open",
+                            "retry_in_seconds": round(unavailable_until - now, 3),
+                            "detail": last_detail,
+                        }
+                    )
+                    return False, last_detail, waited_ms
+                if healthy_until > now:
+                    detail = last_detail or "recent readiness probe passed"
+                    return True, detail, waited_ms
                 ready, detail = await route.provider.probe()
         except TimeoutError:
             ready = False
@@ -278,8 +335,8 @@ class ResilientFastSceneProvider:
         probe_ms = (time.perf_counter() - started) * 1_000
         detail = _bounded_detail(detail)
         if ready:
-            await self._mark_healthy(route, detail=detail)
-            return True, detail, probe_ms
+            current = await self._mark_healthy(route, detail=detail, expected_epoch=epoch)
+            return current, detail if current else "readiness changed during probe", probe_ms
         await self._mark_unavailable(route.name, detail)
         attempts.append(
             {
@@ -291,23 +348,35 @@ class ResilientFastSceneProvider:
         )
         return False, detail, probe_ms
 
-    async def _mark_healthy(self, route: ProviderRoute, *, detail: str = "") -> None:
+    async def _mark_healthy(
+        self, route: ProviderRoute, *, detail: str = "", expected_epoch: int | None = None,
+    ) -> bool:
         ttl_seconds = (
             route.healthy_probe_ttl_seconds
             if route.healthy_probe_ttl_seconds is not None
             else self.healthy_probe_ttl_seconds
         )
         async with self._lock:
+            if (expected_epoch is not None
+                    and self._readiness_epoch.get(route.name, 0) != expected_epoch):
+                return False
             self._unavailable_until.pop(route.name, None)
             self._healthy_until[route.name] = time.monotonic() + ttl_seconds
             if detail:
                 self._last_detail[route.name] = detail
+            return True
+
+    async def _invalidate_readiness(self, name: str) -> None:
+        async with self._lock:
+            self._healthy_until.pop(name, None)
+            self._readiness_epoch[name] = self._readiness_epoch.get(name, 0) + 1
 
     async def _mark_unavailable(
         self, name: str, detail: str, *, cooldown_seconds: float | None = None,
     ) -> None:
         async with self._lock:
             self._healthy_until.pop(name, None)
+            self._readiness_epoch[name] = self._readiness_epoch.get(name, 0) + 1
             cooldown = (
                 self.failure_cooldown_seconds if cooldown_seconds is None else cooldown_seconds
             )
