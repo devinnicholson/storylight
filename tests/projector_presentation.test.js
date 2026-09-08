@@ -12,7 +12,12 @@ async function presentationGate() {
     liveLastEnvelopeAt: 0,
   };
   const activations = [];
+  const frameMessages = [];
+  let finishActivation;
   const c = {state, LIVE_MODE: true, COMPLETE_ONLY: true, SESSION_ID: "voice", SCENE_CROSSFADE_MS: 320,
+    window: {location: {origin: "http://localhost"}, parent: {
+      postMessage(data, origin) { frameMessages.push({data, origin}); },
+    }},
     elements: {packLabel: {textContent: "previous"}}, performance: {now: () => 0},
     renderLiveGenerationBadge() {}, setEvent() {}, publish() {},
     assertStoryPack: (value) => value, livePageAssetFingerprint: () => "new-media",
@@ -22,7 +27,10 @@ async function presentationGate() {
       return {...value, signal: {aborted: false}};
     },
     async activatePage(index, token, value) {
-      activations.push({index, token, pack: value}); state.pack = value; return "depth-composed";
+      activations.push({index, token, pack: value});
+      await new Promise((resolve) => { finishActivation = resolve; });
+      state.pack = value;
+      return "depth-composed";
     },
   };
   vm.createContext(c);
@@ -45,6 +53,7 @@ async function presentationGate() {
       snapshot: {...snapshot, ...delta, revision: ++revision}});
     await state.liveTransition;
     assert.equal(activations.length, 0);
+    assert.equal(frameMessages.length, 0);
     assert.equal(state.pack, previous);
     assert.equal(c.elements.packLabel.textContent, "previous");
   }
@@ -52,10 +61,18 @@ async function presentationGate() {
     serverInstanceId: "server", sessionRevision: 2,
     snapshot: {...snapshot, revision: ++revision, stage: "master_ready", complete: true,
       presentation_ready: true}});
+  await new Promise(setImmediate);
+  assert.equal(frameMessages.length, 0);
+  assert.equal(state.pack, previous);
+  finishActivation();
   await state.liveTransition;
   assert.equal(activations.length, 1);
   assert.equal(activations[0].token.displayWhenComplete, true);
   assert.equal(state.pack, pack);
+  assert.deepEqual(JSON.parse(JSON.stringify(frameMessages)), [{
+    data: {type: "bookforge.preview-activated", sessionId: "voice", jobId: "job"},
+    origin: "http://localhost",
+  }]);
   assert.equal(c.liveSnapshotCanDisplay({...snapshot, request: {}, stage: "draft_ready"}), false);
   assert.equal(c.liveSnapshotCanDisplay({...snapshot, request: {}, stage: "master_ready",
     complete: true, artifacts: [{kind: "master"}]}), false);

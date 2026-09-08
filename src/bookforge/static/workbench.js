@@ -54,6 +54,8 @@ let partialTimer = null;
 let partialBusy = false;
 let partialInFlight = Promise.resolve();
 let partialBytes = 0;
+let partialSchedule = null;
+let voiceTiming = null;
 let recordingEpoch = 0;
 let readerGeneration = null;
 let activePageText = null;
@@ -396,6 +398,56 @@ function safeText(value) {
   return node.innerHTML;
 }
 
+function voiceTimingEvent(type, details = {}, epoch = recordingEpoch) {
+  if (!voiceMode || !voiceTiming || voiceTiming.epoch !== epoch) return;
+  const event = {type, ms: Math.round((performance.now() - voiceTiming.startedAt) * 10) / 10};
+  for (const key of ["asrMs", "serverMs", "providerMs", "bytes", "status"]) {
+    if (typeof details[key] === "number" && Number.isFinite(details[key])) event[key] = details[key];
+  }
+  for (const key of ["final", "changed", "failed", "sceneCacheHit", "superseded"]) {
+    if (typeof details[key] === "boolean") event[key] = details[key];
+  }
+  for (const key of ["jobId", "submissionId"]) {
+    if (typeof details[key] === "string" && /^[a-zA-Z0-9_-]{1,100}$/.test(details[key])) {
+      event[key] = details[key];
+    }
+  }
+  if (type === "generation_response" && event.status === 202 && event.jobId) {
+    voiceTiming.jobIds.add(event.jobId);
+  }
+  if (["completed_scene_reused", "presentation_requested"].includes(type) && event.jobId) {
+    voiceTiming.jobIds.add(event.jobId);
+  }
+  if (["generation_completed", "preview_activated"].includes(type)
+    && !voiceTiming.jobIds.has(event.jobId)) return;
+  if (voiceTiming.jobIds.size > 128) voiceTiming.jobIds.delete(voiceTiming.jobIds.values().next().value);
+  voiceTiming.events.push(event);
+  if (voiceTiming.events.length > 256) voiceTiming.events.shift();
+}
+
+function nextVoicePartialDelay(durationMs) {
+  if (partialSchedule?.lastActivityAt == null
+    || performance.now() - partialSchedule.lastActivityAt > 1200) return 2000;
+  return Math.max(350, Math.min(2000, durationMs), 750 - durationMs);
+}
+
+function scheduleVoicePartial(epoch, delay = 1200) {
+  window.clearTimeout(partialTimer);
+  if (!listening || epoch !== recordingEpoch) return;
+  partialTimer = window.setTimeout(async () => {
+    partialTimer = null;
+    if (!listening || epoch !== recordingEpoch) return;
+    const began = performance.now();
+    if (!partialBusy && !voiceGeneration.publishing) {
+      partialInFlight = transcribePartialRecording(epoch);
+      await partialInFlight;
+    }
+    if (listening && epoch === recordingEpoch) {
+      scheduleVoicePartial(epoch, nextVoicePartialDelay(performance.now() - began));
+    }
+  }, delay);
+}
+
 async function startAudioMeter() {
   if (stream) return;
   stream = await new Promise((resolve, reject) => {
@@ -429,6 +481,14 @@ async function startAudioMeter() {
       energy += normalized * normalized;
     });
     const rms = Math.sqrt(energy / values.length);
+    // Activity changes scheduling only. Whisper still receives all recorded audio.
+    if (voiceMode && listening && partialSchedule && rms >= 0.015) {
+      partialSchedule.lastActivityAt = performance.now();
+      if (voiceTiming && !voiceTiming.activityObserved) {
+        voiceTiming.activityObserved = true;
+        voiceTimingEvent("audio_activity");
+      }
+    }
     elements.micLevel.style.width = `${Math.max(6, Math.min(100, rms * 620))}%`;
     requestAnimationFrame(meter);
   }
@@ -482,6 +542,11 @@ async function startSpeaking() {
       voiceGeneration.timer = null;
     }
     const epoch = recordingEpoch;
+    if (voiceMode) {
+      partialSchedule = {lastActivityAt: null};
+      voiceTiming = {startedAt: performance.now(), epoch, activityObserved: false, jobIds: new Set(), events: []};
+      voiceTimingEvent("recording_started");
+    }
     const preferredType = MediaRecorder.isTypeSupported("audio/webm;codecs=opus")
       ? "audio/webm;codecs=opus"
       : "";
@@ -501,10 +566,9 @@ async function startSpeaking() {
     elements.interim.textContent = voiceMode
       ? "Listening locally. Generation starts as your description becomes clear; only completed scenes will appear."
       : "Listening locally—read the exact page text above.";
-    partialTimer = window.setInterval(() => {
-      if (!partialBusy && (!voiceMode || !voiceGeneration.publishing)) {
-        partialInFlight = transcribePartialRecording(epoch);
-      }
+    if (voiceMode) scheduleVoicePartial(epoch);
+    else partialTimer = window.setInterval(() => {
+      if (!partialBusy) partialInFlight = transcribePartialRecording(epoch);
     }, 2000);
   } catch (error) {
     elements.interim.textContent = `Microphone unavailable: ${error.message}`;
@@ -523,12 +587,14 @@ async function startSpeaking() {
 
 function stopSpeaking() {
   if (finalizing) return;
+  voiceTimingEvent("recording_stopped");
   finalizing = true;
   listening = false;
   elements.micButton.classList.remove("listening");
   elements.micButton.disabled = true;
   elements.micButtonText.textContent = "Finishing…";
   elements.interim.textContent = "Finishing the local transcript…";
+  window.clearTimeout(partialTimer);
   window.clearInterval(partialTimer);
   partialTimer = null;
   if (mediaRecorder?.state === "recording") mediaRecorder.stop();
@@ -544,6 +610,7 @@ function resetMicControls() {
   elements.micButtonText.textContent = voiceMode ? "Describe scene" : "Start reading";
   elements.compileButton.disabled = demoMode || generationSubmitting || Boolean(activeLiveJobId);
   setSceneInputsDisabled(Boolean(activeLiveJobId));
+  window.clearTimeout(partialTimer);
   window.clearInterval(partialTimer);
   partialTimer = null;
   activePageText = null;
@@ -634,6 +701,7 @@ function offerVoiceTranscript(text, {final = false, epoch = recordingEpoch} = {}
   const style = elements.style.value.trim() || "luminous paper theater";
   const key = voiceIntentKey(text, style);
   const previous = voiceGeneration.latest;
+  voiceTimingEvent("transcript", {final, changed: previous?.key !== key});
   voiceGeneration.latest = {
     key, text, style, epoch,
     observations: previous?.key === key ? previous.observations + 1 : 1,
@@ -693,6 +761,7 @@ async function tryPresentVoiceGeneration() {
       || !voiceSnapshotMatchesIntent(pointer.job, intent) || !pointer.job.complete
       || pointer.job.stage === "failed") return;
     completed.presentationAttempted = true;
+    voiceTimingEvent("presentation_requested", {jobId: pointer.job.job_id});
     const shown = await readerRequest(`/v1/live-scenes/${encodeURIComponent(pointer.job.job_id)}/present`, {
       method: "POST", headers: {"Content-Type": "application/json"},
       body: JSON.stringify({server_instance_id: pointer.server_instance_id,
@@ -700,6 +769,7 @@ async function tryPresentVoiceGeneration() {
     }, 10000);
     if (!current() || shown.job_id !== pointer.job.job_id || shown.presentation_ready !== true
       || shown.complete !== true || !voiceSnapshotMatchesIntent(shown, intent)) return;
+    voiceTimingEvent("presentation_acknowledged", {jobId: shown.job_id});
     renderLiveSnapshot(shown);
     elements.interim.textContent = listening
       ? "Your completed scene is showing. Keep describing to change it."
@@ -716,17 +786,37 @@ async function tryPresentVoiceGeneration() {
   }
 }
 
+async function flushVoiceAudio(epoch) {
+  const recorder = mediaRecorder;
+  if (!voiceMode || epoch !== recordingEpoch || recorder?.state !== "recording"
+    || typeof recorder.requestData !== "function") return;
+  await new Promise((resolve) => {
+    const finish = () => {
+      window.clearTimeout(timer);
+      recorder.removeEventListener("dataavailable", finish);
+      resolve();
+    };
+    const timer = window.setTimeout(finish, 250);
+    recorder.addEventListener("dataavailable", finish, {once: true});
+    try { recorder.requestData(); } catch { finish(); }
+  });
+}
+
 async function transcribePartialRecording(epoch) {
   if (partialBusy || !listening || epoch !== recordingEpoch || audioChunks.length === 0) return;
   const generation = readerGeneration;
-  const mimeType = mediaRecorder?.mimeType || "audio/webm";
-  const recording = new Blob(audioChunks, {type: mimeType});
-  if (recording.size < 1000 || recording.size === partialBytes) return;
   partialBusy = true;
-  partialBytes = recording.size;
   try {
+    await flushVoiceAudio(epoch);
+    if (!listening || epoch !== recordingEpoch) return;
+    const mimeType = mediaRecorder?.mimeType || "audio/webm";
+    const recording = new Blob(audioChunks, {type: mimeType});
+    if (recording.size < 1000 || recording.size === partialBytes) return;
+    partialBytes = recording.size;
+    voiceTimingEvent("asr_started", {final: false, bytes: recording.size});
     const payload = await transcribeBlob(recording, mimeType);
     if (!listening || epoch !== recordingEpoch) return;
+    voiceTimingEvent("asr_completed", {final: false, asrMs: payload.total_ms});
     elements.interim.textContent = `Whisper hears: ${payload.text}`;
     if (voiceMode) offerVoiceTranscript(payload.text, {epoch});
     else await publishReaderTranscript(payload.text, false, generation);
@@ -751,7 +841,9 @@ async function transcribeRecording() {
     await partialInFlight;
     if (voiceMode) await voiceGeneration.presentationInFlight;
     if (recording.size < 1000) throw new Error("Recording was too short. Try speaking for a little longer.");
+    voiceTimingEvent("asr_started", {final: true, bytes: recording.size});
     const payload = await transcribeBlob(recording, mimeType);
+    voiceTimingEvent("asr_completed", {final: true, asrMs: payload.total_ms});
     if (voiceMode) {
       const text = typeof payload.text === "string" ? payload.text.trim() : "";
       if (!text) throw new Error("No speech was recognized. Describe the scene again, or type it below.");
@@ -989,6 +1081,12 @@ function setSceneInputsDisabled(disabled) {
 }
 
 function finishLiveJob(snapshot) {
+  if (voiceGeneration.active) voiceTimingEvent("generation_completed", {
+    jobId: snapshot.job_id, failed: snapshot.stage === "failed",
+    serverMs: snapshot.metrics?.elapsed_ms, providerMs: snapshot.metrics?.provider_ms,
+    sceneCacheHit: snapshot.metrics?.scene_cache_hit,
+    superseded: voiceSnapshotKey(snapshot) !== voiceGeneration.latest?.key,
+  });
   stopLiveJobTransport();
   activeLiveJobId = null;
   if (voiceMode) {
@@ -1424,6 +1522,7 @@ async function checkVoiceDescription(request) {
 
 async function compileStory(options = {}) {
   const voiceIntent = options.voiceIntent || null;
+  const timingEpoch = recordingEpoch;
   const automatic = Boolean(voiceMode && voiceIntent);
   if (pendingSubmission) return automatic ? undefined : reconcileGeneration();
   if ((!automatic && (starting || listening || finalizing))
@@ -1466,7 +1565,9 @@ async function compileStory(options = {}) {
     elements.compileButton.textContent = "Checking description…";
     elements.voiceReview.textContent = "Checking the scene locally before generation.";
     try {
+      voiceTimingEvent("scene_check_started", {}, timingEpoch);
       const checked = await checkVoiceDescription(submission.request);
+      voiceTimingEvent("scene_check_completed", {}, timingEpoch);
       if (elements.story.value.trim() !== submission.request.text
         || (elements.style.value.trim() || "luminous paper theater") !== submission.request.visual_style) {
         throw new Error("The description changed during the check. Review it and try again.");
@@ -1478,6 +1579,7 @@ async function compileStory(options = {}) {
         style: submission.request.visual_style, seed: submission.request.seed ?? 0,
         revision: checked.revision});
       if (automatic && voiceGeneration.completed?.semanticKey === semanticKey) {
+        voiceTimingEvent("completed_scene_reused", {jobId: voiceGeneration.completed.snapshot.job_id}, timingEpoch);
         voiceGeneration.completed.key = voiceIntent.key;
         generationSubmitting = false;
         setSceneInputsDisabled(false);
@@ -1575,6 +1677,7 @@ async function compileStory(options = {}) {
     let snapshot;
     try {
       rejected = false;
+      voiceTimingEvent("generation_requested", {submissionId: submission.request.submission_id}, timingEpoch);
       response = await fetch("/v1/live-scenes", {
         method: "POST", headers: {"Content-Type": "application/json"},
         body: JSON.stringify(submission.request), signal: controller.signal,
@@ -1584,6 +1687,7 @@ async function compileStory(options = {}) {
     } finally {
       window.clearTimeout(timer);
     }
+    voiceTimingEvent("generation_response", {status: response.status, jobId: snapshot?.job_id}, timingEpoch);
     if (response.status === 409) {
       if (voiceMode) voiceGeneration.attempted.add(voiceIntentKey(text, submission.request.visual_style));
       const current = await fetchLiveSceneSession();
@@ -1752,4 +1856,22 @@ window.addEventListener("beforeunload", () => {
   liveSessionEventSource?.close();
   stopLiveJobTransport();
   releaseMicrophone();
+});
+
+// Bounded, memory-only diagnostics: no recording or transcript text is retained here.
+window.bookforgeVoiceTiming = () => voiceTiming ? {
+  epoch: voiceTiming.epoch,
+  clock: "milliseconds_since_recording_start",
+  activityIsSpeechEstimate: true,
+  events: voiceTiming.events.map((event) => ({...event})),
+} : null;
+window.addEventListener("message", (event) => {
+  if (event.origin !== window.location.origin
+    || event.source !== elements.projectorFrame.contentWindow
+    || event.data?.type !== "bookforge.preview-activated"
+    || event.data.sessionId !== readerSessionId
+    || event.data.jobId !== voiceGeneration.completed?.snapshot.job_id) return;
+  if (voiceTiming?.events.some((item) => item.type === "preview_activated"
+    && item.jobId === event.data.jobId)) return;
+  voiceTimingEvent("preview_activated", {jobId: event.data.jobId});
 });

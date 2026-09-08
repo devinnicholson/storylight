@@ -14,6 +14,7 @@ for (const [query, expected] of [
   assert.equal(vm.runInContext(`${configuration}\nreaderSessionId`, context), expected);
 }
 function harness() {
+  let now = 100;
   const timers = new Map();
   const intervals = new Map();
   const requests = [];
@@ -27,14 +28,29 @@ function harness() {
   elements.story.value = "A fox carries a lantern.";
   class Recorder {
     static isTypeSupported() { return true; }
-    constructor() { this.handlers = {}; this.mimeType = "audio/webm"; }
-    addEventListener(name, callback) { this.handlers[name] = callback; }
-    removeEventListener(name) { delete this.handlers[name]; }
+    constructor() { this.handlers = {}; this.listeners = {}; this.mimeType = "audio/webm"; }
+    addEventListener(name, callback, options = {}) {
+      (this.listeners[name] ||= []).push({callback, once: options.once});
+      this.handlers[name] = (event) => {
+        let result;
+        for (const listener of [...this.listeners[name]]) {
+          if (!this.listeners[name].includes(listener)) continue;
+          if (listener.once) this.removeEventListener(name, listener.callback);
+          result = listener.callback(event);
+        }
+        return result;
+      };
+    }
+    removeEventListener(name, callback) {
+      this.listeners[name] = (this.listeners[name] || []).filter((entry) => entry.callback !== callback);
+      if (!this.listeners[name].length) delete this.handlers[name];
+    }
     start() { this.state = "recording"; }
     stop() { this.state = "inactive"; events.push("recorder-stop"); }
   }
   const context = {
     elements, AbortController, Blob, Uint8Array, MediaRecorder: Recorder,
+    performance: {now: () => now},
     canRecordAudio: true, sceneReady: true, demoMode: false, voiceMode: false,
     voiceProjectionLive: false, projectorPreviewUrl: null,
     generationSubmitting: false, pendingSubmission: null, pendingVoiceReview: null, generationReconciling: false,
@@ -43,6 +59,7 @@ function harness() {
     analyser: null, audioContext: null, mediaRecorder: null, audioChunks: [],
     partialTimer: null, partialBusy: false, partialInFlight: Promise.resolve(),
     partialBytes: 0, recordingEpoch: 0, readerGeneration: null, activePageText: null,
+    voiceTiming: null, partialSchedule: null,
     readerSessionId: "reader/example", requestAnimationFrame() {},
     navigator: {mediaDevices: {async getUserMedia() {
       events.push("permission");
@@ -56,9 +73,9 @@ function harness() {
         createMediaStreamSource() { return {connect() {}}; }
         close() { events.push("context-close"); }
       },
-      setInterval(callback, milliseconds) { const id = Symbol(); intervals.set(id, {callback, milliseconds}); return id; },
+      setInterval(callback, milliseconds) { const id = Symbol(); intervals.set(id, {callback, milliseconds, at: now + milliseconds}); return id; },
       clearInterval(id) { intervals.delete(id); },
-      setTimeout(callback, milliseconds) { const id = Symbol(); timers.set(id, {callback, milliseconds}); return id; },
+      setTimeout(callback, milliseconds) { const id = Symbol(); timers.set(id, {callback, milliseconds, at: now + milliseconds}); return id; },
       clearTimeout(id) { timers.delete(id); },
     },
     async fetch(url, options) {
@@ -70,14 +87,32 @@ function harness() {
   vm.createContext(context);
   for (const [start, end] of [
     ["function updateMicAvailability(", "function safeText("],
-    ["async function startAudioMeter(", "function liveRevision("],
+    ["function voiceTimingEvent(", "function liveRevision("],
     ["function setSceneInputsDisabled(", "function finishLiveJob("],
   ]) vm.runInContext(source.slice(source.indexOf(start), source.indexOf(end)), context);
-  return {context, elements, timers, intervals, requests, events};
+  async function advance(milliseconds) {
+    const end = now + milliseconds;
+    let callbacks = 0;
+    for (;;) {
+      const due = [...timers, ...intervals].filter(([, timer]) => timer.at <= end)
+        .sort((a, b) => a[1].at - b[1].at)[0];
+      if (!due) break;
+      assert.ok(++callbacks < 1000, "Timer loop did not settle");
+      const [id, timer] = due;
+      now = timer.at;
+      if (intervals.has(id)) timer.at += timer.milliseconds;
+      else timers.delete(id);
+      timer.callback();
+      await new Promise(setImmediate);
+    }
+    now = end;
+    await new Promise(setImmediate);
+  }
+  return {context, elements, timers, intervals, requests, events, advance, now: () => now};
 }
 
 async function lifecycle() {
-  const {context: c, elements, timers, requests, events} = harness();
+  const {context: c, elements, timers, intervals, requests, events} = harness();
   let respondStatus;
   c.respond = () => new Promise((resolve) => { respondStatus = resolve; });
   const starting = c.startSpeaking();
@@ -94,6 +129,8 @@ async function lifecycle() {
   c.respond = async () => ({ok: true, json: async () => ({asr: {ready: true}, generation: 1})});
   await c.startSpeaking();
   assert.equal(c.listening, true);
+  assert.equal(intervals.size, 1);
+  assert.equal([...intervals.values()][0].milliseconds, 2000); // Read-aloud mode is unchanged.
   const recorder = c.mediaRecorder;
   recorder.handlers.dataavailable({data: new Blob(["a".repeat(1200)])});
   c.stopSpeaking();
@@ -171,7 +208,7 @@ function generationHarness() {
     liveSessionRevision: 0, liveServerInstanceId: null, lastLiveRevision: -1,
     liveElapsedTimer: null, livePollTimer: null, liveStartedAt: 0,
     liveElapsedBaseMs: 0, liveElapsedBaseAt: 0, liveIsTerminal: false,
-    performance: {now: () => 100}, invalidatePreparation() {},
+    invalidatePreparation() {},
     stopLiveJobTransport() {}, renderGenerationProgress() {}, updateElapsedClock() {}, setStatus() {},
     setGenerateButtonForStage() {}, liveSessionStreamIsHealthy: () => true,
     isTerminalSnapshot: (snapshot) => snapshot.complete === true || snapshot.stage === "failed",
@@ -265,7 +302,8 @@ async function voiceToScene() {
   c.respond = (url, options) => url === "/v1/audio:transcribe"
     ? new Promise((resolve) => { finishAsr = resolve; }) : original(url, options);
   await c.startSpeaking();
-  assert.equal(h.intervals.size, 1);
+  assert.equal(h.intervals.size, 0);
+  assert.equal(h.timers.get(c.partialTimer).milliseconds, 1200);
   const recorder = c.mediaRecorder;
   recorder.handlers.dataavailable({data: new Blob(["a".repeat(1200)])});
   c.stopSpeaking();
@@ -614,5 +652,277 @@ async function voiceToScene() {
   assert.equal(stopping.submitted.length, 1);
 }
 
-(async () => { await lifecycle(); await voiceToScene(); })().then(() => console.log("Workbench microphone: cleanup, automatic headstart, latest-only presentation and no duplicate paid requests passed."))
+async function partialScheduling() {
+  // A pause with no new recorder bytes does not send the same audio again.
+  // A slow partial may span several scheduling opportunities, but Stop must
+  // drain it before the one final request includes the recorder's final chunk.
+  const h = generationHarness();
+  const c = h.context;
+  await c.startSpeaking();
+  const recorder = c.mediaRecorder;
+  const respond = c.respond;
+  const asr = [];
+  let inFlight = 0;
+  let maximumInFlight = 0;
+  c.respond = (url, options) => {
+    if (url !== "/v1/audio:transcribe") return respond(url, options);
+    inFlight += 1;
+    maximumInFlight = Math.max(maximumInFlight, inFlight);
+    return new Promise((resolve) => asr.push({at: h.now(), bytes: options.body.size,
+      finish(text) { inFlight -= 1; resolve(h.response(200, {text, total_ms: 25})); }}));
+  };
+  await h.advance(6000);
+  assert.equal(asr.length, 0);
+  recorder.handlers.dataavailable({data: new Blob(["a".repeat(1200)])});
+  await h.advance(2000);
+  assert.equal(asr.length, 1);
+  recorder.handlers.dataavailable({data: new Blob(["b".repeat(100)])});
+  await h.advance(6000);
+  assert.equal(asr.length, 1);
+  assert.equal(maximumInFlight, 1);
+  c.stopSpeaking();
+  recorder.handlers.dataavailable({data: new Blob(["c".repeat(100)])});
+  const finalizing = recorder.handlers.stop();
+  await flush();
+  assert.equal(h.events.filter((event) => event === "track-stop").length, 1);
+  assert.equal(asr.length, 1);
+  asr[0].finish("A cat chasing a mouse.");
+  await flush();
+  assert.equal(asr.length, 2);
+  assert.deepEqual(asr.map((request) => request.bytes), [1200, 1400]);
+  assert.equal(h.submitted.length, 0); // The stopped partial is stale.
+  asr[1].finish("A dog chasing a ball.");
+  await finalizing;
+  await flush();
+  assert.equal(h.submitted.length, 1);
+  assert.equal(h.submitted[0].text, "A dog chasing a ball.");
+  assert.equal(maximumInFlight, 1);
+  assert.equal(c.finalizing, false);
+  await h.advance(6000);
+  assert.equal(asr.length, 2);
+
+  // Punctuation and whitespace changes must still pass the local facts check,
+  // but equal validated meaning must not purchase another image, including
+  // when the updated wording arrives while the first image is rendering.
+  const punctuation = generationHarness();
+  punctuation.context.listening = true;
+  punctuation.context.offerVoiceTranscript("A cat chasing a mouse");
+  await punctuation.advance(350);
+  assert.equal(punctuation.submitted.length, 1);
+  punctuation.context.offerVoiceTranscript("  A cat chasing a mouse.  ", {final: true});
+  await flush();
+  assert.equal(punctuation.submitted.length, 1);
+  punctuation.complete();
+  await flush();
+  assert.equal(punctuation.submitted.length, 1);
+  assert.equal(punctuation.checks.length, 2);
+  assert.equal(punctuation.presented.length, 1);
+  assert.deepEqual(punctuation.displayed, ["job-1"]);
+  punctuation.context.offerVoiceTranscript("A cat chasing a mouse!", {final: true});
+  await flush();
+  assert.equal(punctuation.checks.length, 3);
+  assert.equal(punctuation.submitted.length, 1);
+  assert.equal(punctuation.presented.length, 1);
+}
+
+async function adaptiveCadence() {
+  const h = generationHarness();
+  const c = h.context;
+  c.partialSchedule = {lastActivityAt: h.now()};
+  for (const [duration, expected] of [[0, 750], [200, 550], [400, 400],
+    [850, 850], [2400, 2000]]) {
+    assert.equal(c.nextVoicePartialDelay(duration), expected);
+    assert.ok(expected >= 350);
+    assert.ok(duration + expected >= 750);
+  }
+  await h.advance(1201);
+  assert.equal(c.nextVoicePartialDelay(200), 2000);
+  c.partialSchedule.lastActivityAt = null;
+  assert.equal(c.nextVoicePartialDelay(200), 2000);
+
+  await c.startSpeaking();
+  const startedAt = h.now();
+  const recorder = c.mediaRecorder;
+  const respond = c.respond;
+  h.state.rejectCheck = true; // This cadence scenario never needs image generation.
+  const asr = [];
+  c.respond = (url, options) => url === "/v1/audio:transcribe"
+    ? new Promise((resolve) => asr.push({at: h.now(), bytes: options.body.size,
+      finish: (text) => resolve(h.response(200, {text, total_ms: 200}))}))
+    : respond(url, options);
+  const chunk = (bytes) => recorder.handlers.dataavailable({data: new Blob(["a".repeat(bytes)])});
+  chunk(1200);
+  await h.advance(1199);
+  assert.equal(asr.length, 0);
+  await h.advance(1);
+  assert.equal(asr[0].at - startedAt, 1200);
+  await h.advance(200);
+  c.partialSchedule.lastActivityAt = h.now();
+  asr[0].finish("A cat chasing a mouse.");
+  await flush();
+  assert.equal(h.timers.get(c.partialTimer).milliseconds, 550);
+  chunk(100);
+  await h.advance(549);
+  assert.equal(asr.length, 1);
+  await h.advance(1);
+  assert.equal(asr.length, 2);
+  assert.equal(asr[1].at - asr[0].at, 750);
+  assert.equal(c.partialTimer, null); // No periodic ticks accumulate behind ASR.
+  await h.advance(1200);
+  assert.equal(asr.length, 2);
+  c.partialSchedule.lastActivityAt = h.now();
+  asr[1].finish("A cat chasing a mouse.");
+  await flush();
+  assert.equal(h.timers.get(c.partialTimer).milliseconds, 1200);
+  chunk(100);
+  await h.advance(1199);
+  assert.equal(asr.length, 2);
+  await h.advance(1);
+  assert.equal(asr.length, 3);
+  assert.equal(asr[2].at - asr[1].at, 2400);
+  await h.advance(1); // Activity is now older than the quiet-period boundary.
+  const latest = c.voiceGeneration.latest;
+  asr[2].finish(null);
+  await flush();
+  assert.equal(c.voiceGeneration.latest, latest); // Malformed partial is not a scene correction.
+  assert.equal(h.timers.get(c.partialTimer).milliseconds, 2000);
+  assert.equal(h.submitted.length, 0);
+  assert.deepEqual(asr.map((request) => request.bytes), [1200, 1300, 1400]);
+  c.stopSpeaking();
+  await h.advance(6000);
+  assert.equal(asr.length, 3);
+
+  // Diagnostics retain bounded event data, never the synthetic transcript.
+  const events = c.voiceTiming.events;
+  assert.ok(events.some((event) => event.type === "recording_started"));
+  assert.ok(events.some((event) => event.type === "asr_started"));
+  assert.ok(events.some((event) => event.type === "asr_completed"));
+  assert.ok(events.every((event) => Number.isFinite(event.ms) && event.ms >= 0));
+  assert.equal(JSON.stringify(events).includes("A cat chasing a mouse"), false);
+  for (let index = 0; index < 300; index += 1) c.voiceTimingEvent("test_sample");
+  assert.equal(c.voiceTiming.events.length, 256);
+}
+
+async function timingIsolation() {
+  const h = generationHarness();
+  const c = h.context;
+  await c.startSpeaking();
+  c.voiceTimingEvent("asr_completed", {asrMs: {text: "private synthetic words"},
+    serverMs: Infinity, providerMs: "private synthetic words", bytes: 1200,
+    final: true, jobId: "private synthetic words", arbitrary: "private synthetic words"});
+  assert.deepEqual(JSON.parse(JSON.stringify(c.voiceTiming.events.at(-1))), {
+    type: "asr_completed", ms: 0, bytes: 1200, final: true,
+  });
+  let onMessage;
+  c.window.location = {origin: "http://localhost"};
+  c.window.addEventListener = (type, callback) => { assert.equal(type, "message"); onMessage = callback; };
+  c.elements.projectorFrame.contentWindow = {};
+  vm.runInContext(source.slice(source.indexOf("window.bookforgeVoiceTiming =")), c);
+  const message = {origin: "http://localhost", source: c.elements.projectorFrame.contentWindow,
+    data: {type: "bookforge.preview-activated", sessionId: c.readerSessionId, jobId: "job-1"}};
+  c.voiceGeneration.completed = {snapshot: {job_id: "job-1"}};
+  c.voiceTimingEvent("generation_response", {status: 202, jobId: "job-1"});
+  const before = c.voiceTiming.events.length;
+  for (const wrong of [
+    {...message, origin: "https://elsewhere.invalid"}, {...message, source: {}},
+    {...message, data: {...message.data, sessionId: "another-session"}},
+    {...message, data: {...message.data, jobId: "another-job"}},
+  ]) onMessage(wrong);
+  assert.equal(c.voiceTiming.events.length, before);
+  onMessage(message);
+  onMessage(message);
+  assert.equal(c.voiceTiming.events.length, before + 1);
+  assert.equal(c.voiceTiming.events.at(-1).type, "preview_activated");
+  const snapshot = c.window.bookforgeVoiceTiming();
+  snapshot.events[0].type = "mutated";
+  assert.equal(c.voiceTiming.events[0].type, "recording_started");
+
+  const oldEpoch = c.recordingEpoch;
+  c.recordingEpoch += 1;
+  c.voiceTiming = {epoch: c.recordingEpoch, startedAt: h.now(), events: [], jobIds: new Set()};
+  // The old completed pointer can remain visible during a new recording, but
+  // its late display/completion cannot become that recording's latency result.
+  onMessage(message);
+  c.voiceTimingEvent("generation_completed", {jobId: "job-1"});
+  c.voiceTimingEvent("generation_response", {status: 202, jobId: "job-2"}, oldEpoch);
+  assert.equal(c.voiceTiming.events.length, 0);
+  assert.equal(c.voiceTiming.jobIds.size, 0);
+  c.voiceTimingEvent("generation_response", {status: 202, jobId: "job-2"});
+  c.voiceTimingEvent("generation_completed", {jobId: "job-2", serverMs: 300});
+  assert.equal(c.voiceTiming.events.length, 2);
+  assert.equal(c.voiceTiming.events.at(-1).serverMs, 300);
+  c.resetMicControls();
+}
+
+async function recorderFlush() {
+  async function setup() {
+    const h = generationHarness();
+    const c = h.context;
+    await c.startSpeaking();
+    h.state.rejectCheck = true;
+    const recorder = c.mediaRecorder;
+    recorder.handlers.dataavailable({data: new Blob(["a".repeat(1200)])});
+    const respond = c.respond;
+    h.asrBytes = [];
+    c.respond = (url, options) => {
+      if (url !== "/v1/audio:transcribe") return respond(url, options);
+      h.asrBytes.push(options.body.size);
+      assert.equal(recorder.listeners.dataavailable.length, 1); // Only the original chunk collector remains.
+      return h.response(200, {text: "A cat chasing a mouse.", total_ms: 50});
+    };
+    h.flushRequests = [];
+    recorder.requestData = () => { h.flushRequests.push(h.now()); };
+    return {...h, recorder};
+  }
+  const h = await setup();
+  const c = h.context;
+  c.partialInFlight = c.transcribePartialRecording(c.recordingEpoch);
+  await flush();
+  assert.equal(c.partialBusy, true);
+  assert.equal(h.recorder.listeners.dataavailable.length, 2);
+  assert.equal(h.flushRequests.length, 1);
+  assert.deepEqual(h.asrBytes, []);
+  await c.transcribePartialRecording(c.recordingEpoch);
+  assert.equal(h.flushRequests.length, 1); // Flush waiting already owns ASR admission.
+  h.recorder.handlers.dataavailable({data: new Blob(["b".repeat(150)])});
+  await c.partialInFlight;
+  assert.deepEqual(h.asrBytes, [1350]); // Original collector ran before the flush listener.
+  assert.equal(h.recorder.listeners.dataavailable.length, 1);
+  assert.equal([...h.timers.values()].some((timer) => timer.milliseconds === 250), false);
+  c.resetMicControls();
+
+  const stopping = await setup();
+  const sc = stopping.context;
+  sc.partialInFlight = sc.transcribePartialRecording(sc.recordingEpoch);
+  await flush();
+  sc.stopSpeaking();
+  assert.equal(stopping.events.filter((event) => event === "track-stop").length, 1);
+  // The requested chunk precedes MediaRecorder's final data and stop event.
+  stopping.recorder.handlers.dataavailable({data: new Blob(["b".repeat(100)])});
+  stopping.recorder.handlers.dataavailable({data: new Blob(["c".repeat(200)])});
+  const final = stopping.recorder.handlers.stop();
+  await final;
+  assert.deepEqual(stopping.asrBytes, [1500]); // No stale partial POST, one complete final POST.
+  assert.equal(sc.partialBusy, false);
+  assert.equal(sc.finalizing, false);
+  assert.equal(stopping.recorder.listeners.dataavailable.length, 1);
+  assert.equal(stopping.submitted.length, 0);
+
+  const timeout = await setup();
+  const pending = timeout.context.transcribePartialRecording(timeout.context.recordingEpoch);
+  await timeout.advance(249);
+  assert.deepEqual(timeout.asrBytes, []);
+  await timeout.advance(1);
+  await pending;
+  assert.deepEqual(timeout.asrBytes, [1200]); // Bounded fallback uses existing audio.
+  assert.equal(timeout.context.partialBusy, false);
+  assert.equal(timeout.recorder.listeners.dataavailable.length, 1);
+  timeout.recorder.handlers.dataavailable({data: new Blob(["late".repeat(100)])});
+  await flush();
+  assert.equal(timeout.context.audioChunks.length, 2); // Late data is retained, never a second ASR dispatch.
+  assert.deepEqual(timeout.asrBytes, [1200]);
+  timeout.context.resetMicControls();
+}
+
+(async () => { await lifecycle(); await voiceToScene(); await partialScheduling(); await adaptiveCadence(); await timingIsolation(); await recorderFlush(); })().then(() => console.log("Workbench microphone: cleanup, recorder flush, adaptive ASR cadence, latest-only presentation and no duplicate paid requests passed."))
   .catch((error) => { console.error(error); process.exitCode = 1; });

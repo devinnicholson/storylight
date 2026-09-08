@@ -1778,6 +1778,9 @@ function queueLiveSceneSnapshot(envelope) {
       crossfadeMs: SCENE_CROSSFADE_MS,
       activationBreakdown: state.liveActivationBreakdown,
     });
+    if (window.parent !== window) window.parent.postMessage({
+      type: "bookforge.preview-activated", sessionId: SESSION_ID, jobId,
+    }, window.location.origin);
     setEvent("scene.upgraded", `${snapshot.stage} · revision ${revision} · no reload`);
   }).catch((error) => {
     if (renderToken.signal.aborted) return;

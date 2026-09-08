@@ -14,6 +14,56 @@ The prior scene stays visible while generation runs. Voice jobs withhold drafts 
 
 Transcription and submission have timeouts. If a submission response is lost, the interface checks the existing session rather than automatically submitting another billable request. An unresolved result offers **Check generation status**. Rejected descriptions can be edited and retried.
 
+### Speech scheduling and timing
+
+The voice frontend starts its first partial transcription check after 1.2 seconds.
+Subsequent checks wait for the previous request to finish. While audio is active,
+the next check has at least a 350 ms completion gap and 750 ms start spacing;
+the gap grows with transcription duration, up to two seconds. Quiet periods use
+a two-second gap. The audio meter affects scheduling only: every request still
+contains the cumulative recording, and Finish sends the complete recording.
+The fixed-passage reader retains its previous two-second interval.
+
+Before a partial voice request, the frontend calls MediaRecorder's `requestData`
+and waits for a data event, bounded to 250 ms. This makes newly recorded audio
+available sooner than waiting for the next periodic chunk. The existing chunk
+collector retains every blob; Stop still drains the pending partial operation
+before sending the full final recording. A timeout uses the chunks already
+available. The [recording specification](https://www.w3.org/TR/mediastream-recording/)
+defines the asynchronous data event; exact timing depends on the browser.
+
+The existing 350 ms submission debounce, local scene-fact checks, one-image-job
+limit, latest-description queue and completed-scene reuse remain in place.
+Punctuation changes are checked through the existing fact comparison; the
+frontend does not guess that two different descriptions mean the same thing.
+
+For a rehearsal, `window.bookforgeVoiceTiming()` returns the latest recording's
+bounded, memory-only event trace. It includes recording start, first detected
+audio activity, ASR completion, scene checks, image submission/completion,
+presentation acknowledgement and preview activation. No transcript or audio is
+stored in this diagnostic trace. It resets on a new recording or page reload.
+Audio activity is an amplitude estimate, not verified speech onset.
+
+`preview_activated` comes from the same-origin projector iframe after artwork
+activation. It is separate from the server's presentation acknowledgement and
+does not measure a remote physical monitor or completion of the visual crossfade.
+Job and recording identity checks exclude unrelated older generation events.
+
+The [scheduling benchmark](../benchmarks/voice-scheduling-2026-09-08/README.md)
+retains synthetic recordings, real local Whisper responses, scheduling policies
+and their limitations. It makes no image-inference or human-microphone accuracy
+claim. The image model and watercolor settings are unchanged.
+
+In the [actual Chrome/WebM screen](../benchmarks/voice-scheduling-2026-09-08/browser/README.md),
+the short target phrase arrived at 1.578 rather than 2.511 seconds; the paused
+phrase arrived at 3.916 rather than 4.315 seconds. Final transcripts matched,
+with three ASR requests per arm and clip. The headless meter did not advance,
+so these runs used quiet-period backoff. The separate chunked-WAV screen covers
+the active scheduling approximation and used about 40% more ASR request time.
+These small screens support a rehearsal, not a general latency or accuracy claim.
+Reload the workbench to receive the new frontend; no Jetson package or image
+provider change is needed.
+
 ## Running setup
 
 The current processes are:

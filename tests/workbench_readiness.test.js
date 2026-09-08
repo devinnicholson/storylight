@@ -124,7 +124,7 @@ async function generateDoesNotWaitForBackgroundPlannerWarmup() {
   Object.assign(context, {
     edgePlannerWarmUntil: 0, EDGE_PLANNER_KEEP_WARM_MS: 480000,
     edgePlanPreparationTimer: null, listening: false, liveRequestEpoch: 0,
-    starting: false, finalizing: false, generationSubmitting: false, activeLiveJobId: null,
+    starting: false, finalizing: false, recordingEpoch: 0, generationSubmitting: false, activeLiveJobId: null,
     pendingSubmission: null, latestLiveSnapshot: null, AbortController,
     updateMicAvailability() {},
     fetchLiveSceneSession: async (empty) => {
@@ -149,6 +149,7 @@ async function generateDoesNotWaitForBackgroundPlannerWarmup() {
   context.window.crypto = require("crypto").webcrypto;
   const source = fs.readFileSync("src/bookforge/static/workbench.js", "utf8");
   for (const [start, end] of [
+    ["function voiceTimingEvent(", "function nextVoicePartialDelay("],
     ["async function warmEdgePlanner(", "function scheduleEdgePlanPreparation("],
     ["async function compileStory(", "async function loadLatestScene("],
   ]) vm.runInContext(source.slice(source.indexOf(start), source.indexOf(end)), context);
