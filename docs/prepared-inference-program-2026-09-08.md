@@ -24,6 +24,13 @@ byte-for-byte. Rich watercolor detail remains, along with the known extra silver
 fox and lantern. The prepared serving adapter remains inactive; the existing
 production image provider is unchanged.
 
+Follow-up: the separately authorized [modern voice screen](prepared-voice-quality-screen-2026-09-08.md)
+completed as trial `u`: ten deliveries below one second, four of six modern
+images passing factual review, and verified deletion/release observation. Its
+different workload is not pooled into r/s/t. Total program reservations are now
+$28 under the user's increased allowance; the historical accounting below
+describes the original seven trials.
+
 ## Configuration and measurement
 
 Each fresh private Cloud Run service used one RTX PRO 6000 Blackwell GPU,

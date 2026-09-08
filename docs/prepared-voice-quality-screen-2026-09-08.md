@@ -1,15 +1,56 @@
 # Prepared renderer: current voice quality screen
 
-The next decision is whether the modern voice compiler fixes the extra-subject
-failure while retaining watercolor detail. This screen changes prompts, not
-weights, precision, resolution, steps, depth generation or compilation. It is
-prepared locally and has not run on a GPU.
+Trial `u` delivered all ten measured results in under one second, with a
+**0.524-second median and 0.704-second maximum**. Preparation took **90.959
+seconds**. The modern images retained watercolor detail, but **only four of six
+passed the factual review**. The prepared backend remains inactive.
+
+Both independent reviewers found the same failures: the two-fox case contains
+one fox, and the cat faces away from the mouse instead of visibly pursuing it.
+The single silver fox, pink fox jumping over a stream, two red paper boats, and
+standing child holding an open green book passed. The dark-alley lighting in the
+cat image was also uncertain in one review. All six depth maps passed the gross
+alignment check; this is not a projector calibration test.
+
+All twelve control JPEGs—master and depth at ordinals 1, 2, 3, 4, 11 and 12—match
+r/t byte-for-byte. The single-fox modern image avoids the old duplicate, but its
+prompt and seed differ from the legacy control, so this is not a controlled
+estimate of the compiler's causal effect. The two-fox and pursuit failures remain
+clear reasons to withhold promotion.
+
+The service was deleted after a 275.304-second supervised lifecycle, including
+deployment, the unchanged access wait, preparation, measurement and deletion.
+The terminal deletion audit is `2026-09-08T16:11:10.066662Z`; the separate bounded
+release check passed with historical zero usage and current service absence.
+This does not establish billing closure or reserve GPU quota. Delivery timing includes
+HTTP transfer and complete JPEG validation/saving, but excludes speech
+recognition, planning and projector presentation. This new corpus is not pooled
+into the earlier 30-delivery r/s/t result.
+
+The [original-image contact sheet](../benchmarks/prepared-gcp-2026-09-08/support/quality-u-contact-sheet.html),
+[Franklin review](../benchmarks/prepared-gcp-2026-09-08/support/quality-u-review-franklin.json)
+and [Mill review](../benchmarks/prepared-gcp-2026-09-08/support/quality-u-review-mill.json)
+retain the pass/fail observations. The [offline replay](../benchmarks/prepared-gcp-2026-09-08/u/replay.json)
+binds source, build, runtime, every JPEG and cleanup; visual judgment is separate.
+
+The workload used new compiled prompts and fixed seeds. Weights, precision,
+resolution, steps, depth generation and compilation remained unchanged.
+The upload and all 17 inherited
+image layers passed verification. The run completed without request retries.
+
+The next isolated hypothesis is narrative phrasing with explicit plural subjects
+and connected actions. This follows BFL's [Klein prompting guidance](https://help.bfl.ai/articles/7592221790-how-do-i-generate-quickly-with-flux-2-klein),
+but does not establish why these images failed. The two [untested candidates](../benchmarks/prepared-gcp-2026-09-08/support/quality-u-next-hypothesis.md)
+preserve the reviewed facts and style. Local tokenization gives 85 and 80 tokens,
+both in the existing 128-token bucket. Shorter wording alone is therefore not
+evidence of faster inference. A paired visual comparison remains unfunded and
+unexecuted; production prompts are unchanged.
 
 ## Fixed workload
 
-Retain the first two legacy cases verbatim as the actual 128- and 256-token
-warmups. After the existing 30-second idle interval, render those two controls,
-the six modern cases below, then repeat the controls. This is twelve renders:
+The first two legacy cases were retained verbatim as the actual 128- and 256-token
+warmups. After the existing 30-second idle interval, the run rendered those two
+controls, the six modern cases below, then repeated the controls. This is twelve renders:
 two warmups and ten measured deliveries, including six new images.
 
 The source fixture receipt is
@@ -27,7 +68,10 @@ Verification recompiles the fixtures, checks retained warmup/tokenizer evidence,
 and rejects changed prompts, seeds, ordering, extra files and provenance drift.
 All 59 session-experiment tests and scoped Ruff checks passed. Independent
 correctness and deslop reviews found no remaining blocker for local preparation.
-No new image, latency or cloud-release result is claimed.
+Those checks preceded GPU execution. After adding exact `u` admission and
+offline evidence replay, all 62 session-experiment tests and scoped Ruff checks
+passed. The earlier immutable local profile records preparation, not subsequent
+GPU results.
 
 | Modern case | Required visible facts | Clear failure examples |
 | --- | --- | --- |
@@ -74,12 +118,15 @@ archives. Validate the exact selected prompts, order, seeds, compiler and
 tokenizer provenance before building. Keep the reviewed immutable parent,
 private IAM, single GPU, twelve-render limit, 300-second session, finite build
 and supervisor deadlines, dispatch claims, deletion and release verification.
-The current manager admits only the completed legacy program; preparing a local
-profile does not authorize a new deployment.
+The manager admits only the pinned legacy trials and exact `u` quality profile.
+This completed run does not authorize a further deployment.
 
-The prior $25 program has $24.50 in internal reservations. A further $3.50
-reservation needs $3 more allowance; it is not an invoice or a cloud hard cap.
-No reservation is recycled on the assumption that a failed request was free.
+The user approved raising the program allowance from $25 to $28 on 8 September.
+Trial `u` reserves the remaining $3.50, bringing internal reservations to $28.
+The build helper binds that approval to this exact service and profile. This is
+not an invoice or a cloud hard cap. No reservation is recycled on the assumption
+that a failed request was free. The earlier local profile's authorization flag
+remains false as a historical preparation record; the later approval is separate.
 
 After a passing quality screen, the serving wrapper still needs a separately
 verified image and an external finite lifecycle owner before a demo can use it.
@@ -148,7 +195,7 @@ fallback, readiness during close, and bundle promotion/recovery without another
 dispatch. Include a completed-cache test showing an old provider's image cannot
 satisfy the demo request. Then exercise the reviewed-description-to-ASGI-worker
 path with a fake renderer and both JPEGs. These are local implementation checks;
-the existing $0.50 unallocated allowance does not fund another $3.50 trial.
+the approved quality-screen reservation does not fund a further serving trial.
 
 ## Following cold-start experiment
 
