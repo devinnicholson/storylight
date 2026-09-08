@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import hashlib
 import json
+from collections import Counter
 from dataclasses import dataclass
 from pathlib import Path
 from time import perf_counter
@@ -24,10 +25,11 @@ from bookforge.live_scene_planner import (
     LiveSceneWireMagic,
     validate_live_scene_plan_privacy,
 )
+from bookforge.privacy_policy import COUNT_WORDS, privacy_tokens
 from bookforge.scene_facts import SceneFactsV2
 
-REVISION = "reviewed-language-v2"
-PARSER_REVISION = "dependency-scene-draft-v2"
+REVISION = "reviewed-language-v3"
+PARSER_REVISION = "dependency-scene-draft-v3"
 AUDITED_REVISION = "reviewed-language-bounded-v1"
 AUDIT_REVISION = "dependency-nominal-audit-v1"
 CURRENT_REVISIONS = frozenset((BOUNDED_REVISION, REVISION, AUDITED_REVISION))
@@ -50,7 +52,7 @@ class _SyntaxIssue(FrozenStrictModel):
 
 
 class _ParserResponse(FrozenStrictModel):
-    revision: Literal["dependency-scene-draft-v2"]
+    revision: Literal["dependency-scene-draft-v3"]
     status: Literal["draft_ready", "omission_review", "needs_review"]
     facts: SceneFactsV2 | None
     reason: Annotated[str, StringConstraints(max_length=100)] | None
@@ -155,11 +157,29 @@ async def review_description(
                 raise ValueError("invalid local omission")
         first = facts.subjects[0]
         if not first.actions:
-            raise ValueError("missing subject action")
+            # Independently prevent a static parser response from silently
+            # dropping actions, relationships, modifiers or extra source actors.
+            words = privacy_tokens(text)
+            if (len(facts.subjects) != 1 or not words or facts.objects or facts.relationships
+                    or facts.events or facts.motions or facts.negatives or facts.temporal_order
+                    or facts.transformation or facts.salience or parsed.local_omissions
+                    or facts.setting.label != "unspecified" or facts.setting.attributes):
+                raise ValueError("incomplete static source coverage")
+            expected_count = 1 if words[0] in {"a", "an"} else COUNT_WORDS.get(words[0])
+            if words[0] not in {"a", "an", "the", *COUNT_WORDS} or first.count != expected_count:
+                raise ValueError("static count differs from source")
+            described = privacy_tokens(
+                " ".join((first.label, first.color or "", *first.attributes))
+            )
+            if Counter(words[1:]) != Counter(described):
+                raise ValueError("static descriptor differs from complete source")
         plan = LiveSceneGraphWirePlan(
             background_prompt="unspecified",
             focus=LiveSceneWireFocus(
-                kind="character", subject=first.label, action=first.actions[0].split()[0],
+                kind="character" if first.actions else "prop", subject=first.label,
+                # Required legacy scaffold; the exact graph prompt below must
+                # contain only the source facts, with no invented static action.
+                action=first.actions[0].split()[0] if first.actions else "none",
             ),
             magic=LiveSceneWireMagic(kind="effect", prompt="none"), scene_facts=facts,
         ).to_live_scene_plan(context_text=text)

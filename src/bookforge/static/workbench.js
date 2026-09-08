@@ -1502,7 +1502,8 @@ async function checkVoiceDescription(request) {
     const describe = (entity) => [entity.count, entity.color, ...entity.attributes, entity.label]
       .filter(Boolean).join(" ");
     const labels = Object.fromEntries([...facts.subjects, ...facts.objects].map((entity) => [entity.ref, describe(entity)]));
-    const descriptions = facts.subjects.map((subject) => `${describe(subject)}: ${subject.actions.join("; ")}`);
+    const descriptions = facts.subjects.map((subject) => subject.actions.length
+      ? `${describe(subject)}: ${subject.actions.join("; ")}` : describe(subject));
     if (facts.setting.label !== "unspecified") descriptions.push(`Setting: ${[
       ...facts.setting.attributes, facts.setting.label,
     ].join(" ")}`);
@@ -1580,6 +1581,20 @@ async function compileStory(options = {}) {
       }
       if (automatic && voiceGeneration.latest?.key !== voiceIntent.key) {
         throw new Error("A newer description is ready; checking that instead.");
+      }
+      const facts = checked.visual_facts;
+      const staticSubject = Array.isArray(facts?.subjects) && facts.subjects.length > 0
+        && facts.subjects.every((subject) => Array.isArray(subject.actions) && !subject.actions.length)
+        && !facts.events?.length && !facts.motions?.length;
+      if (automatic && staticSubject && !voiceGeneration.latest.final) {
+        voiceGeneration.attempted.delete(voiceIntent.key);
+        generationSubmitting = false;
+        setSceneInputsDisabled(false);
+        elements.compileButton.disabled = listening || finalizing;
+        elements.compileButton.textContent = "Generate scene";
+        elements.interim.textContent = "Keep describing, or finish recording to generate this subject.";
+        updateMicAvailability();
+        return;
       }
       semanticKey = JSON.stringify({facts: checked.visual_facts,
         style: submission.request.visual_style, seed: submission.request.seed ?? 0,

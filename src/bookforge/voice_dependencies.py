@@ -69,7 +69,38 @@ def normalize_breed_subjects(row):
     return {**row, "tokens": repaired}
 
 
-def extract(row):
+def static_nominal_head(row):
+    """Recognize one complete nominal tree; this alone does not admit it."""
+    ts = row["tokens"]
+    content = ts[:-1] if ts and ts[-1]["text"] in {".", "!", "?"} else ts
+    if not content or content[0]["pos"] not in {"DET", "NUM"}:
+        return None
+    if content[0]["text"].casefold() not in {"a", "an", "the", *privacy.COUNT_WORDS}:
+        return None
+    head = content[-1]
+    indexes = {t["i"] for t in content}
+    if head["dep"] != "ROOT" or head["pos"] not in {"NOUN", "PROPN"}:
+        return None
+    if any(
+        t["pos"] not in {"DET", "NUM", "ADJ", "NOUN", "PROPN"}
+        or t["head"] not in indexes
+        or (t is not head and t["dep"] not in {"det", "nummod", "amod", "compound"})
+        for t in content
+    ):
+        return None
+    if any(e["label"] in {"PERSON", "ORG", "GPE", "LOC", "FAC"} for e in row["entities"]):
+        return None
+    public = privacy.recognized_static_compound(row["text"])
+    breeds = privacy.recognized_breed_phrases(row["text"])
+    spans = [*breeds, *([public] if public else [])]
+    if any(t["pos"] == "PROPN" and not any(
+        span.start() <= t["offset"] < span.end() for span in spans
+    ) for t in content):
+        return None
+    return head["i"]
+
+
+def extract(row, *, static_subject=None):
     ts = row["tokens"]
     children = {t["i"]: [] for t in ts}
     for t in ts:
@@ -124,8 +155,16 @@ def extract(row):
                 cursor = ts[cursor]["head"]
         return False
 
+    if static_subject is not None:
+        noun(static_subject)
     for index in sorted(predicates):
         token = ts[index]
+        if token["pos"] == "AUX" and not any(
+            ts[c]["dep"] in {"attr", "acomp", "oprd", "prep", "ccomp", "xcomp"}
+            for c in children[index]
+        ):
+            issues.append({"kind": "incomplete_auxiliary_predicate", "token": index})
+            continue
         subjects = [c for c in children[index] if ts[c]["dep"] == "nsubj"]
         patients = [c for c in children[index] if ts[c]["dep"] == "nsubjpass"]
         objects = [c for c in children[index] if ts[c]["dep"] in {"dobj", "dative"}]
@@ -194,7 +233,7 @@ def extract(row):
     for token in ts:
         if token["dep"] in {"advcl", "ccomp", "xcomp"} and token["i"] not in predicates:
             issues.append({"kind": "unresolved_clause", "token": token["i"]})
-    if not events:
+    if not events and static_subject is None:
         issues.append({"kind": "no_event"})
     proper = privacy.proper_name_candidates(row["text"])
     withheld = []

@@ -1,0 +1,1054 @@
+{
+  "frontend_policy": "A noun-only automatic description requires final ASR; repeated partials never dispatch an image. Manual Generate remains explicit admission. Action-based speculation unchanged.",
+  "inputs": {
+    "actual-parser-rows.json": "83fcbb3d18a2b6821d20b4d7d7f5775609eb80603bb47f8c97499540ad9d21a5",
+    "additional-parser-rows.json": "79b13f5fa58b2ba95f6585c9316798355a117cc89bd1f7dff4ac665bb1b1ab49",
+    "standalone-head-rows.json": "9e15b2c6b2c5474ff5e88e598d19f8679bbbc34aa3910d3f09a1ce0c58b92716"
+  },
+  "known_boundaries": [
+    "Single determiner/count-led nominal tree only; bare nouns, relations, multiple actors and unresolved structures may refuse.",
+    "Static graph actions/events/motions empty; no scene action or dish preparation details are fabricated.",
+    "Original-source names and protected entities remain subject to existing privacy; no new global style-name policy.",
+    "Titlecase exception is a closed literal food phrase and existing breed exceptions, not arbitrary PROPN admission."
+  ],
+  "method": "Offline evaluation of retained actual spaCy3.8.11/core_web_sm3.8.0 phrase and exact-case standalone-head predictions. No network/model downloads or image calls. This is a bounded acceptance/refusal screen, not general noun-phrase accuracy.",
+  "results": [
+    {
+      "id": "balloon",
+      "result": {
+        "facts": {
+          "events": [],
+          "motions": [],
+          "negatives": [],
+          "objects": [],
+          "relationships": [],
+          "salience": [],
+          "setting": {
+            "attributes": [],
+            "label": "unspecified"
+          },
+          "subjects": [
+            {
+              "actions": [],
+              "attributes": [],
+              "color": "red",
+              "count": 1,
+              "label": "balloon",
+              "ref": "e1"
+            }
+          ],
+          "temporal_order": [],
+          "transformation": null,
+          "version": "2.0"
+        },
+        "local_omissions": [],
+        "reason": null,
+        "render_admitted": false,
+        "renderer_prompt_preview": "Style: watercolor. Subject: exactly one red balloon. One continuous full-bleed scene; no captions, labels, signs, or readable text.",
+        "requires_fact_review": true,
+        "revision": "dependency-scene-draft-v3",
+        "status": "draft_ready",
+        "syntax_issues": []
+      },
+      "standalone_head_pos": "NOUN"
+    },
+    {
+      "id": "dish_title",
+      "result": {
+        "facts": {
+          "events": [],
+          "motions": [],
+          "negatives": [],
+          "objects": [],
+          "relationships": [],
+          "salience": [],
+          "setting": {
+            "attributes": [],
+            "label": "unspecified"
+          },
+          "subjects": [
+            {
+              "actions": [],
+              "attributes": [],
+              "color": null,
+              "count": 1,
+              "label": "chicken lollipop",
+              "ref": "e1"
+            }
+          ],
+          "temporal_order": [],
+          "transformation": null,
+          "version": "2.0"
+        },
+        "local_omissions": [],
+        "reason": null,
+        "render_admitted": false,
+        "renderer_prompt_preview": "Style: watercolor. Subject: exactly one chicken lollipop. One continuous full-bleed scene; no captions, labels, signs, or readable text.",
+        "requires_fact_review": true,
+        "revision": "dependency-scene-draft-v3",
+        "status": "draft_ready",
+        "syntax_issues": []
+      },
+      "standalone_head_pos": "PROPN"
+    },
+    {
+      "id": "dish_lower",
+      "result": {
+        "facts": {
+          "events": [],
+          "motions": [],
+          "negatives": [],
+          "objects": [],
+          "relationships": [],
+          "salience": [],
+          "setting": {
+            "attributes": [],
+            "label": "unspecified"
+          },
+          "subjects": [
+            {
+              "actions": [],
+              "attributes": [],
+              "color": null,
+              "count": 1,
+              "label": "chicken lollipop",
+              "ref": "e1"
+            }
+          ],
+          "temporal_order": [],
+          "transformation": null,
+          "version": "2.0"
+        },
+        "local_omissions": [],
+        "reason": null,
+        "render_admitted": false,
+        "renderer_prompt_preview": "Style: watercolor. Subject: exactly one chicken lollipop. One continuous full-bleed scene; no captions, labels, signs, or readable text.",
+        "requires_fact_review": true,
+        "revision": "dependency-scene-draft-v3",
+        "status": "draft_ready",
+        "syntax_issues": []
+      },
+      "standalone_head_pos": "PROPN"
+    },
+    {
+      "id": "dish_bare",
+      "result": {
+        "facts": null,
+        "local_omissions": [],
+        "reason": "syntax_coverage_or_reference",
+        "render_admitted": false,
+        "requires_fact_review": true,
+        "revision": "dependency-scene-draft-v3",
+        "status": "needs_review",
+        "syntax_issues": [
+          {
+            "kind": "unrepresented_content",
+            "token": 0
+          },
+          {
+            "kind": "unrepresented_content",
+            "token": 1
+          },
+          {
+            "kind": "no_event"
+          }
+        ]
+      },
+      "standalone_head_pos": "PROPN"
+    },
+    {
+      "id": "balloon_count",
+      "result": {
+        "facts": {
+          "events": [],
+          "motions": [],
+          "negatives": [],
+          "objects": [],
+          "relationships": [],
+          "salience": [],
+          "setting": {
+            "attributes": [],
+            "label": "unspecified"
+          },
+          "subjects": [
+            {
+              "actions": [],
+              "attributes": [],
+              "color": "red",
+              "count": 2,
+              "label": "balloons",
+              "ref": "e1"
+            }
+          ],
+          "temporal_order": [],
+          "transformation": null,
+          "version": "2.0"
+        },
+        "local_omissions": [],
+        "reason": null,
+        "render_admitted": false,
+        "renderer_prompt_preview": "Style: watercolor. Subject: exactly 2 red balloons. One continuous full-bleed scene; no captions, labels, signs, or readable text.",
+        "requires_fact_review": true,
+        "revision": "dependency-scene-draft-v3",
+        "status": "draft_ready",
+        "syntax_issues": []
+      },
+      "standalone_head_pos": "NOUN"
+    },
+    {
+      "id": "dish_count",
+      "result": {
+        "facts": {
+          "events": [],
+          "motions": [],
+          "negatives": [],
+          "objects": [],
+          "relationships": [],
+          "salience": [],
+          "setting": {
+            "attributes": [],
+            "label": "unspecified"
+          },
+          "subjects": [
+            {
+              "actions": [],
+              "attributes": [],
+              "color": null,
+              "count": 3,
+              "label": "chicken lollipops",
+              "ref": "e1"
+            }
+          ],
+          "temporal_order": [],
+          "transformation": null,
+          "version": "2.0"
+        },
+        "local_omissions": [],
+        "reason": null,
+        "render_admitted": false,
+        "renderer_prompt_preview": "Style: watercolor. Subject: exactly 3 chicken lollipops. One continuous full-bleed scene; no captions, labels, signs, or readable text.",
+        "requires_fact_review": true,
+        "revision": "dependency-scene-draft-v3",
+        "status": "draft_ready",
+        "syntax_issues": []
+      },
+      "standalone_head_pos": "NOUN"
+    },
+    {
+      "id": "dish_attribute",
+      "result": {
+        "facts": {
+          "events": [],
+          "motions": [],
+          "negatives": [],
+          "objects": [],
+          "relationships": [],
+          "salience": [],
+          "setting": {
+            "attributes": [],
+            "label": "unspecified"
+          },
+          "subjects": [
+            {
+              "actions": [],
+              "attributes": [],
+              "color": null,
+              "count": 1,
+              "label": "crispy chicken lollipop",
+              "ref": "e1"
+            }
+          ],
+          "temporal_order": [],
+          "transformation": null,
+          "version": "2.0"
+        },
+        "local_omissions": [],
+        "reason": null,
+        "render_admitted": false,
+        "renderer_prompt_preview": "Style: watercolor. Subject: exactly one crispy chicken lollipop. One continuous full-bleed scene; no captions, labels, signs, or readable text.",
+        "requires_fact_review": true,
+        "revision": "dependency-scene-draft-v3",
+        "status": "draft_ready",
+        "syntax_issues": []
+      },
+      "standalone_head_pos": "PROPN"
+    },
+    {
+      "id": "animal",
+      "result": {
+        "facts": {
+          "events": [],
+          "motions": [],
+          "negatives": [],
+          "objects": [],
+          "relationships": [],
+          "salience": [],
+          "setting": {
+            "attributes": [],
+            "label": "unspecified"
+          },
+          "subjects": [
+            {
+              "actions": [],
+              "attributes": [],
+              "color": null,
+              "count": 1,
+              "label": "chicken",
+              "ref": "e1"
+            }
+          ],
+          "temporal_order": [],
+          "transformation": null,
+          "version": "2.0"
+        },
+        "local_omissions": [],
+        "reason": null,
+        "render_admitted": false,
+        "renderer_prompt_preview": "Style: watercolor. Subject: exactly one chicken. One continuous full-bleed scene; no captions, labels, signs, or readable text.",
+        "requires_fact_review": true,
+        "revision": "dependency-scene-draft-v3",
+        "status": "draft_ready",
+        "syntax_issues": []
+      },
+      "standalone_head_pos": "NOUN"
+    },
+    {
+      "id": "animal_color",
+      "result": {
+        "facts": {
+          "events": [],
+          "motions": [],
+          "negatives": [],
+          "objects": [],
+          "relationships": [],
+          "salience": [],
+          "setting": {
+            "attributes": [],
+            "label": "unspecified"
+          },
+          "subjects": [
+            {
+              "actions": [],
+              "attributes": [],
+              "color": "red",
+              "count": 1,
+              "label": "chicken",
+              "ref": "e1"
+            }
+          ],
+          "temporal_order": [],
+          "transformation": null,
+          "version": "2.0"
+        },
+        "local_omissions": [],
+        "reason": null,
+        "render_admitted": false,
+        "renderer_prompt_preview": "Style: watercolor. Subject: exactly one red chicken. One continuous full-bleed scene; no captions, labels, signs, or readable text.",
+        "requires_fact_review": true,
+        "revision": "dependency-scene-draft-v3",
+        "status": "draft_ready",
+        "syntax_issues": []
+      },
+      "standalone_head_pos": "NOUN"
+    },
+    {
+      "id": "coordination",
+      "result": {
+        "facts": null,
+        "local_omissions": [],
+        "reason": "syntax_coverage_or_reference",
+        "render_admitted": false,
+        "requires_fact_review": true,
+        "revision": "dependency-scene-draft-v3",
+        "status": "needs_review",
+        "syntax_issues": [
+          {
+            "kind": "unrepresented_content",
+            "token": 1
+          },
+          {
+            "kind": "unrepresented_content",
+            "token": 2
+          },
+          {
+            "kind": "unrepresented_content",
+            "token": 5
+          },
+          {
+            "kind": "unrepresented_content",
+            "token": 6
+          },
+          {
+            "kind": "no_event"
+          }
+        ]
+      },
+      "standalone_head_pos": "PROPN"
+    },
+    {
+      "id": "location",
+      "result": {
+        "facts": null,
+        "local_omissions": [],
+        "reason": "syntax_coverage_or_reference",
+        "render_admitted": false,
+        "requires_fact_review": true,
+        "revision": "dependency-scene-draft-v3",
+        "status": "needs_review",
+        "syntax_issues": [
+          {
+            "kind": "no_event"
+          }
+        ]
+      },
+      "standalone_head_pos": "PROPN"
+    },
+    {
+      "id": "negative_no",
+      "result": {
+        "facts": null,
+        "local_omissions": [],
+        "reason": "syntax_coverage_or_reference",
+        "render_admitted": false,
+        "requires_fact_review": true,
+        "revision": "dependency-scene-draft-v3",
+        "status": "needs_review",
+        "syntax_issues": [
+          {
+            "kind": "no_event"
+          }
+        ]
+      },
+      "standalone_head_pos": "PROPN"
+    },
+    {
+      "id": "negative_not",
+      "result": {
+        "facts": null,
+        "local_omissions": [],
+        "reason": "syntax_coverage_or_reference",
+        "render_admitted": false,
+        "requires_fact_review": true,
+        "revision": "dependency-scene-draft-v3",
+        "status": "needs_review",
+        "syntax_issues": [
+          {
+            "kind": "unrepresented_content",
+            "token": 2
+          },
+          {
+            "kind": "unrepresented_content",
+            "token": 3
+          },
+          {
+            "kind": "no_event"
+          }
+        ]
+      },
+      "standalone_head_pos": "PROPN"
+    },
+    {
+      "id": "negative_without",
+      "result": {
+        "facts": null,
+        "local_omissions": [],
+        "reason": "syntax_coverage_or_reference",
+        "render_admitted": false,
+        "requires_fact_review": true,
+        "revision": "dependency-scene-draft-v3",
+        "status": "needs_review",
+        "syntax_issues": [
+          {
+            "kind": "no_event"
+          }
+        ]
+      },
+      "standalone_head_pos": "PROPN"
+    },
+    {
+      "id": "incomplete_chase",
+      "result": {
+        "facts": null,
+        "local_omissions": [],
+        "reason": "syntax_coverage_or_reference",
+        "render_admitted": false,
+        "requires_fact_review": true,
+        "revision": "dependency-scene-draft-v3",
+        "status": "needs_review",
+        "syntax_issues": [
+          {
+            "kind": "unrepresented_content",
+            "token": 1
+          },
+          {
+            "kind": "unrepresented_content",
+            "token": 2
+          },
+          {
+            "kind": "no_event"
+          }
+        ]
+      },
+      "standalone_head_pos": "VERB"
+    },
+    {
+      "id": "incomplete_copula",
+      "result": {
+        "facts": null,
+        "local_omissions": [],
+        "reason": "syntax_coverage_or_reference",
+        "render_admitted": false,
+        "requires_fact_review": true,
+        "revision": "dependency-scene-draft-v3",
+        "status": "needs_review",
+        "syntax_issues": [
+          {
+            "kind": "incomplete_auxiliary_predicate",
+            "token": 3
+          },
+          {
+            "kind": "unrepresented_content",
+            "token": 1
+          },
+          {
+            "kind": "unrepresented_content",
+            "token": 2
+          },
+          {
+            "kind": "no_event"
+          }
+        ]
+      },
+      "standalone_head_pos": "AUX"
+    },
+    {
+      "id": "incomplete_negative",
+      "result": {
+        "facts": null,
+        "local_omissions": [],
+        "reason": "syntax_coverage_or_reference",
+        "render_admitted": false,
+        "requires_fact_review": true,
+        "revision": "dependency-scene-draft-v3",
+        "status": "needs_review",
+        "syntax_issues": [
+          {
+            "kind": "incomplete_auxiliary_predicate",
+            "token": 3
+          },
+          {
+            "kind": "unrepresented_content",
+            "token": 1
+          },
+          {
+            "kind": "unrepresented_content",
+            "token": 2
+          },
+          {
+            "kind": "no_event"
+          }
+        ]
+      },
+      "standalone_head_pos": "AUX"
+    },
+    {
+      "id": "name",
+      "result": {
+        "facts": null,
+        "local_omissions": [],
+        "reason": "syntax_coverage_or_reference",
+        "render_admitted": false,
+        "requires_fact_review": true,
+        "revision": "dependency-scene-draft-v3",
+        "status": "needs_review",
+        "syntax_issues": [
+          {
+            "kind": "unrepresented_content",
+            "token": 0
+          },
+          {
+            "kind": "no_event"
+          }
+        ]
+      },
+      "standalone_head_pos": "PROPN"
+    },
+    {
+      "id": "named_place",
+      "result": {
+        "facts": null,
+        "local_omissions": [
+          {
+            "local_text": "Paris",
+            "omission_requires_review": true,
+            "reason": "proper_name_policy",
+            "ref": 4
+          }
+        ],
+        "reason": "syntax_coverage_or_reference",
+        "render_admitted": false,
+        "requires_fact_review": true,
+        "revision": "dependency-scene-draft-v3",
+        "status": "needs_review",
+        "syntax_issues": [
+          {
+            "kind": "no_event"
+          }
+        ]
+      },
+      "standalone_head_pos": "PROPN"
+    },
+    {
+      "id": "named_item",
+      "result": {
+        "facts": null,
+        "local_omissions": [],
+        "reason": "syntax_coverage_or_reference",
+        "render_admitted": false,
+        "requires_fact_review": true,
+        "revision": "dependency-scene-draft-v3",
+        "status": "needs_review",
+        "syntax_issues": [
+          {
+            "kind": "unrepresented_content",
+            "token": 4
+          }
+        ]
+      },
+      "standalone_head_pos": "PROPN"
+    },
+    {
+      "id": "name_modifier",
+      "result": {
+        "facts": null,
+        "local_omissions": [],
+        "reason": "syntax_coverage_or_reference",
+        "render_admitted": false,
+        "requires_fact_review": true,
+        "revision": "dependency-scene-draft-v3",
+        "status": "needs_review",
+        "syntax_issues": [
+          {
+            "kind": "unrepresented_content",
+            "token": 0
+          },
+          {
+            "kind": "unrepresented_content",
+            "token": 1
+          },
+          {
+            "kind": "unrepresented_content",
+            "token": 2
+          },
+          {
+            "kind": "no_event"
+          }
+        ]
+      },
+      "standalone_head_pos": "PROPN"
+    },
+    {
+      "id": "conflicting_counts",
+      "result": {
+        "facts": null,
+        "local_omissions": [],
+        "reason": "syntax_coverage_or_reference",
+        "render_admitted": false,
+        "requires_fact_review": true,
+        "revision": "dependency-scene-draft-v3",
+        "status": "needs_review",
+        "syntax_issues": [
+          {
+            "kind": "unrepresented_content",
+            "token": 0
+          },
+          {
+            "kind": "unrepresented_content",
+            "token": 1
+          },
+          {
+            "kind": "unrepresented_content",
+            "token": 3
+          },
+          {
+            "kind": "unrepresented_content",
+            "token": 4
+          },
+          {
+            "kind": "unrepresented_content",
+            "token": 5
+          },
+          {
+            "kind": "no_event"
+          }
+        ]
+      },
+      "standalone_head_pos": "NOUN"
+    },
+    {
+      "id": "static_breed",
+      "result": {
+        "facts": null,
+        "local_omissions": [],
+        "reason": "syntax_coverage_or_reference",
+        "render_admitted": false,
+        "requires_fact_review": true,
+        "revision": "dependency-scene-draft-v3",
+        "status": "needs_review",
+        "syntax_issues": [
+          {
+            "kind": "unrepresented_content",
+            "token": 1
+          },
+          {
+            "kind": "unrepresented_content",
+            "token": 2
+          },
+          {
+            "kind": "unrepresented_content",
+            "token": 3
+          },
+          {
+            "kind": "unrepresented_content",
+            "token": 4
+          },
+          {
+            "kind": "no_event"
+          }
+        ]
+      },
+      "standalone_head_pos": "NOUN"
+    },
+    {
+      "id": "cat",
+      "result": {
+        "facts": {
+          "events": [],
+          "motions": [],
+          "negatives": [],
+          "objects": [],
+          "relationships": [],
+          "salience": [],
+          "setting": {
+            "attributes": [],
+            "label": "unspecified"
+          },
+          "subjects": [
+            {
+              "actions": [],
+              "attributes": [],
+              "color": "black",
+              "count": 1,
+              "label": "cat",
+              "ref": "e1"
+            }
+          ],
+          "temporal_order": [],
+          "transformation": null,
+          "version": "2.0"
+        },
+        "local_omissions": [],
+        "reason": null,
+        "render_admitted": false,
+        "renderer_prompt_preview": "Style: watercolor. Subject: exactly one black cat. One continuous full-bleed scene; no captions, labels, signs, or readable text.",
+        "requires_fact_review": true,
+        "revision": "dependency-scene-draft-v3",
+        "status": "draft_ready",
+        "syntax_issues": []
+      },
+      "standalone_head_pos": "NOUN"
+    },
+    {
+      "id": "rose",
+      "result": {
+        "facts": null,
+        "local_omissions": [
+          {
+            "local_text": "Rose",
+            "omission_requires_review": true,
+            "reason": "proper_name_policy",
+            "ref": 1
+          }
+        ],
+        "reason": "named_actor_or_target",
+        "render_admitted": false,
+        "requires_fact_review": true,
+        "revision": "dependency-scene-draft-v3",
+        "status": "needs_review",
+        "syntax_issues": []
+      },
+      "standalone_head_pos": "NOUN"
+    },
+    {
+      "id": "may",
+      "result": {
+        "facts": null,
+        "local_omissions": [],
+        "reason": "syntax_coverage_or_reference",
+        "render_admitted": false,
+        "requires_fact_review": true,
+        "revision": "dependency-scene-draft-v3",
+        "status": "needs_review",
+        "syntax_issues": [
+          {
+            "kind": "unrepresented_content",
+            "token": 1
+          },
+          {
+            "kind": "no_event"
+          }
+        ]
+      },
+      "standalone_head_pos": "AUX"
+    },
+    {
+      "id": "jordan",
+      "result": {
+        "facts": null,
+        "local_omissions": [],
+        "reason": "syntax_coverage_or_reference",
+        "render_admitted": false,
+        "requires_fact_review": true,
+        "revision": "dependency-scene-draft-v3",
+        "status": "needs_review",
+        "syntax_issues": [
+          {
+            "kind": "unrepresented_content",
+            "token": 1
+          },
+          {
+            "kind": "no_event"
+          }
+        ]
+      },
+      "standalone_head_pos": "PROPN"
+    },
+    {
+      "id": "almost",
+      "result": {
+        "facts": null,
+        "local_omissions": [],
+        "reason": "syntax_coverage_or_reference",
+        "render_admitted": false,
+        "requires_fact_review": true,
+        "revision": "dependency-scene-draft-v3",
+        "status": "needs_review",
+        "syntax_issues": [
+          {
+            "kind": "unrepresented_content",
+            "token": 0
+          },
+          {
+            "kind": "unrepresented_content",
+            "token": 2
+          },
+          {
+            "kind": "unrepresented_content",
+            "token": 3
+          },
+          {
+            "kind": "no_event"
+          }
+        ]
+      },
+      "standalone_head_pos": "PROPN"
+    },
+    {
+      "id": "only",
+      "result": {
+        "facts": null,
+        "local_omissions": [],
+        "reason": "syntax_coverage_or_reference",
+        "render_admitted": false,
+        "requires_fact_review": true,
+        "revision": "dependency-scene-draft-v3",
+        "status": "needs_review",
+        "syntax_issues": [
+          {
+            "kind": "unrepresented_content",
+            "token": 0
+          },
+          {
+            "kind": "unrepresented_content",
+            "token": 2
+          },
+          {
+            "kind": "unrepresented_content",
+            "token": 3
+          },
+          {
+            "kind": "no_event"
+          }
+        ]
+      },
+      "standalone_head_pos": "NOUN"
+    },
+    {
+      "id": "dangling_and",
+      "result": {
+        "facts": null,
+        "local_omissions": [],
+        "reason": "syntax_coverage_or_reference",
+        "render_admitted": false,
+        "requires_fact_review": true,
+        "revision": "dependency-scene-draft-v3",
+        "status": "needs_review",
+        "syntax_issues": [
+          {
+            "kind": "unrepresented_content",
+            "token": 1
+          },
+          {
+            "kind": "unrepresented_content",
+            "token": 2
+          },
+          {
+            "kind": "no_event"
+          }
+        ]
+      },
+      "standalone_head_pos": "NOUN"
+    },
+    {
+      "id": "dangling_in",
+      "result": {
+        "facts": null,
+        "local_omissions": [],
+        "reason": "syntax_coverage_or_reference",
+        "render_admitted": false,
+        "requires_fact_review": true,
+        "revision": "dependency-scene-draft-v3",
+        "status": "needs_review",
+        "syntax_issues": [
+          {
+            "kind": "unresolved_preposition",
+            "token": 3
+          },
+          {
+            "kind": "unrepresented_content",
+            "token": 1
+          },
+          {
+            "kind": "unrepresented_content",
+            "token": 2
+          },
+          {
+            "kind": "no_event"
+          }
+        ]
+      },
+      "standalone_head_pos": "PROPN"
+    },
+    {
+      "id": "colored_coordination",
+      "result": {
+        "facts": null,
+        "local_omissions": [],
+        "reason": "syntax_coverage_or_reference",
+        "render_admitted": false,
+        "requires_fact_review": true,
+        "revision": "dependency-scene-draft-v3",
+        "status": "needs_review",
+        "syntax_issues": [
+          {
+            "kind": "unrepresented_content",
+            "token": 1
+          },
+          {
+            "kind": "unrepresented_content",
+            "token": 2
+          },
+          {
+            "kind": "unrepresented_content",
+            "token": 5
+          },
+          {
+            "kind": "unrepresented_content",
+            "token": 6
+          },
+          {
+            "kind": "no_event"
+          }
+        ]
+      },
+      "standalone_head_pos": "NOUN"
+    },
+    {
+      "id": "possessive",
+      "result": {
+        "facts": null,
+        "local_omissions": [],
+        "reason": "syntax_coverage_or_reference",
+        "render_admitted": false,
+        "requires_fact_review": true,
+        "revision": "dependency-scene-draft-v3",
+        "status": "needs_review",
+        "syntax_issues": [
+          {
+            "kind": "unrepresented_content",
+            "token": 0
+          },
+          {
+            "kind": "unrepresented_content",
+            "token": 2
+          },
+          {
+            "kind": "unrepresented_content",
+            "token": 3
+          },
+          {
+            "kind": "no_event"
+          },
+          {
+            "kind": "uncertain_named_entity",
+            "token": 0
+          }
+        ]
+      },
+      "standalone_head_pos": "PROPN"
+    },
+    {
+      "id": "predicate_is",
+      "result": {
+        "facts": null,
+        "local_omissions": [],
+        "reason": "syntax_coverage_or_reference",
+        "render_admitted": false,
+        "requires_fact_review": true,
+        "revision": "dependency-scene-draft-v3",
+        "status": "needs_review",
+        "syntax_issues": [
+          {
+            "kind": "incomplete_auxiliary_predicate",
+            "token": 2
+          },
+          {
+            "kind": "unrepresented_content",
+            "token": 1
+          },
+          {
+            "kind": "no_event"
+          }
+        ]
+      },
+      "standalone_head_pos": "AUX"
+    }
+  ],
+  "schema_version": 1,
+  "sources": {
+    "src/bookforge/privacy_policy.py": "9e63f33d771b08138d77b6a96600dad5f0d0843d46d5bcf2f801a45a0145b20c",
+    "src/bookforge/reviewed_description.py": "24525c88ac0c6a983939d74df89246aa17e9e63256573c5438560bfecf29bfa6",
+    "src/bookforge/static/workbench.js": "0eb3c37fe9e6145fcb424fad4a8571b8ea90a5a1eae2d513de231dcf4023e9c7",
+    "src/bookforge/voice_dependencies.py": "b0f1630802cdcedb03681ca3eb34ad14be6e2d7992cf9940ba1067ba4cd09412",
+    "src/bookforge/voice_language.py": "eb92d60ea2ebbd6c7b30848434f29ab0687dfe1e54d914a9e31f6123e86f069b",
+    "tests/test_reviewed_description.py": "cb6534c59a5ea78f867c2397a8b834c2373e5204249637f33dc2ad2e2e45b3ac",
+    "tests/test_voice_static_subject.py": "b4b652a21248674e6a8d81533db49e11dfe4d70bc81480d574806cbeaa9d26e4",
+    "tests/workbench_microphone.test.js": "1c73c3f4d55482d0e7ea9d326fc617bba451c20fcf8d9c6a3b34fb24081e92d3"
+  },
+  "status_counts": {
+    "draft_ready": 9,
+    "needs_review": 25,
+    "omission_review": 0
+  },
+  "verification": "130 focused Python tests and microphone/readiness/projector-presentation suites passed. Full mocked API requires exact facts confirmation before one fake renderer call; malicious static omissions refuse before jobs."
+}

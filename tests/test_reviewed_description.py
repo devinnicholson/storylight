@@ -289,16 +289,29 @@ def _learned_parser(api_client, monkeypatch):
     return text
 
 
-def test_actual_breed_row_requires_confirmation_then_reaches_fake_renderer(api_client, monkeypatch):
+@pytest.mark.parametrize("case", ["breed", "dish_title", "balloon"])
+def test_actual_parser_row_requires_confirmation_then_reaches_fake_renderer(
+    api_client, monkeypatch, case,
+):
     from bookforge.voice_language import graph_from_row
 
     state = api_client
     socket = Path("/tmp/bookforge-breed-test.sock")
     app.state.settings.reviewed_scene_parser_socket = socket
     state.adapter.reviewed_scene_parser_socket = socket
-    row = json.loads((Path(__file__).resolve().parents[1]
-                      / "benchmarks/voice-retriever-2026-09-08/parser.json").read_bytes())["row"]
-    parsed = graph_from_row(row, "watercolor")
+    root = Path(__file__).resolve().parents[1]
+    if case == "breed":
+        row = json.loads((root / "benchmarks/voice-retriever-2026-09-08/parser.json")
+                         .read_bytes())["row"]
+        parsed = graph_from_row(row, "watercolor")
+    else:
+        directory = root / "benchmarks/voice-static-subject-2026-09-08"
+        row = next(r for r in json.loads((directory / "actual-parser-rows.json").read_bytes())
+                   ["rows"] if r["id"] == case)
+        probe = next(r for r in json.loads((directory / "standalone-head-rows.json").read_bytes())
+                     ["probes"] if r["id"] == case)
+        parsed = graph_from_row(row, "watercolor",
+                                nominal_head_pos=probe["original"]["tokens"][0]["pos"])
     state.adapter.planner = ForbiddenPlanner()
 
     def handler(request):
@@ -316,7 +329,11 @@ def test_actual_breed_row_requires_confirmation_then_reaches_fake_renderer(api_c
     prepared = state.client.post("/v1/live-scene-planner/prepare", json=payload)
     assert prepared.status_code == 200, prepared.text
     assert prepared.json()["requires_fact_review"] is True
-    assert prepared.json()["local_omissions"][0]["local_text"] == "Paris"
+    if case == "breed":
+        assert prepared.json()["local_omissions"][0]["local_text"] == "Paris"
+    else:
+        assert prepared.json()["local_omissions"] == []
+        assert prepared.json()["visual_facts"]["subjects"][0]["actions"] == []
     assert state.renderer.calls == []
     unconfirmed = state.client.post("/v1/live-scenes", json=payload)
     assert unconfirmed.status_code == 422
@@ -333,6 +350,58 @@ def test_actual_breed_row_requires_confirmation_then_reaches_fake_renderer(api_c
     )
     assert "paris" not in state.renderer.calls[0].prompt.lower()
     assert result["metrics"]["models"][0]["model"] == LEARNED_REVISION
+
+
+@pytest.mark.parametrize("source_case,returned_case", [
+    ("incomplete_copula", "balloon"),
+    ("dish_attribute", "dish_lower"),
+    ("colored_coordination", "animal_color"),
+])
+def test_forged_static_response_cannot_omit_source_predicate_modifier_or_actor(
+    api_client, monkeypatch, source_case, returned_case,
+):
+    from bookforge.voice_language import graph_from_row
+
+    state = api_client
+    directory = Path(__file__).resolve().parents[1] / "benchmarks/voice-static-subject-2026-09-08"
+    rows = {row["id"]: row for name in ("actual-parser-rows.json", "additional-parser-rows.json")
+            for row in json.loads((directory / name).read_bytes())["rows"]}
+    probes = {row["id"]: row for row in json.loads(
+        (directory / "standalone-head-rows.json").read_bytes(),
+    )["probes"]}
+    row = rows[returned_case]
+    parsed = graph_from_row(row, "watercolor", nominal_head_pos=(
+        probes[returned_case]["original"]["tokens"][0]["pos"]
+    ))
+    text = rows[source_case]["text"]
+    # A malicious response retains internally consistent facts and prompt, but
+    # omits an action, modifier or actor from the actual source. This is fault
+    # injection at the service boundary, not a claimed spaCy prediction.
+    facts = SceneFactsV2.model_validate(parsed["facts"])
+    parsed["renderer_prompt_preview"] = facts.to_renderer_prompt(
+        source_text=text, visual_style="watercolor",
+    )
+    socket = Path("/tmp/bookforge-static-malformed.sock")
+    app.state.settings.reviewed_scene_parser_socket = socket
+    state.adapter.reviewed_scene_parser_socket = socket
+    calls = []
+
+    async def response(payload, actual_socket):
+        assert actual_socket == socket
+        assert payload == {"text": text, "visual_style": "watercolor"}
+        calls.append(payload)
+        return json.dumps(parsed).encode()
+
+    monkeypatch.setattr("bookforge.reviewed_description._parser_request", response)
+    payload = dict(text=text, visual_style="watercolor", seed=41,
+                   reviewed_description=True, session_id="reviewed-test")
+    assert state.client.post("/v1/live-scene-planner/prepare", json=payload).status_code == 422
+    assert state.client.post("/v1/live-scenes", json={
+        **payload, "confirm_visual_facts": True, "visual_fact_digest": "0" * 64,
+    }).status_code == 422
+    assert len(calls) == 2
+    assert state.renderer.calls == []
+    assert state.client.get("/v1/live-scene-sessions/reviewed-test").status_code == 404
 
 
 def test_learned_draft_requires_confirmation_and_rechecks_before_one_render(
@@ -399,6 +468,7 @@ def test_parser_response_cannot_bypass_fact_grounding_or_provider_confirmation(
                    reviewed_description=True, confirm_visual_facts=True)
     for changed in (
         {"revision": "dependency-scene-draft-v1"},
+        {"revision": "dependency-scene-draft-v2"},
         {"revision": "dependency-scene-draft-old"},
         {"renderer_prompt_preview": "an unrelated picture"},
         {"facts": {**original["facts"], "subjects": [

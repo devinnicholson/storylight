@@ -1,0 +1,181 @@
+{
+  "image_requests": 0,
+  "rows": [
+    {
+      "case": "dish",
+      "text": "A Chicken Lollipop",
+      "status": 200,
+      "wall_ms": 186.43,
+      "result": {
+        "ready": true,
+        "planning_ms": 166.29728599946247,
+        "cache_hit": false,
+        "model": "reviewed-language-v3",
+        "revision": "dependency-scene-draft-v3",
+        "input_tokens": 0,
+        "output_tokens": 0,
+        "visual_facts": {
+          "version": "2.0",
+          "setting": {
+            "label": "unspecified",
+            "attributes": []
+          },
+          "subjects": [
+            {
+              "ref": "e1",
+              "label": "chicken lollipop",
+              "count": 1,
+              "color": null,
+              "attributes": [],
+              "actions": []
+            }
+          ],
+          "objects": [],
+          "relationships": [],
+          "motions": [],
+          "salience": [],
+          "events": [],
+          "temporal_order": [],
+          "negatives": [],
+          "transformation": null
+        },
+        "requires_fact_review": true,
+        "local_omissions": [],
+        "visual_fact_digest": "c59953e4f2a53d730c364a31c0a47b215831a824cb480cf3b074e2513defb90e"
+      }
+    },
+    {
+      "case": "balloon",
+      "text": "A red balloon",
+      "status": 200,
+      "wall_ms": 119.78,
+      "result": {
+        "ready": true,
+        "planning_ms": 106.51632100052666,
+        "cache_hit": false,
+        "model": "reviewed-language-v3",
+        "revision": "dependency-scene-draft-v3",
+        "input_tokens": 0,
+        "output_tokens": 0,
+        "visual_facts": {
+          "version": "2.0",
+          "setting": {
+            "label": "unspecified",
+            "attributes": []
+          },
+          "subjects": [
+            {
+              "ref": "e1",
+              "label": "balloon",
+              "count": 1,
+              "color": "red",
+              "attributes": [],
+              "actions": []
+            }
+          ],
+          "objects": [],
+          "relationships": [],
+          "motions": [],
+          "salience": [],
+          "events": [],
+          "temporal_order": [],
+          "negatives": [],
+          "transformation": null
+        },
+        "requires_fact_review": true,
+        "local_omissions": [],
+        "visual_fact_digest": "d79285f1375fe3abe45abebe74d74c2bc2280f5d510ba23ccc5de12d3b045696"
+      }
+    },
+    {
+      "case": "incomplete",
+      "text": "A chicken is",
+      "status": 422,
+      "wall_ms": 79.96,
+      "result": {
+        "detail": {
+          "code": "reviewed_description_unsupported",
+          "message": "Could not verify every scene detail. Use explicit subjects and actions, check the intended action, and remove or clarify unsupported details."
+        }
+      }
+    },
+    {
+      "case": "name",
+      "text": "A Rose",
+      "status": 422,
+      "wall_ms": 91.36,
+      "result": {
+        "detail": {
+          "code": "reviewed_description_unsupported",
+          "message": "Could not verify every scene detail. Use explicit subjects and actions, check the intended action, and remove or clarify unsupported details."
+        }
+      }
+    },
+    {
+      "case": "retriever",
+      "text": "The English cream golden retriever ran down the cobblestone path in the city of Paris.",
+      "status": 200,
+      "wall_ms": 142.46,
+      "result": {
+        "ready": true,
+        "planning_ms": 129.55278900062694,
+        "cache_hit": false,
+        "model": "reviewed-language-v3",
+        "revision": "dependency-scene-draft-v3",
+        "input_tokens": 0,
+        "output_tokens": 0,
+        "visual_facts": {
+          "version": "2.0",
+          "setting": {
+            "label": "city",
+            "attributes": []
+          },
+          "subjects": [
+            {
+              "ref": "e1",
+              "label": "english cream golden retriever",
+              "count": null,
+              "color": null,
+              "attributes": [],
+              "actions": [
+                "ran down cobblestone path in city"
+              ]
+            }
+          ],
+          "objects": [
+            {
+              "ref": "e2",
+              "label": "cobblestone path",
+              "count": null,
+              "color": null,
+              "states": [],
+              "attributes": []
+            }
+          ],
+          "relationships": [],
+          "motions": [],
+          "salience": [],
+          "events": [],
+          "temporal_order": [],
+          "negatives": [],
+          "transformation": null
+        },
+        "requires_fact_review": true,
+        "local_omissions": [
+          {
+            "ref": 14,
+            "local_text": "Paris",
+            "reason": "proper_name_policy",
+            "omission_requires_review": true
+          }
+        ],
+        "visual_fact_digest": "b5e91aa31ccd45c8548ece4b55b66c4c10d34da37412cf1b397f7995a895c02b"
+      }
+    }
+  ],
+  "frontend": {
+    "http": 200,
+    "sha256": "0eb3c37fe9e6145fcb424fad4a8571b8ea90a5a1eae2d513de231dcf4023e9c7",
+    "matches_worktree": true
+  }
+}

@@ -375,9 +375,24 @@ def recognized_breed_phrases(source_text: str) -> tuple[re.Match[str], ...]:
     )
 
 
+def recognized_static_compound(source_text: str) -> re.Match[str] | None:
+    """Closed public food term, only as an entire determiner-led description.
+
+    This handles ASR title casing, not arbitrary PROPN or name normalization.
+    Explicit naming, suffixes and protected learned entities remain excluded.
+    """
+    return re.fullmatch(
+        r"\s*(?:a|an|the|" + "|".join(COUNT_WORDS) + r")\s+"
+        r"(?P<compound>chicken\s+lollipops?(?:\s+dish)?)\s*[.!?]?\s*",
+        source_text,
+        re.IGNORECASE,
+    )
+
+
 def proper_name_candidates(source_text: str) -> frozenset[tuple[str, ...]]:
     normalized_source = unicodedata.normalize("NFKC", source_text)
     breed_phrases = recognized_breed_phrases(normalized_source)
+    static_compound = recognized_static_compound(normalized_source)
     candidates: set[tuple[str, ...]] = set()
     for match in _NAME_AFTER_ROLE.finditer(normalized_source):
         tokens = privacy_tokens(match.group("name"))
@@ -457,7 +472,10 @@ def proper_name_candidates(source_text: str) -> frozenset[tuple[str, ...]]:
             continue
         # ASR may capitalize coat and breed terms. Explicit name markers above
         # still count as names, even when they reuse one of these words.
-        if any(phrase.start() <= match.start() < phrase.end() for phrase in breed_phrases):
+        if any(phrase.start() <= match.start() < phrase.end() for phrase in breed_phrases) or (
+            static_compound is not None
+            and static_compound.start("compound") <= match.start() < static_compound.end("compound")
+        ):
             continue
         if word.casefold() == "nothing" and re.match(
             r"\s+(?:glows|floats|moves|happens|appears)\b",

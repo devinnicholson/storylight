@@ -9,9 +9,14 @@ from __future__ import annotations
 
 from bookforge.privacy_policy import COLOR_WORDS, COUNT_WORDS
 from bookforge.scene_facts import SceneFactsV2
-from bookforge.voice_dependencies import audit_nominal_spans, extract, normalize_breed_subjects
+from bookforge.voice_dependencies import (
+    audit_nominal_spans,
+    extract,
+    normalize_breed_subjects,
+    static_nominal_head,
+)
 
-REVISION = "dependency-scene-draft-v2"
+REVISION = "dependency-scene-draft-v3"
 RELATIONS = {
     "in": "inside",
     "inside": "inside",
@@ -58,12 +63,29 @@ def extract_graph(text: str, visual_style: str, *, nlp):
         or not visual_style.strip()
     ):
         return _response({"status": "needs_review", "reason": "input_bounds"})
-    return _response(graph_from_row(row_from_doc(nlp(text)), visual_style))
+    row = row_from_doc(nlp(text))
+    nominal = static_nominal_head(row)
+    # A phrase-context parser can mistake an unfinished verb for a noun root
+    # ("a cat chasing"). Check that head independently before a static draft.
+    head_pos = None
+    if nominal is not None:
+        isolated = list(nlp(row["tokens"][nominal]["text"]))
+        if len(isolated) == 1:
+            head_pos = isolated[0].pos_
+    return _response(graph_from_row(row, visual_style, nominal_head_pos=head_pos))
 
 
-def graph_from_row(row, visual_style):
+def graph_from_row(row, visual_style, *, nominal_head_pos=None):
     row = normalize_breed_subjects(row)
-    draft = extract(row)
+    nominal = static_nominal_head(row)
+    if nominal_head_pos not in {"NOUN", "PROPN"}:
+        nominal = None
+    if nominal is not None:
+        row = {**row, "tokens": [dict(t) for t in row["tokens"]]}
+        for token in row["tokens"]:
+            if token["pos"] == "PROPN":
+                token["pos"] = "NOUN"
+    draft = extract(row, static_subject=nominal)
     result = {
         "revision": REVISION,
         "status": "needs_review",
@@ -86,6 +108,8 @@ def graph_from_row(row, visual_style):
     ents = {e["ref"]: e for e in draft["entities"]}
     withheld = {e["ref"] for e in draft["withheld_local_only"]}
     actors = {e["actor"] for e in draft["events"]}
+    if nominal is not None:
+        actors.add(nominal)
     targets = {e["object"] for e in draft["events"] if e["object"] is not None}
     if withheld & (actors | targets):
         result["reason"] = "named_actor_or_target"
@@ -118,8 +142,14 @@ def graph_from_row(row, visual_style):
         token = ts[i]
         mods = [ts[t] for t in e["tokens"] if t != i]
         compounds = [t for t in mods if t["dep"] == "compound"]
+        if nominal == i:
+            compounds += [t for t in mods if t["dep"] == "amod" and any(
+                child["head"] == t["i"] and child["dep"] == "compound" for child in mods
+            )]
+            compounds.sort(key=lambda t: t["i"])
         label = " ".join(t["text"].casefold() for t in [*compounds, token])
-        adjectives = [t["text"].casefold() for t in mods if t["dep"] == "amod"]
+        adjectives = [t["text"].casefold() for t in mods
+                      if t["dep"] == "amod" and t not in compounds]
         color = next((a for a in adjectives if a in COLOR_WORDS), None)
         attributes = [a for a in adjectives if a != color]
         nums = [t["text"].casefold() for t in mods if t["dep"] == "nummod"]

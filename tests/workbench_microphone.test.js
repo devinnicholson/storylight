@@ -973,5 +973,76 @@ async function finalRefusalStatus() {
   assert.equal(h.submitted[0].text, "A dog chasing a ball.");
 }
 
-(async () => { await lifecycle(); await voiceToScene(); await partialScheduling(); await adaptiveCadence(); await timingIsolation(); await recorderFlush(); await finalRefusalStatus(); })().then(() => console.log("Workbench microphone: cleanup, recorder flush, adaptive ASR cadence, latest-only presentation and no duplicate paid requests passed."))
+async function staticPartialAdmission() {
+  function staticHarness() {
+    const h = generationHarness();
+    h.context.listening = true;
+    const ready = h.state.ready;
+    h.state.ready = (request) => {
+      const result = ready(request);
+      if (request.text === "A cat") {
+        result.visual_facts.subjects[0].actions = [];
+        result.visual_facts.objects = [];
+      }
+      return result;
+    };
+    return h;
+  }
+  const correction = staticHarness();
+  correction.context.offerVoiceTranscript("A cat");
+  await correction.advance(350);
+  assert.equal(correction.checks.length, 1);
+  assert.equal(correction.submitted.length, 0);
+  assert.equal(correction.context.voiceGeneration.attempted.size, 0);
+  assert.doesNotMatch(correction.elements.voiceReview.textContent, /cat:/);
+  correction.context.offerVoiceTranscript("A cat chasing a mouse.");
+  await correction.advance(350);
+  assert.equal(correction.submitted.length, 1);
+  assert.equal(correction.submitted[0].text, "A cat chasing a mouse.");
+
+  const stable = staticHarness();
+  stable.context.offerVoiceTranscript("A cat");
+  await stable.advance(350);
+  assert.equal(stable.submitted.length, 0);
+  stable.context.offerVoiceTranscript("A cat");
+  await stable.advance(350);
+  assert.equal(stable.submitted.length, 0);
+  await stable.context.pumpVoiceGeneration();
+  assert.equal(stable.submitted.length, 0);
+  assert.match(stable.elements.interim.textContent, /finish recording to generate this subject/);
+
+  const final = staticHarness();
+  final.context.offerVoiceTranscript("A cat");
+  await final.advance(350);
+  final.context.finalizing = true;
+  final.context.offerVoiceTranscript("A cat", {final: true});
+  assert.equal(final.submitted.length, 0);
+  final.context.finalizing = false;
+  await final.context.pumpVoiceGeneration();
+  assert.equal(final.submitted.length, 1);
+
+  const manual = staticHarness();
+  manual.context.listening = false;
+  manual.elements.story.value = "A cat";
+  await manual.context.compileStory();
+  assert.equal(manual.submitted.length, 1); // Explicit Generate is already final intent.
+
+  // Repetition arriving during a local check is still not a final utterance.
+  // It must neither purchase an image nor leave a stuck attempted claim.
+  const during = staticHarness();
+  const respond = during.context.respond;
+  let finishCheck;
+  during.context.respond = (url, options) => url === "/v1/live-scene-planner/prepare"
+    ? new Promise((resolve) => { finishCheck = () => resolve(respond(url, options)); })
+    : respond(url, options);
+  during.context.offerVoiceTranscript("A cat");
+  await during.advance(350);
+  during.context.offerVoiceTranscript("A cat");
+  finishCheck();
+  await flush();
+  assert.equal(during.submitted.length, 0);
+  assert.equal(during.context.voiceGeneration.attempted.size, 0);
+}
+
+(async () => { await lifecycle(); await voiceToScene(); await partialScheduling(); await adaptiveCadence(); await timingIsolation(); await recorderFlush(); await finalRefusalStatus(); await staticPartialAdmission(); })().then(() => console.log("Workbench microphone: cleanup, recorder flush, adaptive ASR cadence, latest-only presentation and no duplicate paid requests passed."))
   .catch((error) => { console.error(error); process.exitCode = 1; });
