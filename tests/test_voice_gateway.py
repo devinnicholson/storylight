@@ -55,7 +55,7 @@ def test_local_assets_asr_scene_headers_and_sse_cleanup():
     app = create_voice_gateway(transport=httpx.MockTransport(handle))
     with TestClient(app, base_url="http://127.0.0.1:18767", client=("127.0.0.1", 50000)) as client:
         page = client.get("/workbench?voice=1")
-        assert page.status_code == 200 and "voice1" in page.text
+        assert page.status_code == 200 and 'id="micButton"' in page.text
         assert client.get("/workbench-assets/workbench.js").status_code == 200
         assert client.get("/projector?reader=0").status_code == 200
         demo = client.get("/workbench?demo=1&redirect=https://evil.example", follow_redirects=False)

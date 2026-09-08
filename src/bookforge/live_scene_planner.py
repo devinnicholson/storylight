@@ -28,6 +28,7 @@ from bookforge.domain import (
     SceneSpecV2,
     VisualLayer,
 )
+from bookforge.live_scene_grounding import LiveSceneGroundingError, prepare_grounded_wire
 from bookforge.model_client import StructuredModelClient
 from bookforge.scene_facts import SceneFactsPrivacyError, SceneFactsV2, _validate_style_privacy
 
@@ -82,9 +83,9 @@ _LEADING_ARTICLE = re.compile(r"^(?:a|an|the)\s+", re.IGNORECASE)
 _SEMANTIC_WORD = re.compile(r"[A-Za-z][A-Za-z'-]*")
 _PLACEMENT_MARGIN = 0.04
 _PLAN_CACHE_SCHEMA_VERSION = "1"
-_PLAN_CACHE_CONTRACT_REVISION = "semantic-v20-retain-bounded-action"
-LIVE_SCENE_RENDER_CONTRACT_REVISION = "subject-counts-constraints-v5-action"
-CONCISE_RENDER_CONTRACT_REVISION = "klein-concise-v1"
+_PLAN_CACHE_CONTRACT_REVISION = "semantic-v21-source-grounded-wire"
+LIVE_SCENE_RENDER_CONTRACT_REVISION = "subject-counts-constraints-v6-grounding"
+CONCISE_RENDER_CONTRACT_REVISION = "klein-concise-v2-grounding"
 
 
 AnchorValue = Annotated[float, Field(ge=0, le=1)]
@@ -2196,10 +2197,12 @@ class StructuredLiveScenePlanner:
                 else LiveSceneWirePlan
             )
             wire_plan = wire_type.model_validate(plan.model_dump())
-        if getattr(self.client, "wire_plans_are_privacy_sanitized", False):
-            sanitized_wire_plan = wire_plan
-        else:
-            sanitized_wire_plan = wire_plan.privacy_sanitized(source_text=text)
+        try:
+            sanitized_wire_plan = prepare_grounded_wire(wire_plan, source_text=text)
+        except LiveSceneGroundingError as error:
+            raise LiveScenePlannerError(
+                "Local planner selected unsupported visual facts; review the description and retry"
+            ) from error
         validated = sanitized_wire_plan.to_live_scene_plan(context_text=text)
         validate_live_scene_plan_privacy(validated, source_text=text)
         if self.cache_entries:

@@ -1,18 +1,25 @@
-import os
 from hashlib import sha256
 from pathlib import Path
 
-os.environ["BOOKFORGE_MODEL_BACKEND"] = "fake"
-os.environ["BOOKFORGE_MODEL_NAME"] = "fake"
-os.environ["BOOKFORGE_ASSET_BACKEND"] = "fake"
-os.environ["BOOKFORGE_DATA_DIR"] = "/tmp/bookforge-api-tests/data"
-os.environ["BOOKFORGE_CACHE_DIR"] = "/tmp/bookforge-api-tests/cache"
+import pytest
+from fastapi.testclient import TestClient
 
-from fastapi.testclient import TestClient  # noqa: E402
+from bookforge.api import _jetson_writable_runtime_path, app
+from bookforge.asr_backend import DisabledAsrBackend
+from bookforge.config import get_settings
+from bookforge.domain import TranscriptionResponse
 
-from bookforge.api import _jetson_writable_runtime_path, app  # noqa: E402
-from bookforge.asr_backend import DisabledAsrBackend  # noqa: E402
-from bookforge.domain import TranscriptionResponse  # noqa: E402
+
+@pytest.fixture(autouse=True)
+def fake_api_settings(monkeypatch, tmp_path):
+    for name, value in {
+        "MODEL_BACKEND": "fake", "MODEL_NAME": "fake", "ASSET_BACKEND": "fake",
+        "DATA_DIR": str(tmp_path / "data"), "CACHE_DIR": str(tmp_path / "cache"),
+    }.items():
+        monkeypatch.setenv(f"BOOKFORGE_{name}", value)
+    get_settings.cache_clear()
+    yield
+    get_settings.cache_clear()
 
 
 class FakeTranscriber:
@@ -58,7 +65,7 @@ def test_health_and_model_probe() -> None:
     assert probe.status_code == 200
     assert probe.json()["ready"] is True
     assert workbench.status_code == 200
-    assert "Make the story react as you read" in workbench.text
+    assert 'id="micButton"' in workbench.text
     assert projector.status_code == 200
     assert "Bookforge projection stage" in projector.text
 

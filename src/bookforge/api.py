@@ -177,6 +177,7 @@ def _build_live_scene_planner_client(
         max_output_tokens=settings.live_scene_planner_max_output_tokens,
         fallback=fallback,
         fallback_ready_seconds=settings.live_scene_planner_fallback_ready_seconds,
+        defer_fallback_sanitization=True,
         protocol=(
             "hybrid"
             if settings.live_scene_planner_backend in {"tensorrt_hybrid", "tensorrt_graph"}
@@ -234,6 +235,10 @@ async def lifespan(app: FastAPI):
             session_id=payload.session_id,
             planning_scope=settings.live_scene_planner_scope,
         )
+        if pack is not None and (
+            (pack.compiler_model == "bounded-description-v1") != payload.reviewed_description
+        ):
+            return None
         if pack is not None and not _completed_pack_matches_planner_mode(
             pack,
             planner_mode=settings.live_scene_planner,
@@ -749,7 +754,9 @@ async def prepare_live_scene_planner(
         raise HTTPException(status_code=403, detail="Live-scene planning is local-only")
     registry: LiveSceneJobRegistry = request.app.state.live_scenes
     planner = getattr(registry.provider, "planner", None)
-    if planner is None or not callable(getattr(planner, "plan", None)):
+    if not payload.reviewed_description and (
+        planner is None or not callable(getattr(planner, "plan", None))
+    ):
         raise HTTPException(
             status_code=409,
             detail="BOOKFORGE_LIVE_SCENE_PLANNER is not configured as model",
@@ -757,11 +764,16 @@ async def prepare_live_scene_planner(
     if payload.session_id is not None:
         await registry.set_session_planner_active(payload.session_id, True)
     try:
-        result = await planner.plan(
-            text=payload.text,
-            visual_style=payload.visual_style,
-            seed=payload.seed,
-        )
+        if payload.reviewed_description:
+            from bookforge.bounded_description import plan_bounded_description
+
+            result = plan_bounded_description(payload.text, payload.visual_style, payload.seed)
+        else:
+            result = await planner.plan(
+                text=payload.text,
+                visual_style=payload.visual_style,
+                seed=payload.seed,
+            )
     except RuntimeError as error:
         raise HTTPException(status_code=503, detail=str(error)) from error
     finally:

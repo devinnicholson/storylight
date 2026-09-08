@@ -129,6 +129,12 @@ class SceneSettingFact(FrozenStrictModel):
         _require_unique(values, "setting attributes")
         return values
 
+    @model_validator(mode="after")
+    def validate_unspecified(self) -> SceneSettingFact:
+        if self.label == "unspecified" and self.attributes:
+            raise ValueError("an unspecified setting cannot have attributes")
+        return self
+
 
 class SceneSubjectFact(FrozenStrictModel):
     ref: Reference
@@ -724,7 +730,8 @@ def validate_scene_facts_grounding(facts: SceneFactsV2, *, source_text: str) -> 
     sentences = _source_sentences(source_text)
     action_sentences = sentences + _explicit_carried_sentences(facts, source_text)
     issues: list[str] = []
-    _check_phrase(facts.setting.label, sentences, "setting.label", issues)
+    if facts.setting.label != "unspecified":
+        _check_phrase(facts.setting.label, sentences, "setting.label", issues)
     for index, attribute in enumerate(facts.setting.attributes):
         _check_near_phrase(
             attribute,
@@ -919,10 +926,9 @@ def compile_scene_facts_prompt(
     validate_scene_facts_grounding(facts, source_text=source_text)
 
     entities, _ = _grounding_entities(facts, _source_sentences(source_text))
-    clauses = [
-        f"Style: {style}",
-        f"Setting: {_descriptor(facts.setting.label, facts.setting.attributes)}",
-    ]
+    clauses = [f"Style: {style}"]
+    if facts.setting.label != "unspecified":
+        clauses.append(f"Setting: {_descriptor(facts.setting.label, facts.setting.attributes)}")
     for subject in facts.subjects:
         descriptor = _entity_descriptor(
             subject.label,
@@ -977,7 +983,7 @@ def compile_scene_facts_prompt(
         )
     if facts.negatives:
         clauses.append(
-            "Exclude: "
+            "Constraints: "
             + "; ".join(
                 _render_negative(negative, entities=entities) for negative in facts.negatives
             )

@@ -516,7 +516,7 @@ def test_renderer_prompt_preserves_each_critical_fact_exactly_once() -> None:
     assert "Subject: exactly one silver fox" in prompt
     assert "Object: exactly one golden closed lantern" in prompt
     assert "Relations: fox carries lantern" in prompt
-    assert "Exclude: no other animals" in prompt
+    assert "Constraints: no other animals" in prompt
     assert prompt.count("exactly one silver") == 1
     assert prompt.count("exactly one golden closed") == 1
     assert prompt.count("fox carries lantern") == 1

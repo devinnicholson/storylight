@@ -9,6 +9,7 @@ from bookforge.config import Settings
 from bookforge.live_scene_planner import (
     LiveSceneGraphPlan,
     LiveSceneGraphWirePlan,
+    LiveScenePlannerError,
     StructuredLiveScenePlanner,
 )
 from bookforge.model_client import FakeModelClient, ModelUnavailableError
@@ -189,12 +190,10 @@ def test_refused_graph_runs_one_accepted_fallback_and_counts_both_requests():
         )
         try:
             planner = StructuredLiveScenePlanner(client, timeout_seconds=5)
-            result = await planner.plan(text=SOURCE, visual_style="watercolor", seed=0)
-            expected = tensor_slot_wire_plan(ACCEPTED, source_text=SOURCE).to_live_scene_plan(
-                context_text=SOURCE
-            )
-            assert result.plan.model_dump() == expected.model_dump()
-            assert result.metrics.output_tokens == 60
+            # The accepted fallback drops the source's counts, colors, and
+            # spatial target. It must not reach the renderer after graph refusal.
+            with pytest.raises(LiveScenePlannerError, match="unsupported visual facts"):
+                await planner.plan(text=SOURCE, visual_style="watercolor", seed=0)
             assert len(calls) == 2
             assert calls[1]["messages"][0]["content"] == TENSORRT_SLOT_SYSTEM_PROMPT
         finally:

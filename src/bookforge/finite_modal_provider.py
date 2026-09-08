@@ -1866,6 +1866,7 @@ class FiniteModalLiveSceneProvider:
     async def _should_generate_preview(self, request: LiveSceneCreateRequest) -> bool:
         if (
             not self.enable_preview
+            or request.reviewed_description
             or self.planning_scope == "scene"
             or not isinstance(self.provider, WarmModalSceneProvider)
             or self.planner is None
@@ -1942,7 +1943,7 @@ class FiniteModalLiveSceneProvider:
         draft: StoryPack,
         prepare_renderer: bool = True,
     ) -> _ResolvedLiveScenePlan:
-        if self.planning_scope == "scene":
+        if self.planning_scope == "scene" or request.reviewed_description:
             resolved = await self._resolve_plan(
                 request, job_id=job_id, seed=seed, draft=draft
             )
@@ -2055,7 +2056,7 @@ class FiniteModalLiveSceneProvider:
         seed: int,
         draft: StoryPack,
     ) -> _ResolvedLiveScenePlan:
-        if self.planner is None:
+        if self.planner is None and not request.reviewed_description:
             cloud_safe_pack = build_live_scene_story_pack(
                 request,
                 job_id=job_id,
@@ -2077,11 +2078,16 @@ class FiniteModalLiveSceneProvider:
             )
 
         try:
-            result = await self.planner.plan(
-                text=request.text,
-                visual_style=request.visual_style,
-                seed=seed,
-            )
+            if request.reviewed_description:
+                from bookforge.bounded_description import plan_bounded_description
+
+                result = plan_bounded_description(request.text, request.visual_style, seed)
+            else:
+                result = await self.planner.plan(
+                    text=request.text,
+                    visual_style=request.visual_style,
+                    seed=seed,
+                )
             expected_subject_count = 1
             if self.planning_scope == "scene":
                 if not isinstance(result.plan, LiveSceneGraphPlan):
@@ -2121,6 +2127,11 @@ class FiniteModalLiveSceneProvider:
             ):
                 raise LiveScenePlannerError("scene renderer prompt exceeds the request limit")
         except LiveScenePlannerError as error:
+            if request.reviewed_description:
+                raise LiveSceneProviderUnavailableError(
+                    "Couldn't verify every scene detail. Edit the description and try again; "
+                    "no cloud image was generated."
+                ) from error
             # A generic privacy-safe prompt is useful for deterministic fixtures,
             # but it is not a faithful substitute for a requested live scene. In
             # model-planner mode, stop before the paid renderer rather than turn a
@@ -2149,7 +2160,10 @@ class FiniteModalLiveSceneProvider:
         return _ResolvedLiveScenePlan(
             pack=pack,
             planning_ms=result.wall_ms,
-            status=LiveScenePlanningStatus.MODEL,
+            status=(
+                LiveScenePlanningStatus.DETERMINISTIC
+                if request.reviewed_description else LiveScenePlanningStatus.MODEL
+            ),
             provenance=LiveSceneModelProvenance(
                 role="scene_plan",
                 model=result.metrics.model,

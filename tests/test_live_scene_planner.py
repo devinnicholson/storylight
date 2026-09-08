@@ -4,6 +4,7 @@ from pathlib import Path
 import pytest
 
 from bookforge.domain import ModelMetrics
+from bookforge.live_scene_grounding import prepare_grounded_wire
 from bookforge.live_scene_planner import (
     LiveSceneCompactWirePlan,
     LiveScenePlacedLayerPlan,
@@ -472,6 +473,27 @@ def test_privacy_rewrite_never_deletes_a_negation(negation: str) -> None:
         )
 
 
+def _grounded_wire(prompt: str) -> LiveSceneWirePlan:
+    # Model fixtures preserve the requested facts; unrelated cloudscape fixtures
+    # above remain useful for the direct privacy/render-format tests.
+    if "whale" in prompt:
+        subject, action, supporting = "whale", "carries a lantern through a library", "lantern"
+    elif "silent book" in prompt:
+        subject, action, supporting = (
+            "child",
+            "opens a silent book",
+            "origami birds lighting the sky",
+        )
+    else:
+        subject, action = "child", "opens a quiet book"
+        supporting = "paper birds rising"
+    return LiveSceneWirePlan(
+        background_prompt="neutral background",
+        focus=LiveSceneWireFocus(kind="character", subject=subject, action=action),
+        magic=LiveSceneWireMagic(kind="effect", prompt=supporting),
+    )
+
+
 class _ModelStub:
     def __init__(self, *, delay_seconds: float = 0, failure: Exception | None = None) -> None:
         self.delay_seconds = delay_seconds
@@ -492,7 +514,7 @@ class _ModelStub:
                 input_tokens=24,
                 output_tokens=5,
             )
-        plan = _wire_plan()
+        plan = _grounded_wire(prompt)
         if output_type is LiveSceneCompactWirePlan:
             result = LiveSceneCompactWirePlan.model_validate(
                 {
@@ -536,9 +558,9 @@ def test_structured_planner_uses_live_schema_and_records_model_revision() -> Non
     )
 
     source = "A child opens a silent book and origami birds light the sky."
-    assert result.plan == _wire_plan().privacy_sanitized(source_text=source).to_live_scene_plan(
-        context_text=source
-    )
+    assert result.plan == prepare_grounded_wire(
+        _grounded_wire(source), source_text=source
+    ).to_live_scene_plan(context_text=source)
     assert result.metrics.model == "gemma3:1b"
     assert result.model_revision == "sha256:gemma-fixture"
     assert result.wall_ms >= 0
@@ -567,7 +589,10 @@ def test_structured_planner_can_use_opt_in_short_key_contract() -> None:
     assert stub.calls[0]["output_type"] is LiveSceneCompactWirePlan
     assert "f=[kind,subject,action]" in str(stub.calls[0]["prompt"])
     assert result.plan.focus.prompt == (
-        _wire_plan()
+        prepare_grounded_wire(
+            _grounded_wire("A child opens a quiet book while paper birds rise."),
+            source_text="A child opens a quiet book while paper birds rise.",
+        )
         .to_live_scene_plan(context_text="A child opens a quiet book while paper birds rise.")
         .focus.prompt
     )
@@ -675,7 +700,7 @@ def test_structured_planner_cache_is_bounded_by_passage_and_reuses_new_styles() 
 def test_private_persistent_plan_cache_survives_restart_without_storing_source(
     tmp_path: Path,
 ) -> None:
-    text = "A child opens a quiet book while paper birds rise above a floating school."
+    text = "A child opens a quiet book while paper birds rise."
     cache_dir = tmp_path / "private-plans"
     first_stub = _ModelStub()
     first_planner = StructuredLiveScenePlanner(
@@ -758,7 +783,7 @@ def test_planner_coalesces_inflight_requests_and_survives_waiter_cancel() -> Non
 
 
 def test_persistent_planner_cache_tracks_client_instructions(tmp_path: Path) -> None:
-    text = "A child opens a quiet book while paper birds rise above a floating school."
+    text = "A child opens a quiet book while paper birds rise."
     cached = []
     for identity in ("instruction-a", "instruction-a", "instruction-b"):
         stub = _ModelStub()
@@ -789,3 +814,137 @@ def test_structured_planner_turns_timeout_and_model_failure_into_recoverable_err
         asyncio.run(timeout_planner.plan(text="A book opens.", visual_style="paper art", seed=1))
     with pytest.raises(LiveScenePlannerError, match="bad structured output"):
         asyncio.run(broken_planner.plan(text="A book opens.", visual_style="paper art", seed=1))
+
+
+def test_ungrounded_model_output_is_rejected_before_cache_or_scene_conversion(tmp_path):
+    class InventingModel(_ModelStub):
+        async def generate(self, **kwargs):
+            self.calls.append(kwargs)
+            return _wire_plan(), ModelMetrics(backend="fixture", model="local", total_ms=1)
+
+    model = InventingModel()
+    planner = StructuredLiveScenePlanner(model, timeout_seconds=1, persistent_cache_dir=tmp_path)
+    text = "A quick brown box. Don’t throw a little lazy dog."
+    with pytest.raises(LiveScenePlannerError, match="unsupported visual facts") as error:
+        asyncio.run(planner.plan(text=text, visual_style="watercolor", seed=1))
+    assert text not in str(error.value)
+    assert len(model.calls) == 1
+    assert list(tmp_path.iterdir()) == []
+    assert planner._inflight == {}
+
+
+@pytest.mark.parametrize(
+    "source,subject,action,supporting,required",
+    [
+        (
+            "The pink fox jumped over the river stream.",
+            "pink fox",
+            "jumped over the river stream",
+            "none",
+            ("pink fox", "jumped over river stream"),
+        ),
+        (
+            "A brown fox stands beside a stream. No dogs.",
+            "brown fox",
+            "stands beside a stream",
+            "no dogs",
+            ("brown fox", "stands beside stream", "Scene constraint: no dogs"),
+        ),
+    ],
+)
+def test_grounded_facts_survive_privacy_and_final_renderer_prompt(
+    source, subject, action, supporting, required
+):
+    raw = LiveSceneWirePlan(
+        background_prompt="neutral background",
+        focus=LiveSceneWireFocus(kind="character", subject=subject, action=action),
+        magic=LiveSceneWireMagic(kind="effect", prompt=supporting),
+    )
+
+    class Model(_ModelStub):
+        async def generate(self, **kwargs):
+            return raw, ModelMetrics(backend="fixture", model="local", total_ms=1)
+
+    result = asyncio.run(
+        StructuredLiveScenePlanner(Model(), timeout_seconds=1).plan(
+            text=source, visual_style="watercolor", seed=1
+        )
+    )
+    page = result.plan.to_page(source_text=source, visual_style="watercolor", seed=1)
+    for phrase in required:
+        assert phrase in page.scene_spec.master_prompt
+
+
+def test_deferred_tensorrt_fallback_reaches_grounding_before_any_lossy_sanitizer(monkeypatch):
+    import httpx
+
+    import bookforge.live_scene_planner as planner_module
+    from bookforge.tensorrt_slot_client import TensorRTSlotModelClient
+
+    source = "A brown fox stands beside a stream. No dogs."
+    raw = LiveSceneWirePlan(
+        background_prompt="neutral background",
+        focus=LiveSceneWireFocus(
+            kind="character", subject="brown fox", action="stands beside a stream"
+        ),
+        magic=LiveSceneWireMagic(kind="effect", prompt="no dogs"),
+    )
+    seen = []
+
+    def inspect_raw(wire, *, source_text):
+        seen.append(wire.model_dump())
+        return prepare_grounded_wire(wire, source_text=source_text)
+
+    monkeypatch.setattr(planner_module, "prepare_grounded_wire", inspect_raw)
+
+    async def exercise():
+        class Fallback(_ModelStub):
+            async def generate(self, **kwargs):
+                self.calls.append(kwargs)
+                return self.output, ModelMetrics(backend="fallback", model="fixture", total_ms=1)
+
+        fallback = Fallback()
+
+        def unavailable(request):
+            raise httpx.ConnectError("offline fixture", request=request)
+
+        client = TensorRTSlotModelClient(
+            base_url="http://127.0.0.1:11435",
+            model="fixture",
+            timeout_seconds=1,
+            fallback=fallback,
+            defer_fallback_sanitization=True,
+        )
+        await client.client.aclose()
+        client.client = httpx.AsyncClient(
+            base_url=client.base_url, transport=httpx.MockTransport(unavailable)
+        )
+        try:
+            for bad_background in (
+                None,
+                "golden retriever in a flower field",
+                "https://private.example/secret",
+            ):
+                fallback.output = (
+                    raw
+                    if bad_background is None
+                    else raw.model_copy(update={"background_prompt": bad_background})
+                )
+                planner = StructuredLiveScenePlanner(client, timeout_seconds=1)
+                if bad_background is not None:
+                    with pytest.raises(LiveScenePlannerError, match="unsupported visual facts"):
+                        await planner.plan(text=source, visual_style="watercolor", seed=1)
+                else:
+                    result = await planner.plan(text=source, visual_style="watercolor", seed=1)
+                    prompt = result.plan.to_page(
+                        source_text=source, visual_style="watercolor", seed=1
+                    ).scene_spec.master_prompt
+                    assert "stands beside stream" in prompt
+                    assert "Scene constraint: no dogs" in prompt
+            assert len(fallback.calls) == 3
+        finally:
+            await client.client.aclose()
+
+    asyncio.run(exercise())
+    assert len(seen) == 3
+    assert all(item["focus"]["action"] == "stands beside a stream" for item in seen)

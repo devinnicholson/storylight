@@ -199,6 +199,7 @@ class LiveSceneCreateRequest(FrozenStrictModel):
     visual_style: VisualStyle = "luminous watercolor paper theater"
     seed: Annotated[int, Field(ge=0, le=2**32 - 1)] | None = None
     session_id: SessionId | None = None
+    reviewed_description: bool = False
 
 
 class LiveScenePrewarmRequest(FrozenStrictModel):
@@ -231,6 +232,7 @@ class LiveScenePlannerPrepareRequest(FrozenStrictModel):
     visual_style: VisualStyle = "luminous watercolor paper theater"
     seed: Annotated[int, Field(ge=0, le=2**32 - 1)] = 0
     session_id: SessionId | None = None
+    reviewed_description: bool = False
 
 
 class LiveScenePlannerPrepareResponse(FrozenStrictModel):
@@ -1608,7 +1610,11 @@ def _cached_live_scene_metrics(
     compiler = pack.compiler_model
     if "fallback" in compiler.casefold():
         planning_status = LiveScenePlanningStatus.FALLBACK
-    elif "deterministic" in compiler.casefold() or "fixture" in compiler.casefold():
+    elif (
+        compiler == "bounded-description-v1"
+        or "deterministic" in compiler.casefold()
+        or "fixture" in compiler.casefold()
+    ):
         planning_status = LiveScenePlanningStatus.DETERMINISTIC
     else:
         planning_status = LiveScenePlanningStatus.MODEL

@@ -14,6 +14,7 @@ function harness() {
     rendererReadiness: {}, rendererReadinessDetail: {},
   };
   const context = {
+    voiceMode: false,
     elements, readerSessionId: "synthetic-reader", rendererPrewarming: false,
     rendererWarmUntil: 0, rendererWarmExpiryTimer: null, preparedPlanKey: null,
     Date: {now: () => now},

@@ -185,7 +185,7 @@ async function voiceToScene() {
   await c.startSpeaking();
   assert.equal(c.partialTimer, null);
   assert.deepEqual(requests, ["/v1/runtime:status"]);
-  assert.equal(elements.micButtonText.textContent, "Finish & generate");
+  assert.equal(elements.micButtonText.textContent, "Finish recording");
   const recorder = c.mediaRecorder;
   recorder.handlers.dataavailable({data: new Blob(["a".repeat(1200)])});
   c.stopSpeaking();
@@ -196,17 +196,31 @@ async function voiceToScene() {
   assert.equal(requests.filter((url) => url === "/v1/audio:transcribe").length, 1);
   assert.equal(events.filter((event) => event === "track-stop").length, 1);
   finishAsr({ok: true, json: async () => ({text: "  A blue whale above a forest.  "})});
-  await new Promise(setImmediate);
+  await final;
   assert.equal(elements.story.value, "A blue whale above a forest.");
   assert.equal(elements.projectorFrame.src, previousPreview);
+  assert.equal(submitted.length, 0);
+  assert.equal(c.finalizing, false);
+  assert.equal(elements.story.disabled, false);
+  assert.equal(elements.compileButton.disabled, false);
+  assert.equal(elements.compileButton.textContent, "Generate scene");
+  assert.match(elements.interim.textContent, /Review or edit/);
+  assert.deepEqual(requests, ["/v1/runtime:status", "/v1/audio:transcribe"]);
+  elements.story.value = " ";
+  await c.compileStory();
+  assert.equal(submitted.length, 0);
+  elements.story.value = "A golden whale above a forest.";
+  const generation = c.compileStory();
+  await new Promise(setImmediate);
   assert.equal(submitted.length, 1);
   assert.equal(submitted[0].text, elements.story.value);
   assert.equal(submitted[0].visual_style, "rich watercolor");
+  assert.equal(submitted[0].reviewed_description, true);
   await c.compileStory();
   await c.startSpeaking();
   assert.equal(submitted.length, 1);
   finishGeneration({status: 400, json: async () => ({detail: "Description rejected"})});
-  await final;
+  await generation;
   assert.equal(elements.story.disabled, false);
   assert.equal(elements.compileButton.disabled, false);
   assert.equal(c.generationSubmitting, false);
@@ -272,6 +286,9 @@ async function voiceToScene() {
 
   const empty = harness();
   empty.context.voiceMode = true;
+  empty.context.ensureProjectionPreview();
+  const retainedImage = empty.elements.projectorFrame.src;
+  const retainedDescription = empty.elements.story.value;
   empty.context.respond = async () => ({ok: true, json: async () => ({asr: {ready: true}, text: "  "})});
   empty.context.compileStory = () => { throw new Error("Empty speech must not generate"); };
   await empty.context.startSpeaking();
@@ -282,7 +299,9 @@ async function voiceToScene() {
   assert.match(empty.elements.interim.textContent, /No speech was recognized/);
   assert.equal(empty.context.finalizing, false);
   assert.equal(empty.elements.micButton.disabled, false);
+  assert.equal(empty.elements.projectorFrame.src, retainedImage);
+  assert.equal(empty.elements.story.value, retainedDescription);
 }
 
-(async () => { await lifecycle(); await voiceToScene(); })().then(() => console.log("Workbench microphone: read-aloud lifecycle and single-transcription voice generation/retry passed."))
+(async () => { await lifecycle(); await voiceToScene(); })().then(() => console.log("Workbench microphone: read-aloud lifecycle, transcript review and explicit generation/retry passed."))
   .catch((error) => { console.error(error); process.exitCode = 1; });

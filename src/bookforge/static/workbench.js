@@ -242,6 +242,7 @@ async function prepareEdgePlan(text) {
         text,
         visual_style: elements.style.value.trim() || "luminous paper theater",
         session_id: readerSessionId,
+        ...(voiceMode ? {reviewed_description: true} : {}),
       }),
     });
     const planner = await response.json().catch(() => ({}));
@@ -304,6 +305,7 @@ async function prewarmRenderer() {
         text,
         visual_style: visualStyle,
         session_id: readerSessionId,
+        ...(voiceMode ? {reviewed_description: true} : {}),
       }),
     ]);
     const renderer = rendererResult.status === "fulfilled" ? rendererResult.value : null;
@@ -357,7 +359,7 @@ function setSceneReady(ready) {
   elements.projectionPreview.classList.toggle("hidden", !ready);
   if (ready && !listening && !starting && !finalizing) {
     elements.interim.textContent = voiceMode
-      ? "Describe a scene, then finish to generate it. You can also edit the transcript and generate again."
+      ? "Describe a scene, review the transcript, then press Generate scene."
       : "Press Start reading and read the page aloud.";
   }
 }
@@ -482,10 +484,10 @@ async function startSpeaking() {
     listening = true;
     elements.micButton.disabled = false;
     elements.micButton.classList.add("listening");
-    elements.micButtonText.textContent = voiceMode ? "Finish & generate" : "Stop reading";
+    elements.micButtonText.textContent = voiceMode ? "Finish recording" : "Stop reading";
     elements.compileButton.disabled = true;
     elements.interim.textContent = voiceMode
-      ? "Listening locally. Describe what you want to see, then press Finish & generate."
+      ? "Listening locally. Describe what you want to see, then press Finish recording to review it."
       : "Listening locally—read the exact page text above.";
     if (!voiceMode) {
       partialTimer = window.setInterval(() => {
@@ -623,7 +625,6 @@ async function transcribeRecording() {
   const mimeType = mediaRecorder?.mimeType || "audio/webm";
   const recording = new Blob(audioChunks, {type: mimeType});
   const generation = readerGeneration;
-  let generate = false;
   try {
     await partialInFlight;
     if (recording.size < 1000) throw new Error("Recording was too short. Try speaking for a little longer.");
@@ -634,8 +635,8 @@ async function transcribeRecording() {
       elements.story.value = text;
       delete elements.compileButton.dataset.visualVariation;
       invalidatePreparation();
-      elements.interim.textContent = "Description transcribed. Generating your scene…";
-      generate = true;
+      elements.compileButton.textContent = "Generate scene";
+      elements.interim.textContent = "Review or edit your description, then press Generate scene. No scene has been submitted yet.";
     } else {
       await publishReaderTranscript(payload.text, true, generation);
       elements.interim.textContent = `Finished in ${(payload.total_ms / 1000).toFixed(1)} s. Whisper heard: ${payload.text}`;
@@ -648,7 +649,6 @@ async function transcribeRecording() {
     partialInFlight = Promise.resolve();
     resetMicControls();
   }
-  if (generate) await compileStory();
 }
 
 function liveRevision(snapshot) {
@@ -730,7 +730,9 @@ function renderPlanningPrivacy(metrics) {
   const localGemma = planningStatus === "model"
     && /gemma/i.test(scenePlan?.model || "")
     && /^ollama(?:-|$)/i.test(scenePlan?.revision || "");
-  if (localGemma) {
+  if (scenePlan?.model === "bounded-description-v1") {
+    elements.planningPrivacy.textContent = "Reviewed scene description · Local rules verified the visual facts; the renderer received only visual direction.";
+  } else if (localGemma) {
     const source = metrics?.planning_cache_hit ? "Cached local Gemma plan" : "Local Gemma plan";
     elements.planningPrivacy.textContent = `${source} · Gemma planned this scene locally; the renderer received only visual direction.`;
   } else if (planningStatus === "model") {
@@ -873,7 +875,8 @@ function finishLiveJob(snapshot) {
     return;
   }
   elements.compileButton.dataset.visualVariation = "true";
-  elements.compileButton.textContent = "Generate a new visual variation";
+  elements.compileButton.textContent = pendingSubmission
+    ? "Check generation status" : "Generate a new visual variation";
   elements.interim.textContent = snapshot.stage === "motion_ready"
     ? (snapshot.metrics?.scene_cache_hit
       ? "The exact moving scene was restored locally. No Gemma or cloud renderer call was needed."
@@ -1216,6 +1219,7 @@ async function compileStory() {
       text,
       visual_style: elements.style.value.trim() || "luminous paper theater",
       session_id: readerSessionId,
+      ...(voiceMode ? {reviewed_description: true} : {}),
       ...(variationSeed === null ? {} : {seed: variationSeed}),
     },
   };
@@ -1404,7 +1408,8 @@ if (voiceMode) {
   elements.story.value = "";
   elements.style.value = "rich luminous watercolor storybook illustration, layered depth, detailed natural scenery, full-bleed 16:9";
   elements.micButtonText.textContent = "Describe scene";
-  elements.interim.textContent = "Describe what you want to see. Finish to generate, or type a description below.";
+  elements.compileButton.textContent = "Generate scene";
+  elements.interim.textContent = "Describe what you want to see. Finish recording, review the description, then press Generate scene.";
   elements.story.placeholder = "Your spoken description appears here. Edit it to refine or retry the scene.";
   updateMicAvailability();
 }

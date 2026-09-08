@@ -1,8 +1,10 @@
 # Voice to a new scene
 
-Open [the voice interface](http://127.0.0.1:18767/workbench?voice=1&session=voice-demo). Press **Describe scene**, speak a short description, then **Finish & generate**. The Mac transcribes once and submits the recognized text automatically. You can edit that text and generate again without recording another clip.
+Open [the voice interface](http://127.0.0.1:18767/workbench?voice=1&session=voice-demo). Press **Describe scene**, speak a short description, then **Finish recording**. Review and correct the transcript, then press **Generate scene**. Finishing a recording never starts image generation. You can edit the text without recording another clip.
 
-The Mac captures and transcribes audio locally. A loopback-only gateway sends scene requests through SSH to the Jetson's existing API. Its local Gemma planner creates the visual direction, and its configured managed GCP image route creates the artwork. The Jetson kiosk follows the same `voice-demo` session directly on port 8080. Raw audio never crosses the SSH tunnel or reaches GCP. This is separate from the fixed-passage reading mode.
+The Mac captures and transcribes audio locally. A loopback-only gateway sends scene requests through SSH to the Jetson's existing API. For reviewed voice descriptions, the Jetson compiles supported short sentences into typed visual facts using local rules. Its configured managed GCP image route creates the artwork. The Jetson kiosk follows the same `voice-demo` session directly on port 8080. Raw audio never crosses the SSH tunnel or reaches GCP. This is separate from the fixed-passage reading mode.
+
+Use one or two sentences with explicit subjects and actions, such as “A quick brown fox jumps over a lazy dog.” Counts, colors, action targets, spatial relationships, and supported negative constraints remain attached to their subjects. Ambiguous or unsupported descriptions stop before renderer preparation or image generation. They never trigger an automatic model fallback. This bounded parser is not general story understanding or a Gemma accuracy improvement; other story-generation paths still use the local model.
 
 The prior scene stays visible until a new animated draft is available. Verified artwork then replaces the draft. Recording stops immediately when Finish is pressed. Transcription and submission have timeouts; overlapping submissions are blocked. If a submission response is lost, the interface checks the existing session rather than automatically submitting another billable request. An unresolved result offers **Check generation status**. Explicitly rejected descriptions can be edited and retried.
 
@@ -35,8 +37,18 @@ The address above was verified September 7; check Tailscale if it changes. The g
 
 ## Measured check
 
+The [voice fidelity repair evidence](../benchmarks/voice-fidelity-2026-09-07/README.md) records the current deployed path. Five fixed descriptions passed through the voice gateway and Jetson preparation endpoint with **22–66 ms** of local planning; three unsupported descriptions refused. The corrected fox-and-dog image reached `master_ready` in **3.778 seconds**, including **3.656 seconds** in the existing managed image provider. Local planning took **39.9 ms**. The projected artwork was visually checked: one brown fox jumping over one resting dog. These are engineering smoke measurements, not a general latency or accuracy guarantee.
+
+The API identifies this path as `bounded-description-v1` with deterministic provenance. Finishing a recording makes no image request; Generate submits `reviewed_description: true`. Completed-scene reuse checks both the planning mode and updated render contract, so a previously accepted incorrect image cannot silently replace a new reviewed generation. Historical artwork remains available.
+
+The Jetson service imports the installed package under `/opt/bookforge/.venv/lib/python3.12/site-packages/bookforge`, not its older `/opt/bookforge/src` tree. The deployment receipt retains before/after hashes and the backup location. Changes were import-tested on the Jetson, installed into that actual package, and activated with the restricted `bookforge-admin restart-api` helper.
+
+### Earlier automatic-generation check
+
 The [retained smoke result](../benchmarks/voice-to-scene-2026-09-07.json) used “The pink fox jumped over the river stream.” A synthetic WebM recording transcribed exactly through local Whisper in **0.299 seconds**. That recognized description was submitted through the browser, generating a new watercolor image of a pink fox jumping across a stream. The new image was visually inspected, and the Jetson kiosk was verified on the matching completed job.
 
 Generation reached `master_ready` in **3.476 seconds**, including a **3.390-second** managed image call. This used a previously prepared local plan; preparing that plan initially took **10.028 seconds**. These separate measurements are not an uncached end-to-end latency guarantee. The image cost estimate was **$0.034**, not an invoice. The depth sidecar is a local projection gradient, not estimated scene geometry. The underlying renderer is the existing managed Vertex image model, not the experimental native Klein worker.
 
-Automated tests cover one recording producing one transcription and one submission, empty speech, capture cleanup, request timeouts, stale session results, lost-response reconciliation, gateway routing and streamed response cleanup. The smoke check used synthetic speech and browser text submission; it does not substitute for a human microphone rehearsal on the new localhost origin. Allow microphone access when prompted.
+Automated tests cover one recording producing one transcription and no submission until Generate is pressed, empty speech, capture cleanup, request timeouts, stale session results, lost-response reconciliation, gateway routing and streamed response cleanup. The smoke check used synthetic speech and browser text submission; it does not substitute for a human microphone rehearsal on the new localhost origin. Allow microphone access when prompted.
+
+The [matched local speech comparison](../benchmarks/local-asr-2026-09-07/README.md) tested base.en and small.en on twelve synthetic clips. Both preserved their meanings; small.en corrected numeral formatting but added about 0.31 seconds to warm recognition. Base.en remains the demo default. These clips do not establish accuracy on the user's microphone, and the original inaccurate recording was discarded.

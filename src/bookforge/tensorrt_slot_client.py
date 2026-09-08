@@ -685,6 +685,7 @@ class TensorRTSlotModelClient(StructuredModelClient):
         max_output_tokens: int = 64,
         fallback: StructuredModelClient | None = None,
         fallback_ready_seconds: float = 5,
+        defer_fallback_sanitization: bool = False,
         protocol: Literal["slots", "hybrid"] = "slots",
         scene_facts_enabled: bool = False,
         planning_scope: Literal["focal", "scene"] = "focal",
@@ -716,6 +717,7 @@ class TensorRTSlotModelClient(StructuredModelClient):
                     "messages": _slot_messages("", protocol=protocol),
                     "max_tokens": max_output_tokens,
                     "postprocessor": f"slot-privacy-v4-{protocol}-relations",
+                    "defer_fallback_sanitization": defer_fallback_sanitization,
                 },
                 sort_keys=True,
                 separators=(",", ":"),
@@ -742,6 +744,7 @@ class TensorRTSlotModelClient(StructuredModelClient):
             ).hexdigest()
         self.fallback = fallback
         self.fallback_ready_seconds = fallback_ready_seconds
+        self.defer_fallback_sanitization = defer_fallback_sanitization
         self.client = httpx.AsyncClient(
             base_url=self.base_url,
             timeout=timeout_seconds,
@@ -780,7 +783,11 @@ class TensorRTSlotModelClient(StructuredModelClient):
                     source_text = _source_text_from_plan_prompt(prompt)
                     fallback_wire_plan = LiveSceneWirePlan.model_validate(
                         fallback_output.model_dump()
-                    ).privacy_sanitized(source_text=source_text)
+                    )
+                    if not self.defer_fallback_sanitization:
+                        fallback_wire_plan = fallback_wire_plan.privacy_sanitized(
+                            source_text=source_text
+                        )
                     fallback_output = output_type.model_validate(
                         fallback_wire_plan.model_dump()
                     )
