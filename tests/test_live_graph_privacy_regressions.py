@@ -65,6 +65,29 @@ def test_role_actions_and_prepositions_are_not_personal_names(source):
     assert not proper_name_candidates(source)
 
 
+def test_asr_breed_capitalization_keeps_explicit_names_private():
+    source = "The white golden retriever and the Merle Aussie are playing in the field."
+    assert not proper_name_candidates(source)
+    cases = (
+        ("A dog named the Merle Aussie runs.", "aussie"),
+        ("A dog called the Golden Retriever runs.", "retriever"),
+        ("The teacher is named the Border Collie.", "collie"),
+        ("A dog known as the Merle Aussie runs.", "merle"),
+        ("A dog known  as the Merle Aussie runs.", "aussie"),
+        ("A dog named: the Merle Aussie runs.", "merle"),
+        ('A dog goes by "the Merle Aussie".', "aussie"),
+        ("The Merle Aussie named Alice is playing in the field.", "alice"),
+    )
+    for source, name in cases:
+        assert (name,) in proper_name_candidates(source)
+        facts = SceneFactsV2(
+            setting=SceneSettingFact(label="unspecified"),
+            subjects=(SceneSubjectFact(ref="a", label=name),),
+        )
+        with pytest.raises(SceneFactsPrivacyError, match="proper-name"):
+            facts.to_renderer_prompt(source_text=source)
+
+
 @pytest.mark.parametrize("payload", ["password hunter2", "credential abracadabra"])
 def test_adapter_and_wire_compiler_reject_sensitive_noun_payloads(payload):
     from bookforge.live_scene_facts import adapt_live_scene_facts

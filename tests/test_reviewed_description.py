@@ -10,6 +10,7 @@ from fastapi.testclient import TestClient
 from PIL import Image
 
 from bookforge.api import app
+from bookforge.bounded_description import REVISION
 from bookforge.config import Settings
 from bookforge.finite_modal_provider import (
     FAST_MODEL,
@@ -102,7 +103,7 @@ def test_reviewed_api_renders_once_without_planner_and_records_deterministic_pro
     assert result["complete"] and result["stage"] != "failed", result
     assert len(state.renderer.calls) == 1
     assert result["metrics"]["planning_status"] == "deterministic"
-    assert result["metrics"]["models"][0]["model"] == "bounded-description-v1"
+    assert result["metrics"]["models"][0]["model"] == REVISION
     prompt = state.renderer.calls[0].prompt.lower()
     assert all(word in prompt for word in ("brown", "fox", "dog", "lazy"))
     assert "over" in prompt
@@ -166,12 +167,15 @@ def test_completed_old_mode_and_model_cache_cannot_shadow_reviewed_mode(api_clie
 
     monkeypatch.setattr(app.state.story_store, "find_live_scene", old_completed)
     state.adapter.planner = ForbiddenPlanner()
-    second = create(state.client)
-    assert second["stage"] != "failed", second
-    assert len(state.renderer.calls) == 2
-    assert second["metrics"]["scene_cache_hit"] is False
-    assert second["metrics"]["models"][0]["model"] == "bounded-description-v1"
+    assert REVISION != "bounded-description-v1"
+    for calls, compiler in enumerate(("gemma-old-cached-plan", "bounded-description-v1"), 2):
+        stale = pack.model_copy(update={"compiler_model": compiler})
+        regenerated = create(state.client)
+        assert regenerated["stage"] != "failed", regenerated
+        assert len(state.renderer.calls) == calls
+        assert regenerated["metrics"]["scene_cache_hit"] is False
+        assert regenerated["metrics"]["models"][0]["model"] == REVISION
     stale = pack
     normal_mode = create(state.client, reviewed=False)
     assert normal_mode["stage"] == "failed"  # ForbiddenPlanner proves cache was not reused.
-    assert len(state.renderer.calls) == 2
+    assert len(state.renderer.calls) == 3

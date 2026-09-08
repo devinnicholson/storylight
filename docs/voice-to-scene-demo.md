@@ -6,6 +6,8 @@ The Mac captures and transcribes audio locally. A loopback-only gateway sends sc
 
 Use one or two sentences with explicit subjects and actions, such as “A quick brown fox jumps over a lazy dog.” Counts, colors, action targets, spatial relationships, and supported negative constraints remain attached to their subjects. Ambiguous or unsupported descriptions stop before renderer preparation or image generation. They never trigger an automatic model fallback. This bounded parser is not general story understanding or a Gemma accuracy improvement; other story-generation paths still use the local model.
 
+Two subjects can share an action and location: “The white golden retriever and the Merle Aussie are playing in the field.” The compiler preserves compound breeds and the shared location. The current bound is two subject-action clauses total, including clauses expanded from coordinated subjects.
+
 The prior scene stays visible until a new animated draft is available. Verified artwork then replaces the draft. Recording stops immediately when Finish is pressed. Transcription and submission have timeouts; overlapping submissions are blocked. If a submission response is lost, the interface checks the existing session rather than automatically submitting another billable request. An unresolved result offers **Check generation status**. Explicitly rejected descriptions can be edited and retried.
 
 ## Running setup
@@ -39,7 +41,9 @@ The address above was verified September 7; check Tailscale if it changes. The g
 
 The [voice fidelity repair evidence](../benchmarks/voice-fidelity-2026-09-07/README.md) records the current deployed path. Five fixed descriptions passed through the voice gateway and Jetson preparation endpoint with **22–66 ms** of local planning; three unsupported descriptions refused. The corrected fox-and-dog image reached `master_ready` in **3.778 seconds**, including **3.656 seconds** in the existing managed image provider. Local planning took **39.9 ms**. The projected artwork was visually checked: one brown fox jumping over one resting dog. These are engineering smoke measurements, not a general latency or accuracy guarantee.
 
-The API identifies this path as `bounded-description-v1` with deterministic provenance. Finishing a recording makes no image request; Generate submits `reviewed_description: true`. Completed-scene reuse checks both the planning mode and updated render contract, so a previously accepted incorrect image cannot silently replace a new reviewed generation. Historical artwork remains available.
+The API now identifies this path as `bounded-description-v2` with deterministic provenance. The [coordinated-description repair](../benchmarks/voice-coordination-2026-09-07/README.md) records the exact previously rejected two-dog transcript generating in **4.349 seconds**, with **67.6 ms** of local planning. Its detailed watercolor artwork was visually checked in the live projector iframe.
+
+Finishing a recording makes no image request; Generate submits `reviewed_description: true`. Completed-scene reuse checks the planning mode, reviewed compiler revision, and render contract, so older interpretations cannot silently replace a new reviewed generation. Historical artwork remains available.
 
 The Jetson service imports the installed package under `/opt/bookforge/.venv/lib/python3.12/site-packages/bookforge`, not its older `/opt/bookforge/src` tree. The deployment receipt retains before/after hashes and the backup location. Changes were import-tested on the Jetson, installed into that actual package, and activated with the restricted `bookforge-admin restart-api` helper.
 

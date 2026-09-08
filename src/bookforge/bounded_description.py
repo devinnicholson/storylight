@@ -12,7 +12,7 @@ from time import perf_counter
 
 from bookforge.domain import ModelMetrics
 from bookforge.live_scene_facts import _Clause, _Noun, _noun, _Refuse
-from bookforge.live_scene_grounding import _entity
+from bookforge.live_scene_grounding import _MODIFIERS, _entity
 from bookforge.live_scene_planner import (
     LiveSceneGraphWirePlan,
     LiveScenePlannerError,
@@ -32,7 +32,7 @@ from bookforge.scene_facts import (
 )
 from bookforge.semantic_text import normalize_semantic_phrase
 
-REVISION = "bounded-description-v1"
+REVISION = "bounded-description-v2"
 _RELATIONS = {
     "over": "above",
     "above": "above",
@@ -42,8 +42,13 @@ _RELATIONS = {
     "inside": "inside",
     "on": "on",
     "below": "below",
+    "in": "inside",
 }
 _VERBS = (
+    "play",
+    "plays",
+    "played",
+    "playing",
     "jump",
     "jumps",
     "jumped",
@@ -82,9 +87,21 @@ _RELATION = re.compile(r"\b(" + "|".join(_RELATIONS) + r")\b")
 
 
 def _visual_noun(text: str) -> _Noun:
-    parsed = _entity(text)
+    # "Golden retriever" is a breed label, not a second coat color in
+    # "white golden retriever". Preserve the literal compound; do not infer
+    # any breed or expand regional names such as Aussie.
+    breed = re.search(r"\bgolden (retrievers?)$", text)
+    parsed = _entity(text[: breed.start()] + breed[1] if breed else text)
     # Reuse the strict noun grammar for boundaries, pronouns, and phrase limits.
     noun = _noun(parsed.label)
+    if breed:
+        noun = replace(noun, label="golden " + noun.label)
+    if noun.label in _MODIFIERS | {"merle"} or re.search(
+        r"\b(?:in|on|under|over|above|below|beside|behind|inside|near|toward|towards|"
+        r"across|between|with|without|from|to|of|by)\b",
+        noun.label,
+    ):
+        raise ValueError("unsupported noun attachment")
     colors = tuple(value for value in parsed.modifiers if value in COLOR_WORDS)
     if len(colors) > 1:
         raise ValueError("ambiguous color")
@@ -100,11 +117,11 @@ def _visual_noun(text: str) -> _Noun:
     )
 
 
-def _parse(text: str) -> _Clause:
+def _parse(text: str, *, subject_text: str | None = None) -> _Clause:
     match = _PREDICATE.fullmatch(text)
     if match is None:
         raise ValueError("unsupported clause")
-    subject = _visual_noun(match["subject"])
+    subject = _visual_noun(subject_text if subject_text is not None else match["subject"])
     tail = match["tail"] or ""
     relation = _RELATION.search(tail)
     obj = anchor = None
@@ -117,7 +134,7 @@ def _parse(text: str) -> _Clause:
     if obj is not None and anchor is not None:
         raise ValueError("ambiguous spatial attachment")
     verb = normalize_semantic_phrase(match["verb"])[0]
-    if verb in {"stand", "sit", "sleep"} and obj is not None:
+    if verb in {"stand", "sit", "sleep", "play"} and obj is not None:
         raise ValueError("unsupported action target")
     if verb in {"carry", "hold", "chase", "chas"} and obj is None:
         raise ValueError("missing action target")
@@ -141,16 +158,26 @@ def _facts(text: str) -> SceneFactsV2:
     absent = []
     clauses = []
     predicates = {}
-    for part in parts:
+    groups = {}
+    for group, part in enumerate(parts):
         if part.startswith("no "):
             absent.append(_visual_noun(part[3:]))
         else:
-            clause = _parse(part)
-            clauses.append(clause)
             match = _PREDICATE.fullmatch(part)
-            predicates[clause] = " ".join(
-                value for value in (match["verb"], match["tail"]) if value
-            )
+            if match is None:
+                raise ValueError("unsupported clause")
+            subjects = re.split(r"\s+and\s+", match["subject"])
+            if len(subjects) > 2:
+                raise ValueError("unsupported coordination")
+            for subject in subjects:
+                clause = _parse(part, subject_text=subject)
+                if clause in groups:
+                    raise ValueError("repeated clause")
+                clauses.append(clause)
+                groups[clause] = group
+                predicates[clause] = " ".join(
+                    value for value in (match["verb"], match["tail"]) if value
+                )
     if not 1 <= len(clauses) <= 2 or len(absent) > 1 or not any(not c.negative for c in clauses):
         raise ValueError("unsupported clause count")
 
@@ -186,13 +213,15 @@ def _facts(text: str) -> SceneFactsV2:
         nouns[identity] = noun
         return identity
 
+    shared_targets = set()
     for clause in clauses:
         if clause.negative:
             continue
         subject_keys.add(add(clause.subject))
         for noun in (clause.object, clause.anchor):
-            if noun:
+            if noun and (groups[clause], noun) not in shared_targets:
                 add(noun)
+                shared_targets.add((groups[clause], noun))
     refs = {identity: f"n{index}" for index, identity in enumerate(nouns)}
     actions = {identity: [] for identity in subject_keys}
     relationships, negatives = [], []

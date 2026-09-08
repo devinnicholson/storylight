@@ -353,6 +353,21 @@ def privacy_tokens(value: str) -> tuple[str, ...]:
 
 def proper_name_candidates(source_text: str) -> frozenset[tuple[str, ...]]:
     normalized_source = unicodedata.normalize("NFKC", source_text)
+    breed_phrases = tuple(
+        match
+        for match in re.finditer(
+            r"\b(?:a|an|the|" + "|".join(COUNT_WORDS) + r")\s+"
+            r"(?:(?:merle|" + "|".join(COLOR_WORDS) + r")\s+)*"
+            r"(?:golden retrievers?|aussies?|australian shepherds?|border collies?)\b",
+            normalized_source,
+            re.IGNORECASE,
+        )
+        if not re.search(
+            r"\b(?:named|called|known\s+as|goes\s+by)[\s:\"'‘“]*$",
+            normalized_source[: match.start()],
+            re.IGNORECASE,
+        )
+    )
     candidates: set[tuple[str, ...]] = set()
     for match in _NAME_AFTER_ROLE.finditer(normalized_source):
         tokens = privacy_tokens(match.group("name"))
@@ -429,6 +444,10 @@ def proper_name_candidates(source_text: str) -> frozenset[tuple[str, ...]]:
         if not word[0].isupper() and not uncased_script:
             continue
         if word.casefold() in _NON_NAME_CAPITALIZED or word.casefold() in COUNT_WORDS:
+            continue
+        # ASR may capitalize coat and breed terms. Explicit name markers above
+        # still count as names, even when they reuse one of these words.
+        if any(phrase.start() <= match.start() < phrase.end() for phrase in breed_phrases):
             continue
         if word.casefold() == "nothing" and re.match(
             r"\s+(?:glows|floats|moves|happens|appears)\b",

@@ -7,6 +7,7 @@ from bookforge.scene_facts import (
     SceneFactsPrivacyError,
     SceneFactsV2,
     SceneMotionFact,
+    SceneNegativeFact,
     SceneObjectFact,
     SceneRelationshipFact,
     SceneSettingFact,
@@ -339,3 +340,83 @@ def test_rising_motion_agrees_in_number_without_borrowing_actor_or_direction(cou
         facts.model_copy(update={"motions": (
             SceneMotionFact(source="balloon", direction="falls", destination="tower"),
         )}).validate_source_grounding(source_text=source)
+
+
+def _coordinated_actors():
+    return SceneFactsV2(
+        setting=SceneSettingFact(label="unspecified"),
+        subjects=(
+            SceneSubjectFact(ref="fox", label="fox", color="red", actions=("stand beside tree",)),
+            SceneSubjectFact(ref="owl", label="owl", color="blue", actions=("stand beside tree",)),
+        ),
+        objects=(SceneObjectFact(ref="tree", label="tree"),),
+        relationships=(
+            SceneRelationshipFact(source="fox", relation="beside", target="tree"),
+            SceneRelationshipFact(source="owl", relation="beside", target="tree"),
+        ),
+    )
+
+
+def test_explicit_coordination_preserves_each_actor_and_shared_target():
+    facts = _coordinated_actors()
+    source = "A red fox and a blue owl stand beside a tree."
+    facts.validate_source_grounding(source_text=source)
+    prompt = facts.to_renderer_prompt(source_text=source)
+    assert "red fox; action: stand beside tree" in prompt
+    assert "blue owl; action: stand beside tree" in prompt
+    assert "fox beside tree; owl beside tree" in prompt
+    for changes in (
+        {"subjects": tuple(
+            subject.model_copy(update={"color": color})
+            for subject, color in zip(facts.subjects, ("blue", "red"), strict=True)
+        )},
+        {"relationships": (SceneRelationshipFact(source="fox", relation="beside", target="owl"),)},
+    ):
+        with pytest.raises(SceneFactsGroundingError):
+            facts.model_copy(update=changes).validate_source_grounding(source_text=source)
+
+
+@pytest.mark.parametrize("source", [
+    "A red fox sleeps and a blue owl stands beside a tree.",
+    "A red fox does not stand beside a tree and a blue owl stands beside a tree.",
+    "A red fox and a blue owl do not stand beside a tree.",
+    "A red fox or a blue owl stands beside a tree.",
+    "If a red fox and a blue owl stand beside a tree, a dog sleeps.",
+])
+def test_coordination_does_not_borrow_another_actors_action_or_negation(source):
+    with pytest.raises(SceneFactsGroundingError):
+        _coordinated_actors().validate_source_grounding(source_text=source)
+
+
+def test_shared_negative_remains_negative_for_both_coordinated_actors():
+    facts = _coordinated_actors().model_copy(update={
+        "subjects": tuple(subject.model_copy(update={"actions": ()})
+                          for subject in _coordinated_actors().subjects),
+        "relationships": (),
+        "negatives": tuple(SceneNegativeFact(kind="action", target=ref, value="stand beside a tree")
+                           for ref in ("fox", "owl")),
+    })
+    facts.validate_source_grounding(
+        source_text="A red fox and a blue owl do not stand beside a tree."
+    )
+    with pytest.raises(SceneFactsGroundingError, match="negatives"):
+        facts.validate_source_grounding(
+            source_text="A red fox and a blue owl stand beside a tree."
+        )
+
+
+def test_bare_in_does_not_borrow_a_later_object_as_its_container():
+    facts = SceneFactsV2(
+        setting=SceneSettingFact(label="unspecified"),
+        subjects=(SceneSubjectFact(ref="fox", label="fox"),),
+        objects=(SceneObjectFact(ref="tree", label="tree"),),
+        relationships=(SceneRelationshipFact(source="fox", relation="inside", target="tree"),),
+    )
+    facts.validate_source_grounding(source_text="A fox is in a tree.")
+    for source in (
+        "A fox is in front of a tree.",
+        "A fox is in the shade of a tree.",
+        "A fox is in a field beside a tree.",
+    ):
+        with pytest.raises(SceneFactsGroundingError, match="relationships"):
+            facts.validate_source_grounding(source_text=source)

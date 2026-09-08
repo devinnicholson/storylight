@@ -728,7 +728,8 @@ def validate_scene_facts_grounding(facts: SceneFactsV2, *, source_text: str) -> 
 
     _validate_facts_privacy(facts, source_text=source_text)
     sentences = _source_sentences(source_text)
-    action_sentences = sentences + _explicit_carried_sentences(facts, source_text)
+    coordinated = _explicit_coordinated_sentences(facts, source_text)
+    action_sentences = sentences + _explicit_carried_sentences(facts, source_text) + coordinated
     issues: list[str] = []
     if facts.setting.label != "unspecified":
         _check_phrase(facts.setting.label, sentences, "setting.label", issues)
@@ -833,6 +834,7 @@ def validate_scene_facts_grounding(facts: SceneFactsV2, *, source_text: str) -> 
             secondary,
             action_sentences,
             entity_labels=entity_labels,
+            target_entity=entity_by_ref[relationship.target],
         ):
             issues.append(f"relationships[{index}]")
 
@@ -886,7 +888,7 @@ def validate_scene_facts_grounding(facts: SceneFactsV2, *, source_text: str) -> 
         if not _negative_grounded(
             negative,
             target_label=target_label,
-            sentences=sentences,
+            sentences=sentences + coordinated,
             entity_labels=entity_labels,
         ):
             issues.append(f"negatives[{index}]")
@@ -1029,7 +1031,7 @@ _RELATION_MARKERS: dict[SceneRelationKind, tuple[tuple[str, ...], ...]] = {
     SceneRelationKind.CONTAINS: (("contain",), ("inside",)),
     SceneRelationKind.HOLDS: (("hold",),),
     SceneRelationKind.IN_FRONT_OF: (("in", "front", "of"),),
-    SceneRelationKind.INSIDE: (("inside",), ("within",)),
+    SceneRelationKind.INSIDE: (("inside",), ("within",), ("in",)),
     SceneRelationKind.LEFT_OF: (("left", "of"),),
     SceneRelationKind.LOOKS_AT: (("look", "at"), ("watch",)),
     SceneRelationKind.NEXT_TO: (("next", "to"), ("beside",)),
@@ -1287,6 +1289,32 @@ def _asserted_clause(sentence: str) -> str:
     # A comma alone may introduce speech or trailing attribution, not a true clause.
     independent = re.search(r",\s*(?:and|but|while)\b", sentence[: report.start()], re.IGNORECASE)
     return sentence[: independent.start()] if independent else ""
+
+
+def _explicit_coordinated_sentences(
+    facts: SceneFactsV2, source_text: str
+) -> tuple[tuple[str, ...], ...]:
+    """Bind a shared predicate only after proving two complete subject phrases."""
+    result = []
+    for unit in _asserted_units(source_text.casefold()):
+        parts = unit.strip().split(" and ")
+        if len(parts) != 2:
+            continue
+        left, right = parts
+        actors = [subject for subject in facts.subjects if _passive_noun_matches(left, subject)]
+        words = right.split()
+        for boundary in range(1, len(words)):
+            noun = " ".join(words[:boundary])
+            partners = [
+                subject for subject in facts.subjects if _passive_noun_matches(noun, subject)
+            ]
+            if not any(actor.ref != partner.ref for actor in actors for partner in partners):
+                continue
+            predicate = " ".join(words[boundary:])
+            # Preserve auxiliaries and negation verbatim; neither is evidence
+            # that a negated action happened.
+            result.extend(_normalized_phrase(f"{actor} {predicate}") for actor in (left, noun))
+    return tuple(result)
 
 
 def _explicit_carried_sentences(
@@ -1562,6 +1590,7 @@ def _relationship_grounded(
     sentences: tuple[tuple[str, ...], ...],
     *,
     entity_labels: tuple[str, ...],
+    target_entity: SceneSubjectFact | SceneObjectFact,
 ) -> bool:
     for sentence in sentences:
         source_positions = _phrase_positions(sentence, source)
@@ -1577,6 +1606,10 @@ def _relationship_grounded(
                 for target_start, target_end in target_positions:
                     for marker_start, marker_end in marker_positions:
                         if _position_negated(sentence, marker_start):
+                            continue
+                        if marker == ("in",) and not _passive_noun_matches(
+                            " ".join(sentence[marker_end:target_end]), target_entity
+                        ):
                             continue
                         forward = source_end <= marker_start and marker_end <= target_start
                         reverse = target_end <= marker_start and marker_end <= source_start

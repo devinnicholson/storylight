@@ -228,6 +228,8 @@ async def lifespan(app: FastAPI):
         )
 
     async def find_completed_live_scene(payload: LiveSceneCreateRequest) -> StoryPack | None:
+        from bookforge.bounded_description import REVISION as reviewed_revision
+
         pack = await app.state.story_store.find_live_scene(
             text=payload.text,
             visual_style=payload.visual_style,
@@ -236,7 +238,8 @@ async def lifespan(app: FastAPI):
             planning_scope=settings.live_scene_planner_scope,
         )
         if pack is not None and (
-            (pack.compiler_model == "bounded-description-v1") != payload.reviewed_description
+            pack.compiler_model.startswith("bounded-description-") != payload.reviewed_description
+            or (payload.reviewed_description and pack.compiler_model != reviewed_revision)
         ):
             return None
         if pack is not None and not _completed_pack_matches_planner_mode(

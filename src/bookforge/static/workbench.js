@@ -730,7 +730,7 @@ function renderPlanningPrivacy(metrics) {
   const localGemma = planningStatus === "model"
     && /gemma/i.test(scenePlan?.model || "")
     && /^ollama(?:-|$)/i.test(scenePlan?.revision || "");
-  if (scenePlan?.model === "bounded-description-v1") {
+  if (scenePlan?.model?.startsWith("bounded-description-")) {
     elements.planningPrivacy.textContent = "Reviewed scene description · Local rules verified the visual facts; the renderer received only visual direction.";
   } else if (localGemma) {
     const source = metrics?.planning_cache_hit ? "Cached local Gemma plan" : "Local Gemma plan";

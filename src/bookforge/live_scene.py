@@ -1611,7 +1611,7 @@ def _cached_live_scene_metrics(
     if "fallback" in compiler.casefold():
         planning_status = LiveScenePlanningStatus.FALLBACK
     elif (
-        compiler == "bounded-description-v1"
+        compiler.startswith("bounded-description-")
         or "deterministic" in compiler.casefold()
         or "fixture" in compiler.casefold()
     ):

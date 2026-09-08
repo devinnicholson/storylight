@@ -87,7 +87,6 @@ def test_action_negation_and_simple_absence_are_explicit_and_grounded():
     [
         "A quick brown box. Do not throw a lazy dog.",
         "A fox jumps. It runs.",
-        "Two foxes and three ducks stand beside a red boat.",
         "If a fox jumps over a dog.",
         "A fox says jump over a dog.",
         "A fox jumps. A fox runs.",
@@ -131,3 +130,67 @@ def test_unspecified_setting_is_the_only_exception_and_cannot_add_attributes():
     ).validate_source_grounding(source_text="A fox jumps in a meadow.")
     with pytest.raises(LiveScenePlannerError):
         plan_bounded_description("A fox jumps.", "watercolor " * 20, 1)
+
+
+@pytest.mark.parametrize(
+    "text,expected_subjects,target_count",
+    [
+        (
+            "The white golden retriever and the Merle Aussie are playing in the field.",
+            [("golden retriever", "white", None), ("merle aussie", None, None)],
+            None,
+        ),
+        ("A dog and a cat play in a field.", [("dog", None, 1), ("cat", None, 1)], 1),
+        (
+            "Two brown foxes and three ducks stand beside a red boat.",
+            [("foxes", "brown", 2), ("ducks", None, 3)],
+            1,
+        ),
+    ],
+)
+@pytest.mark.parametrize(
+    "style", ["watercolor", "luminous watercolor paper theater, tactile fibers and cinematic depth"]
+)
+def test_coordinated_subjects_share_exact_predicate_and_one_target(
+    text, expected_subjects, target_count, style
+):
+    result = plan_bounded_description(text, style, 1)
+    facts = result.plan.scene_facts
+    assert [(s.label, s.color, s.count) for s in facts.subjects] == expected_subjects
+    assert len(facts.objects) == 1
+    assert facts.objects[0].count == target_count
+    assert facts.subjects[0].actions == facts.subjects[1].actions
+    assert {edge.source for edge in facts.relationships} == {s.ref for s in facts.subjects}
+    assert {edge.target for edge in facts.relationships} == {facts.objects[0].ref}
+    prompt = result.plan.to_page(
+        source_text=text, visual_style=style, seed=1
+    ).scene_spec.master_prompt
+    assert facts.subjects[0].actions[0] in prompt
+    assert prompt == facts.to_renderer_prompt(source_text=text, visual_style=style)
+
+
+def test_compound_breed_retains_explicit_color_in_single_subject_description():
+    result = plan_bounded_description("A white golden retriever plays in a field.", "watercolor", 1)
+    actor = result.plan.scene_facts.subjects[0]
+    assert (actor.label, actor.color, actor.count) == ("golden retriever", "white", 1)
+    assert actor.actions == ("plays in a field",)
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        "The dog and the dog play in the field.",
+        "A white and brown golden retriever plays in a field.",
+        "A red fox and a blue owl play in a field near a pond.",
+        "A red fox and a blue owl play in a field in a forest.",
+        "A dog and a cat and a fox play in a field.",
+        "A dog and a cat play in a field. A bird stands beside a boat.",
+        "A dog and a cat do not play in the field.",
+        "A dog and another dog play in a field.",
+        "A dog plays in a field. A cat plays in a field.",
+        "A white golden retriever and a black golden retriever play a dog beside a field.",
+    ],
+)
+def test_unsupported_coordination_or_distinct_indefinite_targets_still_refuse(text):
+    with pytest.raises(LiveScenePlannerError):
+        plan_bounded_description(text, "watercolor", 1)
