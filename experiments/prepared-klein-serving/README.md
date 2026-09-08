@@ -5,7 +5,9 @@ prepared-session renderer. It is disabled until the parent task qualifies the
 images, reviews the adapter, and authorizes a separate finite deployment. No
 production routing, cloud lifecycle, or automatic scaling is implemented here.
 
-`app.py` pins four byte-identical files from `renderer-session`: its application
+`app.py` pins four byte-identical files from the qualified r/s/t session renderer:
+the frozen reference is retained in `benchmarks/prepared-gcp-2026-09-08/t/context-t/rootfs/app`.
+Its application
 is named `session_worker.py`, alongside `runtime_worker.py`, `session_state.py`,
 and `noise.py`. The original endpoints remain unchanged in their original
 directory. The serving module exports `PACK_PROOF_SHA256`, as required by the

@@ -209,7 +209,7 @@ def test_expiry_and_invalid_prompt_do_not_render(module, monkeypatch):
 
 
 def test_pinned_composition_and_pack_constant(module, tmp_path):
-    original = HERE.parent / "renderer-session"
+    original = HERE.parents[1] / "benchmarks/prepared-gcp-2026-09-08/t/context-t/rootfs/app"
     for name, digest in module.SOURCES.items():
         data = (HERE / (name + ".py")).read_bytes()
         assert hashlib.sha256(data).hexdigest() == digest
