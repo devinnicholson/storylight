@@ -15,6 +15,7 @@ from bookforge.vertex_scene_provider import (
     REQUEST_CONTRACT_REVISION,
     VertexGeminiImageSceneProvider,
     VertexSceneAmbiguousError,
+    VertexSceneProviderError,
     _request_payload,
 )
 
@@ -71,12 +72,15 @@ def test_vertex_provider_generates_checksum_bound_master_and_local_depth(
         token_calls += 1
         return "vertex-token"
 
+    def client_factory(**kwargs):
+        assert kwargs["http2"] is False
+        assert kwargs["follow_redirects"] is False
+        return httpx.AsyncClient(transport=httpx.MockTransport(handler), **kwargs)
+
     provider = VertexGeminiImageSceneProvider(
         project_id="your-gcp-project",
         token_source=token_source,
-        client_factory=lambda **kwargs: httpx.AsyncClient(
-            transport=httpx.MockTransport(handler), **kwargs
-        ),
+        client_factory=client_factory,
     )
     request = FastSceneRequest(
         scene_id="vertex-scene",
@@ -85,7 +89,9 @@ def test_vertex_provider_generates_checksum_bound_master_and_local_depth(
     )
 
     async def exercise():
-        assert (await provider.probe())[0] is True
+        ready, detail = await provider.probe()
+        assert ready is True
+        assert "HTTP/1.1" in detail
         return await provider.generate_fast(request, output_dir=tmp_path / "vertex")
 
     bundle = asyncio.run(exercise())
@@ -116,6 +122,43 @@ def test_vertex_provider_generates_checksum_bound_master_and_local_depth(
     assert bundle.manifest["request"]["contract_revision"] == REQUEST_CONTRACT_REVISION
     assert "One silver fox" not in bundle.manifest_path.read_text()
     assert bundle.estimated_gpu_usd == pytest.approx(0.034)
+
+
+@pytest.mark.parametrize("error_type", [httpx.RemoteProtocolError, httpx.ReadTimeout])
+def test_vertex_ambiguous_transport_failure_is_never_retried(
+    tmp_path: Path, error_type: type[httpx.TransportError],
+) -> None:
+    requests: list[httpx.Request] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        requests.append(request)
+        raise error_type("connection ended after request dispatch", request=request)
+
+    async def token_source() -> str:
+        return "token"
+
+    provider = VertexGeminiImageSceneProvider(
+        project_id="your-gcp-project", session_cost_cap_usd=0.05,
+        token_source=token_source,
+        client_factory=lambda **kwargs: httpx.AsyncClient(
+            transport=httpx.MockTransport(handler), **kwargs,
+        ),
+    )
+
+    async def exercise():
+        request = FastSceneRequest(scene_id="ambiguous", prompt="A paper forest.")
+        with pytest.raises(VertexSceneAmbiguousError) as caught:
+            await provider.generate_fast(request, output_dir=tmp_path / "ambiguous")
+        assert isinstance(caught.value.__cause__, error_type)
+        assert not isinstance(caught.value, SafeProviderFallbackError)
+        assert provider._reserved_usd == pytest.approx(0.034)
+        with pytest.raises(VertexSceneProviderError, match="session estimate"):
+            await provider.generate_fast(request, output_dir=tmp_path / "blocked")
+        await provider.aclose()
+
+    asyncio.run(exercise())
+    assert [request.method for request in requests] == ["POST"]
+    assert not (tmp_path / "ambiguous").exists()
 
 
 def test_vertex_request_reinforces_sanitized_exact_counts() -> None:

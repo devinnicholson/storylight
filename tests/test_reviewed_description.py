@@ -83,12 +83,13 @@ def api_client(monkeypatch, tmp_path):
         yield state
 
 
-def create(client, *, text=TEXT, reviewed=True, seed=41, confirm=False, digest=None):
+def create(client, *, text=TEXT, reviewed=True, seed=41, confirm=False, digest=None, defer=False):
     response = client.post("/v1/live-scenes", json=dict(
         text=text, visual_style="watercolor", seed=seed,
         session_id="reviewed-test", reviewed_description=reviewed,
         confirm_visual_facts=confirm,
         visual_fact_digest=digest,
+        display_when_complete=defer, defer_presentation=defer,
     ))
     assert response.status_code == 202, response.text
     job = response.json()["job_id"]
@@ -127,6 +128,29 @@ def test_reviewed_api_renders_once_without_planner_and_records_deterministic_pro
     assert repeated["metrics"]["scene_cache_hit"] is True
     assert repeated["metrics"]["planning_status"] == "deterministic"
     assert len(state.renderer.calls) == 1
+
+
+def test_completed_voice_scene_presentation_is_explicit_and_does_not_render(api_client):
+    state = api_client
+    create(state.client)
+    previous_pack = state.client.get("/v1/story-packs/latest").json()
+    result = create(state.client, defer=True, seed=42)
+    assert result["complete"] and result["presentation_ready"] is False
+    assert state.client.get("/v1/story-packs/latest").json() == previous_pack
+    pointer = state.client.get("/v1/live-scene-sessions/reviewed-test").json()
+    endpoint = f"/v1/live-scenes/{result['job_id']}/present"
+    expected = {key: pointer[key] for key in ("server_instance_id", "session_revision")}
+    stale = state.client.post(endpoint, json={**expected, "session_revision": 9999})
+    assert stale.status_code == 409
+    response = state.client.post(endpoint, json=expected)
+    assert response.status_code == 200, response.text
+    assert response.json()["presentation_ready"] is True
+    assert response.json()["artifacts"] == result["artifacts"]
+    assert len(state.renderer.calls) == 2
+    assert state.client.get("/v1/story-packs/latest").json() == result["story_pack"]
+    assert state.client.get("/v1/live-scene-sessions/reviewed-test").json()["job"][
+        "presentation_ready"
+    ] is True
 
 
 def test_reviewed_rejection_precedes_renderer_preview_prewarm_and_model_cache(

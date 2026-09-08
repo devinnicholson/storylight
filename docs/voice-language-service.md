@@ -2,8 +2,8 @@
 
 The voice API can use a CPU-only spaCy service over an owner-only Unix socket.
 It predicts syntax and proposes typed scene facts; original-source grounding and
-privacy checks still apply. Learned facts and omissions require explicit review
-and a matching confirmation digest before any image request. The bounded compiler
+privacy checks still apply. Image requests require a matching fact digest;
+the automatic voice flow supplies it after local validation. The bounded compiler
 remains available when the socket setting is absent.
 
 The Jetson environment is `/opt/bookforge/.venv-voice-language`, separate from the

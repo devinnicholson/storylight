@@ -78,6 +78,7 @@ from bookforge.live_scene import (
     LiveScenePlannerPrepareRequest,
     LiveScenePlannerPrepareResponse,
     LiveScenePlannerWarmupResponse,
+    LiveScenePresentationRequest,
     LiveScenePrewarmRequest,
     LiveScenePrewarmResponse,
     LiveSceneRegistryClosedError,
@@ -725,6 +726,22 @@ async def create_live_scene(
         return job
     except LiveSceneCapacityError as error:
         raise HTTPException(status_code=429, detail=str(error)) from error
+    except LiveSceneRegistryClosedError as error:
+        raise HTTPException(status_code=503, detail=str(error)) from error
+
+
+@app.post("/v1/live-scenes/{job_id}/present", response_model=LiveSceneJob)
+async def present_live_scene(
+    job_id: LiveSceneJobId, payload: LiveScenePresentationRequest, request: Request,
+) -> LiveSceneJob:
+    if not _is_local_connection(request):
+        raise HTTPException(status_code=403, detail="Scene presentation is local-only")
+    try:
+        return await request.app.state.live_scenes.present(job_id, **payload.model_dump())
+    except LiveSceneNotFoundError as error:
+        raise HTTPException(status_code=404, detail=str(error)) from error
+    except LiveSceneConflictError as error:
+        raise HTTPException(status_code=409, detail=str(error)) from error
     except LiveSceneRegistryClosedError as error:
         raise HTTPException(status_code=503, detail=str(error)) from error
 

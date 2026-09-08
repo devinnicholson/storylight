@@ -96,6 +96,8 @@ def _route_allowed(method: str, path: str) -> bool:
             or path == "/v1/live-scene-provider/warm-status"
         )
     if method == "POST":
+        if re.fullmatch(r"/v1/live-scenes/scene_[a-f0-9]{24}/present", path):
+            return True
         if re.fullmatch(r"/v1/prepared-projections/prepared_[a-f0-9]{24}/stage", path):
             return True
         return path in {

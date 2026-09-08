@@ -96,5 +96,13 @@ function harness() {
   assert.equal(app.state.page, app.pages[1]);
   assert.equal(app.visible(), "after");
   assert.equal(app.clears(), 1);
+  const previousPack = app.state.pack;
+  const replacement = {pages: [{page_id: "replacement", source_text: "replacement"}], assets: []};
+  const replacing = app.context.activatePage(0, null, replacement);
+  assert.equal(app.state.pack, previousPack);
+  app.loads[3].reject(new Error("new scene depth failed"));
+  await assert.rejects(replacing, /depth failed/);
+  assert.equal(app.state.pack, previousPack);
+  assert.equal(app.visible(), "after");
   console.log("projector navigation transaction passed");
 })().catch((error) => { console.error(error); process.exitCode = 1; });

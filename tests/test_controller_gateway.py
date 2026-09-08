@@ -156,6 +156,10 @@ def test_gateway_configuration_requires_loopback_backend_and_long_token() -> Non
 
 
 def test_gateway_exposes_only_the_bounded_anticipatory_control_paths() -> None:
+    scene = "/v1/live-scenes/scene_" + "a" * 24
+    assert _route_allowed("POST", scene + "/present") is True
+    assert _route_allowed("POST", scene + "/render-again") is False
+    assert _route_allowed("POST", "/v1/live-scenes/invalid/present") is False
     prepared = "/v1/prepared-projections/prepared_" + "a" * 24
     assert _route_allowed("POST", "/v1/prepared-projections") is True
     assert _route_allowed("POST", "/v1/prepared-projections:activate") is True

@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <meta name="theme-color" content="#07110f" />
     <title>Bookforge Live Scene Foundry</title>
-    <link rel="stylesheet" href="/workbench-assets/workbench.css?v=0.2.0-voice5" />
+    <link rel="stylesheet" href="/workbench-assets/workbench.css?v=0.2.0-voice6" />
   </head>
   <body>
     <main class="shell">
@@ -15,7 +15,7 @@
           <h1 class="generation-heading">Turn one line of story into a living world.</h1>
           <h1 class="demo-only">The book that listens back.</h1>
           <h1 class="voice-only">Describe a scene. Watch it appear.</h1>
-          <p class="voice-only lede">Speak your idea, finish recording, and review the description. Press Generate scene when you’re ready to create it for the projector.</p>
+          <p class="voice-only lede">Describe your scene. Generation starts as you speak, and the finished artwork replaces the current scene when it is ready.</p>
           <p class="demo-only lede">The artwork is prepared. Press Start reading and watch the page respond to your voice.</p>
           <p class="lede generation-heading">
             Type a passage and watch the actual projector improve in place: an immediate animated
@@ -68,7 +68,7 @@
                 Press “Start reading” and read the page above. The scene follows your words.
                 Use the projection view for a second screen.
               </p>
-              <p class="voice-only">Press Describe scene, then Finish recording. Review or edit the transcript before pressing Generate scene. Your previous scene stays visible.</p>
+              <p class="voice-only">Press Describe scene and speak. Bookforge starts generating automatically while you describe it. Press Finish recording when you’re done; your previous scene stays visible until the new artwork is complete.</p>
             </div>
             <div class="live-actions">
               <a
@@ -120,10 +120,11 @@
           <button class="button primary generate-button" id="compileButton">
             Generate moving scene
           </button>
-          <p class="generate-note">
+          <p class="generate-note read-only">
             The first animated draft should appear almost immediately. Richer stages replace it without
             refreshing the projector, so you can see where every second goes.
           </p>
+          <p class="generate-note voice-only">Voice starts generation automatically. You can also edit the description and use the button to try again. Unfinished artwork stays off the projector.</p>
           <section class="next-page" aria-labelledby="nextPageHeading">
             <p class="section-label">Next-page rehearsal · GKE + Nemotron</p>
             <h3 id="nextPageHeading">Have the next world waiting.</h3>
@@ -273,6 +274,6 @@
       </footer>
     </main>
     <script src="/workbench-assets/anticipatory-workbench.js?v=1"></script>
-    <script src="/workbench-assets/workbench.js?v=0.2.0-voice5"></script>
+    <script src="/workbench-assets/workbench.js?v=0.2.0-voice6"></script>
   </body>
 </html>

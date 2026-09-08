@@ -89,6 +89,9 @@ class LocalTranscriber:
                     language="en",
                     verbose=None,
                     condition_on_previous_text=False,
+                    # Do not let a confident decoded token override the model's
+                    # no-speech decision on a silent recording window.
+                    logprob_threshold=None,
                 )
             except Exception as error:
                 raise TranscriptionError(f"Local transcription failed: {error}") from error

@@ -204,6 +204,19 @@ class LiveSceneCreateRequest(FrozenStrictModel):
     reviewed_description: bool = False
     confirm_visual_facts: bool = False
     visual_fact_digest: Annotated[str, StringConstraints(pattern=r"^[a-f0-9]{64}$")] | None = None
+    display_when_complete: bool = False
+    defer_presentation: bool = False
+
+    @model_validator(mode="after")
+    def validate_presentation(self) -> LiveSceneCreateRequest:
+        if self.defer_presentation and (not self.display_when_complete or self.session_id is None):
+            raise ValueError("Deferred presentation requires a session and complete-only display")
+        return self
+
+
+class LiveScenePresentationRequest(FrozenStrictModel):
+    server_instance_id: LiveSceneServerInstanceId
+    session_revision: Annotated[int, Field(ge=1)]
 
 
 class LiveScenePrewarmRequest(FrozenStrictModel):
@@ -357,6 +370,7 @@ class LiveSceneJob(FrozenStrictModel):
     revision: Annotated[int, Field(ge=1)]
     progress: Annotated[float, Field(ge=0, le=1)]
     complete: bool = False
+    presentation_ready: bool = False
     provider: Annotated[
         str,
         StringConstraints(strip_whitespace=True, min_length=1, max_length=100),
@@ -376,6 +390,11 @@ class LiveSceneJob(FrozenStrictModel):
             raise ValueError("job timestamps must be timezone-aware")
         if self.updated_at < self.created_at:
             raise ValueError("updated_at cannot precede created_at")
+        if self.presentation_ready and (
+            not self.request.defer_presentation or not self.complete
+            or self.stage not in {LiveSceneStage.MASTER_READY, LiveSceneStage.MOTION_READY}
+        ):
+            raise ValueError("Presentation requires a completed deferred scene")
 
         artifact_ids = [artifact.artifact_id for artifact in self.artifacts]
         if len(artifact_ids) != len(set(artifact_ids)):
@@ -808,6 +827,37 @@ class LiveSceneJobRegistry:
             task.add_done_callback(lambda _: self._tasks.pop(job_id, None))
             return snapshot
 
+    async def present(
+        self, job_id: str, *, server_instance_id: str, session_revision: int,
+    ) -> LiveSceneJob:
+        """Publish an already-complete current scene; never start or retry rendering."""
+        async with self._lock:
+            if self._closed:
+                raise LiveSceneRegistryClosedError("Live-scene job registry is closed")
+            record = self._jobs.get(job_id)
+            if record is None:
+                raise LiveSceneNotFoundError("Live scene was not found")
+            current = record.snapshot
+            pointer = self._session_jobs.get(current.request.session_id)
+            if (server_instance_id != self.server_instance_id
+                    or pointer != (session_revision, job_id)
+                    or not current.request.defer_presentation or not current.complete
+                    or current.stage not in {
+                        LiveSceneStage.MASTER_READY, LiveSceneStage.MOTION_READY,
+                    }):
+                raise LiveSceneConflictError("Scene is not complete or is no longer current")
+            if current.presentation_ready:
+                return current
+            snapshot = LiveSceneJob.model_validate(current.model_copy(update={
+                "presentation_ready": True, "revision": current.revision + 1,
+                "updated_at": datetime.now(UTC),
+            }).model_dump())
+            # Keep persistence and presentation under the same session fence: a
+            # newer submission cannot make this pack obsolete between the two.
+            await self._persist_completed_pack(snapshot.story_pack)
+            self._publish_locked(record, snapshot)
+            return snapshot
+
     async def activate_prepared_pack(
         self,
         *,
@@ -887,7 +937,8 @@ class LiveSceneJobRegistry:
                 created_at=now,
                 updated_at=now,
             )
-            await self._persist_completed_pack(pack)
+            if not request.defer_presentation:
+                await self._persist_completed_pack(pack)
             self._jobs[job_id] = _JobRecord(snapshot=snapshot, started_monotonic=started)
             self._session_revision_sequence += 1
             self._session_jobs[request.session_id] = (self._session_revision_sequence, job_id)
@@ -1052,7 +1103,8 @@ class LiveSceneJobRegistry:
             emitted = False
             async for update in self.provider.generate(request, job_id=job_id):
                 emitted = True
-                if update.complete and update.story_pack is not None:
+                if (update.complete and update.story_pack is not None
+                        and not request.defer_presentation):
                     await self._persist_completed_pack(update.story_pack)
                 snapshot = await self._transition(
                     job_id,
@@ -1068,7 +1120,8 @@ class LiveSceneJobRegistry:
             current = await self.get(job_id)
             if emitted and current.stage is LiveSceneStage.MASTER_READY:
                 assert current.story_pack is not None
-                await self._persist_completed_pack(current.story_pack)
+                if not current.request.defer_presentation:
+                    await self._persist_completed_pack(current.story_pack)
                 await self._complete_master(job_id)
                 return
             if not emitted or not current.terminal:
@@ -1079,7 +1132,8 @@ class LiveSceneJobRegistry:
             current = await self.get(job_id)
             if current.stage is LiveSceneStage.MASTER_READY:
                 assert current.story_pack is not None
-                await self._persist_completed_pack(current.story_pack)
+                if not current.request.defer_presentation:
+                    await self._persist_completed_pack(current.story_pack)
                 await self._complete_master(
                     job_id,
                     warning=LiveSceneError(

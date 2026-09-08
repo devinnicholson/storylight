@@ -1,16 +1,18 @@
 # Voice to a new scene
 
-Open [the voice interface](http://127.0.0.1:18767/workbench?voice=1&session=voice-demo). Press **Describe scene**, speak a short description, then **Finish recording**. Review and correct the transcript, then press **Generate scene**. Finishing a recording never starts image generation. You can edit the text without recording another clip.
+Open [the voice interface](http://127.0.0.1:18767/workbench?voice=1&session=voice-demo), press **Describe scene**, and speak. Generation starts automatically from a usable partial transcript while you continue talking. The finished artwork appears once it matches the latest stable description. **Finish recording** stops capture and immediately processes the final transcript; it is not a separate generation approval. You can also edit the text and use **Generate scene** to retry.
 
 The Mac captures and transcribes audio locally. A loopback-only gateway sends scene requests through SSH to the Jetson's existing API. The bounded description compiler remains available. An optional isolated CPU language service uses spaCy syntax predictions to prepare additional scene drafts, checked against the original description. Its configured managed GCP image route creates the artwork. The Jetson kiosk follows the same `voice-demo` session directly on port 8080. Raw audio never crosses the SSH tunnel or reaches GCP. This is separate from the fixed-passage reading mode.
 
 Use one or two sentences with explicit subjects and actions, such as “A quick brown fox jumps over a lazy dog.” Counts, colors, action targets, spatial relationships, and supported negative constraints remain attached to their subjects. Unresolved descriptions stop before renderer preparation or image generation. The configured language service can offer a draft for additional wording; it cannot admit rendering itself. Other story-generation paths still use the local model.
 
-For a learned draft, the interface shows extracted facts and local omissions before asking for confirmation. Names or places excluded by the privacy policy stay in local review metadata; the user must accept their omission or edit the description. They are not replaced with invented scenery. Confirmation carries a digest of the original text, style, parser revision, facts and omissions. The API and renderer adapter independently recheck it; changed facts require another review. Completed-scene reuse also checks the confirmed digest and stored renderer prompt. Learned drafts report model provenance. With the service configured, bounded facts also receive a syntax audit and report that model dependency; without it, the bounded path remains deterministic.
+Every candidate still receives local fact and privacy checks. The automatic voice flow passes the resulting digest with the matching request; the API and renderer adapter independently recheck it. There is no extra confirmation click. Names or places excluded by the privacy policy remain local and are disclosed in the interface; they are not replaced with invented scenery. Completed-scene reuse also checks the digest and stored renderer prompt. Learned drafts report model provenance. With the service configured, bounded facts also receive a syntax audit and report that model dependency; without it, the bounded path remains deterministic.
 
 Two subjects can share an action and location: “The white golden retriever and the Merle Aussie are playing in the field.” The compiler preserves compound breeds and the shared location. The current bound is two subject-action clauses total, including clauses expanded from coordinated subjects.
 
-The prior scene stays visible until a new animated draft is available. Verified artwork then replaces the draft. Recording stops immediately when Finish is pressed. Transcription and submission have timeouts; overlapping submissions are blocked. If a submission response is lost, the interface checks the existing session rather than automatically submitting another billable request. An unresolved result offers **Check generation status**. Explicitly rejected descriptions can be edited and retried.
+The prior scene stays visible while generation runs. Voice jobs withhold drafts and incomplete artwork from both the workbench and the physical projector. Completed artwork and depth are presented only when the job still matches the latest description. A changed transcript supersedes a speculative result; one image job runs at a time and intermediate queued descriptions are replaced by the newest one. Already-started image calls may still incur cost even when superseded.
+
+Transcription and submission have timeouts. If a submission response is lost, the interface checks the existing session rather than automatically submitting another billable request. An unresolved result offers **Check generation status**. Rejected descriptions can be edited and retried.
 
 ## Running setup
 
@@ -63,11 +65,24 @@ does not enable it or change the active planner.
 
 ## Measured check
 
+The [automatic browser check](../benchmarks/automatic-voice-2026-09-07/README.md)
+used actual MediaRecorder audio, local Whisper, Jetson planning, and the managed
+GCP renderer. Image submission began **521 ms** after the first usable transcript;
+the new image and depth finished in **4.177 seconds**. It appeared while recording
+continued, without Finish or Generate. These are one synthetic-speech smoke run's
+measurements, not a human speech accuracy or latency guarantee.
+
 The [voice fidelity repair evidence](../benchmarks/voice-fidelity-2026-09-07/README.md) records the earlier deployed bounded path. Five fixed descriptions passed through the voice gateway and Jetson preparation endpoint with **22–66 ms** of local planning; three unsupported descriptions refused. The corrected fox-and-dog image reached `master_ready` in **3.778 seconds**, including **3.656 seconds** in the existing managed image provider. Local planning took **39.9 ms**. The projected artwork was visually checked: one brown fox jumping over one resting dog. These are engineering smoke measurements, not a general latency or accuracy guarantee.
 
 The API now identifies this path as `bounded-description-v2` with deterministic provenance. The [coordinated-description repair](../benchmarks/voice-coordination-2026-09-07/README.md) records the exact previously rejected two-dog transcript generating in **4.349 seconds**, with **67.6 ms** of local planning. Its detailed watercolor artwork was visually checked in the live projector iframe.
 
-Finishing a recording makes no image request; Generate submits `reviewed_description: true`. Completed-scene reuse checks the planning mode, reviewed compiler revision, and render contract, so older interpretations cannot silently replace a new reviewed generation. Historical artwork remains available.
+Those earlier checks used the manual review flow. The automatic voice flow now starts image work from partial or final transcripts and defers presentation until the complete result matches the current description. Completed-scene reuse still checks the planning mode, reviewed compiler revision, and render contract. Historical artwork remains available.
+
+The [silence screen](../benchmarks/local-asr-2026-09-07/silence/README.md) explains
+the local Whisper setting that prevents confident tokens from overriding its
+no-speech decision. It removed a false suffix on long silent WAV/WebM recordings
+and preserved 19 tested speech controls. It also disables low-confidence
+temperature fallback; the screen does not prove general microphone accuracy.
 
 The Jetson service imports the installed package under `/opt/bookforge/.venv/lib/python3.12/site-packages/bookforge`, not its older `/opt/bookforge/src` tree. The deployment receipt retains before/after hashes and the backup location. Changes were import-tested on the Jetson, installed into that actual package, and activated with the restricted `bookforge-admin restart-api` helper.
 
@@ -77,8 +92,8 @@ The [retained smoke result](../benchmarks/voice-to-scene-2026-09-07.json) used �
 
 Generation reached `master_ready` in **3.476 seconds**, including a **3.390-second** managed image call. This used a previously prepared local plan; preparing that plan initially took **10.028 seconds**. These separate measurements are not an uncached end-to-end latency guarantee. The image cost estimate was **$0.034**, not an invoice. The depth sidecar is a local projection gradient, not estimated scene geometry. The underlying renderer is the existing managed Vertex image model, not the experimental native Klein worker.
 
-Automated tests cover one recording producing one transcription and no submission until Generate is pressed, empty speech, capture cleanup, request timeouts, stale session results, lost-response reconciliation, gateway routing and streamed response cleanup. The smoke check used synthetic speech and browser text submission; it does not substitute for a human microphone rehearsal on the new localhost origin. Allow microphone access when prompted.
+The earlier smoke check used synthetic speech and browser text submission; it does not substitute for a human microphone rehearsal on the localhost origin. Allow microphone access when prompted.
 
 The later [chasing-phrase speech comparison](../benchmarks/local-asr-2026-09-07/chasing/README.md) motivates activating small.en. Across 36 fixed synthetic clips, repeated in base/small/small/base order, small retained the cat/chasing/mouse tokens in **17/18** relevant clips versus base's **11/18**. Warm medians were approximately **0.539 seconds** and **0.256 seconds**. Small was worse on some clean clips, and both models still misheard breed names. The earlier [clean-speech screen](../benchmarks/local-asr-2026-09-07/README.md) remains historical evidence. Neither screen proves accuracy on the user's microphone; the original inaccurate recording was discarded.
 
-The [20-description language screen](../benchmarks/voice-language-2026-09-07/README.md) produced drafts for 15 descriptions when combining the bounded and learned paths. This is **draft coverage, not 75% accuracy** or proof of general English understanding. Every learned draft still requires fact review, and no image quality claim follows from that benchmark.
+The [20-description language screen](../benchmarks/voice-language-2026-09-07/README.md) produced drafts for 15 descriptions when combining the bounded and learned paths. This is **draft coverage, not 75% accuracy** or proof of general English understanding. The automatic voice flow retains fact validation; no image quality claim follows from that benchmark.

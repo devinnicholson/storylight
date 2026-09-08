@@ -8,6 +8,7 @@ const PACK_SOURCE = query.get("pack") || "fixture";
 const PRESENTATION_MODE = query.get("debug") !== "1";
 const OFFLINE_REPLAY = query.get("offline") === "1";
 const LIVE_MODE = query.get("live") === "1";
+const COMPLETE_ONLY = query.get("complete_only") === "1";
 const READER_MODE = query.get("reader") !== "0";
 const SCENE_CROSSFADE_MS = 320;
 const SCENE_RETIRE_GRACE_MS = 360;
@@ -874,10 +875,16 @@ async function renderPackLayers(pack, page, renderToken = null, timings = null) 
   const motionAsset = readyAssets.find(
     (asset) => asset.role === "motion" && asset.kind === "video_loop",
   );
+  const masterAsset = readyAssets.find((asset) => asset.role === "master");
+  const depthAsset = readyAssets.find((asset) => asset.role === "depth");
+  if (renderToken?.displayWhenComplete && (
+    !masterAsset?.local_uri?.startsWith("/v1/assets/")
+    || !depthAsset?.local_uri?.startsWith("/v1/assets/")
+  )) throw new Error("The completed scene's image and depth are not available yet");
   const previewAsset = readyAssets.find(
     (asset) => asset.role === "preview" && asset.kind === "image",
   );
-  if (previewAsset?.local_uri?.startsWith("/v1/assets/")) {
+  if (!renderToken?.displayWhenComplete && previewAsset?.local_uri?.startsWith("/v1/assets/")) {
     const version = createSceneVersion();
     const scene = document.createElement("div");
     scene.className = "preview-scene";
@@ -930,8 +937,6 @@ async function renderPackLayers(pack, page, renderToken = null, timings = null) 
       setEvent("renderer.fallback", `${error.message}; using provider artwork`);
     }
   }
-  const masterAsset = readyAssets.find((asset) => asset.role === "master");
-  const depthAsset = readyAssets.find((asset) => asset.role === "depth");
   if (
     masterAsset?.local_uri?.startsWith("/v1/assets/")
     && depthAsset?.local_uri?.startsWith("/v1/assets/")
@@ -998,6 +1003,10 @@ async function renderPackLayers(pack, page, renderToken = null, timings = null) 
       if (!liveRenderTokenIsCurrent(renderToken)) {
         discardSceneVersion(version);
         return false;
+      }
+      if (renderToken?.displayWhenComplete) {
+        discardSceneVersion(version);
+        throw error;
       }
       setEvent("renderer.fallback", error.message);
       const masterImage = scene.querySelector(".depth-scene-fallback");
@@ -1389,10 +1398,10 @@ function updatePageControls() {
   elements.nextPage.disabled = state.pageIndex >= total - 1;
 }
 
-async function activatePage(nextIndex, renderToken = null) {
-  if (!state.pack || nextIndex < 0 || nextIndex >= state.pack.pages.length) return false;
+async function activatePage(nextIndex, renderToken = null, pack = state.pack) {
+  if (!pack || nextIndex < 0 || nextIndex >= pack.pages.length) return false;
   if (!liveRenderTokenIsCurrent(renderToken)) return false;
-  const nextPage = state.pack.pages[nextIndex];
+  const nextPage = pack.pages[nextIndex];
   const readerSessionReusable = READER_MODE && Boolean(
     state.generation !== null
     && state.readerConfiguredPageId === nextPage.page_id
@@ -1410,8 +1419,9 @@ async function activatePage(nextIndex, renderToken = null) {
     readerEnabled: READER_MODE,
     readerSessionReused: readerSessionReusable,
   };
-  const renderedMode = await renderPackLayers(state.pack, nextPage, renderToken, timings);
+  const renderedMode = await renderPackLayers(pack, nextPage, renderToken, timings);
   if (!renderedMode || !liveRenderTokenIsCurrent(renderToken)) return false;
+  state.pack = pack;
   state.pageIndex = nextIndex;
   state.page = nextPage;
   if (!readerSessionReusable) {
@@ -1620,7 +1630,7 @@ function livePageAssetFingerprint(pack, page) {
   return `${page.page_id}|${assets.join("|")}`;
 }
 
-function invalidateLiveRender({jobId, revision, serverInstanceId, sessionRevision}) {
+function invalidateLiveRender({jobId, revision, serverInstanceId, sessionRevision, displayWhenComplete = false}) {
   state.liveRenderAbortController?.abort();
   state.liveRenderAbortController = new AbortController();
   state.liveRenderEpoch += 1;
@@ -1633,6 +1643,7 @@ function invalidateLiveRender({jobId, revision, serverInstanceId, sessionRevisio
     sessionRevision,
     jobId,
     revision,
+    displayWhenComplete,
     signal: state.liveRenderAbortController.signal,
   };
 }
@@ -1643,6 +1654,15 @@ function liveModeSatisfiesStage(stage, mode) {
   if (stage === "preview_ready") return mode === "preview-composed";
   if (stage === "draft_ready") return mode === "draft-composed" || mode === "hero-composed";
   return true;
+}
+
+function liveSnapshotCanDisplay(snapshot) {
+  if (snapshot.request?.defer_presentation && snapshot.presentation_ready !== true) return false;
+  if (!COMPLETE_ONLY && !snapshot.request?.display_when_complete) return Boolean(snapshot.story_pack);
+  const roles = liveArtifactRoles(snapshot);
+  return snapshot.complete === true && Boolean(snapshot.story_pack)
+    && ["master_ready", "motion_ready"].includes(snapshot.stage)
+    && roles.includes("master") && roles.includes("depth");
 }
 
 function queueLiveSceneSnapshot(envelope) {
@@ -1697,6 +1717,7 @@ function queueLiveSceneSnapshot(envelope) {
     revision,
     serverInstanceId,
     sessionRevision,
+    displayWhenComplete: COMPLETE_ONLY || snapshot.request?.display_when_complete === true,
   });
   state.liveTransition = state.liveTransition.then(async () => {
     if (!liveRenderTokenIsCurrent(renderToken)) return;
@@ -1708,21 +1729,21 @@ function queueLiveSceneSnapshot(envelope) {
     if (revision < state.liveRevision || !liveRenderTokenIsCurrent(renderToken)) return;
     state.liveLastEnvelopeAt = Math.max(state.liveLastEnvelopeAt, Number(envelope.sentAt || 0));
     state.liveRevision = revision;
-    if (!snapshot.story_pack) {
+    if (!liveSnapshotCanDisplay(snapshot)) {
       state.liveRenderPending = false;
-      renderLiveGenerationBadge(snapshot);
+      renderLiveGenerationBadge(snapshot, {activated: !snapshot.story_pack});
       setEvent("scene.generating", `${snapshot.stage || "queued"} · revision ${revision}`);
       return;
     }
     renderLiveGenerationBadge(snapshot, {activated: false});
     const pack = assertStoryPack(snapshot.story_pack);
     const currentPageId = state.page?.page_id;
-    state.pack = pack;
     const nextIndex = Math.max(0, pack.pages.findIndex((page) => page.page_id === currentPageId));
-    elements.packLabel.textContent = `${pack.title} · live ${snapshot.stage} · r${revision}`;
     const nextPage = pack.pages[nextIndex];
     const fingerprint = livePageAssetFingerprint(pack, nextPage);
     if (state.liveAssetFingerprint === fingerprint) {
+      state.pack = pack;
+      elements.packLabel.textContent = `${pack.title} · live ${snapshot.stage} · r${revision}`;
       state.page = nextPage;
       state.liveActivationMs = 0;
       state.liveActivationBreakdown = null;
@@ -1734,8 +1755,9 @@ function queueLiveSceneSnapshot(envelope) {
       return;
     }
     const activationStartedAt = performance.now();
-    const renderedMode = await activatePage(nextIndex, renderToken);
+    const renderedMode = await activatePage(nextIndex, renderToken, pack);
     if (!renderedMode || !liveRenderTokenIsCurrent(renderToken)) return;
+    elements.packLabel.textContent = `${pack.title} · live ${snapshot.stage} · r${revision}`;
     state.liveActivationMs = performance.now() - activationStartedAt;
     state.liveRenderPending = false;
     if (!liveModeSatisfiesStage(snapshot.stage, renderedMode)) {

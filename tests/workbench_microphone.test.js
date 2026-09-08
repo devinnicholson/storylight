@@ -14,6 +14,7 @@ for (const [query, expected] of [
 }
 function harness() {
   const timers = new Map();
+  const intervals = new Map();
   const requests = [];
   const events = [];
   const element = () => ({classList: {add() {}, remove() {}, toggle() {}},
@@ -53,7 +54,8 @@ function harness() {
         createMediaStreamSource() { return {connect() {}}; }
         close() { events.push("context-close"); }
       },
-      setInterval() { return 1; }, clearInterval() {},
+      setInterval(callback, milliseconds) { const id = Symbol(); intervals.set(id, {callback, milliseconds}); return id; },
+      clearInterval(id) { intervals.delete(id); },
       setTimeout(callback, milliseconds) { const id = Symbol(); timers.set(id, {callback, milliseconds}); return id; },
       clearTimeout(id) { timers.delete(id); },
     },
@@ -69,7 +71,7 @@ function harness() {
     ["async function startAudioMeter(", "function liveRevision("],
     ["function setSceneInputsDisabled(", "function finishLiveJob("],
   ]) vm.runInContext(source.slice(source.indexOf(start), source.indexOf(end)), context);
-  return {context, elements, timers, requests, events};
+  return {context, elements, timers, intervals, requests, events};
 }
 
 async function lifecycle() {
@@ -151,266 +153,418 @@ async function lifecycle() {
   assert.equal(permission.context.stream, null);
 }
 
-async function voiceToScene() {
-  const {context: c, elements, requests, events, timers} = harness();
-  c.voiceMode = true;
-  c.sceneReady = false;
-  elements.story.value = "";
-  elements.style.value = "rich watercolor";
-  elements.compileButton.dataset = {};
-  elements.error = {classList: {add() {}, remove() {}}};
+function generationHarness() {
+  const h = harness();
+  const c = h.context;
+  const displayed = [];
   const submitted = [];
-  let finishAsr;
-  let finishGeneration;
-  let rejectPreflight = false;
-  let requiresFactReview = false;
-  let parsedAction = "floating";
-  const preflight = () => ({ok: !rejectPreflight, status: rejectPreflight ? 422 : 200,
-    json: async () => rejectPreflight
-      ? {detail: {code: "reviewed_description_unsupported", message: "Clarify the action."}}
-      : {revision: "reviewed-language-v1", requires_fact_review: requiresFactReview,
-        visual_fact_digest: "a".repeat(64),
-        local_omissions: requiresFactReview ? [{local_text: "London"}] : [],
-        visual_facts: {subjects: [{ref: "whale", label: "whale", attributes: [], actions: [parsedAction]}],
-          objects: [], relationships: [], negatives: [], setting: {label: "unspecified"}}},
-  });
+  const presented = [];
+  const checks = [];
+  let pointer = null;
   Object.assign(c, {
+    voiceMode: true, sceneReady: false,
+    voiceGeneration: {latest: null, active: null, completed: null, timer: null,
+      publishing: false, presentationInFlight: null, attempted: new Set()},
     edgePlanPreparationTimer: null, liveRequestEpoch: 0,
-    performance: {now: () => 0}, invalidatePreparation() {},
-    stopLiveJobTransport() { events.push("transport-stop"); }, renderGenerationProgress() {}, updateElapsedClock() {}, setStatus() {},
-    setGenerateButtonForStage() {}, isTerminalSnapshot: () => true,
-    acceptedLiveScenePointer: (_response, snapshot) => snapshot,
-    handleLiveSceneSessionPointer(snapshot) { c.activeLiveJobId = snapshot.job_id; },
-    fetchLiveSceneSession: async () => null,
-    respond(url, options) {
-      if (url === "/v1/runtime:status") return {ok: true, json: async () => ({asr: {ready: true}})};
-      if (url === "/v1/audio:transcribe") return new Promise((resolve) => { finishAsr = resolve; });
-      if (url === "/v1/live-scene-planner/prepare") return preflight();
-      assert.equal(url, "/v1/live-scenes");
-      submitted.push(JSON.parse(options.body));
-      return new Promise((resolve) => { finishGeneration = resolve; });
-    },
+    liveSessionRevision: 0, liveServerInstanceId: null, lastLiveRevision: -1,
+    liveElapsedTimer: null, livePollTimer: null, liveStartedAt: 0,
+    liveElapsedBaseMs: 0, liveElapsedBaseAt: 0, liveIsTerminal: false,
+    performance: {now: () => 100}, invalidatePreparation() {},
+    stopLiveJobTransport() {}, renderGenerationProgress() {}, updateElapsedClock() {}, setStatus() {},
+    setGenerateButtonForStage() {}, liveSessionStreamIsHealthy: () => true,
+    isTerminalSnapshot: (snapshot) => snapshot.complete === true || snapshot.stage === "failed",
   });
-  vm.runInContext(source.slice(source.indexOf("async function reconcileGeneration("), source.indexOf("async function loadLatestScene(")), c);
+  h.elements.story.value = "";
+  h.elements.style.value = "rich watercolor";
+  h.elements.compileButton.dataset = {};
+  h.elements.error = {classList: {add() {}, remove() {}}};
+  h.elements.generationProgress = {classList: {add() {}, remove() {}}};
+  vm.runInContext(source.slice(source.indexOf("function liveRevision("), source.indexOf("function providerLabel(")), c);
+  vm.runInContext(source.slice(source.indexOf("function finishLiveJob("), source.indexOf("async function loadLatestScene(")), c);
+  c.renderPack = (payload) => displayed.push(payload.live_snapshot.job_id);
+  const ready = (request) => {
+    const dog = request.text?.includes("dog");
+    const count = request.text?.includes("three") ? 3 : request.text?.includes("two") ? 2 : 1;
+    return {revision: "dependency-scene-draft-v1", requires_fact_review: true,
+      visual_fact_digest: "a".repeat(64), local_omissions: [],
+      visual_facts: {subjects: [{ref: "actor", label: dog ? "dog" : "cat", attributes: [],
+        actions: [dog ? "chasing ball" : "chasing mouse"]}],
+        objects: [{ref: "target", label: dog ? "ball" : "mouse", count, attributes: []}],
+        relationships: [], negatives: [], setting: {label: "unspecified"}},
+    };
+  };
+  const response = (status, payload) => ({ok: status < 400, status, json: async () => payload,
+    headers: {get: (name) => name === "X-Bookforge-Server-Instance-Id" ? "server-1" : String(pointer.session_revision)},
+  });
+  h.state = {rejectCheck: false, ready};
+  c.respond = async (url, options = {}) => {
+    if (url === "/v1/runtime:status") return response(200, {asr: {ready: true}});
+    if (url === "/v1/live-scene-planner/prepare") {
+      const request = JSON.parse(options.body);
+      assert.deepEqual(Object.keys(request).sort(), [
+        "reviewed_description", "seed", "session_id", "text", "visual_style",
+      ]); // The real prepare endpoint rejects render/presentation/confirmation fields.
+      checks.push(request);
+      return h.state.rejectCheck
+        ? response(422, {detail: {message: "Clarify the action."}})
+        : response(200, h.state.ready(request));
+    }
+    if (url === `/v1/live-scene-sessions/${encodeURIComponent(c.readerSessionId)}`) {
+      return pointer ? response(200, pointer) : response(404, {});
+    }
+    if (url === "/v1/live-scenes") {
+      const request = JSON.parse(options.body);
+      submitted.push(request);
+      pointer = {session_id: c.readerSessionId, server_instance_id: "server-1",
+        session_revision: (pointer?.session_revision || 0) + 1,
+        job: {job_id: `job-${submitted.length}`, request, revision: 1,
+          stage: "draft_ready", complete: false, presentation_ready: false, story_pack: {pages: []}}};
+      return response(202, pointer.job);
+    }
+    if (url.endsWith("/present")) {
+      presented.push({url, body: JSON.parse(options.body)});
+      assert.equal(url, `/v1/live-scenes/${pointer.job.job_id}/present`);
+      assert.deepEqual(presented.at(-1).body, {server_instance_id: "server-1", session_revision: pointer.session_revision});
+      pointer = {...pointer, job: {...pointer.job, presentation_ready: true, revision: pointer.job.revision + 1}};
+      return response(200, pointer.job);
+    }
+    throw new Error(`Unexpected request: ${url}`);
+  };
+  h.complete = () => {
+    pointer = {...pointer, job: {...pointer.job, stage: "master_ready", complete: true,
+      revision: pointer.job.revision + 1, artifacts: [{kind: "master"}, {kind: "depth"}]}};
+    c.handleLiveSceneSessionPointer(pointer);
+  };
+  h.response = response;
+  h.pointer = () => pointer;
+  h.setPointer = (value) => { pointer = value; };
+  return {...h, displayed, submitted, presented, checks};
+}
+
+const flush = () => new Promise(setImmediate);
+function fireTimer(h, milliseconds) {
+  const found = [...h.timers.entries()].find(([, timer]) => timer.milliseconds === milliseconds);
+  assert.ok(found, `Expected ${milliseconds} ms timer`);
+  h.timers.delete(found[0]);
+  found[1].callback();
+}
+
+async function voiceToScene() {
+  // A completed final transcript starts exactly one generation without a click.
+  const h = generationHarness();
+  const c = h.context;
   c.ensureProjectionPreview();
-  const previousPreview = elements.projectorFrame.src;
-  assert.match(previousPreview, /reader=0$/);
+  const previousPreview = h.elements.projectorFrame.src;
+  const original = c.respond;
+  let finishAsr;
+  c.respond = (url, options) => url === "/v1/audio:transcribe"
+    ? new Promise((resolve) => { finishAsr = resolve; }) : original(url, options);
   await c.startSpeaking();
-  assert.equal(c.partialTimer, null);
-  assert.deepEqual(requests, ["/v1/runtime:status"]);
-  assert.equal(elements.micButtonText.textContent, "Finish recording");
+  assert.equal(h.intervals.size, 1);
   const recorder = c.mediaRecorder;
   recorder.handlers.dataavailable({data: new Blob(["a".repeat(1200)])});
   c.stopSpeaking();
   const final = recorder.handlers.stop();
   c.stopSpeaking();
   await c.startSpeaking();
-  await new Promise(setImmediate);
-  assert.equal(requests.filter((url) => url === "/v1/audio:transcribe").length, 1);
-  assert.equal(events.filter((event) => event === "track-stop").length, 1);
-  finishAsr({ok: true, json: async () => ({text: "  A blue whale above a forest.  "})});
+  await flush();
+  assert.equal(h.requests.filter((url) => url === "/v1/audio:transcribe").length, 1);
+  assert.equal(h.events.filter((event) => event === "track-stop").length, 1);
+  finishAsr(h.response(200, {text: "  A cat chasing a mouse.  "}));
   await final;
-  assert.equal(elements.story.value, "A blue whale above a forest.");
-  assert.equal(elements.projectorFrame.src, previousPreview);
-  assert.equal(submitted.length, 0);
+  await flush();
   assert.equal(c.finalizing, false);
-  assert.equal(elements.story.disabled, false);
-  assert.equal(elements.compileButton.disabled, false);
-  assert.equal(elements.compileButton.textContent, "Generate scene");
-  assert.match(elements.interim.textContent, /Review or edit/);
-  assert.deepEqual(requests, ["/v1/runtime:status", "/v1/audio:transcribe"]);
-  elements.story.value = " ";
-  await c.compileStory();
-  assert.equal(submitted.length, 0);
-  elements.story.value = "A golden whale above a forest.";
-  rejectPreflight = true;
-  const previousSnapshot = {job_id: "previous-scene", stage: "master_ready"};
-  c.latestLiveSnapshot = previousSnapshot;
-  await c.compileStory();
-  assert.equal(submitted.length, 0);
-  assert.equal(c.latestLiveSnapshot, previousSnapshot);
-  assert.equal(elements.projectorFrame.src, previousPreview);
-  assert.equal(elements.voiceReview.textContent, "Clarify the action.");
-  assert.equal(elements.story.disabled, false);
-  assert.equal(c.generationSubmitting, false);
-  rejectPreflight = false;
+  assert.equal(h.elements.story.value, "A cat chasing a mouse.");
+  assert.equal(h.submitted.length, 1);
+  assert.equal(h.submitted[0].text, "A cat chasing a mouse.");
+  assert.equal(h.submitted[0].confirm_visual_facts, true);
+  assert.equal(h.submitted[0].visual_fact_digest, "a".repeat(64));
+  assert.equal(h.submitted[0].display_when_complete, true);
+  assert.equal(h.submitted[0].defer_presentation, true);
+  assert.deepEqual(h.displayed, []);
+  assert.equal(h.elements.projectorFrame.src, previousPreview);
+  await c.pumpVoiceGeneration();
+  assert.equal(h.submitted.length, 1);
+  h.complete();
+  await flush();
+  assert.equal(h.presented.length, 1);
+  assert.deepEqual(h.displayed, ["job-1"]);
+  await c.tryPresentVoiceGeneration();
+  assert.equal(h.presented.length, 1);
+  const completed = c.voiceGeneration.completed;
+  const {sourceKey, semanticKey} = completed;
+  assert.equal(completed.snapshot.presentation_ready, true);
+  c.offerVoiceTranscript("A cat is chasing a mouse.", {final: true});
+  await flush();
+  assert.equal(h.submitted.length, 1); // This fixture supplies exactly equal validated facts.
+  assert.equal(h.checks.length, 2);
+  assert.equal(c.voiceGeneration.completed.sourceKey, sourceKey);
+  assert.equal(c.voiceGeneration.completed.semanticKey, semanticKey);
+  assert.equal(c.voiceGeneration.completed.snapshot.job_id, "job-1");
+  c.offerVoiceTranscript("A cat chasing two mice.", {final: true});
+  await flush();
+  assert.equal(h.submitted.length, 2); // Changed object count is a different scene.
+  h.complete();
+  await flush();
+  h.elements.style.value = "ink drawing";
+  c.offerVoiceTranscript("A cat chasing two mice.", {final: true});
+  await flush();
+  assert.equal(h.submitted.length, 3); // Style also belongs to the semantic key.
 
-  // Validation must leave the existing scene and transport intact until it succeeds.
-  const normalRespond = c.respond;
-  const stopsBeforeCheck = events.filter((event) => event === "transport-stop").length;
-  const assertUnsubmitted = () => {
-    assert.equal(requests.includes("/v1/live-scenes"), false);
-    assert.equal(c.latestLiveSnapshot, previousSnapshot);
-    assert.equal(elements.projectorFrame.src, previousPreview);
-    assert.equal(events.filter((event) => event === "transport-stop").length, stopsBeforeCheck);
-    assert.equal(c.liveRequestEpoch, 0);
-    assert.equal(c.generationSubmitting, false);
-    assert.equal(elements.story.disabled, false);
-    assert.equal(elements.style.disabled, false);
-    assert.equal(elements.compileButton.disabled, false);
-    assert.equal(timers.size, 0);
-  };
-  c.respond = async (url) => {
-    assert.equal(url, "/v1/live-scene-planner/prepare");
-    return {ok: true, json: async () => ({ready: true})};
-  };
-  await c.compileStory();
-  assertUnsubmitted();
-  assert.match(elements.voiceReview.textContent, /checker needs updating/);
+  // One partial starts paid work. A second identical ASR observation allows
+  // the complete scene to appear while the microphone is still listening.
+  const live = generationHarness();
+  await live.context.startSpeaking();
+  const liveRecorder = live.context.mediaRecorder;
+  liveRecorder.handlers.dataavailable({data: new Blob(["a".repeat(1200)])});
+  const liveRespond = live.context.respond;
+  live.context.respond = (url, options) => url === "/v1/audio:transcribe"
+    ? live.response(200, {text: "A cat chasing a mouse."}) : liveRespond(url, options);
+  await live.context.transcribePartialRecording(live.context.recordingEpoch);
+  assert.equal(live.submitted.length, 0);
+  fireTimer(live, 350);
+  await flush();
+  assert.equal(live.submitted.length, 1);
+  assert.equal(live.context.listening, true);
+  assert.equal(live.elements.micButton.disabled, false); // Stop stays available during generation.
+  live.complete();
+  await flush();
+  assert.equal(live.presented.length, 0);
+  liveRecorder.handlers.dataavailable({data: new Blob(["b".repeat(100)])});
+  await live.context.transcribePartialRecording(live.context.recordingEpoch);
+  await flush();
+  assert.equal(live.presented.length, 1);
+  assert.equal(live.context.listening, true);
+  assert.deepEqual(live.displayed, ["job-1"]);
+  assert.equal(live.submitted.length, 1);
+  assert.equal(live.requests.some((url) => url.includes("reader-sessions")), false);
 
-  c.respond = (url, options) => {
-    assert.equal(url, "/v1/live-scene-planner/prepare");
-    return new Promise((_resolve, reject) => {
-      options.signal.addEventListener("abort", () => reject(new Error("aborted")));
-    });
-  };
-  const checking = c.compileStory();
-  await new Promise(setImmediate);
-  const checksBeforeDoubleClick = requests.length;
-  assert.equal(elements.story.disabled, true);
-  assert.equal(elements.style.disabled, true);
-  assert.equal(elements.compileButton.disabled, true);
-  await c.compileStory();
-  await c.startSpeaking();
-  assert.equal(requests.length, checksBeforeDoubleClick);
-  assert.equal(c.latestLiveSnapshot, previousSnapshot);
-  assert.equal(timers.size, 1);
-  const checkTimer = [...timers.values()][0];
-  assert.equal(checkTimer.milliseconds, 10000);
-  checkTimer.callback();
-  await checking;
-  assertUnsubmitted();
-  assert.match(elements.voiceReview.textContent, /timed out/);
+  // Intermediate intents coalesce. A superseded complete scene is never shown,
+  // and only the latest final wording runs after the first active job ends.
+  const queue = generationHarness();
+  queue.context.listening = true;
+  queue.context.offerVoiceTranscript("A cat chasing a mouse.");
+  fireTimer(queue, 350);
+  await flush();
+  queue.context.offerVoiceTranscript("A cat chasing two mice.");
+  queue.context.offerVoiceTranscript("A cat chasing three mice.", {final: true});
+  await queue.context.pumpVoiceGeneration();
+  assert.equal(queue.submitted.length, 1);
+  queue.complete();
+  await flush();
+  assert.deepEqual(queue.displayed, []);
+  assert.equal(queue.presented.length, 0);
+  assert.equal(queue.submitted.length, 2);
+  assert.equal(queue.submitted[1].text, "A cat chasing three mice.");
+  queue.context.listening = false;
+  queue.complete();
+  await flush();
+  assert.deepEqual(queue.displayed, ["job-2"]);
+  assert.equal(queue.presented.length, 1);
 
-  // Disabled fields can still be changed by restored state or another script.
-  let finishPreflight;
-  c.respond = (url) => {
-    assert.equal(url, "/v1/live-scene-planner/prepare");
-    return new Promise((resolve) => { finishPreflight = resolve; });
-  };
-  for (const [field, edited] of [["story", "A red whale above a forest."], ["style", "paper theater"]]) {
-    const original = elements[field].value;
-    const staleCheck = c.compileStory();
-    await new Promise(setImmediate);
-    elements[field].value = edited;
-    finishPreflight(preflight());
-    await staleCheck;
-    assertUnsubmitted();
-    assert.match(elements.voiceReview.textContent, /changed|check again|review again/i);
-    elements[field].value = original;
-  }
-  c.respond = normalRespond;
-  requiresFactReview = true;
-  await c.compileStory();
-  assert.equal(submitted.length, 0);
-  assert.equal(c.latestLiveSnapshot, previousSnapshot);
-  assert.match(elements.voiceReview.textContent, /Kept on this device: London/);
-  assert.equal(elements.compileButton.textContent, "Generate this scene");
-  parsedAction = "swimming";
-  await c.compileStory();
-  assert.equal(submitted.length, 0); // Changed facts need a fresh confirmation.
-  assert.match(elements.voiceReview.textContent, /swimming/);
-  const generation = c.compileStory();
-  await new Promise(setImmediate);
-  assert.equal(submitted.length, 1);
-  assert.equal(submitted[0].text, elements.story.value);
-  assert.equal(submitted[0].visual_style, "rich watercolor");
-  assert.equal(submitted[0].reviewed_description, true);
-  assert.equal(submitted[0].confirm_visual_facts, true);
-  assert.equal(submitted[0].visual_fact_digest, "a".repeat(64));
-  await c.compileStory();
-  await c.startSpeaking();
-  assert.equal(submitted.length, 1);
-  finishGeneration({status: 400, json: async () => ({detail: "Description rejected"})});
-  await generation;
-  assert.equal(elements.story.disabled, false);
-  assert.equal(elements.compileButton.disabled, false);
-  assert.equal(c.generationSubmitting, false);
-  assert.equal(elements.projectorFrame.src, previousPreview);
-  requiresFactReview = false;
-  elements.story.value = "A red whale above a forest.";
-  const retry = c.compileStory();
-  await c.compileStory();
-  await new Promise(setImmediate);
-  assert.equal(submitted.length, 2);
-  assert.equal(submitted[1].text, elements.story.value);
-  finishGeneration({status: 202, json: async () => ({job_id: "voice-scene"})});
-  await retry;
-  assert.equal(elements.micButton.disabled, true);
-  assert.equal(elements.projectorFrame.src, previousPreview);
-  c.voiceProjectionLive = true; // renderPack switches the frame only after the new draft exists.
-  c.ensureProjectionPreview();
-  assert.match(elements.projectorFrame.src, /reader=0&live=1$/);
-  assert.equal(requests.some((url) => url.includes("reader-sessions")), false);
-  assert.equal(requests.filter((url) => url === "/v1/audio:transcribe").length, 1);
+  // Bad partials and empty speech retain the previous artwork and do not retry
+  // automatically. A newer phrase invalidates an in-flight local check.
+  const bad = generationHarness();
+  bad.state.rejectCheck = true;
+  bad.context.offerVoiceTranscript("A cat she's seeing a mouse.", {final: true});
+  await flush();
+  await bad.context.pumpVoiceGeneration();
+  assert.equal(bad.submitted.length, 0);
+  assert.equal(bad.checks.length, 1);
+  assert.deepEqual(bad.displayed, []);
+  assert.match(bad.elements.voiceReview.textContent, /Clarify/);
+  bad.context.offerVoiceTranscript("   ", {final: true});
+  assert.equal(bad.submitted.length, 0);
+  assert.equal(bad.checks.length, 1);
+  const latest = bad.context.voiceGeneration.latest;
+  bad.context.offerVoiceTranscript("A fox jumps over a dog.", {
+    final: true, epoch: bad.context.recordingEpoch - 1,
+  });
+  await flush();
+  assert.equal(bad.context.voiceGeneration.latest, latest);
+  assert.equal(bad.checks.length, 1);
 
-  // A lost acceptance response must not offer a second paid submission.
-  c.activeLiveJobId = null;
-  c.latestLiveSnapshot = null; // Fresh startup can still have historical work on the server.
-  elements.story.value = "A pink fox in a forest.";
-  let accepted = {
-    session_id: c.readerSessionId, server_instance_id: "server-1", session_revision: 4,
-    job: {job_id: "historical", request: {
-      text: elements.story.value, visual_style: elements.style.value,
-    }},
-  };
-  c.respond = (url, options) => {
-    if (url === "/v1/live-scene-planner/prepare") return preflight();
+  const stale = generationHarness();
+  const staleRespond = stale.context.respond;
+  let finishCheck;
+  stale.context.respond = (url, options) => url === "/v1/live-scene-planner/prepare" && !finishCheck
+    ? new Promise((resolve) => { finishCheck = resolve; }) : staleRespond(url, options);
+  stale.context.offerVoiceTranscript("A cat chasing a mouse.", {final: true});
+  await flush();
+  stale.context.offerVoiceTranscript("A dog chasing a ball.", {final: true});
+  finishCheck(stale.response(200, stale.state.ready({})));
+  await flush();
+  await stale.context.pumpVoiceGeneration();
+  assert.equal(stale.submitted.length, 1);
+  assert.equal(stale.submitted[0].text, "A dog chasing a ball.");
+  assert.deepEqual(stale.displayed, []);
+
+  // Lost acceptance stays locked. A later transcript cannot cause another POST
+  // while the first may already have incurred cost.
+  const lost = generationHarness();
+  const lostRespond = lost.context.respond;
+  const historical = {session_id: lost.context.readerSessionId, server_instance_id: "server-1",
+    session_revision: 7, job: {job_id: "historical", complete: true, stage: "master_ready",
+      request: {text: "A cat chasing a mouse.", visual_style: "rich watercolor"}}};
+  lost.setPointer(historical);
+  lost.context.respond = (url, options) => {
     if (url === "/v1/live-scenes") {
-      submitted.push(JSON.parse(options.body));
-      return new Promise((_resolve, reject) => {
-        options.signal.addEventListener("abort", () => reject(new Error("timeout")));
-      });
+      lost.submitted.push(JSON.parse(options.body));
+      return new Promise((_resolve, reject) => options.signal.addEventListener("abort", () => reject(new Error("timeout"))));
     }
-    assert.equal(url, `/v1/live-scene-sessions/${encodeURIComponent(c.readerSessionId)}`);
-    return accepted
-      ? {ok: true, status: 200, json: async () => accepted}
-      : {status: 404};
+    return lostRespond(url, options);
   };
-  vm.runInContext(source.slice(source.indexOf("async function fetchLiveSceneSession("), source.indexOf("function acceptedLiveScenePointer(")), c);
-  const uncertain = c.compileStory();
-  await new Promise(setImmediate);
-  const acceptanceTimer = [...timers.values()].find((timer) => timer.milliseconds === 15000);
-  assert.ok(acceptanceTimer);
-  acceptanceTimer.callback();
-  await uncertain;
-  assert.equal(submitted.length, 3);
-  assert.equal(c.generationSubmitting, true);
-  assert.equal(elements.micButton.disabled, true);
-  assert.equal(elements.compileButton.textContent, "Check generation status");
-  await c.compileStory();
-  assert.equal(submitted.length, 3);
-  accepted = {session_id: c.readerSessionId, server_instance_id: "server-1", session_revision: 5,
-    job: {job_id: "different-review", request: {...submitted[2], visual_fact_digest: "a".repeat(64)}}};
-  await c.compileStory();
-  assert.notEqual(c.pendingSubmission, null);
-  assert.equal(submitted.length, 3);
-  accepted = {session_id: c.readerSessionId, server_instance_id: "server-1", session_revision: 6,
-    job: {job_id: "accepted-after-timeout", request: submitted[2]}};
-  c.handleLiveSceneSessionPointer = (pointer) => { c.activeLiveJobId = pointer.job.job_id; };
-  await c.compileStory();
-  assert.equal(c.pendingSubmission, null);
-  assert.equal(c.activeLiveJobId, "accepted-after-timeout");
-  assert.equal(submitted.length, 3);
+  lost.context.offerVoiceTranscript("A cat chasing a mouse.", {final: true});
+  await flush();
+  fireTimer(lost, 15000);
+  await flush();
+  assert.notEqual(lost.context.pendingSubmission, null);
+  lost.context.offerVoiceTranscript("A dog chasing a ball.", {final: true});
+  await lost.context.pumpVoiceGeneration();
+  await lost.context.reconcileGeneration();
+  assert.equal(lost.submitted.length, 1);
+  assert.deepEqual(lost.displayed, []);
+  assert.equal(lost.presented.length, 0);
+  lost.setPointer({...historical, session_revision: 8,
+    job: {job_id: "different-digest", revision: 1, stage: "draft_ready", complete: false,
+      request: {...lost.submitted[0], visual_fact_digest: "b".repeat(64)}}});
+  await lost.context.reconcileGeneration();
+  assert.notEqual(lost.context.pendingSubmission, null);
+  lost.setPointer({...historical, session_revision: 9,
+    job: {job_id: "recovered", revision: 1, stage: "draft_ready", complete: false,
+      request: lost.submitted[0]}});
+  await lost.context.reconcileGeneration();
+  assert.equal(lost.context.pendingSubmission, null);
+  assert.equal(lost.context.activeLiveJobId, "recovered");
+  assert.equal(lost.submitted.length, 1);
 
-  const empty = harness();
-  empty.context.voiceMode = true;
-  empty.context.ensureProjectionPreview();
-  const retainedImage = empty.elements.projectorFrame.src;
-  const retainedDescription = empty.elements.story.value;
-  empty.context.respond = async () => ({ok: true, json: async () => ({asr: {ready: true}, text: "  "})});
-  empty.context.compileStory = () => { throw new Error("Empty speech must not generate"); };
-  await empty.context.startSpeaking();
-  const emptyRecorder = empty.context.mediaRecorder;
-  emptyRecorder.handlers.dataavailable({data: new Blob(["a".repeat(1200)])});
-  empty.context.stopSpeaking();
-  await emptyRecorder.handlers.stop();
-  assert.match(empty.elements.interim.textContent, /No speech was recognized/);
-  assert.equal(empty.context.finalizing, false);
-  assert.equal(empty.elements.micButton.disabled, false);
-  assert.equal(empty.elements.projectorFrame.src, retainedImage);
-  assert.equal(empty.elements.story.value, retainedDescription);
+  // A failed presentation read is one bounded attempt, not a recursive retry
+  // loop or a second image request. Keep a finite fake even if this regresses.
+  const publishFailure = generationHarness();
+  publishFailure.context.offerVoiceTranscript("A cat chasing a mouse.", {final: true});
+  await flush();
+  const publishRespond = publishFailure.context.respond;
+  let presentationReads = 0;
+  publishFailure.context.respond = (url, options) => {
+    if (url.includes("/live-scene-sessions/")) {
+      presentationReads += 1;
+      if (presentationReads < 3) throw new Error("unavailable");
+    }
+    return publishRespond(url, options);
+  };
+  publishFailure.complete();
+  await flush();
+  assert.equal(presentationReads, 1);
+  assert.equal(publishFailure.submitted.length, 1);
+  assert.equal(publishFailure.presented.length, 0);
+  assert.deepEqual(publishFailure.displayed, []);
+
+  // If ASR resumes while the presentation pointer is being read, no display
+  // occurs yet; the same completed image remains eligible after ASR finishes.
+  const publishRace = generationHarness();
+  publishRace.context.offerVoiceTranscript("A cat chasing a mouse.", {final: true});
+  await flush();
+  const raceRespond = publishRace.context.respond;
+  let finishPointer;
+  publishRace.context.respond = (url, options) => url.includes("/live-scene-sessions/")
+    ? new Promise((resolve) => { finishPointer = resolve; }) : raceRespond(url, options);
+  publishRace.complete();
+  await flush();
+  publishRace.context.partialBusy = true;
+  finishPointer(publishRace.response(200, publishRace.pointer()));
+  await flush();
+  assert.equal(publishRace.presented.length, 0);
+  assert.equal(publishRace.context.voiceGeneration.completed.presentationAttempted, false);
+  publishRace.context.respond = raceRespond;
+  publishRace.context.partialBusy = false;
+  await publishRace.context.tryPresentVoiceGeneration();
+  assert.equal(publishRace.presented.length, 1);
+
+  // Discovering another active job must leave the unsubmitted new intent
+  // eligible, then start it exactly once when that older job finishes.
+  const prior = generationHarness();
+  prior.setPointer({session_id: prior.context.readerSessionId, server_instance_id: "server-1",
+    session_revision: 1, job: {job_id: "older", revision: 1, stage: "draft_ready", complete: false,
+      presentation_ready: false, request: {text: "A cat chasing a mouse.", visual_style: "rich watercolor"}}});
+  prior.context.offerVoiceTranscript("A dog chasing a ball.", {final: true});
+  await flush();
+  assert.equal(prior.submitted.length, 0);
+  assert.equal(prior.context.activeLiveJobId, "older");
+  prior.complete();
+  await flush();
+  assert.equal(prior.submitted.length, 1);
+  assert.equal(prior.submitted[0].text, "A dog chasing a ball.");
+  assert.deepEqual(prior.displayed, []);
+
+  // A new intent arriving during the pre-POST pointer read cancels only the
+  // unsubmitted intent; if the user returns to it later it must remain eligible.
+  const beforePost = generationHarness();
+  const beforeRespond = beforePost.context.respond;
+  let releasePrior;
+  beforePost.context.respond = (url, options) => url.includes("/live-scene-sessions/") && !releasePrior
+    ? new Promise((resolve) => { releasePrior = resolve; }) : beforeRespond(url, options);
+  beforePost.context.offerVoiceTranscript("A cat chasing a mouse.", {final: true});
+  await flush();
+  beforePost.context.offerVoiceTranscript("A dog chasing a ball.", {final: true});
+  releasePrior(beforePost.response(404, {}));
+  await flush();
+  assert.equal(beforePost.submitted.length, 1);
+  assert.equal(beforePost.submitted[0].text, "A dog chasing a ball.");
+  beforePost.context.offerVoiceTranscript("A cat chasing a mouse.", {final: true});
+  beforePost.complete();
+  await flush();
+  assert.equal(beforePost.submitted.length, 2);
+  assert.equal(beforePost.submitted[1].text, "A cat chasing a mouse.");
+
+  const failed = generationHarness();
+  failed.context.listening = true;
+  failed.context.offerVoiceTranscript("A cat chasing a mouse.", {final: true});
+  await flush();
+  failed.context.offerVoiceTranscript("A dog chasing a ball.", {final: true});
+  const failedPointer = failed.pointer();
+  failed.setPointer({...failedPointer, job: {...failedPointer.job, revision: 2, stage: "failed"}});
+  failed.context.handleLiveSceneSessionPointer(failed.pointer());
+  await flush();
+  assert.equal(failed.submitted.length, 2);
+  assert.equal(failed.submitted[1].text, "A dog chasing a ball.");
+  assert.deepEqual(failed.displayed, []);
+  assert.equal(failed.elements.compileButton.disabled, true);
+  await failed.context.pumpVoiceGeneration();
+  assert.equal(failed.submitted.length, 2);
+
+  // Stop releases the hardware immediately, but final ASR waits for an
+  // already-started presentation CAS so it cannot race that publication.
+  const stopping = generationHarness();
+  await stopping.context.startSpeaking();
+  const stoppingRecorder = stopping.context.mediaRecorder;
+  stoppingRecorder.handlers.dataavailable({data: new Blob(["a".repeat(1200)])});
+  stopping.context.offerVoiceTranscript("A cat chasing a mouse.");
+  fireTimer(stopping, 350);
+  await flush();
+  stopping.context.offerVoiceTranscript("A cat chasing a mouse.");
+  const stopRespond = stopping.context.respond;
+  let releasePresentation;
+  stopping.context.respond = (url, options) => {
+    if (url.endsWith("/present")) {
+      return new Promise((resolve) => { releasePresentation = () => resolve(stopRespond(url, options)); });
+    }
+    if (url === "/v1/audio:transcribe") return stopping.response(200, {text: "A cat chasing a mouse."});
+    return stopRespond(url, options);
+  };
+  stopping.complete();
+  await flush();
+  assert.equal(typeof releasePresentation, "function");
+  stopping.context.stopSpeaking();
+  const stopped = stoppingRecorder.handlers.stop();
+  await flush();
+  assert.equal(stopping.events.filter((event) => event === "track-stop").length, 1);
+  assert.equal(stopping.requests.filter((url) => url === "/v1/audio:transcribe").length, 0);
+  releasePresentation();
+  await stopped;
+  await flush();
+  assert.equal(stopping.requests.filter((url) => url === "/v1/audio:transcribe").length, 1);
+  assert.equal(stopping.submitted.length, 1);
 }
 
-(async () => { await lifecycle(); await voiceToScene(); })().then(() => console.log("Workbench microphone: read-aloud lifecycle, transcript review and explicit generation/retry passed."))
+(async () => { await lifecycle(); await voiceToScene(); })().then(() => console.log("Workbench microphone: cleanup, automatic headstart, latest-only presentation and no duplicate paid requests passed."))
   .catch((error) => { console.error(error); process.exitCode = 1; });

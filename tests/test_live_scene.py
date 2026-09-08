@@ -10,6 +10,7 @@ from bookforge.asset_cache import AssetCache
 from bookforge.live_scene import (
     DeterministicFakeLiveSceneProvider,
     LiveSceneCapacityError,
+    LiveSceneConflictError,
     LiveSceneCreateRequest,
     LiveSceneJob,
     LiveSceneJobRegistry,
@@ -32,6 +33,9 @@ def test_live_scene_request_is_strict_text_only() -> None:
 
     assert request.text == "A fox opens a book beneath the stars."
     assert request.visual_style == "watercolor theater"
+    assert request.display_when_complete is False and request.defer_presentation is False
+    with pytest.raises(ValidationError, match="Deferred presentation"):
+        LiveSceneCreateRequest(text="A fox runs.", defer_presentation=True)
     with pytest.raises(ValidationError, match="raw_audio"):
         LiveSceneCreateRequest.model_validate(
             {
@@ -280,6 +284,63 @@ def test_master_scene_is_successful_without_optional_video(provider, warning_cod
     assert {artifact.kind.value for artifact in terminal.artifacts} == {"master", "depth"}
     assert terminal.error is None
     assert (terminal.warning.code if terminal.warning else None) == warning_code
+
+
+def test_deferred_presentation_requires_completed_current_session_and_never_renders_again():
+    class CountingMaster(_MasterOnlyProvider):
+        calls = 0
+
+        async def generate(self, request, *, job_id):
+            self.calls += 1
+            async for update in super().generate(request, job_id=job_id):
+                yield update
+
+    async def exercise():
+        provider = CountingMaster()
+        saved = []
+
+        async def persist(pack):
+            saved.append(pack)
+
+        registry = LiveSceneJobRegistry(provider, completed_pack_sink=persist)
+        request = LiveSceneCreateRequest(
+            text="A fox opens a book.", session_id="voice-presentation",
+            display_when_complete=True, defer_presentation=True,
+        )
+        try:
+            created = await registry.submit(request)
+            pointer = await registry.get_session(request.session_id)
+            expected = dict(server_instance_id=pointer.server_instance_id,
+                            session_revision=pointer.session_revision)
+            with pytest.raises(LiveSceneConflictError):
+                await registry.present(created.job_id, **expected)
+            complete = await registry.wait(created.job_id)
+            assert complete.complete and not complete.presentation_ready
+            assert saved == []
+            for incorrect in (
+                {**expected, "server_instance_id": "server_" + "0" * 32},
+                {**expected, "session_revision": expected["session_revision"] + 1},
+            ):
+                with pytest.raises(LiveSceneConflictError):
+                    await registry.present(created.job_id, **incorrect)
+            presented = await registry.present(created.job_id, **expected)
+            assert presented.presentation_ready and presented.revision == complete.revision + 1
+            assert presented.story_pack == complete.story_pack
+            assert saved == [complete.story_pack]
+            assert (await registry.get_session(request.session_id)).job.presentation_ready
+            assert await registry.present(created.job_id, **expected) == presented
+            assert provider.calls == 1
+            newer = await registry.submit(request.model_copy(update={"text": "A fox sleeps."}))
+            with pytest.raises(LiveSceneConflictError):
+                await registry.present(created.job_id, **expected)
+            latest = await registry.wait(newer.job_id)
+            assert latest.complete and not latest.presentation_ready
+            assert saved == [complete.story_pack]
+            assert provider.calls == 2
+        finally:
+            await registry.close()
+
+    asyncio.run(exercise())
 
 
 @pytest.mark.parametrize(
