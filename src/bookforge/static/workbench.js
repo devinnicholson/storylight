@@ -58,11 +58,18 @@ let readerGeneration = null;
 let activePageText = null;
 let starting = false;
 let finalizing = false;
+let generationSubmitting = false;
+let pendingSubmission = null;
+let generationReconciling = false;
 let sceneReady = false;
+let voiceProjectionLive = false;
+let projectorPreviewUrl = null;
 const workbenchQuery = new URLSearchParams(window.location.search);
-const demoMode = workbenchQuery.get("demo") === "1";
+const voiceMode = workbenchQuery.get("voice") === "1";
+const demoMode = !voiceMode && workbenchQuery.get("demo") === "1";
 document.body.dataset.demo = String(demoMode);
-const readerSessionId = workbenchQuery.get("session") || "bookforge-live";
+document.body.dataset.voice = String(voiceMode);
+const readerSessionId = workbenchQuery.get("session") || (voiceMode ? "voice-demo" : "bookforge-live");
 const restoreLatestScene = !workbenchQuery.has("session")
   || workbenchQuery.get("restore") === "latest";
 let liveSessionEventSource = null;
@@ -209,6 +216,7 @@ async function warmEdgePlanner() {
 }
 
 function scheduleEdgePlanPreparation(event) {
+  if (voiceMode) return;
   window.clearTimeout(edgePlanPreparationTimer);
   edgePlanPreparationTimer = null;
   const text = currentPlanKey();
@@ -334,26 +342,38 @@ function invalidatePreparation() {
   );
 }
 
+function updateMicAvailability() {
+  elements.micButton.disabled = starting || finalizing || generationSubmitting
+    || (voiceMode && Boolean(activeLiveJobId)) || !canRecordAudio
+    || (!voiceMode && !listening && !sceneReady);
+}
+
 function setSceneReady(ready) {
   sceneReady = ready;
   elements.projectorLink.classList.toggle("disabled", !ready);
   elements.projectorLink.setAttribute("aria-disabled", String(!ready));
   elements.projectorLink.tabIndex = ready ? 0 : -1;
-  elements.micButton.disabled = starting || finalizing || (!listening && (!ready || !canRecordAudio));
+  updateMicAvailability();
   elements.projectionPreview.classList.toggle("hidden", !ready);
   if (ready && !listening && !starting && !finalizing) {
-    elements.interim.textContent = "Press Start reading and read the page aloud.";
+    elements.interim.textContent = voiceMode
+      ? "Describe a scene, then finish to generate it. You can also edit the transcript and generate again."
+      : "Press Start reading and read the page aloud.";
   }
 }
 
 function ensureProjectionPreview() {
-  if (!elements.projectorFrame.src) {
-    elements.projectorFrame.src = projectorUrl();
+  const url = projectorUrl();
+  elements.projectorLink.href = url;
+  if (projectorPreviewUrl !== url) {
+    elements.projectorFrame.src = url;
+    projectorPreviewUrl = url;
   }
 }
 
 function projectorUrl() {
-  return `/projector?pack=latest&session=${encodeURIComponent(readerSessionId)}&present=1&reader=1${demoMode ? "" : "&live=1"}`;
+  const live = !demoMode && (!voiceMode || voiceProjectionLive);
+  return `/projector?pack=latest&session=${encodeURIComponent(readerSessionId)}&present=1&reader=${voiceMode ? "0" : "1"}${live ? "&live=1" : ""}`;
 }
 
 elements.projectorLink.href = projectorUrl();
@@ -418,8 +438,8 @@ function releaseMicrophone() {
 }
 
 async function startSpeaking() {
-  if (starting || listening || finalizing) return;
-  if (!sceneReady) {
+  if (starting || listening || finalizing || generationSubmitting || (voiceMode && activeLiveJobId)) return;
+  if (!voiceMode && !sceneReady) {
     elements.interim.textContent = "Create the scene before starting the reader.";
     return;
   }
@@ -434,12 +454,14 @@ async function startSpeaking() {
   setSceneInputsDisabled(true);
   try {
     const pageText = elements.story.value.trim();
-    if (!pageText) throw new Error("Enter the trusted page text before starting the reader.");
+    if (!voiceMode && !pageText) throw new Error("Enter the trusted page text before starting the reader.");
     const runtime = await readerRequest("/v1/runtime:status", {cache: "no-store"}, 10000);
     if (runtime.asr?.ready !== true) throw new Error("Local transcription is disabled or unavailable. Enable the local ASR backend before reading.");
-    activePageText = pageText;
-    await configureReaderSession(pageText);
-    readerGeneration = (await resetReaderSession()).generation;
+    if (!voiceMode) {
+      activePageText = pageText;
+      await configureReaderSession(pageText);
+      readerGeneration = (await resetReaderSession()).generation;
+    }
     await startAudioMeter();
     audioChunks = [];
     partialBytes = 0;
@@ -460,12 +482,16 @@ async function startSpeaking() {
     listening = true;
     elements.micButton.disabled = false;
     elements.micButton.classList.add("listening");
-    elements.micButtonText.textContent = "Stop reading";
+    elements.micButtonText.textContent = voiceMode ? "Finish & generate" : "Stop reading";
     elements.compileButton.disabled = true;
-    elements.interim.textContent = "Listening locally—read the exact page text above.";
-    partialTimer = window.setInterval(() => {
-      if (!partialBusy) partialInFlight = transcribePartialRecording(epoch);
-    }, 2000);
+    elements.interim.textContent = voiceMode
+      ? "Listening locally. Describe what you want to see, then press Finish & generate."
+      : "Listening locally—read the exact page text above.";
+    if (!voiceMode) {
+      partialTimer = window.setInterval(() => {
+        if (!partialBusy) partialInFlight = transcribePartialRecording(epoch);
+      }, 2000);
+    }
   } catch (error) {
     elements.interim.textContent = `Microphone unavailable: ${error.message}`;
     if (mediaRecorder?.state === "recording") {
@@ -500,9 +526,9 @@ function resetMicControls() {
   listening = false;
   finalizing = false;
   elements.micButton.classList.remove("listening");
-  elements.micButton.disabled = !sceneReady || !canRecordAudio;
-  elements.micButtonText.textContent = "Start reading";
-  elements.compileButton.disabled = demoMode || Boolean(activeLiveJobId);
+  updateMicAvailability();
+  elements.micButtonText.textContent = voiceMode ? "Describe scene" : "Start reading";
+  elements.compileButton.disabled = demoMode || generationSubmitting || Boolean(activeLiveJobId);
   setSceneInputsDisabled(Boolean(activeLiveJobId));
   window.clearInterval(partialTimer);
   partialTimer = null;
@@ -597,12 +623,23 @@ async function transcribeRecording() {
   const mimeType = mediaRecorder?.mimeType || "audio/webm";
   const recording = new Blob(audioChunks, {type: mimeType});
   const generation = readerGeneration;
+  let generate = false;
   try {
     await partialInFlight;
     if (recording.size < 1000) throw new Error("Recording was too short. Try speaking for a little longer.");
     const payload = await transcribeBlob(recording, mimeType);
-    await publishReaderTranscript(payload.text, true, generation);
-    elements.interim.textContent = `Finished in ${(payload.total_ms / 1000).toFixed(1)} s. Whisper heard: ${payload.text}`;
+    if (voiceMode) {
+      const text = typeof payload.text === "string" ? payload.text.trim() : "";
+      if (!text) throw new Error("No speech was recognized. Describe the scene again, or type it below.");
+      elements.story.value = text;
+      delete elements.compileButton.dataset.visualVariation;
+      invalidatePreparation();
+      elements.interim.textContent = "Description transcribed. Generating your scene…";
+      generate = true;
+    } else {
+      await publishReaderTranscript(payload.text, true, generation);
+      elements.interim.textContent = `Finished in ${(payload.total_ms / 1000).toFixed(1)} s. Whisper heard: ${payload.text}`;
+    }
   } catch (error) {
     elements.interim.textContent = error.message;
   } finally {
@@ -611,6 +648,7 @@ async function transcribeRecording() {
     partialInFlight = Promise.resolve();
     resetMicControls();
   }
+  if (generate) await compileStory();
 }
 
 function liveRevision(snapshot) {
@@ -766,6 +804,11 @@ function renderGenerationProgress(snapshot) {
 }
 
 function setGenerateButtonForStage(stage) {
+  if (pendingSubmission) {
+    elements.compileButton.disabled = generationReconciling;
+    elements.compileButton.textContent = "Check generation status";
+    return;
+  }
   const labels = {
     queued: "Waiting for generation provider…",
     planning: "Building animated draft…",
@@ -809,7 +852,7 @@ function startLivePollingFallback() {
 }
 
 function setSceneInputsDisabled(disabled) {
-  const locked = disabled || demoMode || starting || listening || finalizing;
+  const locked = disabled || demoMode || starting || listening || finalizing || generationSubmitting;
   elements.story.disabled = locked;
   elements.style.disabled = locked;
 }
@@ -817,6 +860,7 @@ function setSceneInputsDisabled(disabled) {
 function finishLiveJob(snapshot) {
   stopLiveJobTransport();
   activeLiveJobId = null;
+  updateMicAvailability();
   setSceneInputsDisabled(false);
   elements.compileButton.disabled = false;
   setGenerateButtonForStage(snapshot.stage);
@@ -877,17 +921,23 @@ function renderLiveSnapshot(snapshot, epoch = liveRequestEpoch) {
 }
 
 async function fetchLiveSceneSession() {
-  const response = await fetch(
-    `/v1/live-scene-sessions/${encodeURIComponent(readerSessionId)}`,
-    {cache: "no-store"},
-  );
-  if (response.status === 404) return null;
-  const payload = await response.json().catch(() => ({}));
-  if (!response.ok) throw new Error(payload.detail || `Session rendezvous failed (${response.status})`);
-  if (payload.session_id !== readerSessionId || !payload.job?.job_id) {
-    throw new Error("Generation session returned an invalid job pointer.");
+  const controller = new AbortController();
+  const timer = window.setTimeout(() => controller.abort(), 10000);
+  try {
+    const response = await fetch(
+      `/v1/live-scene-sessions/${encodeURIComponent(readerSessionId)}`,
+      {cache: "no-store", signal: controller.signal},
+    );
+    if (response.status === 404) return null;
+    const payload = await response.json();
+    if (!response.ok) throw new Error(payload.detail || `Session rendezvous failed (${response.status})`);
+    if (payload.session_id !== readerSessionId || !payload.job?.job_id) {
+      throw new Error("Generation session returned an invalid job pointer.");
+    }
+    return payload;
+  } finally {
+    window.clearTimeout(timer);
   }
-  return payload;
 }
 
 function acceptedLiveScenePointer(response, snapshot) {
@@ -944,7 +994,7 @@ function trackLiveSceneSession(pointer, {restoreInputs = false} = {}) {
   liveElapsedBaseMs = ageMs;
   liveElapsedBaseAt = performance.now();
   liveIsTerminal = false;
-  if (restoreInputs) {
+  if (restoreInputs && !voiceMode) {
     elements.story.value = snapshot.request?.text || elements.story.value;
     elements.style.value = snapshot.request?.visual_style || elements.style.value;
   }
@@ -1039,6 +1089,7 @@ function connectLiveSceneSessionEvents() {
 }
 
 function renderPack(payload) {
+  if (voiceMode && payload.live_snapshot) voiceProjectionLive = true;
   const pack = payload.story_pack;
   const metrics = payload.compile_metrics || payload.metrics;
   const generation = payload.generation_metrics;
@@ -1110,23 +1161,70 @@ function renderPack(payload) {
   reloadProjectionPreview();
 }
 
+async function reconcileGeneration() {
+  if (!pendingSubmission || generationReconciling) return;
+  generationReconciling = true;
+  elements.compileButton.disabled = true;
+  try {
+    const pointer = await fetchLiveSceneSession();
+    const request = pointer?.job?.request;
+    const expected = pendingSubmission.request;
+    if (pointer?.job?.job_id !== pendingSubmission.previousJobId
+      && (!pendingSubmission.previousServer || (pointer.server_instance_id === pendingSubmission.previousServer
+        && pointer.session_revision > pendingSubmission.previousRevision))
+      && request?.text === expected.text && request?.visual_style === expected.visual_style
+      && (request.seed ?? null) === (expected.seed ?? null)) {
+      handleLiveSceneSessionPointer(pointer);
+      if ((activeLiveJobId || latestLiveSnapshot?.job_id) === pointer.job.job_id) {
+        pendingSubmission = null;
+        generationSubmitting = false;
+        setGenerateButtonForStage(pointer.job.stage);
+        elements.compileButton.disabled = Boolean(activeLiveJobId);
+        elements.error.classList.add("hidden");
+        setSceneInputsDisabled(Boolean(activeLiveJobId));
+        updateMicAvailability();
+        return;
+      }
+    }
+  } catch (_) {
+    // A lost response cannot establish that the server rejected the paid request.
+  } finally {
+    generationReconciling = false;
+  }
+  elements.interim.textContent = "Generation acceptance is uncertain. Check status to reconnect; this will not submit another scene.";
+  elements.compileButton.disabled = false;
+  elements.compileButton.textContent = "Check generation status";
+}
+
 async function compileStory() {
+  if (pendingSubmission) return reconcileGeneration();
+  if (starting || listening || finalizing || generationSubmitting || activeLiveJobId) return;
   const text = elements.story.value.trim();
   if (!text) {
     elements.interim.textContent = "Add the exact words from one book page first.";
     return;
   }
+  generationSubmitting = true;
+  updateMicAvailability();
   const visualVariation = elements.compileButton.dataset.visualVariation === "true";
   const variationSeed = visualVariation
     ? window.crypto.getRandomValues(new Uint32Array(1))[0]
     : null;
+  const submission = {
+    previousJobId: latestLiveSnapshot?.job_id || null,
+    request: {
+      text,
+      visual_style: elements.style.value.trim() || "luminous paper theater",
+      session_id: readerSessionId,
+      ...(variationSeed === null ? {} : {seed: variationSeed}),
+    },
+  };
   delete elements.compileButton.dataset.visualVariation;
   // If the user clicks before the typing-pause timer fires, let the accepted
   // live job start the planner directly. If preparation is already in flight,
   // the server coalesces both waiters onto that one local Gemma call.
   window.clearTimeout(edgePlanPreparationTimer);
   edgePlanPreparationTimer = null;
-  if (listening) stopSpeaking();
   stopLiveJobTransport();
   liveRequestEpoch += 1;
   activeLiveJobId = null;
@@ -1144,18 +1242,36 @@ async function compileStory() {
   liveElapsedTimer = window.setInterval(updateElapsedClock, 100);
   ensureProjectionPreview();
 
+  let rejected = true;
   try {
-    const response = await fetch("/v1/live-scenes", {
-      method: "POST",
-      headers: {"Content-Type": "application/json"},
-      body: JSON.stringify({
-        text,
-        visual_style: elements.style.value.trim() || "luminous paper theater",
-        session_id: readerSessionId,
-        ...(variationSeed === null ? {} : {seed: variationSeed}),
-      }),
-    });
-    const snapshot = await response.json();
+    const prior = await fetchLiveSceneSession();
+    if (prior && (typeof prior.server_instance_id !== "string" || !prior.server_instance_id
+      || !Number.isSafeInteger(prior.session_revision) || prior.session_revision < 1)) {
+      throw new Error("Generation session returned an invalid revision.");
+    }
+    submission.previousJobId = prior?.job?.job_id || null;
+    submission.previousServer = prior?.server_instance_id || null;
+    submission.previousRevision = prior?.session_revision || 0;
+    if (prior && !isTerminalSnapshot(prior.job)) {
+      handleLiveSceneSessionPointer(prior);
+      elements.interim.textContent = "The current scene is still generating. Wait for it to finish before submitting another.";
+      return;
+    }
+    const controller = new AbortController();
+    const timer = window.setTimeout(() => controller.abort(), 15000);
+    let response;
+    let snapshot;
+    try {
+      rejected = false;
+      response = await fetch("/v1/live-scenes", {
+        method: "POST", headers: {"Content-Type": "application/json"},
+        body: JSON.stringify(submission.request), signal: controller.signal,
+      });
+      rejected = response.status >= 400 && response.status < 500;
+      snapshot = await response.json();
+    } finally {
+      window.clearTimeout(timer);
+    }
     if (response.status !== 202) throw new Error(snapshot.detail || `Request failed (${response.status})`);
     if (!snapshot.job_id) throw new Error("Generation service returned no job ID.");
     const pointer = acceptedLiveScenePointer(response, snapshot) || await fetchLiveSceneSession();
@@ -1167,6 +1283,11 @@ async function compileStory() {
     }
     elements.interim.textContent = "Generation job accepted. The projector will upgrade itself as each stage arrives.";
   } catch (error) {
+    if (!rejected) {
+      pendingSubmission = submission;
+      await reconcileGeneration();
+      return;
+    }
     stopLiveJobTransport();
     activeLiveJobId = null;
     setSceneInputsDisabled(false);
@@ -1175,6 +1296,10 @@ async function compileStory() {
     setStatus("error", "Could not create scene");
     elements.compileButton.disabled = false;
     elements.compileButton.textContent = "Try generation again";
+  } finally {
+    generationSubmitting = Boolean(pendingSubmission);
+    setSceneInputsDisabled(Boolean(activeLiveJobId));
+    updateMicAvailability();
   }
 }
 
@@ -1184,8 +1309,10 @@ async function loadLatestScene() {
     if (!response.ok) return;
     const pack = await response.json();
     const page = pack.pages[0];
-    elements.style.value = pack.visual_style;
-    elements.story.value = page.source_text;
+    if (!voiceMode) {
+      elements.style.value = pack.visual_style;
+      elements.story.value = page.source_text;
+    }
     renderPack({story_pack: pack});
     setStatus("idle", "Last scene restored");
   } catch (_) {
@@ -1208,10 +1335,11 @@ async function recoverLiveSceneSession() {
 async function restoreInitialScene() {
   if (demoMode) return loadLatestScene();
   if (await recoverLiveSceneSession()) return;
-  if (restoreLatestScene) await loadLatestScene();
+  if (restoreLatestScene || voiceMode) await loadLatestScene();
 }
 
 function invalidateScene() {
+  if (voiceMode) return;
   if (!sceneReady || listening || starting || activeLiveJobId) return;
   setSceneReady(false);
   setStatus("stale", "Page changed—create it again");
@@ -1272,6 +1400,14 @@ if (!demoMode) {
   void inspectRendererReadiness();
 }
 setSceneInputsDisabled(false);
+if (voiceMode) {
+  elements.story.value = "";
+  elements.style.value = "rich luminous watercolor storybook illustration, layered depth, detailed natural scenery, full-bleed 16:9";
+  elements.micButtonText.textContent = "Describe scene";
+  elements.interim.textContent = "Describe what you want to see. Finish to generate, or type a description below.";
+  elements.story.placeholder = "Your spoken description appears here. Edit it to refine or retry the scene.";
+  updateMicAvailability();
+}
 if (demoMode) {
   elements.compileButton.disabled = true;
   elements.prewarmButton.disabled = true;

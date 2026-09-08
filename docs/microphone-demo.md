@@ -1,5 +1,7 @@
 # Microphone rehearsal
 
+This page describes reading a fixed passage. To speak arbitrary descriptions and generate new artwork, use the [voice-to-scene demo](voice-to-scene-demo.md).
+
 For a short demo, prepare the artwork before presenting. Open `/workbench?demo=1`, press **Start reading**, allow the microphone, and read the displayed passage. The embedded projector follows aligned words; **Open projection view** opens the same reading on a second screen. Stop releases the microphone while the last transcript finishes. Start again to reset the reading.
 
 The demo uses stored artwork, not live image generation. Its provenance remains in the projection details. Keep generation and cold-start benchmarking outside the audience-facing reading. Microphone audio goes only to the local API, where Whisper transcribes it and removes the temporary recording. This requires the browser and API on the same computer.

@@ -123,6 +123,10 @@ async function generateDoesNotWaitForBackgroundPlannerWarmup() {
   Object.assign(context, {
     edgePlannerWarmUntil: 0, EDGE_PLANNER_KEEP_WARM_MS: 480000,
     edgePlanPreparationTimer: null, listening: false, liveRequestEpoch: 0,
+    starting: false, finalizing: false, generationSubmitting: false, activeLiveJobId: null,
+    pendingSubmission: null, latestLiveSnapshot: null, AbortController,
+    updateMicAvailability() {},
+    fetchLiveSceneSession: async () => null,
     performance: {now: () => 0},
     stopLiveJobTransport() {}, setSceneInputsDisabled() {},
     renderGenerationProgress() {}, updateElapsedClock() {}, ensureProjectionPreview() {},

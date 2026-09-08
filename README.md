@@ -94,7 +94,8 @@ text becoming the exact moving projector output in progressive stages: an immedi
 draft, generated artwork with depth-aware WebGL movement, and an optional cinematic loop. Stage,
 revision, provider, latency, and artifact provenance remain visible throughout. Read-aloud controls
 sit beside the passage and use local Whisper to drive the projector. See the
-[microphone rehearsal](docs/microphone-demo.md) for a prepared-artwork demo without cloud waiting.
+[voice-to-scene demo](docs/voice-to-scene-demo.md) to speak a description and generate new artwork,
+or the [microphone rehearsal](docs/microphone-demo.md) to follow a fixed passage with prepared art.
 
 The accepted edge path runs a real 1B Gemma 3 instruction model on the Orin Nano, emits a strict
 semantic SceneSpec, and sends only that visual direction to the remote image renderer. The first

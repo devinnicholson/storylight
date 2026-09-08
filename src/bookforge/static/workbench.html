@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <meta name="theme-color" content="#07110f" />
     <title>Bookforge Live Scene Foundry</title>
-    <link rel="stylesheet" href="/workbench-assets/workbench.css?v=0.2.0-mic1" />
+    <link rel="stylesheet" href="/workbench-assets/workbench.css?v=0.2.0-voice1" />
   </head>
   <body>
     <main class="shell">
@@ -14,6 +14,8 @@
           <p class="eyebrow">Bookforge · Live Scene Foundry</p>
           <h1 class="generation-heading">Turn one line of story into a living world.</h1>
           <h1 class="demo-only">The book that listens back.</h1>
+          <h1 class="voice-only">Describe a scene. Watch it appear.</h1>
+          <p class="voice-only lede">Speak your idea, then press Finish &amp; generate. Bookforge transcribes locally and creates a new scene for the projector.</p>
           <p class="demo-only lede">The artwork is prepared. Press Start reading and watch the page respond to your voice.</p>
           <p class="lede generation-heading">
             Type a passage and watch the actual projector improve in place: an immediate animated
@@ -22,6 +24,10 @@
         </div>
         <div class="privacy-chip"><span></span> Voice stays on this device</div>
       </header>
+      <nav class="mode-links" aria-label="Interaction mode">
+        <a href="/workbench?voice=1">Describe a new scene</a>
+        <a href="/workbench?demo=1">Read aloud with the saved scene</a>
+      </nav>
 
       <ol class="journey generation-heading" aria-label="How the demo works">
         <li><b>1</b><span><strong>Add a page</strong><small>Type the scene you want to see</small></span></li>
@@ -34,7 +40,8 @@
           <div class="card-heading">
             <div>
               <p class="section-label">Step 1</p>
-              <h2>Your story page</h2>
+              <h2 class="read-only">Your story page</h2>
+              <h2 class="voice-only">Your scene description</h2>
             </div>
           </div>
 
@@ -45,19 +52,21 @@
           </p>
 
           <label class="field-block page-field">
-            <span>Story text</span>
+            <span class="read-only">Story text</span><span class="voice-only">Transcript · edit to refine or retry</span>
             <textarea id="storyInput" rows="7">At dusk, a silver fox carried a golden lantern beneath the enormous cedar trees.</textarea>
           </label>
 
           <section class="try-live deferred-reader" id="tryLive" aria-labelledby="readerHeading">
             <section class="deferred-reader-body">
             <div>
-              <p class="section-label">Read aloud</p>
-              <h3 id="readerHeading">Make the page listen.</h3>
-              <p>
+              <p class="section-label read-only">Read aloud</p>
+              <p class="section-label voice-only">Voice to scene</p>
+              <h3 id="readerHeading"><span class="read-only">Make the page listen.</span><span class="voice-only">Tell us what to create.</span></h3>
+              <p class="read-only">
                 Press “Start reading” and read the page above. The scene follows your words.
                 Use the projection view for a second screen.
               </p>
+              <p class="voice-only">Press Describe scene, speak a short description, then finish. The previous scene stays visible while the new one is generated.</p>
             </div>
             <div class="live-actions">
               <a
@@ -262,6 +271,6 @@
       </footer>
     </main>
     <script src="/workbench-assets/anticipatory-workbench.js?v=1"></script>
-    <script src="/workbench-assets/workbench.js?v=0.2.0-mic3"></script>
+    <script src="/workbench-assets/workbench.js?v=0.2.0-voice1"></script>
   </body>
 </html>

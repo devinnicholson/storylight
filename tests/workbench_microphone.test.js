@@ -3,6 +3,15 @@ const fs = require("fs");
 const vm = require("vm");
 
 const source = fs.readFileSync("src/bookforge/static/workbench.js", "utf8");
+for (const [query, expected] of [
+  ["?voice=1", "voice-demo"], ["?demo=1", "bookforge-live"],
+  ["?voice=1&session=my-projection", "my-projection"],
+]) {
+  const context = {URLSearchParams, window: {location: {search: query}}, document: {body: {dataset: {}}}};
+  vm.createContext(context);
+  const configuration = source.slice(source.indexOf("const workbenchQuery ="), source.indexOf("const restoreLatestScene ="));
+  assert.equal(vm.runInContext(`${configuration}\nreaderSessionId`, context), expected);
+}
 function harness() {
   const timers = new Map();
   const requests = [];
@@ -24,7 +33,10 @@ function harness() {
   }
   const context = {
     elements, AbortController, Blob, Uint8Array, MediaRecorder: Recorder,
-    canRecordAudio: true, sceneReady: true, demoMode: false, activeLiveJobId: null,
+    canRecordAudio: true, sceneReady: true, demoMode: false, voiceMode: false,
+    voiceProjectionLive: false, projectorPreviewUrl: null,
+    generationSubmitting: false, pendingSubmission: null, generationReconciling: false,
+    activeLiveJobId: null, latestLiveSnapshot: null,
     listening: false, starting: false, finalizing: false, stream: null,
     analyser: null, audioContext: null, mediaRecorder: null, audioChunks: [],
     partialTimer: null, partialBusy: false, partialInFlight: Promise.resolve(),
@@ -53,7 +65,7 @@ function harness() {
   };
   vm.createContext(context);
   for (const [start, end] of [
-    ["function setSceneReady(", "function safeText("],
+    ["function updateMicAvailability(", "function safeText("],
     ["async function startAudioMeter(", "function liveRevision("],
     ["function setSceneInputsDisabled(", "function finishLiveJob("],
   ]) vm.runInContext(source.slice(source.indexOf(start), source.indexOf(end)), context);
@@ -139,5 +151,138 @@ async function lifecycle() {
   assert.equal(permission.context.stream, null);
 }
 
-lifecycle().then(() => console.log("Workbench microphone: release, finalization, timeout, ASR availability and demo projection passed."))
+async function voiceToScene() {
+  const {context: c, elements, requests, events, timers} = harness();
+  c.voiceMode = true;
+  c.sceneReady = false;
+  elements.story.value = "";
+  elements.style.value = "rich watercolor";
+  elements.compileButton.dataset = {};
+  elements.error = {classList: {add() {}, remove() {}}};
+  const submitted = [];
+  let finishAsr;
+  let finishGeneration;
+  Object.assign(c, {
+    edgePlanPreparationTimer: null, liveRequestEpoch: 0,
+    performance: {now: () => 0}, invalidatePreparation() {},
+    stopLiveJobTransport() {}, renderGenerationProgress() {}, updateElapsedClock() {}, setStatus() {},
+    setGenerateButtonForStage() {}, isTerminalSnapshot: () => true,
+    acceptedLiveScenePointer: (_response, snapshot) => snapshot,
+    handleLiveSceneSessionPointer(snapshot) { c.activeLiveJobId = snapshot.job_id; },
+    fetchLiveSceneSession: async () => null,
+    respond(url, options) {
+      if (url === "/v1/runtime:status") return {ok: true, json: async () => ({asr: {ready: true}})};
+      if (url === "/v1/audio:transcribe") return new Promise((resolve) => { finishAsr = resolve; });
+      assert.equal(url, "/v1/live-scenes");
+      submitted.push(JSON.parse(options.body));
+      return new Promise((resolve) => { finishGeneration = resolve; });
+    },
+  });
+  vm.runInContext(source.slice(source.indexOf("async function reconcileGeneration("), source.indexOf("async function loadLatestScene(")), c);
+  c.ensureProjectionPreview();
+  const previousPreview = elements.projectorFrame.src;
+  assert.match(previousPreview, /reader=0$/);
+  await c.startSpeaking();
+  assert.equal(c.partialTimer, null);
+  assert.deepEqual(requests, ["/v1/runtime:status"]);
+  assert.equal(elements.micButtonText.textContent, "Finish & generate");
+  const recorder = c.mediaRecorder;
+  recorder.handlers.dataavailable({data: new Blob(["a".repeat(1200)])});
+  c.stopSpeaking();
+  const final = recorder.handlers.stop();
+  c.stopSpeaking();
+  await c.startSpeaking();
+  await new Promise(setImmediate);
+  assert.equal(requests.filter((url) => url === "/v1/audio:transcribe").length, 1);
+  assert.equal(events.filter((event) => event === "track-stop").length, 1);
+  finishAsr({ok: true, json: async () => ({text: "  A blue whale above a forest.  "})});
+  await new Promise(setImmediate);
+  assert.equal(elements.story.value, "A blue whale above a forest.");
+  assert.equal(elements.projectorFrame.src, previousPreview);
+  assert.equal(submitted.length, 1);
+  assert.equal(submitted[0].text, elements.story.value);
+  assert.equal(submitted[0].visual_style, "rich watercolor");
+  await c.compileStory();
+  await c.startSpeaking();
+  assert.equal(submitted.length, 1);
+  finishGeneration({status: 400, json: async () => ({detail: "Description rejected"})});
+  await final;
+  assert.equal(elements.story.disabled, false);
+  assert.equal(elements.compileButton.disabled, false);
+  assert.equal(c.generationSubmitting, false);
+  assert.equal(elements.projectorFrame.src, previousPreview);
+  elements.story.value = "A red whale above a forest.";
+  const retry = c.compileStory();
+  await c.compileStory();
+  await new Promise(setImmediate);
+  assert.equal(submitted.length, 2);
+  assert.equal(submitted[1].text, elements.story.value);
+  finishGeneration({status: 202, json: async () => ({job_id: "voice-scene"})});
+  await retry;
+  assert.equal(elements.micButton.disabled, true);
+  assert.equal(elements.projectorFrame.src, previousPreview);
+  c.voiceProjectionLive = true; // renderPack switches the frame only after the new draft exists.
+  c.ensureProjectionPreview();
+  assert.match(elements.projectorFrame.src, /reader=0&live=1$/);
+  assert.equal(requests.some((url) => url.includes("reader-sessions")), false);
+  assert.equal(requests.filter((url) => url === "/v1/audio:transcribe").length, 1);
+
+  // A lost acceptance response must not offer a second paid submission.
+  c.activeLiveJobId = null;
+  c.latestLiveSnapshot = null; // Fresh startup can still have historical work on the server.
+  elements.story.value = "A pink fox in a forest.";
+  let accepted = {
+    session_id: c.readerSessionId, server_instance_id: "server-1", session_revision: 4,
+    job: {job_id: "historical", request: {
+      text: elements.story.value, visual_style: elements.style.value,
+    }},
+  };
+  c.respond = (url, options) => {
+    if (url === "/v1/live-scenes") {
+      submitted.push(JSON.parse(options.body));
+      return new Promise((_resolve, reject) => {
+        options.signal.addEventListener("abort", () => reject(new Error("timeout")));
+      });
+    }
+    assert.equal(url, `/v1/live-scene-sessions/${encodeURIComponent(c.readerSessionId)}`);
+    return accepted
+      ? {ok: true, status: 200, json: async () => accepted}
+      : {status: 404};
+  };
+  vm.runInContext(source.slice(source.indexOf("async function fetchLiveSceneSession("), source.indexOf("function acceptedLiveScenePointer(")), c);
+  const uncertain = c.compileStory();
+  await new Promise(setImmediate);
+  const acceptanceTimer = [...timers.values()].find((timer) => timer.milliseconds === 15000);
+  assert.ok(acceptanceTimer);
+  acceptanceTimer.callback();
+  await uncertain;
+  assert.equal(submitted.length, 3);
+  assert.equal(c.generationSubmitting, true);
+  assert.equal(elements.micButton.disabled, true);
+  assert.equal(elements.compileButton.textContent, "Check generation status");
+  await c.compileStory();
+  assert.equal(submitted.length, 3);
+  accepted = {session_id: c.readerSessionId, server_instance_id: "server-1", session_revision: 5,
+    job: {job_id: "accepted-after-timeout", request: submitted[2]}};
+  c.handleLiveSceneSessionPointer = (pointer) => { c.activeLiveJobId = pointer.job.job_id; };
+  await c.compileStory();
+  assert.equal(c.pendingSubmission, null);
+  assert.equal(c.activeLiveJobId, "accepted-after-timeout");
+  assert.equal(submitted.length, 3);
+
+  const empty = harness();
+  empty.context.voiceMode = true;
+  empty.context.respond = async () => ({ok: true, json: async () => ({asr: {ready: true}, text: "  "})});
+  empty.context.compileStory = () => { throw new Error("Empty speech must not generate"); };
+  await empty.context.startSpeaking();
+  const emptyRecorder = empty.context.mediaRecorder;
+  emptyRecorder.handlers.dataavailable({data: new Blob(["a".repeat(1200)])});
+  empty.context.stopSpeaking();
+  await emptyRecorder.handlers.stop();
+  assert.match(empty.elements.interim.textContent, /No speech was recognized/);
+  assert.equal(empty.context.finalizing, false);
+  assert.equal(empty.elements.micButton.disabled, false);
+}
+
+(async () => { await lifecycle(); await voiceToScene(); })().then(() => console.log("Workbench microphone: read-aloud lifecycle and single-transcription voice generation/retry passed."))
   .catch((error) => { console.error(error); process.exitCode = 1; });

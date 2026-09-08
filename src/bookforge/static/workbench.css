@@ -164,6 +164,11 @@ pre { max-height: 340px; overflow: auto; padding: 14px; border-radius: 12px; bac
 .try-live { margin-top: 23px; padding: 0; border: 1px solid rgba(141, 240, 174, .16); border-radius: 18px; background: rgba(2, 12, 9, .3); }
 .deferred-reader-body { padding: 20px; }
 .demo-only { display: none; }
+.voice-only { display: none; }
+body[data-voice="true"] .voice-only { display: block; }
+body[data-voice="true"] :is(.read-only, .generation-heading, .next-page, .renderer-preflight) { display: none; }
+.mode-links { display: flex; gap: 20px; flex-wrap: wrap; margin: 0 0 24px; font-size: 14px; }
+.mode-links a { color: var(--green); }
 body[data-demo="true"] .demo-only { display: block; }
 body[data-demo="true"] :is(.generation-heading, .renderer-preflight, .generate-button, .generate-note, .next-page, .input-card > .options, .input-card > .instruction) { display: none; }
 .try-live h3 { margin: 5px 0 6px; font-family: Georgia, serif; font-size: 24px; font-weight: 500; }
