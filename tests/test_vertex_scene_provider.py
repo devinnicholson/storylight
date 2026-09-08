@@ -8,7 +8,7 @@ import httpx
 import pytest
 
 from bookforge.finite_modal_provider import FastSceneRequest
-from bookforge.provider_router import SafeProviderFallbackError
+from bookforge.provider_router import SafeProviderFallbackError, SafeProviderRateLimitError
 from bookforge.vertex_scene_provider import (
     DEPTH_MODEL,
     PROVIDER_NAME,
@@ -17,6 +17,7 @@ from bookforge.vertex_scene_provider import (
     VertexSceneAmbiguousError,
     VertexSceneProviderError,
     _request_payload,
+    _retry_after_seconds,
 )
 
 
@@ -227,6 +228,44 @@ def test_vertex_explicit_http_rejection_is_safe_to_fallback(tmp_path: Path) -> N
         )
 
     assert provider._reserved_usd == 0
+
+
+def test_vertex_rate_limit_preserves_recovery_delay_without_retry(tmp_path, monkeypatch):
+    monkeypatch.setattr("bookforge.vertex_scene_provider.time.time", lambda: 1788849600)
+    assert _retry_after_seconds("Tue, 08 Sep 2026 06:40:45 GMT") == 45
+    assert _retry_after_seconds("Tue, 08 Sep 2026 06:39:00 GMT") == 0
+    for header in (None, "-1", "nan", "inf", "9" * 400, "bad header", "1.5"):
+        assert _retry_after_seconds(header) is None
+    assert _retry_after_seconds("7200") == 7200
+
+    calls = []
+
+    async def token_source():
+        return "token"
+
+    def handler(request):
+        calls.append(request)
+        return httpx.Response(429, headers={"Retry-After": "120"}, json={"error": {}})
+
+    provider = VertexGeminiImageSceneProvider(
+        project_id="your-gcp-project", token_source=token_source,
+        client_factory=lambda **kwargs: httpx.AsyncClient(
+            transport=httpx.MockTransport(handler), **kwargs),
+    )
+
+    async def exercise():
+        with pytest.raises(SafeProviderRateLimitError) as error:
+            await provider.generate_fast(
+                FastSceneRequest(scene_id="limited", prompt="A paper forest."),
+                output_dir=tmp_path / "limited",
+            )
+        assert error.value.retry_after_seconds == 120
+        await provider.aclose()
+
+    asyncio.run(exercise())
+    assert len(calls) == 1
+    assert provider._reserved_usd == 0
+    assert not (tmp_path / "limited").exists()
 
 
 def test_vertex_billable_invalid_response_fails_closed_and_reserves_cost(

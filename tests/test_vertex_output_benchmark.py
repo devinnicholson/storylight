@@ -38,9 +38,15 @@ def test_pairs_change_only_modality_and_balance_order():
     assert "thoughtSignature" not in benchmark.FIELD_MASK
     assert "finishReason" in benchmark.FIELD_MASK
     assert "safetyRatings" in benchmark.FIELD_MASK
+    capacity = benchmark.schedule(capacity=True)
+    assert len(capacity) == 12
+    for first, second in zip(capacity[::2], capacity[1::2], strict=True):
+        assert first["payload"] == second["payload"]
+        assert [first["arm"], second["arm"]] == ["text_image", "baseline_repeat"]
 
 
-def test_ambiguous_dispatch_stops_and_existing_run_cannot_replay(tmp_path, monkeypatch):
+@pytest.mark.parametrize("alternate", [False, True])
+def test_ambiguous_dispatch_stops_and_existing_run_cannot_replay(tmp_path, monkeypatch, alternate):
     calls = []
 
     async def token():
@@ -57,14 +63,34 @@ def test_ambiguous_dispatch_stops_and_existing_run_cannot_replay(tmp_path, monke
     ))
     out = tmp_path / "experiment"
     with pytest.raises(httpx.ReadTimeout):
-        asyncio.run(benchmark.run(out))
+        asyncio.run(benchmark.run(out, capacity=alternate, flash_512=alternate))
     assert len(calls) == 1
+    if alternate:
+        assert benchmark.ALTERNATE_MODEL in str(calls[0].url)
+        config = json.loads(calls[0].content)["generationConfig"]
+        assert config["maxOutputTokens"] == 4096
+        assert config["imageConfig"]["imageSize"] == "512"
+        assert config["thinkingConfig"] == {"thinkingLevel": "MINIMAL"}
+        manifest = json.loads((out / "manifest.json").read_text())
+        assert len(manifest["operations"]) == 12
+        assert manifest["maximum_request_reservation_usd"] * 12 <= 3
     journal = [json.loads(line) for line in (out / "journal.jsonl").read_text().splitlines()]
     assert [r["event"] for r in journal] == ["dispatch", "failed"]
     assert "test-token" not in (out / "journal.jsonl").read_text()
     with pytest.raises(FileExistsError):
         asyncio.run(benchmark.run(out))
     assert len(calls) == 1
+
+
+@pytest.mark.parametrize("options", [
+    {"field_mask": True, "capacity": True}, {"interval": float("nan")},
+    {"interval": 31, "capacity": True}, {"interval": 30}, {"flash_512": True},
+])
+def test_invalid_run_is_rejected_before_output_or_cloud(tmp_path, options):
+    output = tmp_path / "invalid"
+    with pytest.raises(ValueError):
+        asyncio.run(benchmark.run(output, **options))
+    assert not output.exists()
 
 
 @pytest.mark.parametrize("reason,thought", [("MAX_TOKENS", False), ("STOP", True)])

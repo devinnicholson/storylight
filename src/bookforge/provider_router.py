@@ -27,6 +27,18 @@ class SafeProviderFallbackError(FiniteModalUnavailableError):
     """A provider rejected work before it could create a billable result."""
 
 
+class SafeProviderRateLimitError(SafeProviderFallbackError):
+    """An explicit rate limit; its cooldown applies to later requests."""
+
+    def __init__(self, message: str, *, retry_after_seconds: float | None = None) -> None:
+        if retry_after_seconds is not None and (
+            not math.isfinite(retry_after_seconds) or retry_after_seconds < 0
+        ):
+            raise ValueError("retry-after delay must be finite and nonnegative")
+        super().__init__(message)
+        self.retry_after_seconds = retry_after_seconds
+
+
 class RoutedFastSceneProvider(Protocol):
     async def probe(self) -> tuple[bool, str]: ...
 
@@ -170,7 +182,13 @@ class ResilientFastSceneProvider:
                         "detail": detail,
                     }
                 )
-                await self._mark_unavailable(route.name, detail)
+                cooldown = None
+                if isinstance(error, SafeProviderRateLimitError):
+                    cooldown = (
+                        error.retry_after_seconds
+                        if error.retry_after_seconds is not None else 30.0
+                    )
+                await self._mark_unavailable(route.name, detail, cooldown_seconds=cooldown)
                 continue
             except FiniteModalUnavailableError as error:
                 # The readiness gate passed and generation started. Older
@@ -285,10 +303,15 @@ class ResilientFastSceneProvider:
             if detail:
                 self._last_detail[route.name] = detail
 
-    async def _mark_unavailable(self, name: str, detail: str) -> None:
+    async def _mark_unavailable(
+        self, name: str, detail: str, *, cooldown_seconds: float | None = None,
+    ) -> None:
         async with self._lock:
             self._healthy_until.pop(name, None)
-            self._unavailable_until[name] = time.monotonic() + self.failure_cooldown_seconds
+            cooldown = (
+                self.failure_cooldown_seconds if cooldown_seconds is None else cooldown_seconds
+            )
+            self._unavailable_until[name] = time.monotonic() + cooldown
             self._last_detail[name] = detail
 
     @staticmethod

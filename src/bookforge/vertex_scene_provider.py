@@ -11,6 +11,7 @@ import time
 import zlib
 from collections.abc import Awaitable, Callable, Mapping
 from datetime import UTC, datetime
+from email.utils import parsedate_to_datetime
 from pathlib import Path
 from typing import Any
 
@@ -23,7 +24,7 @@ from bookforge.finite_modal_provider import (
     MotionUpgradeRequest,
     SceneArtifact,
 )
-from bookforge.provider_router import SafeProviderFallbackError
+from bookforge.provider_router import SafeProviderFallbackError, SafeProviderRateLimitError
 
 PROVIDER_NAME = "gcp-vertex-gemini-image"
 DEFAULT_MODEL = "gemini-3.1-flash-lite-image"
@@ -168,6 +169,11 @@ class VertexGeminiImageSceneProvider:
                     f"Vertex image request ended ambiguously: {error}"
                 ) from error
             remote_seconds = time.perf_counter() - started
+            if response.status_code == 429:
+                raise SafeProviderRateLimitError(
+                    "Vertex rejected image generation with HTTP 429",
+                    retry_after_seconds=_retry_after_seconds(response.headers.get("retry-after")),
+                )
             if response.status_code >= 400:
                 # Vertex pricing documents charge successful (200) predictions;
                 # an explicit non-2xx response is therefore safe to route onward.
@@ -287,6 +293,22 @@ async def google_access_token() -> str:
         return token
 
     return await asyncio.to_thread(fetch)
+
+
+def _retry_after_seconds(value: str | None) -> float | None:
+    if value is None:
+        return None
+    try:
+        if value.strip().isascii() and value.strip().isdigit():
+            seconds = float(value)
+        else:
+            retry_at = parsedate_to_datetime(value)
+            if retry_at.tzinfo is None:
+                return None
+            seconds = max(0.0, retry_at.timestamp() - time.time())
+        return seconds if math.isfinite(seconds) else None
+    except (ValueError, TypeError, OverflowError):
+        return None
 
 
 def _request_payload(request: FastSceneRequest) -> dict[str, Any]:

@@ -7,6 +7,7 @@ import pytest
 
 from bookforge.finite_modal_provider import (
     FastSceneRequest,
+    FiniteModalUnavailableError,
     FiniteSceneBundle,
     SceneArtifact,
 )
@@ -14,6 +15,7 @@ from bookforge.provider_router import (
     ProviderRoute,
     ResilientFastSceneProvider,
     SafeProviderFallbackError,
+    SafeProviderRateLimitError,
 )
 
 
@@ -230,3 +232,45 @@ def test_router_never_duplicates_an_ambiguous_paid_request(tmp_path: Path) -> No
 
     assert primary.generations == 1
     assert fallback.generations == 0
+
+
+@pytest.mark.parametrize("error, cooldown", [
+    (SafeProviderRateLimitError("HTTP 429"), 30),
+    (SafeProviderRateLimitError("HTTP 429", retry_after_seconds=120), 120),
+    (SafeProviderFallbackError("HTTP 403"), 300),
+])
+def test_router_rechecks_only_new_requests_after_rejection_cooldown(
+    tmp_path: Path, monkeypatch, error: SafeProviderFallbackError, cooldown: float,
+) -> None:
+    now = 1000.0
+    monkeypatch.setattr("bookforge.provider_router.time.monotonic", lambda: now)
+    provider = StubProvider("vertex", generation_error=error)
+    router = ResilientFastSceneProvider([ProviderRoute("vertex", provider)])
+
+    async def exercise():
+        nonlocal now
+        with pytest.raises(FiniteModalUnavailableError):
+            await router.generate_fast(_request("rejected"), output_dir=tmp_path / "rejected")
+        assert provider.generations == 1
+        assert router._unavailable_until["vertex"] == now + cooldown
+        provider.generation_error = None
+        now += cooldown - 0.01
+        with pytest.raises(FiniteModalUnavailableError):
+            await router.generate_fast(_request("too-early"), output_dir=tmp_path / "too-early")
+        assert provider.generations == provider.probes == 1
+        now += 0.01
+        bundle = await router.generate_fast(_request("recovered"), output_dir=tmp_path / "ok")
+        assert bundle.scene_id == "recovered"
+        assert provider.generations == provider.probes == 2
+
+    asyncio.run(exercise())
+
+
+def test_rate_limit_delay_validation_preserves_server_delay() -> None:
+    for delay in [-1, float("nan"), float("inf")]:
+        with pytest.raises(ValueError, match="finite and nonnegative"):
+            SafeProviderRateLimitError("HTTP 429", retry_after_seconds=delay)
+    for delay in [0, 7200]:
+        error = SafeProviderRateLimitError("HTTP 429", retry_after_seconds=delay)
+        assert error.retry_after_seconds == delay
+        assert isinstance(error, SafeProviderFallbackError)

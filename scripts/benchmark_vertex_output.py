@@ -7,6 +7,7 @@ import hashlib
 import importlib.metadata
 import io
 import json
+import math
 import platform
 import statistics
 import time
@@ -30,6 +31,7 @@ STYLE = (
     "Rich luminous watercolor storybook illustration, layered depth, detailed natural "
     "scenery, full-bleed 16:9. "
 )
+ALTERNATE_MODEL = "gemini-3.1-flash-image"
 SCENES = [
     "Exactly one orange cat chases exactly one gray mouse along a garden path.",
     "Exactly one pink fox jumps over a narrow stream in a lush forest.",
@@ -78,9 +80,17 @@ def validate_output(payload):
     return _extract_image({"candidates": [{"content": {"parts": image_parts}}]})
 
 
-def schedule(field_mask=False):
+def schedule(field_mask=False, capacity=False):
     rows = []
     for case, scene in enumerate(SCENES):
+        if capacity:
+            payload = _request_payload(FastSceneRequest(
+                scene_id=f"capacity-{case}", prompt=STYLE + scene, seed=7600 + case,
+            ))
+            for arm in ("text_image", "baseline_repeat"):
+                rows.append({"ordinal": len(rows), "case": case, "repeat": 0,
+                             "arm": arm, "payload": copy.deepcopy(payload)})
+            continue
         arms = ["text_image", "image", "image", "text_image"]
         if case % 2:
             arms = ["image", "text_image", "text_image", "image"]
@@ -108,7 +118,8 @@ def summarize(directory):
     complete = [r for r in records if r["event"] == "complete"]
     manifest = json.loads((directory / "manifest.json").read_text())
     expected = manifest["operations"]
-    candidate = "field_mask" if manifest.get("field_mask") else "image"
+    candidate = ("baseline_repeat" if manifest.get("capacity") else
+                 "field_mask" if manifest.get("field_mask") else "image")
     dispatched = [r for r in records if r["event"] == "dispatch"]
     assert [r["ordinal"] for r in dispatched] == list(range(len(dispatched)))
     assert len(dispatched) <= len(expected)
@@ -139,7 +150,7 @@ def summarize(directory):
         result["median_improvement_percent"] = 100 * (
             1 - arms[candidate]["median_ms"] / arms["text_image"]["median_ms"]
         )
-    if manifest.get("field_mask"):
+    if manifest.get("field_mask") or manifest.get("capacity"):
         pairs = []
         for case in range(6):
             for repeat in range(2):
@@ -161,7 +172,7 @@ def summarize(directory):
                     "candidate_response_bytes": filtered["response_bytes"],
                 })
         result["pairs"] = pairs
-        result["promotion_qualified"] = (
+        result["promotion_qualified"] = not manifest.get("capacity", False) and (
             len(pairs) == 12 and result["failures"] == 0
             and result["median_improvement_percent"] >= 5
             and arms[candidate]["max_ms"] <= arms["text_image"]["max_ms"]
@@ -171,24 +182,46 @@ def summarize(directory):
     return result
 
 
-async def run(directory, *, field_mask=False, interval=0):
+async def run(directory, *, field_mask=False, interval=0, capacity=False, flash_512=False):
+    if field_mask and capacity:
+        raise ValueError("Capacity probe uses only unfiltered responses")
+    if not math.isfinite(interval) or not 0 <= interval <= 30:
+        raise ValueError("interval must be between 0 and 30 seconds")
+    if not capacity and interval > 20:
+        raise ValueError("24-call comparisons require interval at most 20 seconds")
+    if flash_512 and not capacity:
+        raise ValueError("Alternate model screen requires the capacity schedule")
     directory.mkdir(parents=True, exist_ok=False)
-    rows = schedule(field_mask)
+    rows = schedule(field_mask, capacity)
+    model = ALTERNATE_MODEL if flash_512 else DEFAULT_MODEL
+    if flash_512:
+        for row in rows:
+            config = row["payload"]["generationConfig"]
+            config["imageConfig"]["imageSize"] = "512"
+            config["thinkingConfig"] = {"thinkingLevel": "MINIMAL"}
+            config["maxOutputTokens"] = 4096
     endpoint = ("https://aiplatform.googleapis.com/v1/projects/your-gcp-project/"
-                f"locations/global/publishers/google/models/{DEFAULT_MODEL}:generateContent")
-    manifest = {"created_at": datetime.now(UTC).isoformat(), "model": DEFAULT_MODEL,
+                f"locations/global/publishers/google/models/{model}:generateContent")
+    manifest = {"created_at": datetime.now(UTC).isoformat(), "model": model,
                 "endpoint": endpoint, "script_sha256": sha(Path(__file__).read_bytes()),
                 "provider_sha256": sha(Path(vertex_scene_provider.__file__).read_bytes()),
                 "python": platform.python_version(), "platform": platform.platform(),
                 "httpx": importlib.metadata.version("httpx"), "http2": False,
                 "field_mask": FIELD_MASK if field_mask else None,
+                "capacity": capacity,
+                "flash_512": flash_512,
                 "minimum_dispatch_interval_seconds": interval,
-                "maximum_requests": 24, "deadline_seconds": 600,
-                "image_component_estimate_usd": 24 * 0.0336,
+                "maximum_requests": len(rows), "deadline_seconds": 600,
+                "image_component_estimate_usd": len(rows) * (747 * 60 / 1e6
+                                                            if flash_512 else 0.0336),
                 "total_planning_allowance_usd": 3.0, "automatic_retries": 0,
-                "maximum_request_reservation_usd": 4096 * 30 / 1e6 + 4000 * 0.25 / 1e6,
+                "maximum_request_reservation_usd": (
+                    4096 * (60 if flash_512 else 30) / 1e6
+                    + 4000 * (0.5 if flash_512 else 0.25) / 1e6),
                 "client": "Mac; direct Vertex; excludes Jetson and browser",
                 "promotion_gate": (
+                    "diagnostic only; 12 successful requests; measure baseline seed variation"
+                    if capacity else
                     "5% median gain; 60% fewer bytes; identical pixels; no worse maximum/failures"
                     if field_mask else "20% median gain; no worse maximum/failures; visual review"
                 ),
@@ -233,6 +266,11 @@ async def run(directory, *, field_mask=False, interval=0):
                         received_ms = (time.perf_counter() - started) * 1000
                         payload = json.loads(b"".join(chunks))
                         evidence, _ = response_evidence(payload)
+                        evidence["transport"] = {
+                            key: response.headers[key] for key in
+                            ("retry-after", "x-request-id", "x-goog-request-id", "server-timing")
+                            if key in response.headers
+                        }
                         (directory / f"{row['ordinal']:02d}-response.json").write_text(
                             json.dumps(evidence, indent=2) + "\n")
                         response.raise_for_status()
@@ -272,11 +310,12 @@ if __name__ == "__main__":
     parser.add_argument("directory", type=Path)
     parser.add_argument("--run", action="store_true", help="Makes up to 24 billable image calls")
     parser.add_argument("--field-mask", action="store_true", help="Compare signature filtering")
+    parser.add_argument("--capacity", action="store_true", help="12 unfiltered A/A calls")
+    parser.add_argument("--flash-512", action="store_true", help="Screen Flash Image at 512")
     parser.add_argument("--interval", type=float, default=0, help="Seconds between dispatches")
     args = parser.parse_args()
     if args.run:
-        if not 0 <= args.interval <= 20:
-            parser.error("interval must be between 0 and 20 seconds")
-        asyncio.run(run(args.directory, field_mask=args.field_mask, interval=args.interval))
+        asyncio.run(run(args.directory, field_mask=args.field_mask,
+                        interval=args.interval, capacity=args.capacity, flash_512=args.flash_512))
     else:
         print(json.dumps(summarize(args.directory), indent=2))
