@@ -127,7 +127,10 @@ async function generateDoesNotWaitForBackgroundPlannerWarmup() {
     starting: false, finalizing: false, generationSubmitting: false, activeLiveJobId: null,
     pendingSubmission: null, latestLiveSnapshot: null, AbortController,
     updateMicAvailability() {},
-    fetchLiveSceneSession: async () => null,
+    fetchLiveSceneSession: async (empty) => {
+      if (empty) empty.serverInstanceId = `server_${"a".repeat(32)}`;
+      return null;
+    },
     performance: {now: () => 0},
     stopLiveJobTransport() {}, setSceneInputsDisabled() {},
     renderGenerationProgress() {}, updateElapsedClock() {}, ensureProjectionPreview() {},
@@ -139,10 +142,11 @@ async function generateDoesNotWaitForBackgroundPlannerWarmup() {
       if (url.endsWith("/warmup")) return warmup;
       assert.equal(url, "/v1/live-scenes");
       submitted.push(JSON.parse(options.body));
-      return {status: 202, json: async () => ({job_id: "scene-cached"})};
+      return {status: 202, json: async () => ({job_id: "scene-cached", request: submitted.at(-1)})};
     },
   });
   context.window.setInterval = () => 1;
+  context.window.crypto = require("crypto").webcrypto;
   const source = fs.readFileSync("src/bookforge/static/workbench.js", "utf8");
   for (const [start, end] of [
     ["async function warmEdgePlanner(", "function scheduleEdgePlanPreparation("],
@@ -155,7 +159,10 @@ async function generateDoesNotWaitForBackgroundPlannerWarmup() {
   assert.deepEqual(requests, ["/v1/live-scene-planner/warmup", "/v1/live-scenes"]);
   assert.deepEqual(submitted, [{
     text: elements.story.value, visual_style: elements.style.value, session_id: context.readerSessionId,
+    submission_id: submitted[0].submission_id,
+    expected_server_instance_id: `server_${"a".repeat(32)}`, expected_session_revision: 0,
   }]);
+  assert.match(submitted[0].submission_id, /^[a-f0-9]{8}(?:-[a-f0-9]{4}){3}-[a-f0-9]{12}$/);
   await generation;
   assert.equal(context.activeLiveJobId, "scene-cached");
   assert.equal(context.edgePlannerWarmUntil, 0);

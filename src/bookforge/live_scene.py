@@ -206,11 +206,22 @@ class LiveSceneCreateRequest(FrozenStrictModel):
     visual_fact_digest: Annotated[str, StringConstraints(pattern=r"^[a-f0-9]{64}$")] | None = None
     display_when_complete: bool = False
     defer_presentation: bool = False
+    submission_id: Annotated[
+        str, StringConstraints(pattern=r"^[a-f0-9]{8}(?:-[a-f0-9]{4}){3}-[a-f0-9]{12}$"),
+    ] | None = None
+    expected_server_instance_id: LiveSceneServerInstanceId | None = None
+    expected_session_revision: Annotated[int, Field(ge=0)] | None = None
 
     @model_validator(mode="after")
     def validate_presentation(self) -> LiveSceneCreateRequest:
         if self.defer_presentation and (not self.display_when_complete or self.session_id is None):
             raise ValueError("Deferred presentation requires a session and complete-only display")
+        guarded = (
+            self.submission_id is not None, self.expected_server_instance_id is not None,
+            self.expected_session_revision is not None,
+        )
+        if any(guarded) and (not all(guarded) or self.session_id is None):
+            raise ValueError("Guarded submission requires a session, ID, server and revision")
         return self
 
 
@@ -752,6 +763,10 @@ class LiveSceneJobRegistry:
         self._session_subscribers: dict[str, set[LiveSceneSessionSubscription]] = {}
         self._session_planner_activity: dict[str, int] = {}
         self._session_revision_sequence = 0
+        # Keep small, source-free claims after job eviction. Never forget a claim
+        # and accidentally repeat paid work; reject new claims when capacity fills.
+        self.max_submission_claims = max_retained_jobs * 16
+        self._submission_jobs: dict[tuple[str, str], str] = {}
         self._tasks: dict[str, asyncio.Task[None]] = {}
         self._lock = asyncio.Lock()
         self._closed = False
@@ -760,6 +775,25 @@ class LiveSceneJobRegistry:
         async with self._lock:
             if self._closed:
                 raise LiveSceneRegistryClosedError("Live-scene job registry is closed")
+            submission_key = None
+            if request.submission_id is not None:
+                if request.expected_server_instance_id != self.server_instance_id:
+                    raise LiveSceneConflictError("Submission belongs to another server instance")
+                submission_key = (request.session_id, request.submission_id)
+                claimed_job_id = self._submission_jobs.get(submission_key)
+                if claimed_job_id is not None:
+                    claimed = self._jobs.get(claimed_job_id)
+                    if claimed is None:
+                        raise LiveSceneConflictError("Submission result is no longer retained")
+                    if claimed.snapshot.request != request:
+                        raise LiveSceneConflictError("Submission ID was used with another request")
+                    return claimed.snapshot
+                pointer = self._session_jobs.get(request.session_id)
+                revision = pointer[0] if pointer is not None else 0
+                if request.expected_session_revision != revision:
+                    raise LiveSceneConflictError("Generation session changed before submission")
+                if len(self._submission_jobs) >= self.max_submission_claims:
+                    raise LiveSceneCapacityError("Guarded submission capacity is full")
             if request.session_id is not None:
                 pointer = self._session_jobs.get(request.session_id)
                 if pointer is not None:
@@ -815,6 +849,8 @@ class LiveSceneJobRegistry:
             )
             record = _JobRecord(snapshot=snapshot, started_monotonic=perf_counter())
             self._jobs[job_id] = record
+            if submission_key is not None:
+                self._submission_jobs[submission_key] = job_id
             if request.session_id is not None:
                 self._session_revision_sequence += 1
                 self._session_jobs[request.session_id] = (

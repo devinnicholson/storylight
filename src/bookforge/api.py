@@ -721,9 +721,12 @@ async def create_live_scene(
         job = await registry.submit(payload)
         if payload.session_id is not None:
             pointer = await registry.get_session(payload.session_id)
-            response.headers["X-Bookforge-Server-Instance-Id"] = pointer.server_instance_id
-            response.headers["X-Bookforge-Session-Revision"] = str(pointer.session_revision)
+            if pointer.job.job_id == job.job_id:
+                response.headers["X-Bookforge-Server-Instance-Id"] = pointer.server_instance_id
+                response.headers["X-Bookforge-Session-Revision"] = str(pointer.session_revision)
         return job
+    except LiveSceneConflictError as error:
+        raise HTTPException(status_code=409, detail=str(error)) from error
     except LiveSceneCapacityError as error:
         raise HTTPException(status_code=429, detail=str(error)) from error
     except LiveSceneRegistryClosedError as error:
@@ -1191,7 +1194,10 @@ async def live_scene_session_status(
     try:
         return await registry.get_session(session_id)
     except LiveSceneNotFoundError as error:
-        raise HTTPException(status_code=404, detail=str(error)) from error
+        raise HTTPException(
+            status_code=404, detail=str(error),
+            headers={"X-Bookforge-Server-Instance-Id": registry.server_instance_id},
+        ) from error
 
 
 @app.get(

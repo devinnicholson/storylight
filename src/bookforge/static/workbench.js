@@ -1084,7 +1084,7 @@ function renderLiveSnapshot(snapshot, epoch = liveRequestEpoch) {
   if (isTerminalSnapshot(snapshot)) finishLiveJob(snapshot);
 }
 
-async function fetchLiveSceneSession() {
+async function fetchLiveSceneSession(emptySession = null) {
   const controller = new AbortController();
   const timer = window.setTimeout(() => controller.abort(), 10000);
   try {
@@ -1092,7 +1092,14 @@ async function fetchLiveSceneSession() {
       `/v1/live-scene-sessions/${encodeURIComponent(readerSessionId)}`,
       {cache: "no-store", signal: controller.signal},
     );
-    if (response.status === 404) return null;
+    if (response.status === 404) {
+      const server = response.headers.get("X-Bookforge-Server-Instance-Id");
+      if (!/^server_[a-f0-9]{32}$/.test(server || "")) {
+        throw new Error("Generation service did not provide a current server ID. Update or reconnect before generating.");
+      }
+      if (emptySession) emptySession.serverInstanceId = server;
+      return null;
+    }
     const payload = await response.json();
     if (!response.ok) throw new Error(payload.detail || `Session rendezvous failed (${response.status})`);
     if (payload.session_id !== readerSessionId || !payload.job?.job_id) {
@@ -1337,6 +1344,8 @@ async function reconcileGeneration() {
       && (!pendingSubmission.previousServer || (pointer.server_instance_id === pendingSubmission.previousServer
         && pointer.session_revision > pendingSubmission.previousRevision))
       && request?.text === expected.text && request?.visual_style === expected.visual_style
+      && typeof expected.submission_id === "string"
+      && request.submission_id === expected.submission_id
       && Boolean(request.reviewed_description) === Boolean(expected.reviewed_description)
       && Boolean(request.display_when_complete) === Boolean(expected.display_when_complete)
       && Boolean(request.defer_presentation) === Boolean(expected.defer_presentation)
@@ -1533,13 +1542,14 @@ async function compileStory(options = {}) {
 
   let rejected = true;
   try {
-    const prior = await fetchLiveSceneSession();
-    if (prior && (typeof prior.server_instance_id !== "string" || !prior.server_instance_id
+    const emptySession = {};
+    const prior = await fetchLiveSceneSession(emptySession);
+    if (prior && (!/^server_[a-f0-9]{32}$/.test(prior.server_instance_id || "")
       || !Number.isSafeInteger(prior.session_revision) || prior.session_revision < 1)) {
       throw new Error("Generation session returned an invalid revision.");
     }
     submission.previousJobId = prior?.job?.job_id || null;
-    submission.previousServer = prior?.server_instance_id || null;
+    submission.previousServer = prior?.server_instance_id || emptySession.serverInstanceId;
     submission.previousRevision = prior?.session_revision || 0;
     if (prior && !isTerminalSnapshot(prior.job)) {
       if (automatic && voiceSnapshotKey(prior.job) !== voiceIntent.key) {
@@ -1553,6 +1563,12 @@ async function compileStory(options = {}) {
       voiceGeneration.attempted.delete(voiceIntent.key);
       return;
     }
+    if (!submission.previousServer) {
+      throw new Error("Generation service did not provide a current server ID. Reconnect before generating.");
+    }
+    submission.request.submission_id = window.crypto.randomUUID();
+    submission.request.expected_server_instance_id = submission.previousServer;
+    submission.request.expected_session_revision = submission.previousRevision;
     const controller = new AbortController();
     const timer = window.setTimeout(() => controller.abort(), 15000);
     let response;
@@ -1568,8 +1584,18 @@ async function compileStory(options = {}) {
     } finally {
       window.clearTimeout(timer);
     }
+    if (response.status === 409) {
+      if (voiceMode) voiceGeneration.attempted.add(voiceIntentKey(text, submission.request.visual_style));
+      const current = await fetchLiveSceneSession();
+      if (current) handleLiveSceneSessionPointer(current);
+      elements.interim.textContent = "Another scene request changed this session. Showing its status; no additional image was requested.";
+      return;
+    }
     if (response.status !== 202) throw new Error(snapshot.detail?.message || snapshot.detail || `Request failed (${response.status})`);
     if (!snapshot.job_id) throw new Error("Generation service returned no job ID.");
+    if (snapshot.request?.submission_id !== submission.request.submission_id) {
+      throw new Error("Generation service returned a different submission.");
+    }
     const pointer = acceptedLiveScenePointer(response, snapshot) || await fetchLiveSceneSession();
     if (!pointer) throw new Error("Generation session did not retain the accepted job.");
     handleLiveSceneSessionPointer(pointer);

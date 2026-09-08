@@ -2,6 +2,7 @@ import hashlib
 import json
 import os
 from types import SimpleNamespace
+from uuid import uuid4
 
 import pytest
 
@@ -50,6 +51,46 @@ def _sse_data(response_text: str) -> list[dict[str, object]]:
         for line in response_text.splitlines()
         if line.startswith("data: ")
     ]
+
+
+def test_guarded_create_uses_empty_session_epoch_and_replays_without_generation() -> None:
+    class AmbiguousProvider:
+        name = "fake"
+        calls = 0
+
+        async def generate(self, request, *, job_id):
+            self.calls += 1
+            raise RuntimeError("Upstream completion is uncertain")
+            yield
+
+    with TestClient(app) as client:
+        provider = AmbiguousProvider()
+        app.state.live_scenes.provider = provider
+        empty = client.get("/v1/live-scene-sessions/typed-scene-demo")
+        assert empty.status_code == 404
+        server = empty.headers["x-bookforge-server-instance-id"]
+        payload = {**_payload(), "submission_id": str(uuid4()),
+                   "expected_server_instance_id": server, "expected_session_revision": 0}
+        first = client.post("/v1/live-scenes", json=payload)
+        assert first.status_code == 202
+        job_id = first.json()["job_id"]
+        client.get(f"/v1/live-scenes/{job_id}/events")
+        replay = client.post("/v1/live-scenes", json=payload)
+        assert replay.status_code == 202 and replay.json()["job_id"] == job_id
+        assert replay.json()["stage"] == "failed"
+        assert provider.calls == 1
+        for changes in [{"submission_id": str(uuid4())}, {"text": "Another fox runs."},
+                        {"expected_server_instance_id": f"server_{'0' * 32}"}]:
+            assert client.post("/v1/live-scenes", json={**payload, **changes}).status_code == 409
+        assert provider.calls == 1
+        revision = int(first.headers["x-bookforge-session-revision"])
+        replacement = client.post("/v1/live-scenes", json={
+            **payload, "submission_id": str(uuid4()), "expected_session_revision": revision,
+        })
+        assert replacement.status_code == 202
+        old = client.post("/v1/live-scenes", json=payload)
+        assert old.status_code == 202 and old.json()["job_id"] == job_id
+        assert "x-bookforge-session-revision" not in old.headers
 
 
 def test_model_planner_rejects_completed_deterministic_fallback_cache() -> None:

@@ -1,6 +1,7 @@
 const assert = require("assert").strict;
 const fs = require("fs");
 const vm = require("vm");
+const SERVER_ID = `server_${"a".repeat(32)}`;
 
 const source = fs.readFileSync("src/bookforge/static/workbench.js", "utf8");
 for (const [query, expected] of [
@@ -48,6 +49,7 @@ function harness() {
       return {getTracks: () => [{stop: () => events.push("track-stop")}]};
     }}},
     window: {
+      crypto: require("crypto").webcrypto,
       MediaRecorder: Recorder,
       AudioContext: class {
         createAnalyser() { return {}; }
@@ -194,7 +196,7 @@ function generationHarness() {
     };
   };
   const response = (status, payload) => ({ok: status < 400, status, json: async () => payload,
-    headers: {get: (name) => name === "X-Bookforge-Server-Instance-Id" ? "server-1" : String(pointer.session_revision)},
+    headers: {get: (name) => name === "X-Bookforge-Server-Instance-Id" ? SERVER_ID : String(pointer?.session_revision || 0)},
   });
   h.state = {rejectCheck: false, ready};
   c.respond = async (url, options = {}) => {
@@ -215,7 +217,10 @@ function generationHarness() {
     if (url === "/v1/live-scenes") {
       const request = JSON.parse(options.body);
       submitted.push(request);
-      pointer = {session_id: c.readerSessionId, server_instance_id: "server-1",
+      assert.equal(request.expected_server_instance_id, SERVER_ID);
+      assert.equal(request.expected_session_revision, pointer?.session_revision || 0);
+      assert.match(request.submission_id, /^[a-f0-9]{8}(?:-[a-f0-9]{4}){3}-[a-f0-9]{12}$/);
+      pointer = {session_id: c.readerSessionId, server_instance_id: SERVER_ID,
         session_revision: (pointer?.session_revision || 0) + 1,
         job: {job_id: `job-${submitted.length}`, request, revision: 1,
           stage: "draft_ready", complete: false, presentation_ready: false, story_pack: {pages: []}}};
@@ -224,7 +229,7 @@ function generationHarness() {
     if (url.endsWith("/present")) {
       presented.push({url, body: JSON.parse(options.body)});
       assert.equal(url, `/v1/live-scenes/${pointer.job.job_id}/present`);
-      assert.deepEqual(presented.at(-1).body, {server_instance_id: "server-1", session_revision: pointer.session_revision});
+      assert.deepEqual(presented.at(-1).body, {server_instance_id: SERVER_ID, session_revision: pointer.session_revision});
       pointer = {...pointer, job: {...pointer.job, presentation_ready: true, revision: pointer.job.revision + 1}};
       return response(200, pointer.job);
     }
@@ -403,7 +408,7 @@ async function voiceToScene() {
   // while the first may already have incurred cost.
   const lost = generationHarness();
   const lostRespond = lost.context.respond;
-  const historical = {session_id: lost.context.readerSessionId, server_instance_id: "server-1",
+  const historical = {session_id: lost.context.readerSessionId, server_instance_id: SERVER_ID,
     session_revision: 7, job: {job_id: "historical", complete: true, stage: "master_ready",
       request: {text: "A cat chasing a mouse.", visual_style: "rich watercolor"}}};
   lost.setPointer(historical);
@@ -430,6 +435,11 @@ async function voiceToScene() {
       request: {...lost.submitted[0], visual_fact_digest: "b".repeat(64)}}});
   await lost.context.reconcileGeneration();
   assert.notEqual(lost.context.pendingSubmission, null);
+  lost.setPointer({...historical, session_revision: 8,
+    job: {job_id: "other-tab-same-text", revision: 1, stage: "draft_ready", complete: false,
+      request: {...lost.submitted[0], submission_id: require("crypto").randomUUID()}}});
+  await lost.context.reconcileGeneration();
+  assert.notEqual(lost.context.pendingSubmission, null); // Matching text cannot claim another POST.
   lost.setPointer({...historical, session_revision: 9,
     job: {job_id: "recovered", revision: 1, stage: "draft_ready", complete: false,
       request: lost.submitted[0]}});
@@ -437,6 +447,44 @@ async function voiceToScene() {
   assert.equal(lost.context.pendingSubmission, null);
   assert.equal(lost.context.activeLiveJobId, "recovered");
   assert.equal(lost.submitted.length, 1);
+
+  // An old API must not make a stale remembered server epoch safe to reuse.
+  const missingEpoch = generationHarness();
+  const epochRespond = missingEpoch.context.respond;
+  missingEpoch.context.liveServerInstanceId = SERVER_ID;
+  missingEpoch.context.respond = (url, options) => url.includes("/live-scene-sessions/")
+    ? {status: 404, headers: {get: () => null}, json: async () => ({})}
+    : epochRespond(url, options);
+  missingEpoch.context.offerVoiceTranscript("A cat chasing a mouse.", {final: true});
+  await flush();
+  assert.equal(missingEpoch.submitted.length, 0);
+  assert.match(missingEpoch.elements.error.textContent, /current server ID/);
+  assert.equal(missingEpoch.context.pendingSubmission, null);
+
+  // A competing tab wins after the empty-session read. Adopt its pointer without
+  // cancelling it or resubmitting this rejected intent when that job finishes.
+  const conflict = generationHarness();
+  const conflictRespond = conflict.context.respond;
+  conflict.context.respond = (url, options) => {
+    if (url === "/v1/live-scenes") {
+      conflict.submitted.push(JSON.parse(options.body));
+      conflict.setPointer({session_id: conflict.context.readerSessionId,
+        server_instance_id: SERVER_ID, session_revision: 1,
+        job: {job_id: "competing-tab", revision: 1, complete: false, stage: "draft_ready",
+          request: {text: "A dog chasing a ball.", visual_style: "rich watercolor"}}});
+      return conflict.response(409, {detail: "Generation session changed before submission"});
+    }
+    return conflictRespond(url, options);
+  };
+  conflict.context.offerVoiceTranscript("A cat chasing a mouse.", {final: true});
+  await flush();
+  assert.equal(conflict.context.activeLiveJobId, "competing-tab");
+  assert.equal(conflict.context.pendingSubmission, null);
+  conflict.complete();
+  await flush();
+  await conflict.context.pumpVoiceGeneration();
+  assert.equal(conflict.submitted.length, 1);
+  assert.equal(conflict.presented.length, 0);
 
   // A failed presentation read is one bounded attempt, not a recursive retry
   // loop or a second image request. Keep a finite fake even if this regresses.
@@ -483,7 +531,7 @@ async function voiceToScene() {
   // Discovering another active job must leave the unsubmitted new intent
   // eligible, then start it exactly once when that older job finishes.
   const prior = generationHarness();
-  prior.setPointer({session_id: prior.context.readerSessionId, server_instance_id: "server-1",
+  prior.setPointer({session_id: prior.context.readerSessionId, server_instance_id: SERVER_ID,
     session_revision: 1, job: {job_id: "older", revision: 1, stage: "draft_ready", complete: false,
       presentation_ready: false, request: {text: "A cat chasing a mouse.", visual_style: "rich watercolor"}}});
   prior.context.offerVoiceTranscript("A dog chasing a ball.", {final: true});
