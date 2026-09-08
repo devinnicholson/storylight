@@ -1,158 +1,136 @@
-# Prepared inference sessions
+# Prepared inference sessions — 8 September 2026
 
-This program tests whether preparing the existing native GCP renderer before a
-voice session can deliver consistently fast complete images. It preserves the
-watercolor prompt, model weights, runtime and 1024 × 576 output. Production stays
-on the existing provider until both performance and image quality qualify.
+The repaired r/s/t cohort returned **30 of 30 measured results in under one
+second**: pooled median **0.512 seconds**, observed maximum **0.981 seconds**.
+Preparation took **68–83 seconds** per session. Supervised lifecycles took
+**254–275 seconds**, including provisioning, access propagation, measurement
+and deletion. All three release checks verified historical zero usage and current
+service absence.
 
-## Measurement protocol
+| Session | Preparation | First ready delivery | Median delivery | Maximum delivery |
+| --- | ---: | ---: | ---: | ---: |
+| r | 68.044 s | 0.717 s | 0.583 s | 0.981 s |
+| s | 82.730 s | 0.729 s | 0.486 s | 0.729 s |
+| t | 81.545 s | 0.736 s | 0.527 s | 0.736 s |
 
-Run three fresh private Cloud Run services sequentially. Each uses one RTX PRO
-6000, 20 vCPU, 80 GiB memory, concurrency one, minimum one and maximum one instance.
-Prepare the actual 128- and 256-token execution buckets, retaining both images and
-the complete preparation time. After 30 seconds idle, measure ten requests using
-the frozen eight-case corpus followed by its first two cases. Report preparation,
-first delivery, all ten delivery times, median and observed maximum separately.
+Delivery includes HTTP transfer, complete master/depth JPEG decoding, validation
+and saving. It excludes microphone capture, speech recognition, scene planning
+and browser/projector presentation. Preparation is the warmup request's elapsed
+time, excluding service provisioning. These are prepared-renderer results;
+they do not establish microphone-to-projector latency.
 
-The speed screen requires a median at most one second and observed maximum at
-most two seconds in each session. Thirty successes are a qualification screen,
-not a production reliability guarantee. Review every image for source facts and
-watercolor detail; faster output alone does not qualify a candidate.
+All **72 JPEGs** match their corresponding images from successful session o
+byte-for-byte. Rich watercolor detail remains, along with the known extra silver
+fox and lantern. The prepared serving adapter remains inactive; the existing
+production image provider is unchanged.
 
-Readiness belongs to one process identity and expires 300 seconds after preparation
-starts. Replacement, changed source identity, unsupported token bucket, expiry,
-duplicate ordinal and ambiguous responses fail the attempt. A failed request is
-never silently submitted again. Keep failed attempts and diagnose them before
-starting a separately identified experiment.
+## Configuration and measurement
 
-The browser/API work adds guarded submission IDs and session revisions so lost
-responses can reconcile with the accepted job. Exact replay returns that job;
-changed payloads, stale revisions and restarted servers reject before starting
-generation. Existing scenes remain visible until replacement assets are complete.
+Each fresh private Cloud Run service used one RTX PRO 6000 Blackwell GPU,
+20 vCPU, 80 GiB memory, concurrency one, and minimum/maximum one instance.
+The unchanged renderer used FLUX.2 Klein 4B, BF16, four steps, guidance 1,
+1024 × 576 output, and the existing depth model and watercolor prompts.
 
-## Bounds and evidence
+Two actual renders prepared the 128- and 256-token execution buckets. After
+30 seconds idle, each service handled the frozen eight-case corpus followed
+by repeats of its first two cases: two warmups plus ten measured deliveries.
+Each session had a distinct process identity. Physical host placement and image
+caches were uncontrolled; these were fresh services, not verified hardware cold boots.
 
-The approved incremental allowance is $25. Reserve $3.50 per trial before its build;
-do not release that reservation based on delayed billing. Each build is bounded to
-600 seconds. Each deployment and measurement lifecycle is bounded to 600 seconds,
-with another 60 seconds reserved for deletion and a closure receipt. Observe
-resource release for at most 900 seconds before another GPU experiment. Missing
-Monitoring data does not prove zero usage. Stop paid dispatch when cleanup or
-remaining allowance cannot be established.
+All three sessions passed the predefined speed screen: median at most one second
+and observed maximum at most two seconds. Thirty successes are a bounded screen,
+not a production reliability guarantee. The earlier successful o session is
+retained separately and is not substituted into the repaired cohort.
 
-At published us-central1 instance rates, one configured instance costs
-$0.00088522/second before discounts: 20 × $0.000018 CPU, 80 × $0.000002 memory,
-plus $0.00036522 GPU. Reserving two instance equivalents for the 1,560-second
-work/cleanup/observation envelope costs $2.7618864; the remaining trial reservation
-covers its bounded CPU build, storage and small operational costs. This is an
-experiment estimate, not an invoice or a cloud-enforced spending cap.
-[Cloud Run pricing](https://cloud.google.com/run/pricing).
+## Readiness, transport and application boundary
 
-Minimum instances can restart, so a minimum of one does not prove model readiness.
-Verify actual warmup results and pin subsequent requests to their process identity.
-[Minimum instances](https://docs.cloud.google.com/run/docs/configuring/min-instances).
+Readiness is bound to the prepared process identity, exact runtime identity and
+both warmup receipts. Its 300-second expiry starts with preparation and never
+extends. Replacement, expiry, unsupported buckets and ambiguous responses fail
+closed. Work is serialized; cancellation drains in-flight GPU work before cleanup.
 
-Retain source hashes, build configuration and ID, immutable image digest, exact
-overlay verification, request dispatch journal, images, noise receipts, timing,
-failure evidence, deletion receipt and release observations. The new image must
-preserve all 17 parent layers and add only the reviewed six-file application
-overlay. No new tensor-equivalence claim is implied by preserving those layers.
+The reviewed transport wrapper requires fresh, token-free TLS verification for
+the renderer and ten control-plane hosts. It keeps original URL hostnames, SNI
+and certificate checks while using verified addresses for its finite process tree.
+Its 720-second outer limit includes preflight and preserves the supervisor's
+600-second work limit plus 60 seconds for cleanup. No failed image is retried.
 
-## Status
+The separate serving candidate accepts compiled prompts, verifies fixed leases
+and request identities, validates complete JPEGs, and can reconstruct saved
+bundles under its exact model contract. Persistent local claims precede dispatch;
+there is no automatic HTTP retry or fallback. Its pooled HTTP client can reuse
+live connections and closes after active work drains. This pooling change was
+not part of the frozen cohort and has no measured speed gain.
+[HTTPX connection pooling](https://www.python-httpx.org/advanced/clients/).
 
-The guarded-submission change passed independent review, 1,074 project tests and
-six JavaScript suites. Its exact API/registry hunks were applied to the installed
-Jetson package while preserving its existing compatibility changes. Three mocked
-tests passed on the Jetson before restart; the running gateway then returned the
-new server identity on a missing-session response. Backup:
-`/opt/bookforge/.voice-backups/guarded-submission-20260908`.
+Original-source privacy validation remains mandatory on the caller's local
+reviewed-description path. Raw speech, source text and omitted named locations
+stay local; the renderer receives the admitted compiled prompt. The adapter's
+obvious-sensitive-data check does not replace source-aware privacy validation.
 
-The initial prepared worker and measurement tools passed 24 offline tests,
-including termination cleanup and ambiguous deployment outcomes. Independent
-source and deslop reviews passed. The first build completed successfully and its
-source archive and 17 inherited layers were verified before GPU dispatch.
+The browser/API guarded-submission change binds submission IDs, server identity
+and session revision. Exact replay reconciles an accepted job; changed payloads,
+stale revisions and server restarts reject before a new generation. Existing
+scenes remain visible until replacement assets are complete. This application
+behavior is separate from the measured renderer endpoint.
 
-Trial n's first preparation returned HTTP 409 after 8.893 seconds at the platform.
-Package and GPU checks passed, and the final application log marked model loading.
-No image or successful preparation receipt was returned. The supervisor stopped
-without retrying and verified service deletion after 156.069 seconds; subsequent
-release checks found historical zeros and current absence. Its $3.50 reservation remains consumed
-for admission accounting, regardless of eventual billed cost.
+## Failures retained and repaired
 
-Source inspection found an inherited loader contract missed by the wrapper:
-`klein_flashpack.load_transformer` imports `app.PACK_PROOF_SHA256`. The wrapper did
-not expose that constant. This defect is consistent with the observed failure
-stage; the original response did not retain an exception trace. The next revision
-adds the compatibility export, a regression test and bounded error diagnostics.
-Trial o passed the first speed screen; trials p and q subsequently failed as
-described below. Retain all failures and use the remaining r/s/t reservations for
-three identical speed workloads after the repairs. Seven $3.50 reservations total
-$24.50; unused reservations are prospective, and failed-trial reservations are not
-recycled. The modern voice compiler has a locally validated six-scene fixture
-screen, but its GPU quality trial no longer fits this reservation envelope. The
-existing image quality defects still prevent production promotion.
+- **n:** Preparation failed without an image. Source inspection found that the
+  wrapper omitted `app.PACK_PROOF_SHA256`, required by the inherited loader.
+  An explicit export and actual-helper regression repaired that contract. The
+  original failure had no exception trace, so its exact cause is not asserted.
+- **p:** Both warmups completed, but the first delivery failed with `ConnectError`.
+  The error does not distinguish DNS, TCP or TLS failure. Automatic deletion also
+  timed out; a separate recovery deleted the service. Original failed evidence
+  remains intact. The transport wrapper repairs a demonstrated operational risk
+  without claiming to identify p's precise cause.
+- **q:** Deployment succeeded, but local client validation rejected its service
+  name before authentication or render dispatch. Manager/client allowlists now
+  agree, and pre-build admission runs the actual client validator. Every admitted
+  name has a regression. q supplies no renderer-delivery measurement.
 
-The inherited k images also require qualification: they match i exactly, whose
-retained factual review passed six of eight cases. Rich watercolor detail passed
-all eight, but an extra silver fox/lantern and an unclear owl perch remain known
-failures. Preserving these images would not establish product quality acceptance.
-Trial o completed both preparation renders and all ten measured deliveries.
-Preparation took **79.643 seconds**. After 30 seconds idle, the first complete
-delivery took **0.635 seconds**, the median was **0.510 seconds**, and the observed
-maximum was **0.635 seconds**. The service was deleted after a 273.435-second
-supervised lifecycle. This passes one session's speed screen, not the planned
-three-session qualification or production reliability.
+The r/s/t cohort used the reviewed repairs with identical workloads. Every failed
+attempt remains in the evidence and retains its budget reservation.
 
-Independent review compared all 24 JPEGs. Warmups exactly match k; 18 of 20
-measured JPEGs match their k counterparts. The remaining master/depth pair matches
-k's later repeat of that case. All eight scenes retain rich watercolor detail.
-Current visual review passes the owl perch and scores seven of eight factual
-cases; this differs from the historical review of the same owl pixels and is not
-a quality improvement. The extra silver fox and lantern remain a clear failure.
+## Bounds, verification and remaining work
 
-The failing prompt is from the older `LiveScenePlan.to_page` template. Current
-reviewed voice uses `compile_scene_facts_prompt`, which does not emit the generic
-upper-right placement instruction. A later quality screen should therefore test
-that actual compiler before drawing conclusions about the modern voice path.
-BFL recommends specific positive descriptions and documents that Klein does not
-upsample prompts automatically. [Prompt guidance](https://docs.bfl.ai/guides/prompting_guide_t2i_negative),
-[Klein overview](https://docs.bfl.ai/flux_2/flux2_overview).
+Seven **$3.50 reservations total $24.50** against the approved $25 allowance.
+All seven are consumed for admission accounting; failed attempts are not recycled.
+This is reserved allowance, not invoiced cost or a cloud-enforced spending cap.
+The configured instance estimate is $0.00088522/second before discounts, including
+GPU, CPU and memory. [Cloud Run pricing](https://cloud.google.com/run/pricing).
 
-No production GPU promotion is claimed. The existing image provider remains live.
+Each build was bounded to 600 seconds. Cleanup required observed service absence
+and terminal creation state. Release observation is separately bounded to
+900 seconds. A successful observer decision means historical zero metrics plus
+current service absence; it does not prove current instance count, quota
+reservation or billing closure. The adapter's `aclose` is not cloud deletion:
+an external lifecycle owner remains required.
 
-Trial p completed both warmups in **75.011 seconds**, then its first measured
-request failed with `ConnectError` after 30 seconds idle. No measured image was
-returned. The retained error cannot distinguish DNS, TCP and TLS failures. The
-client opens a fresh connection after this idle interval; stale connection reuse
-does not explain this attempt. No request was retried.
+[Retained evidence](../benchmarks/prepared-gcp-2026-09-08/) binds source snapshots,
+external context pins, generation-bound build archives, immutable image digests,
+all 17 inherited layers and the exact application overlay, dispatch journals,
+images, noise receipts, timings, cleanup and release observations. No new full
+model tensor-equivalence claim follows merely from retaining the parent layers.
+The [generated results report](../benchmarks/prepared-gcp-2026-09-08/report/results.md)
+replays all three matching protocols, distinct workers, route evidence and release
+records before marking the 30-delivery screen passed.
 
-The automatic deletion command also timed out. Its original failed closure is
-preserved. A separate recovery command deleted the service, verified absence and
-retained the terminal deletion audit at 08:15:21 UTC. Release monitoring later
-confirmed historical zero usage and current absence before the next trial.
+The inactive implementation was pushed to main as `ac0716f`. Validation passed
+**1,084 project tests, 74 combined
+adapter/experiment tests, and six JavaScript suites**, with independent code and
+style review. Native prepared serving remains inactive.
 
-The repaired cohort uses a separate, reviewed transport wrapper. Before dispatch it
-requires a fresh token-free TLS proof for the renderer and ten control-plane
-domains. It preserves URL hostnames, SNI and certificate verification while using
-the verified network addresses. Its 720-second process bound includes read-only
-preflight; the GPU supervisor's 600-second work and 60-second cleanup limits stay
-unchanged. This is a test of a transport repair, not proof of p's precise cause.
+The next quality screen should use the actual modern compiler rather than the
+older prompt that produced the extra fox. The [local fixture receipt](../benchmarks/prepared-gcp-2026-09-08/support/modern-voice-cases.json)
+and [generator](../experiments/renderer-session/voice_cases.py) retain eight typed
+fixtures and propose six modern cases alongside the original warmup controls.
+They bind compiler/source/tokenizer provenance; they are not ASR accuracy or
+rendered-quality results. Raw source text and the London omission stay local.
+No GPU execution of that screen is authorized by the remaining allowance.
 
-Trial q deployed successfully but failed local input validation before
-authentication or a render dispatch. The client allowed names n/o/p while the
-manager also admitted q. The service was automatically deleted after 144.324
-seconds. The repair makes the manager run the actual client's input validation
-before any build or deployment, with a regression for every admitted name.
-Trial q provides no inference or transport-delivery measurement.
-
-The inactive serving adapter uses the reviewed compiled-prompt boundary and
-verifies fixed leases, request identity, complete JPEGs and saved bundles. Its
-cloud lifecycle remains externally owned. Connection pooling now avoids
-setting up a new TCP/TLS connection for every call, following
-[HTTPX's client guidance](https://www.python-httpx.org/advanced/clients/). This is
-separate from the frozen benchmark and has no measured GPU speed claim yet.
-
-The inactive implementation passed independent code and deslop review, 1,084
-project tests, 71 combined adapter/experiment tests and all six JavaScript suites.
-The pool's close/drain regression confirms that readiness stops immediately,
-active work drains and cancellation still closes the owned client.
+The historical factual review scored 6/8; a later reviewer passed the unchanged
+owl perch (7/8). That disagreement is not a pixel or quality improvement.
+The extra fox remains a clear failure, so these speed results do not authorize
+production promotion or claim human/projector acceptance.
