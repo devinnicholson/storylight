@@ -1483,6 +1483,9 @@ def _descriptor_grounded(
                 and any(
                     label_end < detail_start <= label_end + 3
                     and not _position_negated(sentence, detail_start)
+                    and set(sentence[label_end + 1 : detail_start]).issubset(
+                        {"very", "quite", "rather", "still", "so", "slightly"}
+                    )
                     and not _DESCRIPTOR_BINDING_BOUNDARIES.intersection(
                         sentence[label_end:detail_start]
                     )

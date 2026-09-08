@@ -1,0 +1,899 @@
+{
+  "schema": "dependency-graph-screen-v1",
+  "sources": {
+    "graph_candidate.py": "a2fa0fe2f928614f3bac716c756d217b25de46a1e57b13f4a26f73b1a0ba343f",
+    "extract.py": "037e8b630af75d6bffbffc496895b5c1cdde4afa407fee9d74610ddd22323cd6",
+    "evaluate.py": "04ee7f1f9063a0de255c73e25d940140f8895882aa1ea1ad5536bb220a9ace01",
+    "cases.json": "08ad4b056fcdd5de19a82b85fcc950934c2286e936626452e366b2f19c0d88ea",
+    "syntax-results.json": "c40715bd7b92dcd250cf5c16062b33ba70b83822e91a83898268729f1d459b2a"
+  },
+  "validation_sources": {
+    "voice_language.py": "c5926e3e439ba22f4ac597657b42e47bef1b7bb6402ce758106fbbbee5d43c68",
+    "voice_dependencies.py": "f94bf64cfc7aa2db228d5562db3f73e6c363dfce932a2c5e7164dfa9680cf9af",
+    "scene_facts.py": "13f051c0a051e7c43817d44f171d7b723d85187f4ea580435242616eca98b4ff",
+    "privacy_policy.py": "e36a22e80e47774223b31600507b199eccb2955f83e32d1f30228ca7c671713d",
+    "semantic_text.py": "52f377dba57ef2beafb5f2ee3b8096cc1617da933c2cb6efbe3c99e028532115",
+    "domain.py": "fc446999490a8a5d7b33a6059af4965a6879c1b57f93755393c6f6f541773f2d"
+  },
+  "case_count": 20,
+  "drafts_passing_existing_fact_boundary": 13,
+  "omission_review_count": 1,
+  "validation_median_ms": 2.3398541379719973,
+  "rows": [
+    {
+      "revision": "dependency-scene-draft-v1",
+      "status": "omission_review",
+      "facts": {
+        "version": "2.0",
+        "setting": {
+          "label": "dark alleyway",
+          "attributes": []
+        },
+        "subjects": [
+          {
+            "ref": "e1",
+            "label": "cat",
+            "count": 1,
+            "color": null,
+            "attributes": [],
+            "actions": [
+              "chasing mouse in dark alleyway"
+            ]
+          }
+        ],
+        "objects": [
+          {
+            "ref": "e2",
+            "label": "mouse",
+            "count": 1,
+            "color": null,
+            "states": [],
+            "attributes": []
+          }
+        ],
+        "relationships": [],
+        "motions": [],
+        "salience": [],
+        "events": [],
+        "temporal_order": [],
+        "negatives": [],
+        "transformation": null
+      },
+      "reason": null,
+      "render_admitted": false,
+      "requires_fact_review": true,
+      "local_omissions": [
+        {
+          "ref": 10,
+          "local_text": "London",
+          "reason": "proper_name_policy",
+          "omission_requires_review": true
+        }
+      ],
+      "syntax_issues": [],
+      "renderer_prompt_preview": "Style: watercolor. Setting: dark alleyway. Subject: exactly one cat; action: chasing mouse in dark alleyway. Object: exactly one mouse. One continuous full-bleed scene; no captions, labels, signs, or readable text.",
+      "id": "01",
+      "validation_ms": 5.86254196241498
+    },
+    {
+      "revision": "dependency-scene-draft-v1",
+      "status": "draft_ready",
+      "facts": {
+        "version": "2.0",
+        "setting": {
+          "label": "unspecified",
+          "attributes": []
+        },
+        "subjects": [
+          {
+            "ref": "e1",
+            "label": "fox",
+            "count": 1,
+            "color": "brown",
+            "attributes": [
+              "quick"
+            ],
+            "actions": [
+              "jumps over lazy dog"
+            ]
+          }
+        ],
+        "objects": [
+          {
+            "ref": "e2",
+            "label": "dog",
+            "count": 1,
+            "color": null,
+            "states": [],
+            "attributes": [
+              "lazy"
+            ]
+          }
+        ],
+        "relationships": [
+          {
+            "source": "e1",
+            "relation": "above",
+            "target": "e2",
+            "secondary_target": null
+          }
+        ],
+        "motions": [],
+        "salience": [],
+        "events": [],
+        "temporal_order": [],
+        "negatives": [],
+        "transformation": null
+      },
+      "reason": null,
+      "render_admitted": false,
+      "requires_fact_review": true,
+      "local_omissions": [],
+      "syntax_issues": [],
+      "renderer_prompt_preview": "Style: watercolor. Subject: exactly one brown quick fox; action: jumps over lazy dog. Object: exactly one lazy dog. Relations: fox above dog. One continuous full-bleed scene; no captions, labels, signs, or readable text.",
+      "id": "02",
+      "validation_ms": 2.854292280972004
+    },
+    {
+      "revision": "dependency-scene-draft-v1",
+      "status": "draft_ready",
+      "facts": {
+        "version": "2.0",
+        "setting": {
+          "label": "unspecified",
+          "attributes": []
+        },
+        "subjects": [
+          {
+            "ref": "e1",
+            "label": "fox",
+            "count": 1,
+            "color": "pink",
+            "attributes": [],
+            "actions": [
+              "jumped over river stream"
+            ]
+          }
+        ],
+        "objects": [
+          {
+            "ref": "e2",
+            "label": "river stream",
+            "count": 1,
+            "color": null,
+            "states": [],
+            "attributes": []
+          }
+        ],
+        "relationships": [
+          {
+            "source": "e1",
+            "relation": "above",
+            "target": "e2",
+            "secondary_target": null
+          }
+        ],
+        "motions": [],
+        "salience": [],
+        "events": [],
+        "temporal_order": [],
+        "negatives": [],
+        "transformation": null
+      },
+      "reason": null,
+      "render_admitted": false,
+      "requires_fact_review": true,
+      "local_omissions": [],
+      "syntax_issues": [],
+      "renderer_prompt_preview": "Style: watercolor. Subject: exactly one pink fox; action: jumped over river stream. Object: exactly one river stream. Relations: fox above river stream. One continuous full-bleed scene; no captions, labels, signs, or readable text.",
+      "id": "03",
+      "validation_ms": 2.6994580402970314
+    },
+    {
+      "revision": "dependency-scene-draft-v1",
+      "status": "needs_review",
+      "facts": null,
+      "reason": "syntax_coverage_or_reference",
+      "render_admitted": false,
+      "requires_fact_review": true,
+      "local_omissions": [
+        {
+          "ref": 7,
+          "local_text": "Merle Aussie",
+          "reason": "proper_name_policy",
+          "omission_requires_review": true
+        }
+      ],
+      "syntax_issues": [
+        {
+          "kind": "uncertain_named_entity",
+          "token": 5
+        }
+      ],
+      "id": "04",
+      "validation_ms": 0.28787506744265556
+    },
+    {
+      "revision": "dependency-scene-draft-v1",
+      "status": "draft_ready",
+      "facts": {
+        "version": "2.0",
+        "setting": {
+          "label": "unspecified",
+          "attributes": []
+        },
+        "subjects": [
+          {
+            "ref": "e1",
+            "label": "foxes",
+            "count": 2,
+            "color": "brown",
+            "attributes": [],
+            "actions": [
+              "chase three white rabbits"
+            ]
+          }
+        ],
+        "objects": [
+          {
+            "ref": "e2",
+            "label": "rabbits",
+            "count": 3,
+            "color": "white",
+            "states": [],
+            "attributes": []
+          }
+        ],
+        "relationships": [],
+        "motions": [],
+        "salience": [],
+        "events": [],
+        "temporal_order": [],
+        "negatives": [],
+        "transformation": null
+      },
+      "reason": null,
+      "render_admitted": false,
+      "requires_fact_review": true,
+      "local_omissions": [],
+      "syntax_issues": [],
+      "renderer_prompt_preview": "Style: watercolor. Subject: exactly 2 brown foxes; action: chase three white rabbits. Object: exactly 3 white rabbits. One continuous full-bleed scene; no captions, labels, signs, or readable text.",
+      "id": "05",
+      "validation_ms": 3.20154195651412
+    },
+    {
+      "revision": "dependency-scene-draft-v1",
+      "status": "draft_ready",
+      "facts": {
+        "version": "2.0",
+        "setting": {
+          "label": "unspecified",
+          "attributes": []
+        },
+        "subjects": [
+          {
+            "ref": "e1",
+            "label": "bird",
+            "count": 1,
+            "color": "red",
+            "attributes": [],
+            "actions": [
+              "eating green apple"
+            ]
+          }
+        ],
+        "objects": [
+          {
+            "ref": "e2",
+            "label": "apple",
+            "count": 1,
+            "color": "green",
+            "states": [],
+            "attributes": []
+          }
+        ],
+        "relationships": [],
+        "motions": [],
+        "salience": [],
+        "events": [],
+        "temporal_order": [],
+        "negatives": [],
+        "transformation": null
+      },
+      "reason": null,
+      "render_admitted": false,
+      "requires_fact_review": true,
+      "local_omissions": [],
+      "syntax_issues": [],
+      "renderer_prompt_preview": "Style: watercolor. Subject: exactly one red bird; action: eating green apple. Object: exactly one green apple. One continuous full-bleed scene; no captions, labels, signs, or readable text.",
+      "id": "06",
+      "validation_ms": 3.41383321210742
+    },
+    {
+      "revision": "dependency-scene-draft-v1",
+      "status": "draft_ready",
+      "facts": {
+        "version": "2.0",
+        "setting": {
+          "label": "unspecified",
+          "attributes": []
+        },
+        "subjects": [
+          {
+            "ref": "e1",
+            "label": "child",
+            "count": 1,
+            "color": null,
+            "attributes": [
+              "small"
+            ],
+            "actions": [
+              "reads blue book beside tree"
+            ]
+          }
+        ],
+        "objects": [
+          {
+            "ref": "e2",
+            "label": "book",
+            "count": 1,
+            "color": "blue",
+            "states": [],
+            "attributes": []
+          },
+          {
+            "ref": "e3",
+            "label": "tree",
+            "count": 1,
+            "color": null,
+            "states": [],
+            "attributes": []
+          }
+        ],
+        "relationships": [],
+        "motions": [],
+        "salience": [],
+        "events": [],
+        "temporal_order": [],
+        "negatives": [],
+        "transformation": null
+      },
+      "reason": null,
+      "render_admitted": false,
+      "requires_fact_review": true,
+      "local_omissions": [],
+      "syntax_issues": [],
+      "renderer_prompt_preview": "Style: watercolor. Subject: exactly one small child; action: reads blue book beside tree. Object: exactly one blue book. Object: exactly one tree. One continuous full-bleed scene; no captions, labels, signs, or readable text.",
+      "id": "07",
+      "validation_ms": 3.4869168885052204
+    },
+    {
+      "revision": "dependency-scene-draft-v1",
+      "status": "draft_ready",
+      "facts": {
+        "version": "2.0",
+        "setting": {
+          "label": "unspecified",
+          "attributes": []
+        },
+        "subjects": [
+          {
+            "ref": "e1",
+            "label": "ducks",
+            "count": 3,
+            "color": "yellow",
+            "attributes": [],
+            "actions": [
+              "swimming across pond"
+            ]
+          }
+        ],
+        "objects": [
+          {
+            "ref": "e2",
+            "label": "pond",
+            "count": 1,
+            "color": null,
+            "states": [],
+            "attributes": []
+          }
+        ],
+        "relationships": [],
+        "motions": [],
+        "salience": [],
+        "events": [],
+        "temporal_order": [],
+        "negatives": [],
+        "transformation": null
+      },
+      "reason": null,
+      "render_admitted": false,
+      "requires_fact_review": true,
+      "local_omissions": [],
+      "syntax_issues": [],
+      "renderer_prompt_preview": "Style: watercolor. Subject: exactly 3 yellow ducks; action: swimming across pond. Object: exactly one pond. One continuous full-bleed scene; no captions, labels, signs, or readable text.",
+      "id": "08",
+      "validation_ms": 2.231166698038578
+    },
+    {
+      "revision": "dependency-scene-draft-v1",
+      "status": "needs_review",
+      "facts": null,
+      "reason": "syntax_coverage_or_reference",
+      "render_admitted": false,
+      "requires_fact_review": true,
+      "local_omissions": [],
+      "syntax_issues": [
+        {
+          "kind": "no_event"
+        }
+      ],
+      "id": "09",
+      "validation_ms": 0.14145905151963234
+    },
+    {
+      "revision": "dependency-scene-draft-v1",
+      "status": "draft_ready",
+      "facts": {
+        "version": "2.0",
+        "setting": {
+          "label": "unspecified",
+          "attributes": []
+        },
+        "subjects": [
+          {
+            "ref": "e1",
+            "label": "dog",
+            "count": 1,
+            "color": "black",
+            "attributes": [],
+            "actions": [
+              "carries red ball"
+            ]
+          }
+        ],
+        "objects": [
+          {
+            "ref": "e2",
+            "label": "ball",
+            "count": 1,
+            "color": "red",
+            "states": [],
+            "attributes": []
+          }
+        ],
+        "relationships": [],
+        "motions": [],
+        "salience": [],
+        "events": [],
+        "temporal_order": [],
+        "negatives": [],
+        "transformation": null
+      },
+      "reason": null,
+      "render_admitted": false,
+      "requires_fact_review": true,
+      "local_omissions": [],
+      "syntax_issues": [],
+      "renderer_prompt_preview": "Style: watercolor. Subject: exactly one black dog; action: carries red ball. Object: exactly one red ball. One continuous full-bleed scene; no captions, labels, signs, or readable text.",
+      "id": "10",
+      "validation_ms": 2.4485415779054165
+    },
+    {
+      "revision": "dependency-scene-draft-v1",
+      "status": "draft_ready",
+      "facts": {
+        "version": "2.0",
+        "setting": {
+          "label": "unspecified",
+          "attributes": []
+        },
+        "subjects": [
+          {
+            "ref": "e1",
+            "label": "rabbit",
+            "count": 1,
+            "color": "white",
+            "attributes": [],
+            "actions": [
+              "watches brown fox"
+            ]
+          }
+        ],
+        "objects": [
+          {
+            "ref": "e2",
+            "label": "fox",
+            "count": 1,
+            "color": "brown",
+            "states": [],
+            "attributes": []
+          }
+        ],
+        "relationships": [],
+        "motions": [],
+        "salience": [],
+        "events": [],
+        "temporal_order": [],
+        "negatives": [],
+        "transformation": null
+      },
+      "reason": null,
+      "render_admitted": false,
+      "requires_fact_review": true,
+      "local_omissions": [],
+      "syntax_issues": [],
+      "renderer_prompt_preview": "Style: watercolor. Subject: exactly one white rabbit; action: watches brown fox. Object: exactly one brown fox. One continuous full-bleed scene; no captions, labels, signs, or readable text.",
+      "id": "11",
+      "validation_ms": 1.7044171690940857
+    },
+    {
+      "revision": "dependency-scene-draft-v1",
+      "status": "draft_ready",
+      "facts": {
+        "version": "2.0",
+        "setting": {
+          "label": "unspecified",
+          "attributes": []
+        },
+        "subjects": [
+          {
+            "ref": "e1",
+            "label": "robot",
+            "count": 1,
+            "color": null,
+            "attributes": [],
+            "actions": [
+              "pushes wooden cart through tunnel"
+            ]
+          }
+        ],
+        "objects": [
+          {
+            "ref": "e2",
+            "label": "cart",
+            "count": 1,
+            "color": null,
+            "states": [],
+            "attributes": [
+              "wooden"
+            ]
+          },
+          {
+            "ref": "e3",
+            "label": "tunnel",
+            "count": 1,
+            "color": null,
+            "states": [],
+            "attributes": []
+          }
+        ],
+        "relationships": [],
+        "motions": [],
+        "salience": [],
+        "events": [],
+        "temporal_order": [],
+        "negatives": [],
+        "transformation": null
+      },
+      "reason": null,
+      "render_admitted": false,
+      "requires_fact_review": true,
+      "local_omissions": [],
+      "syntax_issues": [],
+      "renderer_prompt_preview": "Style: watercolor. Subject: exactly one robot; action: pushes wooden cart through tunnel. Object: exactly one wooden cart. Object: exactly one tunnel. One continuous full-bleed scene; no captions, labels, signs, or readable text.",
+      "id": "12",
+      "validation_ms": 4.881750326603651
+    },
+    {
+      "revision": "dependency-scene-draft-v1",
+      "status": "needs_review",
+      "facts": null,
+      "reason": "syntax_coverage_or_reference",
+      "render_admitted": false,
+      "requires_fact_review": true,
+      "local_omissions": [],
+      "syntax_issues": [
+        {
+          "kind": "unrepresented_content",
+          "token": 5
+        },
+        {
+          "kind": "unrepresented_content",
+          "token": 7
+        },
+        {
+          "kind": "unrepresented_content",
+          "token": 8
+        },
+        {
+          "kind": "unresolved_clause",
+          "token": 8
+        }
+      ],
+      "id": "13",
+      "validation_ms": 0.120542012155056
+    },
+    {
+      "revision": "dependency-scene-draft-v1",
+      "status": "draft_ready",
+      "facts": {
+        "version": "2.0",
+        "setting": {
+          "label": "unspecified",
+          "attributes": []
+        },
+        "subjects": [
+          {
+            "ref": "e1",
+            "label": "dog",
+            "count": 1,
+            "color": null,
+            "attributes": [],
+            "actions": [
+              "sleep beside red boat"
+            ]
+          },
+          {
+            "ref": "e2",
+            "label": "cat",
+            "count": 1,
+            "color": null,
+            "attributes": [],
+            "actions": [
+              "sleep beside red boat"
+            ]
+          }
+        ],
+        "objects": [
+          {
+            "ref": "e3",
+            "label": "boat",
+            "count": 1,
+            "color": "red",
+            "states": [],
+            "attributes": []
+          }
+        ],
+        "relationships": [
+          {
+            "source": "e1",
+            "relation": "beside",
+            "target": "e3",
+            "secondary_target": null
+          },
+          {
+            "source": "e2",
+            "relation": "beside",
+            "target": "e3",
+            "secondary_target": null
+          }
+        ],
+        "motions": [],
+        "salience": [],
+        "events": [],
+        "temporal_order": [],
+        "negatives": [],
+        "transformation": null
+      },
+      "reason": null,
+      "render_admitted": false,
+      "requires_fact_review": true,
+      "local_omissions": [],
+      "syntax_issues": [],
+      "renderer_prompt_preview": "Style: watercolor. Subject: exactly one dog; action: sleep beside red boat. Subject: exactly one cat; action: sleep beside red boat. Object: exactly one red boat. Relations: dog beside boat; cat beside boat. One continuous full-bleed scene; no captions, labels, signs, or readable text.",
+      "id": "14",
+      "validation_ms": 5.629915744066238
+    },
+    {
+      "revision": "dependency-scene-draft-v1",
+      "status": "draft_ready",
+      "facts": {
+        "version": "2.0",
+        "setting": {
+          "label": "unspecified",
+          "attributes": []
+        },
+        "subjects": [
+          {
+            "ref": "e1",
+            "label": "owl",
+            "count": 1,
+            "color": "blue",
+            "attributes": [],
+            "actions": [
+              "sits on branch"
+            ]
+          },
+          {
+            "ref": "e3",
+            "label": "fox",
+            "count": 1,
+            "color": "red",
+            "attributes": [],
+            "actions": [
+              "sleeps under tree"
+            ]
+          }
+        ],
+        "objects": [
+          {
+            "ref": "e2",
+            "label": "branch",
+            "count": 1,
+            "color": null,
+            "states": [],
+            "attributes": []
+          },
+          {
+            "ref": "e4",
+            "label": "tree",
+            "count": null,
+            "color": null,
+            "states": [],
+            "attributes": []
+          }
+        ],
+        "relationships": [
+          {
+            "source": "e1",
+            "relation": "on",
+            "target": "e2",
+            "secondary_target": null
+          },
+          {
+            "source": "e3",
+            "relation": "under",
+            "target": "e4",
+            "secondary_target": null
+          }
+        ],
+        "motions": [],
+        "salience": [],
+        "events": [],
+        "temporal_order": [],
+        "negatives": [],
+        "transformation": null
+      },
+      "reason": null,
+      "render_admitted": false,
+      "requires_fact_review": true,
+      "local_omissions": [],
+      "syntax_issues": [],
+      "renderer_prompt_preview": "Style: watercolor. Subject: exactly one blue owl; action: sits on branch. Subject: exactly one red fox; action: sleeps under tree. Object: exactly one branch. Object: tree. Relations: owl on branch; fox under tree. One continuous full-bleed scene; no captions, labels, signs, or readable text.",
+      "id": "15",
+      "validation_ms": 3.532374743372202
+    },
+    {
+      "revision": "dependency-scene-draft-v1",
+      "status": "needs_review",
+      "facts": null,
+      "reason": "syntax_coverage_or_reference",
+      "render_admitted": false,
+      "requires_fact_review": true,
+      "local_omissions": [],
+      "syntax_issues": [
+        {
+          "kind": "uncertain_named_entity",
+          "token": 10
+        }
+      ],
+      "id": "16",
+      "validation_ms": 0.12012524530291557
+    },
+    {
+      "revision": "dependency-scene-draft-v1",
+      "status": "draft_ready",
+      "facts": {
+        "version": "2.0",
+        "setting": {
+          "label": "unspecified",
+          "attributes": []
+        },
+        "subjects": [
+          {
+            "ref": "e1",
+            "label": "fox",
+            "count": 1,
+            "color": "brown",
+            "attributes": [],
+            "actions": [
+              "stands beside stream"
+            ]
+          }
+        ],
+        "objects": [
+          {
+            "ref": "e2",
+            "label": "stream",
+            "count": 1,
+            "color": null,
+            "states": [],
+            "attributes": []
+          }
+        ],
+        "relationships": [
+          {
+            "source": "e1",
+            "relation": "beside",
+            "target": "e2",
+            "secondary_target": null
+          }
+        ],
+        "motions": [],
+        "salience": [],
+        "events": [],
+        "temporal_order": [],
+        "negatives": [
+          {
+            "kind": "additional_object",
+            "value": "dogs",
+            "target": null
+          }
+        ],
+        "transformation": null
+      },
+      "reason": null,
+      "render_admitted": false,
+      "requires_fact_review": true,
+      "local_omissions": [],
+      "syntax_issues": [],
+      "renderer_prompt_preview": "Style: watercolor. Subject: exactly one brown fox; action: stands beside stream. Object: exactly one stream. Relations: fox beside stream. Constraints: no dogs. One continuous full-bleed scene; no captions, labels, signs, or readable text.",
+      "id": "17",
+      "validation_ms": 1.8867920152842999
+    },
+    {
+      "revision": "dependency-scene-draft-v1",
+      "status": "needs_review",
+      "facts": null,
+      "reason": "existing_fact_boundary",
+      "render_admitted": false,
+      "requires_fact_review": true,
+      "local_omissions": [],
+      "syntax_issues": [],
+      "id": "18",
+      "validation_ms": 0.7050419226288795
+    },
+    {
+      "revision": "dependency-scene-draft-v1",
+      "status": "needs_review",
+      "facts": null,
+      "reason": "syntax_coverage_or_reference",
+      "render_admitted": false,
+      "requires_fact_review": true,
+      "local_omissions": [],
+      "syntax_issues": [
+        {
+          "kind": "unresolved_pronoun",
+          "token": 9
+        },
+        {
+          "kind": "unrepresented_content",
+          "token": 11
+        }
+      ],
+      "id": "19",
+      "validation_ms": 0.055999960750341415
+    },
+    {
+      "revision": "dependency-scene-draft-v1",
+      "status": "needs_review",
+      "facts": null,
+      "reason": "syntax_coverage_or_reference",
+      "render_admitted": false,
+      "requires_fact_review": true,
+      "local_omissions": [],
+      "syntax_issues": [
+        {
+          "kind": "unrepresented_content",
+          "token": 5
+        }
+      ],
+      "id": "20",
+      "validation_ms": 0.051791779696941376
+    }
+  ],
+  "automatic_render_admissions": 0,
+  "cloud_calls": 0,
+  "scope": "same frozen 20 synthetic descriptions; draft coverage is not semantic accuracy"
+}

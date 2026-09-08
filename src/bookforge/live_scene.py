@@ -38,6 +38,8 @@ from bookforge.domain import (
     VisualLayer,
 )
 from bookforge.event_hub import SessionId
+from bookforge.reviewed_description import LocalSceneOmission
+from bookforge.scene_facts import SceneFactsV2
 
 if TYPE_CHECKING:
     from bookforge.model_client import StructuredModelClient
@@ -200,6 +202,8 @@ class LiveSceneCreateRequest(FrozenStrictModel):
     seed: Annotated[int, Field(ge=0, le=2**32 - 1)] | None = None
     session_id: SessionId | None = None
     reviewed_description: bool = False
+    confirm_visual_facts: bool = False
+    visual_fact_digest: Annotated[str, StringConstraints(pattern=r"^[a-f0-9]{64}$")] | None = None
 
 
 class LiveScenePrewarmRequest(FrozenStrictModel):
@@ -249,6 +253,10 @@ class LiveScenePlannerPrepareResponse(FrozenStrictModel):
     ]
     input_tokens: Annotated[int, Field(ge=0)]
     output_tokens: Annotated[int, Field(ge=0)]
+    visual_facts: SceneFactsV2 | None = None
+    requires_fact_review: bool = False
+    local_omissions: tuple[LocalSceneOmission, ...] = ()
+    visual_fact_digest: Annotated[str, StringConstraints(pattern=r"^[a-f0-9]{64}$")] | None = None
 
 
 class LiveScenePlannerWarmupResponse(FrozenStrictModel):
@@ -1798,6 +1806,7 @@ def build_live_scene_provider(
     planner_cache_entries: int = 32,
     planner_cache_dir: Path | None = None,
     planner_compact_wire: bool = False,
+    reviewed_scene_parser_socket: Path | None = None,
     master_width: int = 1024,
     master_height: int = 576,
     master_steps: int = 2,
@@ -1853,6 +1862,7 @@ def build_live_scene_provider(
             enable_motion=enable_motion,
             enable_preview=enable_preview,
             planner=planner,
+            reviewed_scene_parser_socket=reviewed_scene_parser_socket,
             master_width=master_width,
             master_height=master_height,
             master_steps=master_steps,
@@ -1878,6 +1888,7 @@ def build_live_scene_provider(
             cache=cache,
             output_root=output_root,
             planner=planner,
+            reviewed_scene_parser_socket=reviewed_scene_parser_socket,
             enable_preview=False,
             enable_motion=False,
             master_width=1024,
@@ -1910,6 +1921,7 @@ def build_live_scene_provider(
             enable_motion=enable_motion,
             enable_preview=enable_preview,
             planner=planner,
+            reviewed_scene_parser_socket=reviewed_scene_parser_socket,
             master_width=master_width,
             master_height=master_height,
             master_steps=master_steps,
@@ -1939,6 +1951,7 @@ def build_live_scene_provider(
             enable_motion=False,
             enable_preview=False,
             planner=planner,
+            reviewed_scene_parser_socket=reviewed_scene_parser_socket,
             master_width=master_width,
             master_height=master_height,
             master_steps=master_steps,
@@ -2018,6 +2031,7 @@ def build_live_scene_provider(
             enable_motion=False,
             enable_preview=False,
             planner=planner,
+            reviewed_scene_parser_socket=reviewed_scene_parser_socket,
             master_width=master_width,
             master_height=master_height,
             master_steps=master_steps,

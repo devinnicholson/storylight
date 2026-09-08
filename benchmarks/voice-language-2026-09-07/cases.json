@@ -1,0 +1,22 @@
+[
+ {"id":"01","text":"A cat chasing a mouse in a dark alleyway in London.","events":[["cat","chase","mouse"]],"locations":["dark alleyway"],"omitted_names":["London"]},
+ {"id":"02","text":"A quick brown fox jumps over a lazy dog.","events":[["quick brown fox","jump",null]],"relations":[["fox","over","lazy dog"]]},
+ {"id":"03","text":"A pink fox jumped over a river stream.","events":[["pink fox","jump",null]],"relations":[["fox","over","river stream"]]},
+ {"id":"04","text":"The white golden retriever and the Merle Aussie are playing in the field.","events":[["white golden retriever","play",null],["Merle Aussie","play",null]],"locations":["field"]},
+ {"id":"05","text":"Two brown foxes chase three white rabbits.","events":[["Two brown foxes","chase","three white rabbits"]]},
+ {"id":"06","text":"A red bird is eating a green apple.","events":[["red bird","eat","green apple"]]},
+ {"id":"07","text":"A small child reads a blue book beside a tree.","events":[["small child","read","blue book"]],"locations":["tree"]},
+ {"id":"08","text":"Three yellow ducks swimming across a pond.","events":[["Three yellow ducks","swim",null]],"relations":[["ducks","across","pond"]]},
+ {"id":"09","text":"A purple dragon flies above a snowy mountain.","events":[["purple dragon","fly",null]],"relations":[["dragon","above","snowy mountain"]]},
+ {"id":"10","text":"A black dog carries a red ball.","events":[["black dog","carry","red ball"]]},
+ {"id":"11","text":"A white rabbit watches a brown fox.","events":[["white rabbit","watch","brown fox"]]},
+ {"id":"12","text":"A robot pushes a wooden cart through a tunnel.","events":[["robot","push","wooden cart"]],"locations":["tunnel"]},
+ {"id":"13","text":"A girl kicks a football while a boy waves.","events":[["girl","kick","football"],["boy","wave",null]]},
+ {"id":"14","text":"A dog and a cat sleep beside a red boat.","events":[["dog","sleep",null],["cat","sleep",null]],"locations":["red boat"]},
+ {"id":"15","text":"A blue owl sits on a branch. A red fox sleeps under the tree.","events":[["blue owl","sit",null],["red fox","sleep",null]],"relations":[["owl","on","branch"],["fox","under","tree"]]},
+ {"id":"16","text":"A brown fox stands beside a white dog. The fox does not jump over the dog.","events":[["brown fox","stand",null]],"negative_events":[["fox","jump","dog"]]},
+ {"id":"17","text":"A brown fox stands beside a stream. No dogs.","events":[["brown fox","stand",null]],"absent":["dogs"]},
+ {"id":"18","text":"A white rabbit is chased by a brown fox.","events":[["brown fox","chase","white rabbit"]]},
+ {"id":"19","text":"A cat sees a dog beside a mouse. It runs away.","must_clarify":"ambiguous pronoun It"},
+ {"id":"20","text":"A brown fox does not ever under any circumstances jump over a dog.","negative_events":[["brown fox","jump","dog"]]}
+]

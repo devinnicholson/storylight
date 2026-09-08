@@ -1,0 +1,1173 @@
+{
+  "schema": "local-dependency-draft-v1",
+  "source_sha256": "58521296705fa8db840af8b2da465dc1bc28e4d3b804b9ef43fee23dc8e72c80",
+  "syntax_results_sha256": "c40715bd7b92dcd250cf5c16062b33ba70b83822e91a83898268729f1d459b2a",
+  "syntax_coverage_count": 14,
+  "rows": [
+    {
+      "id": "01",
+      "entities": [
+        {
+          "ref": 1,
+          "phrase": "cat",
+          "tokens": [
+            1
+          ],
+          "head_lemma": "cat"
+        },
+        {
+          "ref": 4,
+          "phrase": "mouse",
+          "tokens": [
+            4
+          ],
+          "head_lemma": "mouse"
+        },
+        {
+          "ref": 8,
+          "phrase": "dark alleyway",
+          "tokens": [
+            7,
+            8
+          ],
+          "head_lemma": "alleyway"
+        },
+        {
+          "ref": 10,
+          "phrase": "London",
+          "tokens": [
+            10
+          ],
+          "head_lemma": "London"
+        }
+      ],
+      "events": [
+        {
+          "token": 2,
+          "actor": 1,
+          "action": "chasing",
+          "lemma": "chase",
+          "object": 4,
+          "negative": false
+        }
+      ],
+      "relations": [
+        {
+          "owner_token": 2,
+          "relation": "in",
+          "target": 8,
+          "token": 5
+        },
+        {
+          "owner_token": 8,
+          "relation": "in",
+          "target": 10,
+          "token": 9
+        }
+      ],
+      "absent": [],
+      "issues": [],
+      "syntax_coverage_pass": true,
+      "withheld_local_only": [
+        {
+          "ref": 10,
+          "local_text": "London",
+          "reason": "proper_name_policy",
+          "omission_requires_review": true
+        }
+      ],
+      "named_entity_review": [
+        {
+          "text": "London",
+          "label": "GPE",
+          "start": 10,
+          "end": 11
+        }
+      ],
+      "requires_user_fact_review": true,
+      "render_admitted": false
+    },
+    {
+      "id": "02",
+      "entities": [
+        {
+          "ref": 3,
+          "phrase": "quick brown fox",
+          "tokens": [
+            1,
+            2,
+            3
+          ],
+          "head_lemma": "fox"
+        },
+        {
+          "ref": 8,
+          "phrase": "lazy dog",
+          "tokens": [
+            7,
+            8
+          ],
+          "head_lemma": "dog"
+        }
+      ],
+      "events": [
+        {
+          "token": 4,
+          "actor": 3,
+          "action": "jumps",
+          "lemma": "jump",
+          "object": null,
+          "negative": false
+        }
+      ],
+      "relations": [
+        {
+          "owner_token": 4,
+          "relation": "over",
+          "target": 8,
+          "token": 5
+        }
+      ],
+      "absent": [],
+      "issues": [],
+      "syntax_coverage_pass": true,
+      "withheld_local_only": [],
+      "named_entity_review": [],
+      "requires_user_fact_review": true,
+      "render_admitted": false
+    },
+    {
+      "id": "03",
+      "entities": [
+        {
+          "ref": 2,
+          "phrase": "pink fox",
+          "tokens": [
+            1,
+            2
+          ],
+          "head_lemma": "fox"
+        },
+        {
+          "ref": 7,
+          "phrase": "river stream",
+          "tokens": [
+            6,
+            7
+          ],
+          "head_lemma": "stream"
+        }
+      ],
+      "events": [
+        {
+          "token": 3,
+          "actor": 2,
+          "action": "jumped",
+          "lemma": "jump",
+          "object": null,
+          "negative": false
+        }
+      ],
+      "relations": [
+        {
+          "owner_token": 3,
+          "relation": "over",
+          "target": 7,
+          "token": 4
+        }
+      ],
+      "absent": [],
+      "issues": [],
+      "syntax_coverage_pass": true,
+      "withheld_local_only": [],
+      "named_entity_review": [],
+      "requires_user_fact_review": true,
+      "render_admitted": false
+    },
+    {
+      "id": "04",
+      "entities": [
+        {
+          "ref": 3,
+          "phrase": "white golden retriever",
+          "tokens": [
+            1,
+            2,
+            3
+          ],
+          "head_lemma": "retriever"
+        },
+        {
+          "ref": 7,
+          "phrase": "Merle Aussie",
+          "tokens": [
+            6,
+            7
+          ],
+          "head_lemma": "Aussie"
+        },
+        {
+          "ref": 12,
+          "phrase": "field",
+          "tokens": [
+            12
+          ],
+          "head_lemma": "field"
+        }
+      ],
+      "events": [
+        {
+          "token": 9,
+          "actor": 3,
+          "action": "playing",
+          "lemma": "play",
+          "object": null,
+          "negative": false
+        },
+        {
+          "token": 9,
+          "actor": 7,
+          "action": "playing",
+          "lemma": "play",
+          "object": null,
+          "negative": false
+        }
+      ],
+      "relations": [
+        {
+          "owner_token": 9,
+          "relation": "in",
+          "target": 12,
+          "token": 10
+        }
+      ],
+      "absent": [],
+      "issues": [
+        {
+          "kind": "uncertain_named_entity",
+          "token": 5
+        }
+      ],
+      "syntax_coverage_pass": false,
+      "withheld_local_only": [
+        {
+          "ref": 7,
+          "local_text": "Merle Aussie",
+          "reason": "proper_name_policy",
+          "omission_requires_review": true
+        }
+      ],
+      "named_entity_review": [
+        {
+          "text": "the Merle Aussie",
+          "label": "ORG",
+          "start": 5,
+          "end": 8
+        }
+      ],
+      "requires_user_fact_review": true,
+      "render_admitted": false
+    },
+    {
+      "id": "05",
+      "entities": [
+        {
+          "ref": 2,
+          "phrase": "Two brown foxes",
+          "tokens": [
+            0,
+            1,
+            2
+          ],
+          "head_lemma": "fox"
+        },
+        {
+          "ref": 6,
+          "phrase": "three white rabbits",
+          "tokens": [
+            4,
+            5,
+            6
+          ],
+          "head_lemma": "rabbit"
+        }
+      ],
+      "events": [
+        {
+          "token": 3,
+          "actor": 2,
+          "action": "chase",
+          "lemma": "chase",
+          "object": 6,
+          "negative": false
+        }
+      ],
+      "relations": [],
+      "absent": [],
+      "issues": [],
+      "syntax_coverage_pass": true,
+      "withheld_local_only": [],
+      "named_entity_review": [],
+      "requires_user_fact_review": true,
+      "render_admitted": false
+    },
+    {
+      "id": "06",
+      "entities": [
+        {
+          "ref": 2,
+          "phrase": "red bird",
+          "tokens": [
+            1,
+            2
+          ],
+          "head_lemma": "bird"
+        },
+        {
+          "ref": 7,
+          "phrase": "green apple",
+          "tokens": [
+            6,
+            7
+          ],
+          "head_lemma": "apple"
+        }
+      ],
+      "events": [
+        {
+          "token": 4,
+          "actor": 2,
+          "action": "eating",
+          "lemma": "eat",
+          "object": 7,
+          "negative": false
+        }
+      ],
+      "relations": [],
+      "absent": [],
+      "issues": [],
+      "syntax_coverage_pass": true,
+      "withheld_local_only": [],
+      "named_entity_review": [],
+      "requires_user_fact_review": true,
+      "render_admitted": false
+    },
+    {
+      "id": "07",
+      "entities": [
+        {
+          "ref": 2,
+          "phrase": "small child",
+          "tokens": [
+            1,
+            2
+          ],
+          "head_lemma": "child"
+        },
+        {
+          "ref": 6,
+          "phrase": "blue book",
+          "tokens": [
+            5,
+            6
+          ],
+          "head_lemma": "book"
+        },
+        {
+          "ref": 9,
+          "phrase": "tree",
+          "tokens": [
+            9
+          ],
+          "head_lemma": "tree"
+        }
+      ],
+      "events": [
+        {
+          "token": 3,
+          "actor": 2,
+          "action": "reads",
+          "lemma": "read",
+          "object": 6,
+          "negative": false
+        }
+      ],
+      "relations": [
+        {
+          "owner_token": 3,
+          "relation": "beside",
+          "target": 9,
+          "token": 7
+        }
+      ],
+      "absent": [],
+      "issues": [],
+      "syntax_coverage_pass": true,
+      "withheld_local_only": [],
+      "named_entity_review": [],
+      "requires_user_fact_review": true,
+      "render_admitted": false
+    },
+    {
+      "id": "08",
+      "entities": [
+        {
+          "ref": 2,
+          "phrase": "Three yellow ducks",
+          "tokens": [
+            0,
+            1,
+            2
+          ],
+          "head_lemma": "duck"
+        },
+        {
+          "ref": 6,
+          "phrase": "pond",
+          "tokens": [
+            6
+          ],
+          "head_lemma": "pond"
+        }
+      ],
+      "events": [
+        {
+          "token": 3,
+          "actor": 2,
+          "action": "swimming",
+          "lemma": "swim",
+          "object": null,
+          "negative": false
+        }
+      ],
+      "relations": [
+        {
+          "owner_token": 3,
+          "relation": "across",
+          "target": 6,
+          "token": 4
+        }
+      ],
+      "absent": [],
+      "issues": [],
+      "syntax_coverage_pass": true,
+      "withheld_local_only": [],
+      "named_entity_review": [],
+      "requires_user_fact_review": true,
+      "render_admitted": false
+    },
+    {
+      "id": "09",
+      "entities": [
+        {
+          "ref": 3,
+          "phrase": "purple dragon flies",
+          "tokens": [
+            1,
+            2,
+            3
+          ],
+          "head_lemma": "fly"
+        },
+        {
+          "ref": 7,
+          "phrase": "snowy mountain",
+          "tokens": [
+            6,
+            7
+          ],
+          "head_lemma": "mountain"
+        }
+      ],
+      "events": [],
+      "relations": [
+        {
+          "owner_token": 3,
+          "relation": "above",
+          "target": 7,
+          "token": 4
+        }
+      ],
+      "absent": [],
+      "issues": [
+        {
+          "kind": "no_event"
+        }
+      ],
+      "syntax_coverage_pass": false,
+      "withheld_local_only": [],
+      "named_entity_review": [],
+      "requires_user_fact_review": true,
+      "render_admitted": false
+    },
+    {
+      "id": "10",
+      "entities": [
+        {
+          "ref": 2,
+          "phrase": "black dog",
+          "tokens": [
+            1,
+            2
+          ],
+          "head_lemma": "dog"
+        },
+        {
+          "ref": 6,
+          "phrase": "red ball",
+          "tokens": [
+            5,
+            6
+          ],
+          "head_lemma": "ball"
+        }
+      ],
+      "events": [
+        {
+          "token": 3,
+          "actor": 2,
+          "action": "carries",
+          "lemma": "carry",
+          "object": 6,
+          "negative": false
+        }
+      ],
+      "relations": [],
+      "absent": [],
+      "issues": [],
+      "syntax_coverage_pass": true,
+      "withheld_local_only": [],
+      "named_entity_review": [],
+      "requires_user_fact_review": true,
+      "render_admitted": false
+    },
+    {
+      "id": "11",
+      "entities": [
+        {
+          "ref": 2,
+          "phrase": "white rabbit",
+          "tokens": [
+            1,
+            2
+          ],
+          "head_lemma": "rabbit"
+        },
+        {
+          "ref": 6,
+          "phrase": "brown fox",
+          "tokens": [
+            5,
+            6
+          ],
+          "head_lemma": "fox"
+        }
+      ],
+      "events": [
+        {
+          "token": 3,
+          "actor": 2,
+          "action": "watches",
+          "lemma": "watch",
+          "object": 6,
+          "negative": false
+        }
+      ],
+      "relations": [],
+      "absent": [],
+      "issues": [],
+      "syntax_coverage_pass": true,
+      "withheld_local_only": [],
+      "named_entity_review": [],
+      "requires_user_fact_review": true,
+      "render_admitted": false
+    },
+    {
+      "id": "12",
+      "entities": [
+        {
+          "ref": 1,
+          "phrase": "robot",
+          "tokens": [
+            1
+          ],
+          "head_lemma": "robot"
+        },
+        {
+          "ref": 5,
+          "phrase": "wooden cart",
+          "tokens": [
+            4,
+            5
+          ],
+          "head_lemma": "cart"
+        },
+        {
+          "ref": 8,
+          "phrase": "tunnel",
+          "tokens": [
+            8
+          ],
+          "head_lemma": "tunnel"
+        }
+      ],
+      "events": [
+        {
+          "token": 2,
+          "actor": 1,
+          "action": "pushes",
+          "lemma": "push",
+          "object": 5,
+          "negative": false
+        }
+      ],
+      "relations": [
+        {
+          "owner_token": 2,
+          "relation": "through",
+          "target": 8,
+          "token": 6
+        }
+      ],
+      "absent": [],
+      "issues": [],
+      "syntax_coverage_pass": true,
+      "withheld_local_only": [],
+      "named_entity_review": [],
+      "requires_user_fact_review": true,
+      "render_admitted": false
+    },
+    {
+      "id": "13",
+      "entities": [
+        {
+          "ref": 1,
+          "phrase": "girl",
+          "tokens": [
+            1
+          ],
+          "head_lemma": "girl"
+        },
+        {
+          "ref": 4,
+          "phrase": "football",
+          "tokens": [
+            4
+          ],
+          "head_lemma": "football"
+        }
+      ],
+      "events": [
+        {
+          "token": 2,
+          "actor": 1,
+          "action": "kicks",
+          "lemma": "kick",
+          "object": 4,
+          "negative": false
+        }
+      ],
+      "relations": [],
+      "absent": [],
+      "issues": [
+        {
+          "kind": "unrepresented_content",
+          "token": 5
+        },
+        {
+          "kind": "unrepresented_content",
+          "token": 7
+        },
+        {
+          "kind": "unrepresented_content",
+          "token": 8
+        },
+        {
+          "kind": "unresolved_clause",
+          "token": 8
+        }
+      ],
+      "syntax_coverage_pass": false,
+      "withheld_local_only": [],
+      "named_entity_review": [],
+      "requires_user_fact_review": true,
+      "render_admitted": false
+    },
+    {
+      "id": "14",
+      "entities": [
+        {
+          "ref": 1,
+          "phrase": "dog",
+          "tokens": [
+            1
+          ],
+          "head_lemma": "dog"
+        },
+        {
+          "ref": 4,
+          "phrase": "cat",
+          "tokens": [
+            4
+          ],
+          "head_lemma": "cat"
+        },
+        {
+          "ref": 9,
+          "phrase": "red boat",
+          "tokens": [
+            8,
+            9
+          ],
+          "head_lemma": "boat"
+        }
+      ],
+      "events": [
+        {
+          "token": 5,
+          "actor": 1,
+          "action": "sleep",
+          "lemma": "sleep",
+          "object": null,
+          "negative": false
+        },
+        {
+          "token": 5,
+          "actor": 4,
+          "action": "sleep",
+          "lemma": "sleep",
+          "object": null,
+          "negative": false
+        }
+      ],
+      "relations": [
+        {
+          "owner_token": 5,
+          "relation": "beside",
+          "target": 9,
+          "token": 6
+        }
+      ],
+      "absent": [],
+      "issues": [],
+      "syntax_coverage_pass": true,
+      "withheld_local_only": [],
+      "named_entity_review": [],
+      "requires_user_fact_review": true,
+      "render_admitted": false
+    },
+    {
+      "id": "15",
+      "entities": [
+        {
+          "ref": 2,
+          "phrase": "blue owl",
+          "tokens": [
+            1,
+            2
+          ],
+          "head_lemma": "owl"
+        },
+        {
+          "ref": 10,
+          "phrase": "red fox",
+          "tokens": [
+            9,
+            10
+          ],
+          "head_lemma": "fox"
+        },
+        {
+          "ref": 6,
+          "phrase": "branch",
+          "tokens": [
+            6
+          ],
+          "head_lemma": "branch"
+        },
+        {
+          "ref": 14,
+          "phrase": "tree",
+          "tokens": [
+            14
+          ],
+          "head_lemma": "tree"
+        }
+      ],
+      "events": [
+        {
+          "token": 3,
+          "actor": 2,
+          "action": "sits",
+          "lemma": "sit",
+          "object": null,
+          "negative": false
+        },
+        {
+          "token": 11,
+          "actor": 10,
+          "action": "sleeps",
+          "lemma": "sleep",
+          "object": null,
+          "negative": false
+        }
+      ],
+      "relations": [
+        {
+          "owner_token": 3,
+          "relation": "on",
+          "target": 6,
+          "token": 4
+        },
+        {
+          "owner_token": 11,
+          "relation": "under",
+          "target": 14,
+          "token": 12
+        }
+      ],
+      "absent": [],
+      "issues": [],
+      "syntax_coverage_pass": true,
+      "withheld_local_only": [],
+      "named_entity_review": [],
+      "requires_user_fact_review": true,
+      "render_admitted": false
+    },
+    {
+      "id": "16",
+      "entities": [
+        {
+          "ref": 2,
+          "phrase": "brown fox",
+          "tokens": [
+            1,
+            2
+          ],
+          "head_lemma": "fox"
+        },
+        {
+          "ref": 10,
+          "phrase": "fox",
+          "tokens": [
+            10
+          ],
+          "head_lemma": "fox"
+        },
+        {
+          "ref": 7,
+          "phrase": "white dog",
+          "tokens": [
+            6,
+            7
+          ],
+          "head_lemma": "dog"
+        },
+        {
+          "ref": 16,
+          "phrase": "dog",
+          "tokens": [
+            16
+          ],
+          "head_lemma": "dog"
+        }
+      ],
+      "events": [
+        {
+          "token": 3,
+          "actor": 2,
+          "action": "stands",
+          "lemma": "stand",
+          "object": null,
+          "negative": false
+        },
+        {
+          "token": 13,
+          "actor": 10,
+          "action": "jump",
+          "lemma": "jump",
+          "object": null,
+          "negative": true
+        }
+      ],
+      "relations": [
+        {
+          "owner_token": 3,
+          "relation": "beside",
+          "target": 7,
+          "token": 4
+        },
+        {
+          "owner_token": 13,
+          "relation": "over",
+          "target": 16,
+          "token": 14
+        }
+      ],
+      "absent": [],
+      "issues": [
+        {
+          "kind": "uncertain_named_entity",
+          "token": 10
+        }
+      ],
+      "syntax_coverage_pass": false,
+      "withheld_local_only": [],
+      "named_entity_review": [
+        {
+          "text": "fox",
+          "label": "ORG",
+          "start": 10,
+          "end": 11
+        }
+      ],
+      "requires_user_fact_review": true,
+      "render_admitted": false
+    },
+    {
+      "id": "17",
+      "entities": [
+        {
+          "ref": 2,
+          "phrase": "brown fox",
+          "tokens": [
+            1,
+            2
+          ],
+          "head_lemma": "fox"
+        },
+        {
+          "ref": 6,
+          "phrase": "stream",
+          "tokens": [
+            6
+          ],
+          "head_lemma": "stream"
+        },
+        {
+          "ref": 9,
+          "phrase": "dogs",
+          "tokens": [
+            9
+          ],
+          "head_lemma": "dog"
+        }
+      ],
+      "events": [
+        {
+          "token": 3,
+          "actor": 2,
+          "action": "stands",
+          "lemma": "stand",
+          "object": null,
+          "negative": false
+        }
+      ],
+      "relations": [
+        {
+          "owner_token": 3,
+          "relation": "beside",
+          "target": 6,
+          "token": 4
+        }
+      ],
+      "absent": [
+        9
+      ],
+      "issues": [],
+      "syntax_coverage_pass": true,
+      "withheld_local_only": [],
+      "named_entity_review": [],
+      "requires_user_fact_review": true,
+      "render_admitted": false
+    },
+    {
+      "id": "18",
+      "entities": [
+        {
+          "ref": 8,
+          "phrase": "brown fox",
+          "tokens": [
+            7,
+            8
+          ],
+          "head_lemma": "fox"
+        },
+        {
+          "ref": 2,
+          "phrase": "white rabbit",
+          "tokens": [
+            1,
+            2
+          ],
+          "head_lemma": "rabbit"
+        }
+      ],
+      "events": [
+        {
+          "token": 4,
+          "actor": 8,
+          "action": "chased",
+          "lemma": "chase",
+          "object": 2,
+          "negative": false
+        }
+      ],
+      "relations": [],
+      "absent": [],
+      "issues": [],
+      "syntax_coverage_pass": true,
+      "withheld_local_only": [],
+      "named_entity_review": [],
+      "requires_user_fact_review": true,
+      "render_admitted": false
+    },
+    {
+      "id": "19",
+      "entities": [
+        {
+          "ref": 1,
+          "phrase": "cat",
+          "tokens": [
+            1
+          ],
+          "head_lemma": "cat"
+        },
+        {
+          "ref": 4,
+          "phrase": "dog",
+          "tokens": [
+            4
+          ],
+          "head_lemma": "dog"
+        },
+        {
+          "ref": 9,
+          "phrase": "It",
+          "tokens": [
+            9
+          ],
+          "head_lemma": "it"
+        },
+        {
+          "ref": 7,
+          "phrase": "mouse",
+          "tokens": [
+            7
+          ],
+          "head_lemma": "mouse"
+        }
+      ],
+      "events": [
+        {
+          "token": 2,
+          "actor": 1,
+          "action": "sees",
+          "lemma": "see",
+          "object": 4,
+          "negative": false
+        },
+        {
+          "token": 10,
+          "actor": 9,
+          "action": "runs",
+          "lemma": "run",
+          "object": null,
+          "negative": false
+        }
+      ],
+      "relations": [
+        {
+          "owner_token": 2,
+          "relation": "beside",
+          "target": 7,
+          "token": 5
+        }
+      ],
+      "absent": [],
+      "issues": [
+        {
+          "kind": "unresolved_pronoun",
+          "token": 9
+        },
+        {
+          "kind": "unrepresented_content",
+          "token": 11
+        }
+      ],
+      "syntax_coverage_pass": false,
+      "withheld_local_only": [],
+      "named_entity_review": [],
+      "requires_user_fact_review": true,
+      "render_admitted": false
+    },
+    {
+      "id": "20",
+      "entities": [
+        {
+          "ref": 2,
+          "phrase": "brown fox",
+          "tokens": [
+            1,
+            2
+          ],
+          "head_lemma": "fox"
+        },
+        {
+          "ref": 8,
+          "phrase": "circumstances",
+          "tokens": [
+            8
+          ],
+          "head_lemma": "circumstance"
+        },
+        {
+          "ref": 12,
+          "phrase": "dog",
+          "tokens": [
+            12
+          ],
+          "head_lemma": "dog"
+        }
+      ],
+      "events": [
+        {
+          "token": 9,
+          "actor": 2,
+          "action": "jump",
+          "lemma": "jump",
+          "object": null,
+          "negative": true
+        }
+      ],
+      "relations": [
+        {
+          "owner_token": 9,
+          "relation": "under",
+          "target": 8,
+          "token": 6
+        },
+        {
+          "owner_token": 9,
+          "relation": "over",
+          "target": 12,
+          "token": 10
+        }
+      ],
+      "absent": [],
+      "issues": [
+        {
+          "kind": "unrepresented_content",
+          "token": 5
+        }
+      ],
+      "syntax_coverage_pass": false,
+      "withheld_local_only": [],
+      "named_entity_review": [],
+      "requires_user_fact_review": true,
+      "render_admitted": false
+    }
+  ],
+  "cloud_calls": 0,
+  "render_admitted": false
+}

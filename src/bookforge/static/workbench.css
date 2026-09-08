@@ -91,6 +91,7 @@ textarea { resize: vertical; min-height: 154px; line-height: 1.6; }
 .orb { width: 90px; height: 90px; margin-bottom: 20px; border-radius: 50%; display: grid; place-items: center; background: radial-gradient(circle at 35% 32%, #fff6bc, #dbb975 42%, #16372f 44%, #0a1916 70%); box-shadow: 0 0 60px rgba(141, 240, 174, .16); }
 .orb span { width: 15px; height: 15px; transform: rotate(45deg); background: var(--green); box-shadow: 0 0 20px var(--green); }
 .hidden { display: none !important; }
+#voiceReview { white-space: pre-line; }
 
 .projection-preview { margin-top: 22px; }
 .preview-label { display: flex; align-items: center; justify-content: space-between; gap: 14px; margin-bottom: 9px; color: var(--muted); font-size: 11px; }

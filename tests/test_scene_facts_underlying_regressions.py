@@ -226,6 +226,38 @@ def test_colored_actor_cannot_borrow_action_event_or_relation_from_same_label():
     assert {"subjects[0].actions[0]", "relationships[0]", "events[0]"}.issubset(caught.value.paths)
 
 
+@pytest.mark.parametrize("action", ["eating", "holding"])
+def test_progressive_action_keeps_object_color_separate_from_its_actor(action):
+    source = f"A red bird is {action} a green apple."
+    facts = SceneFactsV2(
+        setting=SceneSettingFact(label="unspecified"),
+        subjects=(SceneSubjectFact(
+            ref="bird", label="bird", color="red", actions=(f"{action} green apple",),
+        ),),
+        objects=(SceneObjectFact(ref="apple", label="apple", color="green"),),
+        relationships=(SceneRelationshipFact(source="bird", relation="holds", target="apple"),)
+        if action == "holding" else (),
+    )
+    prompt = facts.to_renderer_prompt(source_text=source)
+    assert "red bird" in prompt and "green apple" in prompt
+    for collection, wrong_color in (("subjects", "green"), ("objects", "red")):
+        entity = getattr(facts, collection)[0].model_copy(update={"color": wrong_color})
+        with pytest.raises(SceneFactsGroundingError, match=f"{collection}\\[0\\].color"):
+            facts.model_copy(update={collection: (entity,)}).to_renderer_prompt(source_text=source)
+
+
+def test_direct_predicate_color_allows_intensifiers_but_not_negation_or_ownership():
+    facts = SceneFactsV2(
+        setting=SceneSettingFact(label="unspecified"),
+        subjects=(SceneSubjectFact(ref="bird", label="bird", color="green"),),
+    )
+    for source in ("A bird is green.", "A bird appears quite green."):
+        facts.validate_source_grounding(source_text=source)
+    for source in ("A bird is not green.", "A bird is holding green apples."):
+        with pytest.raises(SceneFactsGroundingError, match=r"subjects\[0\].color"):
+            facts.validate_source_grounding(source_text=source)
+
+
 @pytest.mark.parametrize("antecedent", ["the blue feather", "the red feather", "the feather"])
 def test_transformation_preserves_colored_antecedent_identity(antecedent):
     facts = SceneFactsV2(

@@ -1,0 +1,53 @@
+{
+  "parser_activation": "active",
+  "session_status": 404,
+  "session_unchanged": true,
+  "cases": [
+    {
+      "route": "prepare",
+      "status": 200,
+      "wall_ms": 140.46,
+      "text_sha256": "85cc239be2866b3df18183632c3fc55c4c230febe15f0980dac9d75e4ba9c4be"
+    },
+    {
+      "route": "prepare",
+      "status": 200,
+      "wall_ms": 136.39,
+      "text_sha256": "bb9a362ecca11ebd93e0c42ca85d1a6bd1e05a24be391cf0bb894b42cb87e545"
+    },
+    {
+      "route": "prepare",
+      "status": 200,
+      "wall_ms": 113.32,
+      "text_sha256": "d53db0eb7c0441b73910138344c160c09fdbba49475ee11044e9c40e5c372d2a"
+    },
+    {
+      "route": "create-without-matching-confirmation",
+      "status": 422
+    },
+    {
+      "route": "create-without-matching-confirmation",
+      "status": 422
+    },
+    {
+      "route": "prepare",
+      "status": 422,
+      "wall_ms": 90.58,
+      "text_sha256": "5d5fb0456f7ac85ca40ba1fb0863d7a561238556ecaafe612e5014070cbb4873"
+    },
+    {
+      "route": "create-invalid",
+      "status": 422
+    },
+    {
+      "route": "prepare",
+      "status": 422,
+      "wall_ms": 103.3,
+      "text_sha256": "20679b4087aea039bc88bb89572256160e5a0cebd8727db4dcfc527de4ed8427"
+    },
+    {
+      "route": "create-invalid",
+      "status": 422
+    }
+  ]
+}

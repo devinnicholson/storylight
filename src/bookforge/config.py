@@ -69,6 +69,7 @@ class Settings(BaseSettings):
     ] = "configured-local-model"
     live_scene_planner_cache_entries: Annotated[int, Field(ge=0, le=256)] = 32
     live_scene_planner_auto_warmup: bool = False
+    reviewed_scene_parser_socket: Path | None = None
     # Positional short-key output was faster on Gemma 3 1B but repeatedly
     # dropped verbs, settings, and supporting objects. Keep the faithful named
     # schema as the production default; compact remains an explicit research A/B.

@@ -3,8 +3,10 @@
 import asyncio
 import hashlib
 import json
+from pathlib import Path
 from types import SimpleNamespace
 
+import httpx
 import pytest
 from fastapi.testclient import TestClient
 from PIL import Image
@@ -20,6 +22,7 @@ from bookforge.finite_modal_provider import (
     load_finite_scene_bundle,
 )
 from bookforge.live_scene import LiveSceneCreateRequest
+from bookforge.scene_facts import SceneFactsV2, SceneObjectFact, SceneSettingFact, SceneSubjectFact
 
 TEXT = "A quick brown fox jumps over a lazy dog."
 INVALID = "A quick brown box. Do not throw a lazy dog."
@@ -80,10 +83,12 @@ def api_client(monkeypatch, tmp_path):
         yield state
 
 
-def create(client, *, text=TEXT, reviewed=True, seed=41):
+def create(client, *, text=TEXT, reviewed=True, seed=41, confirm=False, digest=None):
     response = client.post("/v1/live-scenes", json=dict(
         text=text, visual_style="watercolor", seed=seed,
         session_id="reviewed-test", reviewed_description=reviewed,
+        confirm_visual_facts=confirm,
+        visual_fact_digest=digest,
     ))
     assert response.status_code == 202, response.text
     job = response.json()["job_id"]
@@ -98,7 +103,15 @@ def test_reviewed_api_renders_once_without_planner_and_records_deterministic_pro
         text=TEXT, visual_style="watercolor", seed=41, reviewed_description=True,
     ))
     assert prepared.status_code == 200, prepared.text
+    assert prepared.json()["requires_fact_review"] is False
+    assert prepared.json()["local_omissions"] == []
+    assert prepared.json()["visual_fact_digest"] is None
     assert state.renderer.calls == []
+    facts = SceneFactsV2.model_validate(prepared.json()["visual_facts"])
+    assert facts.subjects[0].label == "fox"
+    assert facts.subjects[0].color == "brown"
+    assert facts.subjects[0].actions == ("jumps over a lazy dog",)
+    assert facts.objects[0].label == "dog"
     result = create(state.client)
     assert result["complete"] and result["stage"] != "failed", result
     assert len(state.renderer.calls) == 1
@@ -116,16 +129,33 @@ def test_reviewed_api_renders_once_without_planner_and_records_deterministic_pro
     assert len(state.renderer.calls) == 1
 
 
-def test_reviewed_rejection_precedes_renderer_preview_prewarm_and_model_cache(api_client):
+def test_reviewed_rejection_precedes_renderer_preview_prewarm_and_model_cache(
+    api_client, monkeypatch,
+):
     state = api_client
+    previous = create(state.client)
+    assert previous["stage"] != "failed"
+    pointer = state.client.get("/v1/live-scene-sessions/reviewed-test").json()
     state.adapter.planner = ForbiddenPlanner()
-    prepared = state.client.post("/v1/live-scene-planner/prepare", json=dict(
-        text=INVALID, visual_style="watercolor", seed=41, reviewed_description=True,
-    ))
-    assert prepared.status_code in {400, 422, 503}
-    result = create(state.client, text=INVALID)
-    assert result["stage"] == "failed"
-    assert state.renderer.calls == []
+
+    async def forbidden_submit(*args, **kwargs):
+        raise AssertionError("unsupported description must not create any job")
+
+    monkeypatch.setattr(app.state.live_scenes, "submit", forbidden_submit)
+    for text in (INVALID, "A cat she's seeing a mouse in a dark alleyway in London."):
+        payload = dict(text=text, visual_style="watercolor", seed=41,
+                       session_id="reviewed-test", reviewed_description=True)
+        prepared = state.client.post("/v1/live-scene-planner/prepare", json=payload)
+        created = state.client.post("/v1/live-scenes", json=payload)
+        assert prepared.status_code == created.status_code == 422
+        assert prepared.json() == created.json()
+        detail = prepared.json()["detail"]
+        assert detail["code"] == "reviewed_description_unsupported"
+        assert "explicit subjects and actions" in detail["message"]
+        assert text not in prepared.text and "London" not in prepared.text
+        assert "job_id" not in created.json()
+        assert state.client.get("/v1/live-scene-sessions/reviewed-test").json() == pointer
+    assert len(state.renderer.calls) == 1  # Only the prior, still-visible scene.
 
     async def warm_boundary():
         warm = object.__new__(WarmModalSceneProvider)
@@ -179,3 +209,227 @@ def test_completed_old_mode_and_model_cache_cannot_shadow_reviewed_mode(api_clie
     normal_mode = create(state.client, reviewed=False)
     assert normal_mode["stage"] == "failed"  # ForbiddenPlanner proves cache was not reused.
     assert len(state.renderer.calls) == 3
+
+
+def _learned_parser(api_client, monkeypatch):
+    state = api_client
+    socket = Path("/tmp/bookforge-test-scene-parser.sock")
+    app.state.settings.reviewed_scene_parser_socket = socket
+    state.adapter.reviewed_scene_parser_socket = socket
+    text = "A red bird is eating a green apple in London."
+    facts = SceneFactsV2(
+        setting=SceneSettingFact(label="unspecified"),
+        subjects=(SceneSubjectFact(ref="bird", label="bird", color="red",
+                                   actions=("eating green apple",)),),
+        objects=(SceneObjectFact(ref="apple", label="apple", color="green"),),
+    )
+    state.parsed = dict(
+        revision="dependency-scene-draft-v1", status="omission_review",
+        facts=facts.model_dump(mode="json"), reason=None, render_admitted=False,
+        requires_fact_review=True,
+        local_omissions=[dict(ref=9, local_text="London", reason="proper_name_policy",
+                              omission_requires_review=True)],
+        syntax_issues=[],
+        renderer_prompt_preview=facts.to_renderer_prompt(
+            source_text=text, visual_style="watercolor",
+        ),
+    )
+    state.parser_calls = []
+    state.parser_status = 200
+    state.parser_error = None
+    state.change_after_api = False
+
+    def handler(request):
+        assert str(request.url) == "http://scene-parser/v1/scene-facts"
+        assert json.loads(request.content) == {"text": text, "visual_style": "watercolor"}
+        state.parser_calls.append(request)
+        if state.change_after_api and len(state.parser_calls) == 3:
+            changed = json.loads(json.dumps(state.parsed["facts"]))
+            changed["objects"][0]["count"] = 1
+            state.parsed["facts"] = changed
+            state.parsed["renderer_prompt_preview"] = SceneFactsV2.model_validate(
+                changed,
+            ).to_renderer_prompt(source_text=text, visual_style="watercolor")
+        if state.parser_error:
+            raise state.parser_error
+        return httpx.Response(state.parser_status, json=state.parsed,
+                              headers={"Location": "https://invalid.example/forbidden"})
+
+    def transport(**kwargs):
+        assert kwargs == {"uds": str(socket), "retries": 0}
+        return httpx.MockTransport(handler)
+
+    monkeypatch.setattr("bookforge.reviewed_description.httpx.AsyncHTTPTransport", transport)
+    return text
+
+
+def test_learned_draft_requires_confirmation_and_rechecks_before_one_render(
+    api_client, monkeypatch,
+):
+    state = api_client
+    text = _learned_parser(state, monkeypatch)
+    state.adapter.planner = ForbiddenPlanner()
+    payload = dict(text=text, visual_style="watercolor", seed=41,
+                   session_id="reviewed-test", reviewed_description=True)
+    prepared = state.client.post("/v1/live-scene-planner/prepare", json=payload)
+    assert prepared.status_code == 200, prepared.text
+    assert prepared.json()["requires_fact_review"] is True
+    assert prepared.json()["local_omissions"][0]["local_text"] == "London"
+    assert prepared.json()["model"] == "reviewed-language-v1"
+    refused = state.client.post("/v1/live-scenes", json=payload)
+    assert refused.status_code == 422
+    assert refused.json()["detail"]["code"] == "visual_fact_confirmation_required"
+    assert state.client.get("/v1/live-scene-sessions/reviewed-test").status_code == 404
+    assert state.renderer.calls == []
+
+    digest = prepared.json()["visual_fact_digest"]
+    assert len(digest) == 64
+    result = create(state.client, text=text, confirm=True, digest=digest)
+    assert result["stage"] != "failed", result
+    assert len(state.parser_calls) == 4  # Prepare, refusal, API, independent provider validation.
+    assert len(state.renderer.calls) == 1
+    assert "London" not in state.renderer.calls[0].prompt
+    assert result["metrics"]["planning_status"] == "model"
+    assert result["metrics"]["models"][0]["model"] == "reviewed-language-v1"
+    repeated = create(state.client, text=text, confirm=True, digest=digest)
+    assert repeated["metrics"]["scene_cache_hit"] is True
+    assert repeated["metrics"]["planning_status"] == "model"
+    assert len(state.renderer.calls) == 1
+    changed = json.loads(json.dumps(state.parsed["facts"]))
+    changed["objects"][0]["count"] = 1
+    state.parsed["facts"] = changed
+    state.parsed["renderer_prompt_preview"] = SceneFactsV2.model_validate(
+        changed,
+    ).to_renderer_prompt(source_text=text, visual_style="watercolor")
+    stale_confirmation = state.client.post("/v1/live-scenes", json={
+        **payload, "confirm_visual_facts": True, "visual_fact_digest": digest,
+    })
+    assert stale_confirmation.status_code == 422
+    prepared_again = state.client.post("/v1/live-scene-planner/prepare", json=payload).json()
+    assert prepared_again["visual_fact_digest"] != digest
+    regenerated = create(state.client, text=text, confirm=True,
+                         digest=prepared_again["visual_fact_digest"])
+    assert regenerated["stage"] != "failed", regenerated
+    assert regenerated["metrics"]["scene_cache_hit"] is False
+    assert len(state.renderer.calls) == 2  # Old completed graph cannot shadow the new review.
+    normal = create(state.client, text=text, reviewed=False)
+    assert normal["stage"] == "failed"  # The reviewed pack cannot shadow normal planning.
+    assert len(state.renderer.calls) == 2
+
+
+def test_parser_response_cannot_bypass_fact_grounding_or_provider_confirmation(
+    api_client, monkeypatch,
+):
+    state = api_client
+    text = _learned_parser(state, monkeypatch)
+    original = json.loads(json.dumps(state.parsed))
+    payload = dict(text=text, visual_style="watercolor", seed=41,
+                   reviewed_description=True, confirm_visual_facts=True)
+    for changed in (
+        {"revision": "dependency-scene-draft-old"},
+        {"renderer_prompt_preview": "an unrelated picture"},
+        {"facts": {**original["facts"], "subjects": [
+            {**original["facts"]["subjects"][0], "color": "green"},
+        ]}},
+    ):
+        state.parsed = {**original, **changed}
+        response = state.client.post("/v1/live-scenes", json=payload)
+        assert response.status_code == 422
+        assert "London" not in response.text and "job_id" not in response.json()
+    assert state.renderer.calls == []
+    state.parsed = original
+    for status, error in ((302, None), (200, httpx.ReadTimeout("private upstream message"))):
+        state.parser_status, state.parser_error = status, error
+        before = len(state.parser_calls)
+        response = state.client.post("/v1/live-scenes", json=payload)
+        assert response.status_code == 422
+        assert len(state.parser_calls) == before + 1  # No redirect or retry.
+        assert "private upstream message" not in response.text
+    state.parser_status, state.parser_error = 200, None
+
+    async def unconfirmed_provider():
+        from bookforge.live_scene import build_live_scene_story_pack
+
+        request = LiveSceneCreateRequest(text=text, visual_style="watercolor",
+                                         reviewed_description=True)
+        draft = build_live_scene_story_pack(request, job_id="unconfirmed", seed=41,
+                                            assets=[], compiler_model="fixture")
+        with pytest.raises(RuntimeError, match="no cloud image was generated"):
+            await state.adapter._resolve_plan(request, job_id="unconfirmed", seed=41, draft=draft)
+
+    asyncio.run(unconfirmed_provider())
+    assert state.renderer.calls == []
+
+    # A changed but independently grounded parse after API acceptance must still
+    # stop at the provider boundary before it can use the paid renderer.
+    state.parser_calls.clear()
+    prepared = state.client.post("/v1/live-scene-planner/prepare", json={
+        key: value for key, value in payload.items() if key != "confirm_visual_facts"
+    })
+    assert prepared.status_code == 200
+    state.change_after_api = True
+    result = create(state.client, text=text, confirm=True,
+                    digest=prepared.json()["visual_fact_digest"])
+    assert result["stage"] == "failed"
+    assert len(state.parser_calls) == 3
+    assert state.renderer.calls == []
+
+
+def test_configured_nominal_audit_blocks_adverb_labels_and_invalidates_unaudited_cache(
+    api_client, monkeypatch,
+):
+    state = api_client
+    initial = create(state.client)
+    assert initial["metrics"]["planning_status"] == "deterministic"
+    socket = Path("/tmp/bookforge-nominal-test.sock")
+    app.state.settings.reviewed_scene_parser_socket = socket
+    state.adapter.reviewed_scene_parser_socket = socket
+    audits = []
+
+    def handler(request):
+        payload = json.loads(request.content)
+        assert set(payload) == {"text", "visual_style", "nominal_labels"}
+        audits.append(payload)
+        issues = [dict(label_index=i, reason="not_nominal_span")
+                  for i, label in enumerate(payload["nominal_labels"]) if "slowly" in label]
+        return httpx.Response(200, json=dict(revision="dependency-nominal-audit-v1",
+                                             accepted=not issues, issues=issues))
+
+    def transport(**kwargs):
+        assert kwargs == {"uds": str(socket), "retries": 0}
+        return httpx.MockTransport(handler)
+
+    monkeypatch.setattr("bookforge.reviewed_description.httpx.AsyncHTTPTransport", transport)
+    audited = create(state.client)
+    assert audited["stage"] != "failed", audited
+    assert audited["metrics"]["scene_cache_hit"] is False
+    assert audited["metrics"]["planning_status"] == "model"
+    assert audited["metrics"]["models"][0]["model"] == "reviewed-language-bounded-v1"
+    assert len(state.renderer.calls) == 2
+    assert create(state.client)["metrics"]["scene_cache_hit"] is True
+    assert len(state.renderer.calls) == 2
+    pointer = state.client.get("/v1/live-scene-sessions/reviewed-test").json()
+    payload = dict(text="A cat slowly chases a mouse.", visual_style="watercolor",
+                   seed=41, session_id="reviewed-test", reviewed_description=True)
+    for endpoint in ("/v1/live-scene-planner/prepare", "/v1/live-scenes"):
+        response = state.client.post(endpoint, json=payload)
+        assert response.status_code == 422
+        assert response.json()["detail"]["code"] == "reviewed_description_unsupported"
+    assert any("slowly" in label for label in audits[-1]["nominal_labels"])
+    assert len(state.renderer.calls) == 2
+    assert state.client.get("/v1/live-scene-sessions/reviewed-test").json() == pointer
+
+    for text in (
+        "The white golden retriever and the Merle Aussie are playing in the field.",
+        "A brown fox stands beside a white dog. The fox does not jump over the dog.",
+        "A fox stands beside a stream. No dogs.",
+    ):
+        response = state.client.post(
+            "/v1/live-scene-planner/prepare", json={**payload, "text": text},
+        )
+        assert response.status_code == 200, response.text
+        assert response.json()["requires_fact_review"] is False
+        assert response.json()["model"] == "reviewed-language-bounded-v1"
+        assert response.json()["revision"] == "dependency-nominal-audit-v1"
+    assert "dogs" in audits[-1]["nominal_labels"]  # Absent nouns are audited too.
+    assert len(state.renderer.calls) == 2

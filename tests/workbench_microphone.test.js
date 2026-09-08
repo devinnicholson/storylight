@@ -20,7 +20,7 @@ function harness() {
     setAttribute() {}, style: {}, textContent: ""});
   const elements = Object.fromEntries([
     "micButton", "micButtonText", "micLevel", "compileButton", "interim",
-    "story", "style", "projectorLink", "projectorFrame", "projectionPreview",
+    "story", "style", "projectorLink", "projectorFrame", "projectionPreview", "voiceReview",
   ].map((key) => [key, element()]));
   elements.story.value = "A fox carries a lantern.";
   class Recorder {
@@ -35,7 +35,7 @@ function harness() {
     elements, AbortController, Blob, Uint8Array, MediaRecorder: Recorder,
     canRecordAudio: true, sceneReady: true, demoMode: false, voiceMode: false,
     voiceProjectionLive: false, projectorPreviewUrl: null,
-    generationSubmitting: false, pendingSubmission: null, generationReconciling: false,
+    generationSubmitting: false, pendingSubmission: null, pendingVoiceReview: null, generationReconciling: false,
     activeLiveJobId: null, latestLiveSnapshot: null,
     listening: false, starting: false, finalizing: false, stream: null,
     analyser: null, audioContext: null, mediaRecorder: null, audioChunks: [],
@@ -162,10 +162,22 @@ async function voiceToScene() {
   const submitted = [];
   let finishAsr;
   let finishGeneration;
+  let rejectPreflight = false;
+  let requiresFactReview = false;
+  let parsedAction = "floating";
+  const preflight = () => ({ok: !rejectPreflight, status: rejectPreflight ? 422 : 200,
+    json: async () => rejectPreflight
+      ? {detail: {code: "reviewed_description_unsupported", message: "Clarify the action."}}
+      : {revision: "reviewed-language-v1", requires_fact_review: requiresFactReview,
+        visual_fact_digest: "a".repeat(64),
+        local_omissions: requiresFactReview ? [{local_text: "London"}] : [],
+        visual_facts: {subjects: [{ref: "whale", label: "whale", attributes: [], actions: [parsedAction]}],
+          objects: [], relationships: [], negatives: [], setting: {label: "unspecified"}}},
+  });
   Object.assign(c, {
     edgePlanPreparationTimer: null, liveRequestEpoch: 0,
     performance: {now: () => 0}, invalidatePreparation() {},
-    stopLiveJobTransport() {}, renderGenerationProgress() {}, updateElapsedClock() {}, setStatus() {},
+    stopLiveJobTransport() { events.push("transport-stop"); }, renderGenerationProgress() {}, updateElapsedClock() {}, setStatus() {},
     setGenerateButtonForStage() {}, isTerminalSnapshot: () => true,
     acceptedLiveScenePointer: (_response, snapshot) => snapshot,
     handleLiveSceneSessionPointer(snapshot) { c.activeLiveJobId = snapshot.job_id; },
@@ -173,6 +185,7 @@ async function voiceToScene() {
     respond(url, options) {
       if (url === "/v1/runtime:status") return {ok: true, json: async () => ({asr: {ready: true}})};
       if (url === "/v1/audio:transcribe") return new Promise((resolve) => { finishAsr = resolve; });
+      if (url === "/v1/live-scene-planner/prepare") return preflight();
       assert.equal(url, "/v1/live-scenes");
       submitted.push(JSON.parse(options.body));
       return new Promise((resolve) => { finishGeneration = resolve; });
@@ -210,12 +223,101 @@ async function voiceToScene() {
   await c.compileStory();
   assert.equal(submitted.length, 0);
   elements.story.value = "A golden whale above a forest.";
+  rejectPreflight = true;
+  const previousSnapshot = {job_id: "previous-scene", stage: "master_ready"};
+  c.latestLiveSnapshot = previousSnapshot;
+  await c.compileStory();
+  assert.equal(submitted.length, 0);
+  assert.equal(c.latestLiveSnapshot, previousSnapshot);
+  assert.equal(elements.projectorFrame.src, previousPreview);
+  assert.equal(elements.voiceReview.textContent, "Clarify the action.");
+  assert.equal(elements.story.disabled, false);
+  assert.equal(c.generationSubmitting, false);
+  rejectPreflight = false;
+
+  // Validation must leave the existing scene and transport intact until it succeeds.
+  const normalRespond = c.respond;
+  const stopsBeforeCheck = events.filter((event) => event === "transport-stop").length;
+  const assertUnsubmitted = () => {
+    assert.equal(requests.includes("/v1/live-scenes"), false);
+    assert.equal(c.latestLiveSnapshot, previousSnapshot);
+    assert.equal(elements.projectorFrame.src, previousPreview);
+    assert.equal(events.filter((event) => event === "transport-stop").length, stopsBeforeCheck);
+    assert.equal(c.liveRequestEpoch, 0);
+    assert.equal(c.generationSubmitting, false);
+    assert.equal(elements.story.disabled, false);
+    assert.equal(elements.style.disabled, false);
+    assert.equal(elements.compileButton.disabled, false);
+    assert.equal(timers.size, 0);
+  };
+  c.respond = async (url) => {
+    assert.equal(url, "/v1/live-scene-planner/prepare");
+    return {ok: true, json: async () => ({ready: true})};
+  };
+  await c.compileStory();
+  assertUnsubmitted();
+  assert.match(elements.voiceReview.textContent, /checker needs updating/);
+
+  c.respond = (url, options) => {
+    assert.equal(url, "/v1/live-scene-planner/prepare");
+    return new Promise((_resolve, reject) => {
+      options.signal.addEventListener("abort", () => reject(new Error("aborted")));
+    });
+  };
+  const checking = c.compileStory();
+  await new Promise(setImmediate);
+  const checksBeforeDoubleClick = requests.length;
+  assert.equal(elements.story.disabled, true);
+  assert.equal(elements.style.disabled, true);
+  assert.equal(elements.compileButton.disabled, true);
+  await c.compileStory();
+  await c.startSpeaking();
+  assert.equal(requests.length, checksBeforeDoubleClick);
+  assert.equal(c.latestLiveSnapshot, previousSnapshot);
+  assert.equal(timers.size, 1);
+  const checkTimer = [...timers.values()][0];
+  assert.equal(checkTimer.milliseconds, 10000);
+  checkTimer.callback();
+  await checking;
+  assertUnsubmitted();
+  assert.match(elements.voiceReview.textContent, /timed out/);
+
+  // Disabled fields can still be changed by restored state or another script.
+  let finishPreflight;
+  c.respond = (url) => {
+    assert.equal(url, "/v1/live-scene-planner/prepare");
+    return new Promise((resolve) => { finishPreflight = resolve; });
+  };
+  for (const [field, edited] of [["story", "A red whale above a forest."], ["style", "paper theater"]]) {
+    const original = elements[field].value;
+    const staleCheck = c.compileStory();
+    await new Promise(setImmediate);
+    elements[field].value = edited;
+    finishPreflight(preflight());
+    await staleCheck;
+    assertUnsubmitted();
+    assert.match(elements.voiceReview.textContent, /changed|check again|review again/i);
+    elements[field].value = original;
+  }
+  c.respond = normalRespond;
+  requiresFactReview = true;
+  await c.compileStory();
+  assert.equal(submitted.length, 0);
+  assert.equal(c.latestLiveSnapshot, previousSnapshot);
+  assert.match(elements.voiceReview.textContent, /Kept on this device: London/);
+  assert.equal(elements.compileButton.textContent, "Generate this scene");
+  parsedAction = "swimming";
+  await c.compileStory();
+  assert.equal(submitted.length, 0); // Changed facts need a fresh confirmation.
+  assert.match(elements.voiceReview.textContent, /swimming/);
   const generation = c.compileStory();
   await new Promise(setImmediate);
   assert.equal(submitted.length, 1);
   assert.equal(submitted[0].text, elements.story.value);
   assert.equal(submitted[0].visual_style, "rich watercolor");
   assert.equal(submitted[0].reviewed_description, true);
+  assert.equal(submitted[0].confirm_visual_facts, true);
+  assert.equal(submitted[0].visual_fact_digest, "a".repeat(64));
   await c.compileStory();
   await c.startSpeaking();
   assert.equal(submitted.length, 1);
@@ -225,6 +327,7 @@ async function voiceToScene() {
   assert.equal(elements.compileButton.disabled, false);
   assert.equal(c.generationSubmitting, false);
   assert.equal(elements.projectorFrame.src, previousPreview);
+  requiresFactReview = false;
   elements.story.value = "A red whale above a forest.";
   const retry = c.compileStory();
   await c.compileStory();
@@ -252,6 +355,7 @@ async function voiceToScene() {
     }},
   };
   c.respond = (url, options) => {
+    if (url === "/v1/live-scene-planner/prepare") return preflight();
     if (url === "/v1/live-scenes") {
       submitted.push(JSON.parse(options.body));
       return new Promise((_resolve, reject) => {
@@ -277,6 +381,11 @@ async function voiceToScene() {
   await c.compileStory();
   assert.equal(submitted.length, 3);
   accepted = {session_id: c.readerSessionId, server_instance_id: "server-1", session_revision: 5,
+    job: {job_id: "different-review", request: {...submitted[2], visual_fact_digest: "a".repeat(64)}}};
+  await c.compileStory();
+  assert.notEqual(c.pendingSubmission, null);
+  assert.equal(submitted.length, 3);
+  accepted = {session_id: c.readerSessionId, server_instance_id: "server-1", session_revision: 6,
     job: {job_id: "accepted-after-timeout", request: submitted[2]}};
   c.handleLiveSceneSessionPointer = (pointer) => { c.activeLiveJobId = pointer.job.job_id; };
   await c.compileStory();

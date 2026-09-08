@@ -228,7 +228,12 @@ async def lifespan(app: FastAPI):
         )
 
     async def find_completed_live_scene(payload: LiveSceneCreateRequest) -> StoryPack | None:
-        from bookforge.bounded_description import REVISION as reviewed_revision
+        from bookforge.reviewed_description import (
+            BOUNDED_REVISION,
+            CURRENT_REVISIONS,
+            is_reviewed_compiler,
+            review_description,
+        )
 
         pack = await app.state.story_store.find_live_scene(
             text=payload.text,
@@ -238,10 +243,26 @@ async def lifespan(app: FastAPI):
             planning_scope=settings.live_scene_planner_scope,
         )
         if pack is not None and (
-            pack.compiler_model.startswith("bounded-description-") != payload.reviewed_description
-            or (payload.reviewed_description and pack.compiler_model != reviewed_revision)
+            is_reviewed_compiler(pack.compiler_model) != payload.reviewed_description
+            or (payload.reviewed_description and pack.compiler_model not in CURRENT_REVISIONS)
         ):
             return None
+        if pack is not None and payload.reviewed_description and (
+            settings.reviewed_scene_parser_socket is not None
+            or pack.compiler_model != BOUNDED_REVISION
+        ):
+            reviewed = await review_description(
+                payload.text, payload.visual_style, live_scene_request_seed(payload),
+                parser_socket=settings.reviewed_scene_parser_socket,
+            )
+            expected = reviewed.result.plan.scene_facts.to_renderer_prompt(
+                source_text=payload.text, visual_style=payload.visual_style,
+            )
+            if (not reviewed.is_confirmed(payload.confirm_visual_facts, payload.visual_fact_digest)
+                    or reviewed.result.metrics.model != pack.compiler_model or len(pack.pages) != 1
+                    or pack.pages[0].scene_spec is None
+                    or pack.pages[0].scene_spec.master_prompt != expected):
+                return None
         if pack is not None and not _completed_pack_matches_planner_mode(
             pack,
             planner_mode=settings.live_scene_planner,
@@ -307,6 +328,7 @@ async def lifespan(app: FastAPI):
             planner_cache_entries=settings.live_scene_planner_cache_entries,
             planner_cache_dir=settings.cache_dir / "live-scene-plans",
             planner_compact_wire=settings.live_scene_planner_compact_wire,
+            reviewed_scene_parser_socket=settings.reviewed_scene_parser_socket,
             master_width=settings.live_scene_master_width,
             master_height=settings.live_scene_master_height,
             master_steps=settings.live_scene_master_steps,
@@ -650,6 +672,25 @@ async def latest_projector_telemetry(
     return snapshot
 
 
+async def _reviewed_description_plan(text: str, visual_style: str, seed: int, *, parser_socket):
+    from bookforge.live_scene_planner import LiveScenePlannerError
+    from bookforge.reviewed_description import review_description
+
+    try:
+        return await review_description(text, visual_style, seed, parser_socket=parser_socket)
+    except LiveScenePlannerError as error:
+        raise HTTPException(
+            status_code=422,
+            detail={
+                "code": "reviewed_description_unsupported",
+                "message": (
+                    "Could not verify every scene detail. Use explicit subjects and actions, "
+                    "check the intended action, and remove or clarify unsupported details."
+                ),
+            },
+        ) from error
+
+
 @app.post(
     "/v1/live-scenes",
     response_model=LiveSceneJob,
@@ -662,6 +703,18 @@ async def create_live_scene(
 ) -> LiveSceneJob:
     if not _is_local_connection(request):
         raise HTTPException(status_code=403, detail="Live-scene generation is local-only")
+    if payload.reviewed_description:
+        reviewed = await _reviewed_description_plan(
+            payload.text, payload.visual_style, live_scene_request_seed(payload),
+            parser_socket=request.app.state.settings.reviewed_scene_parser_socket,
+        )
+        if not reviewed.is_confirmed(payload.confirm_visual_facts, payload.visual_fact_digest):
+            raise HTTPException(status_code=422, detail={
+                "code": "visual_fact_confirmation_required",
+                "message": (
+                    "Review the extracted scene facts and local omissions, then confirm generation."
+                ),
+            })
     registry: LiveSceneJobRegistry = request.app.state.live_scenes
     try:
         job = await registry.submit(payload)
@@ -764,13 +817,17 @@ async def prepare_live_scene_planner(
             status_code=409,
             detail="BOOKFORGE_LIVE_SCENE_PLANNER is not configured as model",
         )
-    if payload.session_id is not None:
+    model_activity = payload.session_id is not None and not payload.reviewed_description
+    reviewed = None
+    if model_activity:
         await registry.set_session_planner_active(payload.session_id, True)
     try:
         if payload.reviewed_description:
-            from bookforge.bounded_description import plan_bounded_description
-
-            result = plan_bounded_description(payload.text, payload.visual_style, payload.seed)
+            reviewed = await _reviewed_description_plan(
+                payload.text, payload.visual_style, payload.seed,
+                parser_socket=request.app.state.settings.reviewed_scene_parser_socket,
+            )
+            result = reviewed.result
         else:
             result = await planner.plan(
                 text=payload.text,
@@ -780,7 +837,7 @@ async def prepare_live_scene_planner(
     except RuntimeError as error:
         raise HTTPException(status_code=503, detail=str(error)) from error
     finally:
-        if payload.session_id is not None:
+        if model_activity:
             await registry.set_session_planner_active(payload.session_id, False)
     return LiveScenePlannerPrepareResponse(
         planning_ms=result.wall_ms,
@@ -789,6 +846,10 @@ async def prepare_live_scene_planner(
         revision=result.model_revision,
         input_tokens=result.metrics.input_tokens,
         output_tokens=result.metrics.output_tokens,
+        visual_facts=result.plan.scene_facts if payload.reviewed_description else None,
+        requires_fact_review=reviewed.requires_fact_review if reviewed else False,
+        local_omissions=reviewed.local_omissions if reviewed else (),
+        visual_fact_digest=reviewed.visual_fact_digest if reviewed else None,
     )
 
 

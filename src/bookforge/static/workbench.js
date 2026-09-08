@@ -16,6 +16,7 @@ const elements = {
   empty: document.querySelector("#emptyState"),
   results: document.querySelector("#results"),
   error: document.querySelector("#errorBox"),
+  voiceReview: document.querySelector("#voiceReview"),
   model: document.querySelector("#modelMetric"),
   time: document.querySelector("#timeMetric"),
   tokens: document.querySelector("#tokenMetric"),
@@ -60,6 +61,7 @@ let starting = false;
 let finalizing = false;
 let generationSubmitting = false;
 let pendingSubmission = null;
+let pendingVoiceReview = null;
 let generationReconciling = false;
 let sceneReady = false;
 let voiceProjectionLive = false;
@@ -633,6 +635,8 @@ async function transcribeRecording() {
       const text = typeof payload.text === "string" ? payload.text.trim() : "";
       if (!text) throw new Error("No speech was recognized. Describe the scene again, or type it below.");
       elements.story.value = text;
+      pendingVoiceReview = null;
+      elements.voiceReview.textContent = "";
       delete elements.compileButton.dataset.visualVariation;
       invalidatePreparation();
       elements.compileButton.textContent = "Generate scene";
@@ -722,7 +726,7 @@ function formatBackendMs(value) {
 
 function renderPlanningPrivacy(metrics) {
   if (metrics?.scene_cache_hit) {
-    elements.planningPrivacy.textContent = "Verified local replay · This exact completed scene was restored without a new model or cloud request.";
+    elements.planningPrivacy.textContent = "Verified local replay · This exact completed scene was restored without a new cloud image request.";
     return;
   }
   const scenePlan = (metrics?.models || []).find((model) => model.role === "scene_plan");
@@ -732,6 +736,8 @@ function renderPlanningPrivacy(metrics) {
     && /^ollama(?:-|$)/i.test(scenePlan?.revision || "");
   if (scenePlan?.model?.startsWith("bounded-description-")) {
     elements.planningPrivacy.textContent = "Reviewed scene description · Local rules verified the visual facts; the renderer received only visual direction.";
+  } else if (scenePlan?.model?.startsWith("reviewed-language-")) {
+    elements.planningPrivacy.textContent = "Reviewed local language plan · Local language checks verified the visual direction sent to the renderer.";
   } else if (localGemma) {
     const source = metrics?.planning_cache_hit ? "Cached local Gemma plan" : "Local Gemma plan";
     elements.planningPrivacy.textContent = `${source} · Gemma planned this scene locally; the renderer received only visual direction.`;
@@ -1176,6 +1182,9 @@ async function reconcileGeneration() {
       && (!pendingSubmission.previousServer || (pointer.server_instance_id === pendingSubmission.previousServer
         && pointer.session_revision > pendingSubmission.previousRevision))
       && request?.text === expected.text && request?.visual_style === expected.visual_style
+      && Boolean(request.reviewed_description) === Boolean(expected.reviewed_description)
+      && Boolean(request.confirm_visual_facts) === Boolean(expected.confirm_visual_facts)
+      && (request.visual_fact_digest ?? null) === (expected.visual_fact_digest ?? null)
       && (request.seed ?? null) === (expected.seed ?? null)) {
       handleLiveSceneSessionPointer(pointer);
       if ((activeLiveJobId || latestLiveSnapshot?.job_id) === pointer.job.job_id) {
@@ -1199,12 +1208,56 @@ async function reconcileGeneration() {
   elements.compileButton.textContent = "Check generation status";
 }
 
+async function checkVoiceDescription(request) {
+  const controller = new AbortController();
+  const timer = window.setTimeout(() => controller.abort(), 10000);
+  try {
+    const response = await fetch("/v1/live-scene-planner/prepare", {
+      method: "POST", headers: {"Content-Type": "application/json"},
+      body: JSON.stringify({...request, seed: request.seed ?? 0}), signal: controller.signal,
+    });
+    const result = await response.json();
+    if (!response.ok) throw new Error(result.detail?.message
+      || (typeof result.detail === "string" ? result.detail : "The local scene check is unavailable. Try again."));
+    if (!result.visual_facts) throw new Error("The local scene checker needs updating. No image was requested.");
+    if (result.requires_fact_review && (typeof result.visual_fact_digest !== "string"
+      || !/^[a-f0-9]{64}$/.test(result.visual_fact_digest))) {
+      throw new Error("The local scene review is incomplete. No image was requested.");
+    }
+    const facts = result.visual_facts;
+    const describe = (entity) => [entity.count, entity.color, ...entity.attributes, entity.label]
+      .filter(Boolean).join(" ");
+    const labels = Object.fromEntries([...facts.subjects, ...facts.objects].map((entity) => [entity.ref, describe(entity)]));
+    const descriptions = facts.subjects.map((subject) => `${describe(subject)}: ${subject.actions.join("; ")}`);
+    if (facts.setting.label !== "unspecified") descriptions.push(`Setting: ${[
+      ...facts.setting.attributes, facts.setting.label,
+    ].join(" ")}`);
+    if (facts.objects.length) descriptions.push(`Also visible: ${facts.objects.map(describe).join(", ")}`);
+    for (const relation of facts.relationships) descriptions.push([
+      labels[relation.source], relation.relation.replaceAll("_", " "), labels[relation.target],
+      relation.secondary_target ? `and ${labels[relation.secondary_target]}` : "",
+    ].filter(Boolean).join(" "));
+    for (const negative of facts.negatives) descriptions.push(negative.target
+      ? `${labels[negative.target]}: not ${negative.value}` : `Exclude: ${negative.value}`);
+    const omissions = result.local_omissions || [];
+    if (omissions.length) descriptions.push(`Kept on this device: ${omissions.map((item) => item.local_text).join(", ")}. These details will not appear in the image request.`);
+    elements.voiceReview.textContent = `Scene to generate\n${descriptions.join("\n")}`;
+    return result;
+  } catch (error) {
+    throw controller.signal.aborted
+      ? new Error("The local scene check timed out. Your previous scene is unchanged; try again.")
+      : error;
+  } finally {
+    window.clearTimeout(timer);
+  }
+}
+
 async function compileStory() {
   if (pendingSubmission) return reconcileGeneration();
   if (starting || listening || finalizing || generationSubmitting || activeLiveJobId) return;
   const text = elements.story.value.trim();
   if (!text) {
-    elements.interim.textContent = "Add the exact words from one book page first.";
+    elements.interim.textContent = voiceMode ? "Describe the scene first." : "Add the exact words from one book page first.";
     return;
   }
   generationSubmitting = true;
@@ -1223,6 +1276,46 @@ async function compileStory() {
       ...(variationSeed === null ? {} : {seed: variationSeed}),
     },
   };
+  if (voiceMode) {
+    elements.compileButton.disabled = true;
+    setSceneInputsDisabled(true);
+    elements.compileButton.textContent = "Checking description…";
+    elements.voiceReview.textContent = "Checking the scene locally before generation.";
+    try {
+      const checked = await checkVoiceDescription(submission.request);
+      if (elements.story.value.trim() !== submission.request.text
+        || (elements.style.value.trim() || "luminous paper theater") !== submission.request.visual_style) {
+        throw new Error("The description changed during the check. Review it and try again.");
+      }
+      const reviewKey = JSON.stringify({text, style: submission.request.visual_style,
+        revision: checked.revision, facts: checked.visual_facts, omissions: checked.local_omissions,
+        digest: checked.visual_fact_digest});
+      if (checked.requires_fact_review && pendingVoiceReview !== reviewKey) {
+        pendingVoiceReview = reviewKey;
+        generationSubmitting = false;
+        setSceneInputsDisabled(false);
+        elements.compileButton.disabled = false;
+        elements.compileButton.textContent = "Generate this scene";
+        elements.interim.textContent = "Check the scene details above. Edit the description if anything is wrong, or press Generate this scene.";
+        updateMicAvailability();
+        return;
+      }
+      if (checked.requires_fact_review) {
+        submission.request.confirm_visual_facts = true;
+        submission.request.visual_fact_digest = checked.visual_fact_digest;
+      }
+      pendingVoiceReview = null;
+    } catch (error) {
+      elements.voiceReview.textContent = error.message;
+      elements.interim.textContent = "Review the description above. Your previous scene is unchanged; no image was requested.";
+      generationSubmitting = false;
+      setSceneInputsDisabled(false);
+      elements.compileButton.disabled = false;
+      elements.compileButton.textContent = "Check description again";
+      updateMicAvailability();
+      return;
+    }
+  }
   delete elements.compileButton.dataset.visualVariation;
   // If the user clicks before the typing-pause timer fires, let the accepted
   // live job start the planner directly. If preparation is already in flight,
@@ -1276,7 +1369,7 @@ async function compileStory() {
     } finally {
       window.clearTimeout(timer);
     }
-    if (response.status !== 202) throw new Error(snapshot.detail || `Request failed (${response.status})`);
+    if (response.status !== 202) throw new Error(snapshot.detail?.message || snapshot.detail || `Request failed (${response.status})`);
     if (!snapshot.job_id) throw new Error("Generation service returned no job ID.");
     const pointer = acceptedLiveScenePointer(response, snapshot) || await fetchLiveSceneSession();
     if (!pointer) throw new Error("Generation session did not retain the accepted job.");
@@ -1365,6 +1458,10 @@ elements.projectorLink.addEventListener("click", (event) => {
     delete elements.compileButton.dataset.visualVariation;
     invalidatePreparation();
     invalidateScene();
+    if (voiceMode) {
+      pendingVoiceReview = null;
+      elements.voiceReview.textContent = "";
+    }
   });
 });
 elements.story.addEventListener("input", scheduleEdgePlanPreparation);

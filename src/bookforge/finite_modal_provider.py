@@ -1545,6 +1545,7 @@ class FiniteModalLiveSceneProvider:
         auto_prewarm_on_submit: bool = False,
         provider_name: str = PROVIDER_NAME,
         render_contract: Literal["full", "concise"] = "full",
+        reviewed_scene_parser_socket: Path | None = None,
     ) -> None:
         self.provider = provider
         self.cache = cache
@@ -1563,6 +1564,7 @@ class FiniteModalLiveSceneProvider:
         self.auto_prewarm_on_submit = auto_prewarm_on_submit
         self.provider_name = provider_name
         self.render_contract = render_contract
+        self.reviewed_scene_parser_socket = reviewed_scene_parser_socket
         # Validate the complete render profile once at construction time.
         profile = FastSceneRequest(
             scene_id="render-profile",
@@ -2079,9 +2081,19 @@ class FiniteModalLiveSceneProvider:
 
         try:
             if request.reviewed_description:
-                from bookforge.bounded_description import plan_bounded_description
+                from bookforge.reviewed_description import review_description
 
-                result = plan_bounded_description(request.text, request.visual_style, seed)
+                reviewed = await review_description(
+                    request.text, request.visual_style, seed,
+                    parser_socket=self.reviewed_scene_parser_socket,
+                )
+                if not reviewed.is_confirmed(
+                    request.confirm_visual_facts, request.visual_fact_digest,
+                ):
+                    raise LiveScenePlannerError(
+                        "Extracted scene facts require explicit confirmation"
+                    )
+                result = reviewed.result
             else:
                 result = await self.planner.plan(
                     text=request.text,
@@ -2162,7 +2174,8 @@ class FiniteModalLiveSceneProvider:
             planning_ms=result.wall_ms,
             status=(
                 LiveScenePlanningStatus.DETERMINISTIC
-                if request.reviewed_description else LiveScenePlanningStatus.MODEL
+                if request.reviewed_description and result.metrics.backend == "deterministic"
+                else LiveScenePlanningStatus.MODEL
             ),
             provenance=LiveSceneModelProvenance(
                 role="scene_plan",

@@ -1,0 +1,148 @@
+{
+  "synthetic_request": {
+    "text": "A cat chasing a mouse in a dark alleyway.",
+    "visual_style": "rich luminous watercolor storybook illustration, layered depth, detailed natural scenery, full-bleed 16:9",
+    "seed": 907,
+    "session_id": "voice-repair-smoke",
+    "reviewed_description": true,
+    "confirm_visual_facts": true,
+    "visual_fact_digest": "cb89570616a4b4b87e1390df76cfd450bcc3fd2d851d602d5dab43db3f7ab2b8"
+  },
+  "job_id": "scene_75b5c02f1f2f47b3b77e1b81",
+  "stage": "master_ready",
+  "metrics": {
+    "elapsed_ms": 4319.633,
+    "provider_ms": 4127.178566064686,
+    "inference_ms": 4127.178566064686,
+    "cache_ms": 19.77095694746822,
+    "overhead_ms": 0.0,
+    "packaging_ms": 7.5819139601662755,
+    "planning_ms": 104.21816597227007,
+    "preparation_ms": 0.043008942157030106,
+    "planning_status": "model",
+    "planning_cache_hit": false,
+    "scene_cache_hit": false,
+    "warm_state": "unknown",
+    "gpu": "vertex-managed",
+    "estimated_gpu_usd": 0.034,
+    "cost_source": "provider_manifest",
+    "models": [
+      {
+        "role": "scene_plan",
+        "model": "reviewed-language-v1",
+        "revision": "dependency-scene-draft-v1"
+      },
+      {
+        "role": "master",
+        "model": "gemini-3.1-flash-lite-image",
+        "revision": "vertex-managed"
+      },
+      {
+        "role": "depth",
+        "model": "bookforge-projection-depth-bootstrap",
+        "revision": "vertical-gradient-v1"
+      }
+    ],
+    "milestones_ms": {
+      "queued": 0.0,
+      "planning": 1.135,
+      "draft_ready": 2.706,
+      "master_ready": 4319.633
+    }
+  },
+  "artifacts": [
+    {
+      "artifact_id": "scene_75b5c02f1f2f47b3b77e1b81-master",
+      "kind": "master",
+      "uri": "/v1/assets/287463d118266349ff22e93c3ae77e00c56e1ee66421ed829a494fb9bc0cd7b3/scene_75b5c02f1f2f47b3b77e1b81-master.jpg",
+      "checksum_sha256": "287463d118266349ff22e93c3ae77e00c56e1ee66421ed829a494fb9bc0cd7b3",
+      "media_type": "image/jpeg",
+      "provider": "gcp-vertex-gemini-image",
+      "model": "gemini-3.1-flash-lite-image@vertex-managed",
+      "seed": 907,
+      "width": 1376,
+      "height": 768,
+      "duration_ms": 0
+    },
+    {
+      "artifact_id": "scene_75b5c02f1f2f47b3b77e1b81-depth",
+      "kind": "depth",
+      "uri": "/v1/assets/5ba5c1aee28dd9e440e52dffa84eb5f60d26870d87983f550a7c340111e16bb2/scene_75b5c02f1f2f47b3b77e1b81-depth.png",
+      "checksum_sha256": "5ba5c1aee28dd9e440e52dffa84eb5f60d26870d87983f550a7c340111e16bb2",
+      "media_type": "image/png",
+      "provider": "gcp-vertex-gemini-image",
+      "model": "bookforge-projection-depth-bootstrap@vertical-gradient-v1",
+      "seed": 907,
+      "width": 1376,
+      "height": 768,
+      "duration_ms": 0
+    }
+  ],
+  "master_prompt_sha256": "f1e17ee17915794fc1b25526d326716fef620ada664b6e0d0ffe1fff05e7c19a",
+  "visual_review": {
+    "method": "unblinded browser inspection",
+    "observed": "One cat chasing one mouse through a detailed dark alleyway.",
+    "london_claimed": false
+  },
+  "browser_checks": {
+    "corrected_review_before_submission": true,
+    "omission_visible": true,
+    "malformed_description_preserves_completed_job": true,
+    "additional_paid_requests": 0
+  },
+  "asr_gateway": {
+    "first": {
+      "text": "A cat chasing a mouse.",
+      "language": "en",
+      "model": ".models/whisper-small.en",
+      "total_ms": 4362.48,
+      "audio_bytes": 41954
+    },
+    "warm": {
+      "text": "A cat chasing a mouse.",
+      "language": "en",
+      "model": ".models/whisper-small.en",
+      "total_ms": 717.41,
+      "audio_bytes": 41954
+    },
+    "audio": "benchmarks/local-asr-2026-09-07/chasing/corpus/samantha-0-clean.wav",
+    "synthetic": true
+  },
+  "billing_before": {
+    "enabled": true,
+    "latest_notification": [
+      {
+        "textPayload": "Gross project cost is $34.48; $175.00 emergency threshold not reached.\n",
+        "timestamp": "2026-09-08T03:21:40.953605Z"
+      }
+    ],
+    "cost_is_delayed_not_invoice": true
+  },
+  "runtime": {
+    "parser_release": "/opt/bookforge/voice-language-releases/20260908-v3",
+    "hashes": {
+      "__init__.py": "45695e78f8e4d39e327e58c68abbf0dbe4df9ec4d45e9cc08a3fdd9a4b8a2f76",
+      "domain.py": "fc446999490a8a5d7b33a6059af4965a6879c1b57f93755393c6f6f541773f2d",
+      "scene_facts.py": "13f051c0a051e7c43817d44f171d7b723d85187f4ea580435242616eca98b4ff",
+      "privacy_policy.py": "e36a22e80e47774223b31600507b199eccb2955f83e32d1f30228ca7c671713d",
+      "semantic_text.py": "52f377dba57ef2beafb5f2ee3b8096cc1617da933c2cb6efbe3c99e028532115",
+      "voice_language.py": "c5926e3e439ba22f4ac597657b42e47bef1b7bb6402ce758106fbbbee5d43c68",
+      "voice_dependencies.py": "f94bf64cfc7aa2db228d5562db3f73e6c363dfce932a2c5e7164dfa9680cf9af"
+    },
+    "system_drop_in": "/etc/systemd/system/bookforge@operator.service.d/50-voice-language.conf",
+    "administrator_installed": true,
+    "socket_mode": "0600",
+    "api_active": true,
+    "language_service_active": true,
+    "kiosk_active": true
+  },
+  "verification": {
+    "python_tests_passed": 1049,
+    "javascript_suites_passed": 5,
+    "ruff": "passed",
+    "diff_check": "passed",
+    "public_target_exact": 4144,
+    "public_target_eligible": 4605,
+    "hidden_evaluated": false
+  }
+}

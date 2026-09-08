@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <meta name="theme-color" content="#07110f" />
     <title>Bookforge Live Scene Foundry</title>
-    <link rel="stylesheet" href="/workbench-assets/workbench.css?v=0.2.0-voice4" />
+    <link rel="stylesheet" href="/workbench-assets/workbench.css?v=0.2.0-voice5" />
   </head>
   <body>
     <main class="shell">
@@ -55,6 +55,8 @@
             <span class="read-only">Story text</span><span class="voice-only">Transcript · edit to refine or retry</span>
             <textarea id="storyInput" rows="7">At dusk, a silver fox carried a golden lantern beneath the enormous cedar trees.</textarea>
           </label>
+
+          <p class="instruction voice-only" id="voiceReview" role="status" aria-live="polite"></p>
 
           <section class="try-live deferred-reader" id="tryLive" aria-labelledby="readerHeading">
             <section class="deferred-reader-body">
@@ -271,6 +273,6 @@
       </footer>
     </main>
     <script src="/workbench-assets/anticipatory-workbench.js?v=1"></script>
-    <script src="/workbench-assets/workbench.js?v=0.2.0-voice4"></script>
+    <script src="/workbench-assets/workbench.js?v=0.2.0-voice5"></script>
   </body>
 </html>

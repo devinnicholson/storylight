@@ -1,0 +1,142 @@
+{
+  "schema": "actual-unix-service-proof-v1",
+  "socket_mode": "0600",
+  "startup_ms": 1226.6046670265496,
+  "observations": [
+    {
+      "name": "cat",
+      "http_status": 200,
+      "elapsed_ms": 21.160250063985586,
+      "response": {
+        "revision": "dependency-scene-draft-v1",
+        "status": "omission_review",
+        "facts": {
+          "version": "2.0",
+          "setting": {
+            "label": "dark alleyway",
+            "attributes": []
+          },
+          "subjects": [
+            {
+              "ref": "e1",
+              "label": "cat",
+              "count": 1,
+              "color": null,
+              "attributes": [],
+              "actions": [
+                "chasing mouse in dark alleyway"
+              ]
+            }
+          ],
+          "objects": [
+            {
+              "ref": "e2",
+              "label": "mouse",
+              "count": 1,
+              "color": null,
+              "states": [],
+              "attributes": []
+            }
+          ],
+          "relationships": [],
+          "motions": [],
+          "salience": [],
+          "events": [],
+          "temporal_order": [],
+          "negatives": [],
+          "transformation": null
+        },
+        "reason": null,
+        "render_admitted": false,
+        "requires_fact_review": true,
+        "local_omissions": [
+          {
+            "ref": 10,
+            "local_text": "London",
+            "reason": "proper_name_policy",
+            "omission_requires_review": true
+          }
+        ],
+        "syntax_issues": [],
+        "renderer_prompt_preview": "Style: watercolor. Setting: dark alleyway. Subject: exactly one cat; action: chasing mouse in dark alleyway. Object: exactly one mouse. One continuous full-bleed scene; no captions, labels, signs, or readable text."
+      }
+    },
+    {
+      "name": "modifier",
+      "http_status": 200,
+      "elapsed_ms": 4.026000387966633,
+      "response": {
+        "revision": "dependency-scene-draft-v1",
+        "status": "needs_review",
+        "facts": null,
+        "reason": "syntax_coverage_or_reference",
+        "render_admitted": false,
+        "requires_fact_review": true,
+        "local_omissions": [],
+        "syntax_issues": [
+          {
+            "kind": "unrepresented_content",
+            "token": 2
+          }
+        ],
+        "renderer_prompt_preview": null
+      }
+    },
+    {
+      "name": "empty",
+      "http_status": 400,
+      "elapsed_ms": 0.9568748064339161,
+      "response": {
+        "error": "invalid_request"
+      }
+    },
+    {
+      "name": "extra",
+      "http_status": 400,
+      "elapsed_ms": 2.3162919096648693,
+      "response": {
+        "error": "invalid_request"
+      }
+    },
+    {
+      "name": "nominal_bad",
+      "http_status": 200,
+      "elapsed_ms": 4.972834140062332,
+      "response": {
+        "revision": "dependency-nominal-audit-v1",
+        "accepted": false,
+        "issues": [
+          {
+            "label_index": 0,
+            "reason": "not_nominal_span"
+          }
+        ]
+      }
+    },
+    {
+      "name": "nominal_breed",
+      "http_status": 200,
+      "elapsed_ms": 7.424584124237299,
+      "response": {
+        "revision": "dependency-nominal-audit-v1",
+        "accepted": true,
+        "issues": []
+      }
+    },
+    {
+      "name": "nominal_schema",
+      "http_status": 400,
+      "elapsed_ms": 1.1055422946810722,
+      "response": {
+        "error": "invalid_request"
+      }
+    }
+  ],
+  "duplicate_key_rejected": true,
+  "stdout_empty": true,
+  "stderr_empty": true,
+  "owned_socket_removed": true,
+  "cloud_calls": 0,
+  "source_sha256": "5ccd7e7c29245642d09a7b571eb3eb4615f1cd05130c4947bdabfcac0ad1cd58",
+  "service_sha256": "c5926e3e439ba22f4ac597657b42e47bef1b7bb6402ce758106fbbbee5d43c68"
+}
