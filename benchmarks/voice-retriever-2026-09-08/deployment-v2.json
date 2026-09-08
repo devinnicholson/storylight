@@ -1,0 +1,15 @@
+{
+  "previous_release": "/opt/bookforge/voice-language-releases/20260908-v3",
+  "release": "/opt/bookforge/voice-language-releases/20260908-v4",
+  "api_backup": "/opt/bookforge/voice-api-backups/20260908-v4",
+  "before_api_sha256": {
+    "privacy_policy.py": "e36a22e80e47774223b31600507b199eccb2955f83e32d1f30228ca7c671713d",
+    "reviewed_description.py": "8d9fc223f0076f5a69f7c7d3da3d01ee3f8880f91220e56f01dd9381b5ab3172"
+  },
+  "source_sha256": {
+    "privacy_policy.py": "9752ef9e67607078fdd391e00af8a36aa42a61aa1f33b18d2fccbc27a8b3b096",
+    "voice_dependencies.py": "985511683fc0f33781c481695ffece37157ed3b1d6a7989cb5c7cb631f5a6102",
+    "voice_language.py": "3de4036a5f20a5459c7cc0d953705a83ae3a691c79356251dfa1160fc007747a",
+    "reviewed_description.py": "c42ee8c0f893780e2fe871fbd1c55ac3af1949c279ec814c7626702f68e61da6"
+  }
+}

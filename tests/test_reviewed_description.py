@@ -22,6 +22,8 @@ from bookforge.finite_modal_provider import (
     load_finite_scene_bundle,
 )
 from bookforge.live_scene import LiveSceneCreateRequest
+from bookforge.reviewed_description import PARSER_REVISION
+from bookforge.reviewed_description import REVISION as LEARNED_REVISION
 from bookforge.scene_facts import SceneFactsV2, SceneObjectFact, SceneSettingFact, SceneSubjectFact
 
 TEXT = "A quick brown fox jumps over a lazy dog."
@@ -248,7 +250,7 @@ def _learned_parser(api_client, monkeypatch):
         objects=(SceneObjectFact(ref="apple", label="apple", color="green"),),
     )
     state.parsed = dict(
-        revision="dependency-scene-draft-v1", status="omission_review",
+        revision=PARSER_REVISION, status="omission_review",
         facts=facts.model_dump(mode="json"), reason=None, render_admitted=False,
         requires_fact_review=True,
         local_omissions=[dict(ref=9, local_text="London", reason="proper_name_policy",
@@ -287,6 +289,52 @@ def _learned_parser(api_client, monkeypatch):
     return text
 
 
+def test_actual_breed_row_requires_confirmation_then_reaches_fake_renderer(api_client, monkeypatch):
+    from bookforge.voice_language import graph_from_row
+
+    state = api_client
+    socket = Path("/tmp/bookforge-breed-test.sock")
+    app.state.settings.reviewed_scene_parser_socket = socket
+    state.adapter.reviewed_scene_parser_socket = socket
+    row = json.loads((Path(__file__).resolve().parents[1]
+                      / "benchmarks/voice-retriever-2026-09-08/parser.json").read_bytes())["row"]
+    parsed = graph_from_row(row, "watercolor")
+    state.adapter.planner = ForbiddenPlanner()
+
+    def handler(request):
+        assert str(request.url) == "http://scene-parser/v1/scene-facts"
+        assert json.loads(request.content) == {"text": row["text"], "visual_style": "watercolor"}
+        return httpx.Response(200, json=parsed)
+
+    def transport(**kwargs):
+        assert kwargs == {"uds": str(socket), "retries": 0}
+        return httpx.MockTransport(handler)
+
+    monkeypatch.setattr("bookforge.reviewed_description.httpx.AsyncHTTPTransport", transport)
+    payload = dict(text=row["text"], visual_style="watercolor", seed=41,
+                   reviewed_description=True, session_id="reviewed-test")
+    prepared = state.client.post("/v1/live-scene-planner/prepare", json=payload)
+    assert prepared.status_code == 200, prepared.text
+    assert prepared.json()["requires_fact_review"] is True
+    assert prepared.json()["local_omissions"][0]["local_text"] == "Paris"
+    assert state.renderer.calls == []
+    unconfirmed = state.client.post("/v1/live-scenes", json=payload)
+    assert unconfirmed.status_code == 422
+    assert unconfirmed.json()["detail"]["code"] == "visual_fact_confirmation_required"
+    assert state.renderer.calls == []
+    result = create(state.client, text=row["text"], confirm=True,
+                    digest=prepared.json()["visual_fact_digest"])
+    assert result["complete"] and result["stage"] != "failed", result
+    assert len(state.renderer.calls) == 1
+    assert state.renderer.calls[0].prompt == (
+        parsed["renderer_prompt_preview"]
+        + " Full-bleed luminous storybook projection, strong foreground/background depth,"
+        " clean silhouettes, no border, no interface."
+    )
+    assert "paris" not in state.renderer.calls[0].prompt.lower()
+    assert result["metrics"]["models"][0]["model"] == LEARNED_REVISION
+
+
 def test_learned_draft_requires_confirmation_and_rechecks_before_one_render(
     api_client, monkeypatch,
 ):
@@ -299,7 +347,7 @@ def test_learned_draft_requires_confirmation_and_rechecks_before_one_render(
     assert prepared.status_code == 200, prepared.text
     assert prepared.json()["requires_fact_review"] is True
     assert prepared.json()["local_omissions"][0]["local_text"] == "London"
-    assert prepared.json()["model"] == "reviewed-language-v1"
+    assert prepared.json()["model"] == LEARNED_REVISION
     refused = state.client.post("/v1/live-scenes", json=payload)
     assert refused.status_code == 422
     assert refused.json()["detail"]["code"] == "visual_fact_confirmation_required"
@@ -314,7 +362,7 @@ def test_learned_draft_requires_confirmation_and_rechecks_before_one_render(
     assert len(state.renderer.calls) == 1
     assert "London" not in state.renderer.calls[0].prompt
     assert result["metrics"]["planning_status"] == "model"
-    assert result["metrics"]["models"][0]["model"] == "reviewed-language-v1"
+    assert result["metrics"]["models"][0]["model"] == LEARNED_REVISION
     repeated = create(state.client, text=text, confirm=True, digest=digest)
     assert repeated["metrics"]["scene_cache_hit"] is True
     assert repeated["metrics"]["planning_status"] == "model"
@@ -350,6 +398,7 @@ def test_parser_response_cannot_bypass_fact_grounding_or_provider_confirmation(
     payload = dict(text=text, visual_style="watercolor", seed=41,
                    reviewed_description=True, confirm_visual_facts=True)
     for changed in (
+        {"revision": "dependency-scene-draft-v1"},
         {"revision": "dependency-scene-draft-old"},
         {"renderer_prompt_preview": "an unrelated picture"},
         {"facts": {**original["facts"], "subjects": [

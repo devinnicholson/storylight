@@ -351,23 +351,33 @@ def privacy_tokens(value: str) -> tuple[str, ...]:
     return tuple(re.findall(r"[^\W_]+", normalized, flags=re.UNICODE))
 
 
-def proper_name_candidates(source_text: str) -> frozenset[tuple[str, ...]]:
-    normalized_source = unicodedata.normalize("NFKC", source_text)
-    breed_phrases = tuple(
+def recognized_breed_phrases(source_text: str) -> tuple[re.Match[str], ...]:
+    """Literal, determiner-led breed descriptions; explicit names stay private.
+
+    These spans also bound the local dependency repair. They do not authorize
+    ignoring a learned PERSON/location span or treating an arbitrary noun as a breed.
+    """
+    return tuple(
         match
         for match in re.finditer(
             r"\b(?:a|an|the|" + "|".join(COUNT_WORDS) + r")\s+"
             r"(?:(?:merle|" + "|".join(COLOR_WORDS) + r")\s+)*"
-            r"(?:golden retrievers?|aussies?|australian shepherds?|border collies?)\b",
-            normalized_source,
+            r"(?P<breed>(?:(?:english\s+)?cream\s+)?golden retrievers?|"
+            r"aussies?|australian shepherds?|border collies?)\b",
+            source_text,
             re.IGNORECASE,
         )
         if not re.search(
             r"\b(?:named|called|known\s+as|goes\s+by)[\s:\"'‘“]*$",
-            normalized_source[: match.start()],
+            source_text[: match.start()],
             re.IGNORECASE,
         )
     )
+
+
+def proper_name_candidates(source_text: str) -> frozenset[tuple[str, ...]]:
+    normalized_source = unicodedata.normalize("NFKC", source_text)
+    breed_phrases = recognized_breed_phrases(normalized_source)
     candidates: set[tuple[str, ...]] = set()
     for match in _NAME_AFTER_ROLE.finditer(normalized_source):
         tokens = privacy_tokens(match.group("name"))

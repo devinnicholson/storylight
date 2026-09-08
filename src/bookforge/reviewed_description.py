@@ -26,8 +26,8 @@ from bookforge.live_scene_planner import (
 )
 from bookforge.scene_facts import SceneFactsV2
 
-REVISION = "reviewed-language-v1"
-PARSER_REVISION = "dependency-scene-draft-v1"
+REVISION = "reviewed-language-v2"
+PARSER_REVISION = "dependency-scene-draft-v2"
 AUDITED_REVISION = "reviewed-language-bounded-v1"
 AUDIT_REVISION = "dependency-nominal-audit-v1"
 CURRENT_REVISIONS = frozenset((BOUNDED_REVISION, REVISION, AUDITED_REVISION))
@@ -50,7 +50,7 @@ class _SyntaxIssue(FrozenStrictModel):
 
 
 class _ParserResponse(FrozenStrictModel):
-    revision: Literal["dependency-scene-draft-v1"]
+    revision: Literal["dependency-scene-draft-v2"]
     status: Literal["draft_ready", "omission_review", "needs_review"]
     facts: SceneFactsV2 | None
     reason: Annotated[str, StringConstraints(max_length=100)] | None

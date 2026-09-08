@@ -7,6 +7,68 @@ coverage checks detect omissions, not all semantic errors. No verb whitelist.
 from bookforge import privacy_policy as privacy
 
 
+def normalize_breed_subjects(row):
+    """Repair only a recognized literal subject phrase, never adjacent actors.
+
+    The small dependency model can split a compound breed into multiple nsubj
+    heads and label its last word PROPN. Source offsets and the shared lexical
+    span constrain this correction; named entities and ambiguous attachments
+    remain authoritative refusals. The original prediction is not mutated.
+    """
+    tokens = row["tokens"]
+    protected = {
+        i
+        for span in row["entities"]
+        if span["label"] in {"PERSON", "GPE", "LOC", "FAC", "ORG"}
+        for i in range(span["start"], span["end"])
+    }
+    repaired = [dict(t) for t in tokens]
+    for phrase in privacy.recognized_breed_phrases(row["text"]):
+        indexes = [t["i"] for t in tokens if phrase.start() <= t["offset"] < phrase.end()]
+        if not indexes or protected.intersection(indexes):
+            continue
+        first, head = indexes[0], indexes[-1]
+        if first and tokens[first - 1]["text"] not in {".", "!", "?", ";"}:
+            continue
+        if (
+            tokens[first]["offset"] != phrase.start()
+            or tokens[head]["offset"] + len(tokens[head]["text"]) != phrase.end()
+            or indexes != list(range(first, head + 1))
+        ):
+            continue
+        subjects = [t for t in tokens[first : head + 1] if t["dep"] == "nsubj"]
+        if not subjects or len({t["head"] for t in subjects}) != 1:
+            continue
+        predicate = subjects[0]["head"]
+        if predicate <= head or tokens[predicate]["pos"] != "VERB":
+            continue
+        if any(
+            t["dep"] in {"nsubj", "nsubjpass"} and t["head"] == predicate and t["i"] not in indexes
+            for t in tokens
+        ):
+            continue
+        if any(
+            t["head"] != predicate or t["dep"] not in {"aux", "neg"}
+            for t in tokens[head + 1 : predicate]
+        ):
+            continue
+        if any(
+            t["dep"] not in {"det", "amod", "compound", "nmod", "nummod", "nsubj"}
+            or (t["dep"] != "nsubj" and t["head"] not in indexes)
+            for t in tokens[first : head + 1]
+        ):
+            continue
+        if any(t["head"] in indexes and t["i"] not in indexes for t in tokens):
+            continue
+        for index in indexes:
+            t = repaired[index]
+            t["head"] = predicate if index == head else head
+            if t["offset"] >= phrase.start("breed"):
+                t["dep"] = "nsubj" if index == head else "compound"
+                t["pos"] = "NOUN"
+    return {**row, "tokens": repaired}
+
+
 def extract(row):
     ts = row["tokens"]
     children = {t["i"]: [] for t in ts}
@@ -78,6 +140,12 @@ def extract(row):
         if len(subjects) != 1 or len(objects) > 1:
             issues.append({"kind": "unresolved_event_arguments", "token": index})
             continue
+        particles = sorted(c for c in children[index] if ts[c]["dep"] == "prt")
+        if particles and particles != list(range(index + 1, index + 1 + len(particles))):
+            issues.append({"kind": "unresolved_predicate_particle", "token": index})
+            continue
+        action = " ".join(ts[i]["text"] for i in [index, *particles])
+        covered.update(particles)
         actor_ids = actor_group(subjects[0])
         object_ids = actor_group(objects[0]) if objects else [None]
         for actor in actor_ids:
@@ -86,7 +154,7 @@ def extract(row):
                     {
                         "token": index,
                         "actor": actor,
-                        "action": token["text"],
+                        "action": action,
                         "lemma": token["lemma"],
                         "object": target,
                         "negative": bound_negative(index),

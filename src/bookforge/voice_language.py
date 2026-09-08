@@ -9,9 +9,9 @@ from __future__ import annotations
 
 from bookforge.privacy_policy import COLOR_WORDS, COUNT_WORDS
 from bookforge.scene_facts import SceneFactsV2
-from bookforge.voice_dependencies import audit_nominal_spans, extract
+from bookforge.voice_dependencies import audit_nominal_spans, extract, normalize_breed_subjects
 
-REVISION = "dependency-scene-draft-v1"
+REVISION = "dependency-scene-draft-v2"
 RELATIONS = {
     "in": "inside",
     "inside": "inside",
@@ -62,6 +62,7 @@ def extract_graph(text: str, visual_style: str, *, nlp):
 
 
 def graph_from_row(row, visual_style):
+    row = normalize_breed_subjects(row)
     draft = extract(row)
     result = {
         "revision": REVISION,
