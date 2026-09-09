@@ -13,13 +13,21 @@ async function presentationGate() {
   };
   const activations = [];
   const frameMessages = [];
+  const events = [];
+  const timers = new Set();
+  let now = 0;
   let finishActivation;
   const c = {state, LIVE_MODE: true, COMPLETE_ONLY: true, SESSION_ID: "voice", SCENE_CROSSFADE_MS: 320,
-    window: {location: {origin: "http://localhost"}, parent: {
+    window: {location: {origin: "http://localhost"},
+      clearInterval(id) { timers.delete(id); },
+      setInterval() { const id = Symbol(); timers.add(id); return id; }, parent: {
       postMessage(data, origin) { frameMessages.push({data, origin}); },
     }},
-    elements: {packLabel: {textContent: "previous"}}, performance: {now: () => 0},
-    renderLiveGenerationBadge() {}, setEvent() {}, publish() {},
+    elements: {packLabel: {textContent: "previous"},
+      liveGenerationBadge: {dataset: {}, classList: {remove() {}, toggle() {}}},
+      liveGenerationStage: {}, liveGenerationDetail: {}, liveGenerationElapsed: {},
+    }, performance: {now: () => now},
+    setEvent(type) { events.push(type); }, publish() {}, liveProviderLabel: () => "fixture renderer",
     assertStoryPack: (value) => value, livePageAssetFingerprint: () => "new-media",
     liveRenderTokenIsCurrent: () => true,
     invalidateLiveRender(value) {
@@ -36,11 +44,12 @@ async function presentationGate() {
   vm.createContext(c);
   for (const [start, end] of [
     ["function liveArtifactRoles(", "function updateLiveGenerationClock("],
-    ["function liveModeSatisfiesStage(", "function liveSnapshotIsTerminal("],
+    ["function updateLiveGenerationClock(", "function livePageAssetFingerprint("],
+    ["function liveSnapshotAwaitsPresentation(", "function liveSnapshotIsTerminal("],
   ]) vm.runInContext(source.slice(source.indexOf(start), source.indexOf(end)), c);
   const snapshot = {job_id: "job", story_pack: pack, request: {
     display_when_complete: true, defer_presentation: true,
-  }, artifacts: [{kind: "master"}, {kind: "depth"}]};
+  }, metrics: {elapsed_ms: 1500}, artifacts: [{kind: "master"}, {kind: "depth"}]};
   let revision = 0;
   for (const delta of [
     {stage: "draft_ready", complete: false},
@@ -56,6 +65,24 @@ async function presentationGate() {
     assert.equal(frameMessages.length, 0);
     assert.equal(state.pack, previous);
     assert.equal(c.elements.packLabel.textContent, "previous");
+    if (delta.complete && delta.stage === "master_ready") {
+      assert.equal(c.elements.liveGenerationStage.textContent, "Waiting for verified description");
+      assert.match(c.elements.liveGenerationDetail.textContent, /held for presentation approval/);
+      assert.doesNotMatch(c.elements.liveGenerationDetail.textContent, /retrying/);
+      assert.equal(events.at(-1), "scene.awaiting-presentation");
+      assert.equal(timers.size, 0);
+      assert.equal(c.elements.liveGenerationBadge.dataset.clockRunning, "false");
+      now += 10000;
+      c.updateLiveGenerationClock();
+      assert.equal(c.elements.liveGenerationElapsed.textContent, "1.5 s");
+      c.queueLiveSceneSnapshot({type: "bookforge.live-scene", sessionId: "voice",
+        serverInstanceId: "server", sessionRevision: 2,
+        snapshot: {...snapshot, ...delta, revision}});
+      await state.liveTransition;
+      assert.equal(activations.length, 0);
+      assert.equal(timers.size, 0);
+      assert.equal(c.elements.liveGenerationStage.textContent, "Waiting for verified description");
+    }
   }
   c.queueLiveSceneSnapshot({type: "bookforge.live-scene", sessionId: "voice",
     serverInstanceId: "server", sessionRevision: 2,
@@ -64,11 +91,16 @@ async function presentationGate() {
   await new Promise(setImmediate);
   assert.equal(frameMessages.length, 0);
   assert.equal(state.pack, previous);
+  assert.equal(c.elements.liveGenerationStage.textContent, "Loading artwork + depth");
+  assert.match(c.elements.liveGenerationDetail.textContent, /media retrying/);
   finishActivation();
   await state.liveTransition;
   assert.equal(activations.length, 1);
   assert.equal(activations[0].token.displayWhenComplete, true);
   assert.equal(state.pack, pack);
+  assert.equal(c.elements.liveGenerationStage.textContent, "Artwork + depth live");
+  assert.doesNotMatch(c.elements.liveGenerationDetail.textContent, /held|retrying/);
+  assert.equal(timers.size, 0);
   assert.deepEqual(JSON.parse(JSON.stringify(frameMessages)), [{
     data: {type: "bookforge.preview-activated", sessionId: "voice", jobId: "job"},
     origin: "http://localhost",

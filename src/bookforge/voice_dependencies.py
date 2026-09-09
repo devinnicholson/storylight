@@ -100,7 +100,64 @@ def static_nominal_head(row):
     return head["i"]
 
 
-def extract(row, *, static_subject=None):
+def copular_location_continuation(row):
+    """Keep a setting's complete trailing ``with`` clause without choosing its scope.
+
+    A noun coordination followed by a location can have ambiguous attachment.
+    Retaining the contiguous clause avoids assigning that location to either
+    conjunct. Only a single copular location and a fully nominal tail qualify.
+    """
+    ts = row["tokens"]
+    content = ts[:-1] if ts and ts[-1]["text"] in {".", "!", "?"} else ts
+    roots = [t for t in content if t["dep"] == "ROOT"]
+    if len(roots) != 1 or roots[0]["pos"] != "AUX" or roots[0]["lemma"] != "be":
+        return None
+    root = roots[0]["i"]
+    locations = [t for t in content if t["head"] == root and t["dep"] == "prep"]
+    if len(locations) != 1 or locations[0]["text"].casefold() not in {"in", "inside"}:
+        return None
+    settings = [t for t in content if t["head"] == locations[0]["i"] and t["dep"] == "pobj"]
+    if len(settings) != 1 or settings[0]["pos"] != "NOUN":
+        return None
+    tails = [t for t in content if t["head"] == settings[0]["i"]
+             and t["dep"] == "prep" and t["text"].casefold() == "with"]
+    if len(tails) != 1 or not root < locations[0]["i"] < settings[0]["i"] < tails[0]["i"]:
+        return None
+    start = tails[0]["i"]
+    indexes = {start}
+    for _ in content:
+        expanded = indexes | {t["i"] for t in content if t["head"] in indexes}
+        if expanded == indexes:
+            break
+        indexes = expanded
+    if indexes != set(range(start, len(content))):
+        return None
+    allowed = {("ADP", "prep"), ("NOUN", "pobj"), ("NOUN", "conj"),
+               ("NOUN", "compound"), ("ADJ", "amod"), ("NUM", "nummod"),
+               ("DET", "det"), ("CCONJ", "cc")}
+    qualifiers = {"no", "not", "without", "neither", "nor", "or", "only", "almost"}
+    prepositions = {"with", "in", "inside", "on", "above", "over", "under", "below",
+                    "behind", "beside", "near"}
+    if any((t["pos"], t["dep"]) not in allowed
+           or t["text"].casefold() in qualifiers
+           or t["text"].endswith(("-", "—", "–"))
+           or (t["pos"] == "ADP" and t["text"].casefold() not in prepositions)
+           or (t["pos"] == "CCONJ" and t["text"].casefold() != "and") for t in content[start:]):
+        return None
+    if any(indexes.intersection(range(e["start"], e["end"]))
+           and e["label"] in {"PERSON", "ORG", "GPE", "LOC", "FAC"} for e in row["entities"]):
+        return None
+    heads = [t["i"] for t in content[start:] if t["dep"] in {"pobj", "conj"}
+             and not (t["lemma"] in {"background", "foreground"}
+                      and ts[t["head"]]["text"].casefold() == "in")]
+    if not heads or content[-1]["pos"] != "NOUN":
+        return None
+    end = content[-1]["offset"] + len(content[-1]["text"])
+    return {"predicate": root, "tokens": indexes, "entities": heads,
+            "phrase": row["text"][ts[start]["offset"]:end]}
+
+
+def extract(row, *, static_subject=None, location_continuation=None):
     ts = row["tokens"]
     children = {t["i"]: [] for t in ts}
     for t in ts:
@@ -157,6 +214,10 @@ def extract(row, *, static_subject=None):
 
     if static_subject is not None:
         noun(static_subject)
+    if location_continuation is not None:
+        for index in location_continuation["entities"]:
+            noun(index)
+        covered.update(location_continuation["tokens"])
     for index in sorted(predicates):
         token = ts[index]
         if token["pos"] == "AUX" and not any(
@@ -207,6 +268,8 @@ def extract(row, *, static_subject=None):
         ):
             absent.append(noun(index))
         if token["dep"] != "prep":
+            continue
+        if location_continuation is not None and index in location_continuation["tokens"]:
             continue
         targets = [c for c in children[index] if ts[c]["dep"] == "pobj"]
         if len(targets) != 1:

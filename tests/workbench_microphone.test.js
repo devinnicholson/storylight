@@ -397,18 +397,52 @@ async function voiceToScene() {
   queue.context.offerVoiceTranscript("A cat chasing two mice.");
   queue.context.offerVoiceTranscript("A cat chasing three mice.", {final: true});
   await queue.context.pumpVoiceGeneration();
+  await flush();
   assert.equal(queue.submitted.length, 1);
+  assert.equal(queue.checks.at(-1).text, "A cat chasing three mice.");
+  assert.ok(queue.context.voiceGeneration.latest.checked);
+  const checkedBeforeCompletion = queue.checks.length;
   queue.complete();
   await flush();
   assert.deepEqual(queue.displayed, []);
   assert.equal(queue.presented.length, 0);
   assert.equal(queue.submitted.length, 2);
   assert.equal(queue.submitted[1].text, "A cat chasing three mice.");
+  assert.equal(queue.checks.length, checkedBeforeCompletion);
   queue.context.listening = false;
   queue.complete();
   await flush();
   assert.deepEqual(queue.displayed, ["job-2"]);
   assert.equal(queue.presented.length, 1);
+
+  // Completion cannot bypass a pending correction check or reuse stale facts.
+  const correction = generationHarness();
+  correction.context.offerVoiceTranscript("A cat chasing a mouse.", {final: true});
+  await flush();
+  const respondCorrection = correction.context.respond;
+  let releaseCorrection;
+  correction.context.respond = (url, options) => {
+    if (url === "/v1/live-scene-planner/prepare") {
+      return new Promise((resolve) => { releaseCorrection = () => resolve(respondCorrection(url, options)); });
+    }
+    return respondCorrection(url, options);
+  };
+  correction.context.offerVoiceTranscript("A dog chasing a ball.", {final: true});
+  await flush();
+  correction.complete();
+  await flush();
+  assert.equal(correction.submitted.length, 1);
+  assert.equal(correction.presented.length, 0);
+  correction.context.offerVoiceTranscript("A cat chasing three mice.", {final: true});
+  releaseCorrection();
+  await flush();
+  assert.equal(correction.submitted.length, 1);
+  assert.equal(correction.context.voiceGeneration.latest.checked, null);
+  releaseCorrection();
+  await flush();
+  assert.equal(correction.submitted.length, 2);
+  assert.equal(correction.submitted[1].text, "A cat chasing three mice.");
+  assert.equal(correction.context.voiceGeneration.latest.checked.visual_facts.subjects[0].label, "cat");
 
   // Bad partials and empty speech retain the previous artwork and do not retry
   // automatically. A newer phrase invalidates an in-flight local check.

@@ -1,0 +1,2603 @@
+{
+  "model": "core_web_sm",
+  "model_sha256": {
+    "LICENSE": "3933c176979b68bc6d0bcc902c7d6c130f1d127f476f17ba5cdba8d99cfd0012",
+    "LICENSES_SOURCES": "20d9dfacd215112251f15341edd1a47b1f98bf393a212f10f194ffdc7ee98a90",
+    "README.md": "91b0ed1742ea0803034b4d769c4536e88d9d4da7808d833f2a804b6c54aae220",
+    "accuracy.json": "e7572d7f2f3c18e9921471f9d0b3424f8cf7f1a909ae484fa10b780a13f4c676",
+    "attribute_ruler/patterns": "f8b97f7ebef9b8536bba5f0fc1e73af6183563e96e2325bcbb021b8c6dbc6683",
+    "config.cfg": "65c545ca2da5bd4b87b22d4917318605360b37dee6ed6b18516a036f87319f79",
+    "lemmatizer/lookups/lookups.bin": "eb64f40c0f8396d1762730c0ddf4dad2a52d138f5a389f71a1a1d088173b7737",
+    "meta.json": "7456349002fa8cf31111051bd37fdbea67a1b7f7a0a60ce235466f98a6758125",
+    "ner/cfg": "a7172edadafba9f472e9ac0f2660eec04b6405e471be9e20267b79c67288d22d",
+    "ner/model": "cd93e9ca9126c69f1d10a1039ef67c3d9ec1223b44d079856705970f0f19ff4e",
+    "ner/moves": "d82b13473ebd33e0396004dd22f00c71fe3c1251742bf1f7c4554f23fd3b0af4",
+    "parser/cfg": "e2a240ef01f95e58f5dd4c9d6e90d61f597b8d998966570d3009dd81e8879780",
+    "parser/model": "e0098910535a863d430082ece57455d5fa071cd4ca3a0054e80582076c752b1e",
+    "parser/moves": "ec41318c32eb7f9e4d8f050b2e8466ee67954d2d3455c1aec73abf46c82dd67f",
+    "senter/cfg": "2a4db4a729b6469da1f87d71cc7cd3ed2a73360cc85326821e850836c4671103",
+    "senter/model": "b69e7174a0b6307739adec3c8053ac45fdbad7171c4d3d8bfcd9713ecbc01f8c",
+    "tagger/cfg": "d484c3d9391f37bf9c727aa2eb4c477a24cb103020f95e52dc37842818b50118",
+    "tagger/model": "1ec3d93f38cebe172f2b5c89d84be72856ce42c8f1a64f1699f1d98a771f36b7",
+    "tok2vec/cfg": "f8a5a26e3056eb6fb06deeb3dbccfd88ae74900200c98c70b5966bbb7ec9d4de",
+    "tok2vec/model": "e84fc06eb319c94d28e460fc334e292120b01f18baa5dc8b50c977459820a090",
+    "tokenizer": "b014e8bba4958b120af2d0c1c63eabb7c00379f2bacaf10df7c5325efd2ea467",
+    "vocab/key2row": "76be8b528d0075f7aae98d6fa57a6d3c83ae480a8469e668d7b0af968995ac71",
+    "vocab/lookups.bin": "fce9c883c56165f29573cc938c2a1c9d417ac61bd8f56b671dd5f7996de70682",
+    "vocab/strings.json": "b1966d1f07a05b68576df07f43f40203b4e11124ad82cc839e8312ad8d7fdae7",
+    "vocab/vectors": "14772b683e726436d5948ad3fff2b43d036ef2ebbe3458aafed6004e05a40706",
+    "vocab/vectors.cfg": "ff4359091952c8cd16f1f0482f5770fb82d1707368d5cca3c46aa501f552e3c5"
+  },
+  "model_version": "3.8.0",
+  "rows": [
+    {
+      "entities": [],
+      "id": "exact",
+      "text": "The cow was in a big pasture with goats and mountains in the background.",
+      "tokens": [
+        {
+          "dep": "det",
+          "head": 1,
+          "i": 0,
+          "lemma": "the",
+          "offset": 0,
+          "pos": "DET",
+          "text": "The"
+        },
+        {
+          "dep": "nsubj",
+          "head": 2,
+          "i": 1,
+          "lemma": "cow",
+          "offset": 4,
+          "pos": "NOUN",
+          "text": "cow"
+        },
+        {
+          "dep": "ROOT",
+          "head": 2,
+          "i": 2,
+          "lemma": "be",
+          "offset": 8,
+          "pos": "AUX",
+          "text": "was"
+        },
+        {
+          "dep": "prep",
+          "head": 2,
+          "i": 3,
+          "lemma": "in",
+          "offset": 12,
+          "pos": "ADP",
+          "text": "in"
+        },
+        {
+          "dep": "det",
+          "head": 6,
+          "i": 4,
+          "lemma": "a",
+          "offset": 15,
+          "pos": "DET",
+          "text": "a"
+        },
+        {
+          "dep": "amod",
+          "head": 6,
+          "i": 5,
+          "lemma": "big",
+          "offset": 17,
+          "pos": "ADJ",
+          "text": "big"
+        },
+        {
+          "dep": "pobj",
+          "head": 3,
+          "i": 6,
+          "lemma": "pasture",
+          "offset": 21,
+          "pos": "NOUN",
+          "text": "pasture"
+        },
+        {
+          "dep": "prep",
+          "head": 6,
+          "i": 7,
+          "lemma": "with",
+          "offset": 29,
+          "pos": "ADP",
+          "text": "with"
+        },
+        {
+          "dep": "pobj",
+          "head": 7,
+          "i": 8,
+          "lemma": "goat",
+          "offset": 34,
+          "pos": "NOUN",
+          "text": "goats"
+        },
+        {
+          "dep": "cc",
+          "head": 8,
+          "i": 9,
+          "lemma": "and",
+          "offset": 40,
+          "pos": "CCONJ",
+          "text": "and"
+        },
+        {
+          "dep": "conj",
+          "head": 8,
+          "i": 10,
+          "lemma": "mountain",
+          "offset": 44,
+          "pos": "NOUN",
+          "text": "mountains"
+        },
+        {
+          "dep": "prep",
+          "head": 8,
+          "i": 11,
+          "lemma": "in",
+          "offset": 54,
+          "pos": "ADP",
+          "text": "in"
+        },
+        {
+          "dep": "det",
+          "head": 13,
+          "i": 12,
+          "lemma": "the",
+          "offset": 57,
+          "pos": "DET",
+          "text": "the"
+        },
+        {
+          "dep": "pobj",
+          "head": 11,
+          "i": 13,
+          "lemma": "background",
+          "offset": 61,
+          "pos": "NOUN",
+          "text": "background"
+        },
+        {
+          "dep": "punct",
+          "head": 2,
+          "i": 14,
+          "lemma": ".",
+          "offset": 71,
+          "pos": "PUNCT",
+          "text": "."
+        }
+      ]
+    },
+    {
+      "entities": [],
+      "id": "horse",
+      "text": "A horse is in a wide meadow with sheep and trees in the background.",
+      "tokens": [
+        {
+          "dep": "det",
+          "head": 1,
+          "i": 0,
+          "lemma": "a",
+          "offset": 0,
+          "pos": "DET",
+          "text": "A"
+        },
+        {
+          "dep": "nsubj",
+          "head": 2,
+          "i": 1,
+          "lemma": "horse",
+          "offset": 2,
+          "pos": "NOUN",
+          "text": "horse"
+        },
+        {
+          "dep": "ROOT",
+          "head": 2,
+          "i": 2,
+          "lemma": "be",
+          "offset": 8,
+          "pos": "AUX",
+          "text": "is"
+        },
+        {
+          "dep": "prep",
+          "head": 2,
+          "i": 3,
+          "lemma": "in",
+          "offset": 11,
+          "pos": "ADP",
+          "text": "in"
+        },
+        {
+          "dep": "det",
+          "head": 6,
+          "i": 4,
+          "lemma": "a",
+          "offset": 14,
+          "pos": "DET",
+          "text": "a"
+        },
+        {
+          "dep": "amod",
+          "head": 6,
+          "i": 5,
+          "lemma": "wide",
+          "offset": 16,
+          "pos": "ADJ",
+          "text": "wide"
+        },
+        {
+          "dep": "pobj",
+          "head": 3,
+          "i": 6,
+          "lemma": "meadow",
+          "offset": 21,
+          "pos": "NOUN",
+          "text": "meadow"
+        },
+        {
+          "dep": "prep",
+          "head": 6,
+          "i": 7,
+          "lemma": "with",
+          "offset": 28,
+          "pos": "ADP",
+          "text": "with"
+        },
+        {
+          "dep": "pobj",
+          "head": 7,
+          "i": 8,
+          "lemma": "sheep",
+          "offset": 33,
+          "pos": "NOUN",
+          "text": "sheep"
+        },
+        {
+          "dep": "cc",
+          "head": 8,
+          "i": 9,
+          "lemma": "and",
+          "offset": 39,
+          "pos": "CCONJ",
+          "text": "and"
+        },
+        {
+          "dep": "conj",
+          "head": 8,
+          "i": 10,
+          "lemma": "tree",
+          "offset": 43,
+          "pos": "NOUN",
+          "text": "trees"
+        },
+        {
+          "dep": "prep",
+          "head": 8,
+          "i": 11,
+          "lemma": "in",
+          "offset": 49,
+          "pos": "ADP",
+          "text": "in"
+        },
+        {
+          "dep": "det",
+          "head": 13,
+          "i": 12,
+          "lemma": "the",
+          "offset": 52,
+          "pos": "DET",
+          "text": "the"
+        },
+        {
+          "dep": "pobj",
+          "head": 11,
+          "i": 13,
+          "lemma": "background",
+          "offset": 56,
+          "pos": "NOUN",
+          "text": "background"
+        },
+        {
+          "dep": "punct",
+          "head": 2,
+          "i": 14,
+          "lemma": ".",
+          "offset": 66,
+          "pos": "PUNCT",
+          "text": "."
+        }
+      ]
+    },
+    {
+      "entities": [
+        {
+          "end": 1,
+          "label": "CARDINAL",
+          "start": 0,
+          "text": "Two"
+        },
+        {
+          "end": 10,
+          "label": "CARDINAL",
+          "start": 9,
+          "text": "three"
+        }
+      ],
+      "id": "counts",
+      "text": "Two brown cows were in a big pasture with three goats in the background.",
+      "tokens": [
+        {
+          "dep": "nummod",
+          "head": 2,
+          "i": 0,
+          "lemma": "two",
+          "offset": 0,
+          "pos": "NUM",
+          "text": "Two"
+        },
+        {
+          "dep": "amod",
+          "head": 2,
+          "i": 1,
+          "lemma": "brown",
+          "offset": 4,
+          "pos": "ADJ",
+          "text": "brown"
+        },
+        {
+          "dep": "nsubj",
+          "head": 3,
+          "i": 2,
+          "lemma": "cow",
+          "offset": 10,
+          "pos": "NOUN",
+          "text": "cows"
+        },
+        {
+          "dep": "ROOT",
+          "head": 3,
+          "i": 3,
+          "lemma": "be",
+          "offset": 15,
+          "pos": "AUX",
+          "text": "were"
+        },
+        {
+          "dep": "prep",
+          "head": 3,
+          "i": 4,
+          "lemma": "in",
+          "offset": 20,
+          "pos": "ADP",
+          "text": "in"
+        },
+        {
+          "dep": "det",
+          "head": 7,
+          "i": 5,
+          "lemma": "a",
+          "offset": 23,
+          "pos": "DET",
+          "text": "a"
+        },
+        {
+          "dep": "amod",
+          "head": 7,
+          "i": 6,
+          "lemma": "big",
+          "offset": 25,
+          "pos": "ADJ",
+          "text": "big"
+        },
+        {
+          "dep": "pobj",
+          "head": 4,
+          "i": 7,
+          "lemma": "pasture",
+          "offset": 29,
+          "pos": "NOUN",
+          "text": "pasture"
+        },
+        {
+          "dep": "prep",
+          "head": 7,
+          "i": 8,
+          "lemma": "with",
+          "offset": 37,
+          "pos": "ADP",
+          "text": "with"
+        },
+        {
+          "dep": "nummod",
+          "head": 10,
+          "i": 9,
+          "lemma": "three",
+          "offset": 42,
+          "pos": "NUM",
+          "text": "three"
+        },
+        {
+          "dep": "pobj",
+          "head": 8,
+          "i": 10,
+          "lemma": "goat",
+          "offset": 48,
+          "pos": "NOUN",
+          "text": "goats"
+        },
+        {
+          "dep": "prep",
+          "head": 10,
+          "i": 11,
+          "lemma": "in",
+          "offset": 54,
+          "pos": "ADP",
+          "text": "in"
+        },
+        {
+          "dep": "det",
+          "head": 13,
+          "i": 12,
+          "lemma": "the",
+          "offset": 57,
+          "pos": "DET",
+          "text": "the"
+        },
+        {
+          "dep": "pobj",
+          "head": 11,
+          "i": 13,
+          "lemma": "background",
+          "offset": 61,
+          "pos": "NOUN",
+          "text": "background"
+        },
+        {
+          "dep": "punct",
+          "head": 3,
+          "i": 14,
+          "lemma": ".",
+          "offset": 71,
+          "pos": "PUNCT",
+          "text": "."
+        }
+      ]
+    },
+    {
+      "entities": [],
+      "id": "colors",
+      "text": "The cow was in a pasture with red goats and blue mountains.",
+      "tokens": [
+        {
+          "dep": "det",
+          "head": 1,
+          "i": 0,
+          "lemma": "the",
+          "offset": 0,
+          "pos": "DET",
+          "text": "The"
+        },
+        {
+          "dep": "nsubj",
+          "head": 2,
+          "i": 1,
+          "lemma": "cow",
+          "offset": 4,
+          "pos": "NOUN",
+          "text": "cow"
+        },
+        {
+          "dep": "ROOT",
+          "head": 2,
+          "i": 2,
+          "lemma": "be",
+          "offset": 8,
+          "pos": "AUX",
+          "text": "was"
+        },
+        {
+          "dep": "prep",
+          "head": 2,
+          "i": 3,
+          "lemma": "in",
+          "offset": 12,
+          "pos": "ADP",
+          "text": "in"
+        },
+        {
+          "dep": "det",
+          "head": 5,
+          "i": 4,
+          "lemma": "a",
+          "offset": 15,
+          "pos": "DET",
+          "text": "a"
+        },
+        {
+          "dep": "pobj",
+          "head": 3,
+          "i": 5,
+          "lemma": "pasture",
+          "offset": 17,
+          "pos": "NOUN",
+          "text": "pasture"
+        },
+        {
+          "dep": "prep",
+          "head": 5,
+          "i": 6,
+          "lemma": "with",
+          "offset": 25,
+          "pos": "ADP",
+          "text": "with"
+        },
+        {
+          "dep": "amod",
+          "head": 8,
+          "i": 7,
+          "lemma": "red",
+          "offset": 30,
+          "pos": "ADJ",
+          "text": "red"
+        },
+        {
+          "dep": "pobj",
+          "head": 6,
+          "i": 8,
+          "lemma": "goat",
+          "offset": 34,
+          "pos": "NOUN",
+          "text": "goats"
+        },
+        {
+          "dep": "cc",
+          "head": 8,
+          "i": 9,
+          "lemma": "and",
+          "offset": 40,
+          "pos": "CCONJ",
+          "text": "and"
+        },
+        {
+          "dep": "amod",
+          "head": 11,
+          "i": 10,
+          "lemma": "blue",
+          "offset": 44,
+          "pos": "ADJ",
+          "text": "blue"
+        },
+        {
+          "dep": "conj",
+          "head": 8,
+          "i": 11,
+          "lemma": "mountain",
+          "offset": 49,
+          "pos": "NOUN",
+          "text": "mountains"
+        },
+        {
+          "dep": "punct",
+          "head": 2,
+          "i": 12,
+          "lemma": ".",
+          "offset": 58,
+          "pos": "PUNCT",
+          "text": "."
+        }
+      ]
+    },
+    {
+      "entities": [],
+      "id": "inside",
+      "text": "A cat is inside a garden with flowers and trees.",
+      "tokens": [
+        {
+          "dep": "det",
+          "head": 1,
+          "i": 0,
+          "lemma": "a",
+          "offset": 0,
+          "pos": "DET",
+          "text": "A"
+        },
+        {
+          "dep": "nsubj",
+          "head": 2,
+          "i": 1,
+          "lemma": "cat",
+          "offset": 2,
+          "pos": "NOUN",
+          "text": "cat"
+        },
+        {
+          "dep": "ROOT",
+          "head": 2,
+          "i": 2,
+          "lemma": "be",
+          "offset": 6,
+          "pos": "AUX",
+          "text": "is"
+        },
+        {
+          "dep": "prep",
+          "head": 2,
+          "i": 3,
+          "lemma": "inside",
+          "offset": 9,
+          "pos": "ADP",
+          "text": "inside"
+        },
+        {
+          "dep": "det",
+          "head": 5,
+          "i": 4,
+          "lemma": "a",
+          "offset": 16,
+          "pos": "DET",
+          "text": "a"
+        },
+        {
+          "dep": "pobj",
+          "head": 3,
+          "i": 5,
+          "lemma": "garden",
+          "offset": 18,
+          "pos": "NOUN",
+          "text": "garden"
+        },
+        {
+          "dep": "prep",
+          "head": 5,
+          "i": 6,
+          "lemma": "with",
+          "offset": 25,
+          "pos": "ADP",
+          "text": "with"
+        },
+        {
+          "dep": "pobj",
+          "head": 6,
+          "i": 7,
+          "lemma": "flower",
+          "offset": 30,
+          "pos": "NOUN",
+          "text": "flowers"
+        },
+        {
+          "dep": "cc",
+          "head": 7,
+          "i": 8,
+          "lemma": "and",
+          "offset": 38,
+          "pos": "CCONJ",
+          "text": "and"
+        },
+        {
+          "dep": "conj",
+          "head": 7,
+          "i": 9,
+          "lemma": "tree",
+          "offset": 42,
+          "pos": "NOUN",
+          "text": "trees"
+        },
+        {
+          "dep": "punct",
+          "head": 2,
+          "i": 10,
+          "lemma": ".",
+          "offset": 47,
+          "pos": "PUNCT",
+          "text": "."
+        }
+      ]
+    },
+    {
+      "entities": [],
+      "id": "nested",
+      "text": "A cow is in a pasture with goats near a river.",
+      "tokens": [
+        {
+          "dep": "det",
+          "head": 1,
+          "i": 0,
+          "lemma": "a",
+          "offset": 0,
+          "pos": "DET",
+          "text": "A"
+        },
+        {
+          "dep": "nsubj",
+          "head": 2,
+          "i": 1,
+          "lemma": "cow",
+          "offset": 2,
+          "pos": "NOUN",
+          "text": "cow"
+        },
+        {
+          "dep": "ROOT",
+          "head": 2,
+          "i": 2,
+          "lemma": "be",
+          "offset": 6,
+          "pos": "AUX",
+          "text": "is"
+        },
+        {
+          "dep": "prep",
+          "head": 2,
+          "i": 3,
+          "lemma": "in",
+          "offset": 9,
+          "pos": "ADP",
+          "text": "in"
+        },
+        {
+          "dep": "det",
+          "head": 5,
+          "i": 4,
+          "lemma": "a",
+          "offset": 12,
+          "pos": "DET",
+          "text": "a"
+        },
+        {
+          "dep": "pobj",
+          "head": 3,
+          "i": 5,
+          "lemma": "pasture",
+          "offset": 14,
+          "pos": "NOUN",
+          "text": "pasture"
+        },
+        {
+          "dep": "prep",
+          "head": 5,
+          "i": 6,
+          "lemma": "with",
+          "offset": 22,
+          "pos": "ADP",
+          "text": "with"
+        },
+        {
+          "dep": "pobj",
+          "head": 6,
+          "i": 7,
+          "lemma": "goat",
+          "offset": 27,
+          "pos": "NOUN",
+          "text": "goats"
+        },
+        {
+          "dep": "prep",
+          "head": 7,
+          "i": 8,
+          "lemma": "near",
+          "offset": 33,
+          "pos": "ADP",
+          "text": "near"
+        },
+        {
+          "dep": "det",
+          "head": 10,
+          "i": 9,
+          "lemma": "a",
+          "offset": 38,
+          "pos": "DET",
+          "text": "a"
+        },
+        {
+          "dep": "pobj",
+          "head": 8,
+          "i": 10,
+          "lemma": "river",
+          "offset": 40,
+          "pos": "NOUN",
+          "text": "river"
+        },
+        {
+          "dep": "punct",
+          "head": 2,
+          "i": 11,
+          "lemma": ".",
+          "offset": 45,
+          "pos": "PUNCT",
+          "text": "."
+        }
+      ]
+    },
+    {
+      "entities": [],
+      "id": "negative",
+      "text": "The cow was not in a big pasture with goats and mountains in the background.",
+      "tokens": [
+        {
+          "dep": "det",
+          "head": 1,
+          "i": 0,
+          "lemma": "the",
+          "offset": 0,
+          "pos": "DET",
+          "text": "The"
+        },
+        {
+          "dep": "nsubj",
+          "head": 2,
+          "i": 1,
+          "lemma": "cow",
+          "offset": 4,
+          "pos": "NOUN",
+          "text": "cow"
+        },
+        {
+          "dep": "ROOT",
+          "head": 2,
+          "i": 2,
+          "lemma": "be",
+          "offset": 8,
+          "pos": "AUX",
+          "text": "was"
+        },
+        {
+          "dep": "neg",
+          "head": 2,
+          "i": 3,
+          "lemma": "not",
+          "offset": 12,
+          "pos": "PART",
+          "text": "not"
+        },
+        {
+          "dep": "prep",
+          "head": 2,
+          "i": 4,
+          "lemma": "in",
+          "offset": 16,
+          "pos": "ADP",
+          "text": "in"
+        },
+        {
+          "dep": "det",
+          "head": 7,
+          "i": 5,
+          "lemma": "a",
+          "offset": 19,
+          "pos": "DET",
+          "text": "a"
+        },
+        {
+          "dep": "amod",
+          "head": 7,
+          "i": 6,
+          "lemma": "big",
+          "offset": 21,
+          "pos": "ADJ",
+          "text": "big"
+        },
+        {
+          "dep": "pobj",
+          "head": 4,
+          "i": 7,
+          "lemma": "pasture",
+          "offset": 25,
+          "pos": "NOUN",
+          "text": "pasture"
+        },
+        {
+          "dep": "prep",
+          "head": 7,
+          "i": 8,
+          "lemma": "with",
+          "offset": 33,
+          "pos": "ADP",
+          "text": "with"
+        },
+        {
+          "dep": "pobj",
+          "head": 8,
+          "i": 9,
+          "lemma": "goat",
+          "offset": 38,
+          "pos": "NOUN",
+          "text": "goats"
+        },
+        {
+          "dep": "cc",
+          "head": 9,
+          "i": 10,
+          "lemma": "and",
+          "offset": 44,
+          "pos": "CCONJ",
+          "text": "and"
+        },
+        {
+          "dep": "conj",
+          "head": 9,
+          "i": 11,
+          "lemma": "mountain",
+          "offset": 48,
+          "pos": "NOUN",
+          "text": "mountains"
+        },
+        {
+          "dep": "prep",
+          "head": 9,
+          "i": 12,
+          "lemma": "in",
+          "offset": 58,
+          "pos": "ADP",
+          "text": "in"
+        },
+        {
+          "dep": "det",
+          "head": 14,
+          "i": 13,
+          "lemma": "the",
+          "offset": 61,
+          "pos": "DET",
+          "text": "the"
+        },
+        {
+          "dep": "pobj",
+          "head": 12,
+          "i": 14,
+          "lemma": "background",
+          "offset": 65,
+          "pos": "NOUN",
+          "text": "background"
+        },
+        {
+          "dep": "punct",
+          "head": 2,
+          "i": 15,
+          "lemma": ".",
+          "offset": 75,
+          "pos": "PUNCT",
+          "text": "."
+        }
+      ]
+    },
+    {
+      "entities": [],
+      "id": "no_goats",
+      "text": "The cow was in a big pasture with no goats and mountains in the background.",
+      "tokens": [
+        {
+          "dep": "det",
+          "head": 1,
+          "i": 0,
+          "lemma": "the",
+          "offset": 0,
+          "pos": "DET",
+          "text": "The"
+        },
+        {
+          "dep": "nsubj",
+          "head": 2,
+          "i": 1,
+          "lemma": "cow",
+          "offset": 4,
+          "pos": "NOUN",
+          "text": "cow"
+        },
+        {
+          "dep": "ROOT",
+          "head": 2,
+          "i": 2,
+          "lemma": "be",
+          "offset": 8,
+          "pos": "AUX",
+          "text": "was"
+        },
+        {
+          "dep": "prep",
+          "head": 2,
+          "i": 3,
+          "lemma": "in",
+          "offset": 12,
+          "pos": "ADP",
+          "text": "in"
+        },
+        {
+          "dep": "det",
+          "head": 6,
+          "i": 4,
+          "lemma": "a",
+          "offset": 15,
+          "pos": "DET",
+          "text": "a"
+        },
+        {
+          "dep": "amod",
+          "head": 6,
+          "i": 5,
+          "lemma": "big",
+          "offset": 17,
+          "pos": "ADJ",
+          "text": "big"
+        },
+        {
+          "dep": "pobj",
+          "head": 3,
+          "i": 6,
+          "lemma": "pasture",
+          "offset": 21,
+          "pos": "NOUN",
+          "text": "pasture"
+        },
+        {
+          "dep": "prep",
+          "head": 6,
+          "i": 7,
+          "lemma": "with",
+          "offset": 29,
+          "pos": "ADP",
+          "text": "with"
+        },
+        {
+          "dep": "det",
+          "head": 9,
+          "i": 8,
+          "lemma": "no",
+          "offset": 34,
+          "pos": "DET",
+          "text": "no"
+        },
+        {
+          "dep": "pobj",
+          "head": 7,
+          "i": 9,
+          "lemma": "goat",
+          "offset": 37,
+          "pos": "NOUN",
+          "text": "goats"
+        },
+        {
+          "dep": "cc",
+          "head": 9,
+          "i": 10,
+          "lemma": "and",
+          "offset": 43,
+          "pos": "CCONJ",
+          "text": "and"
+        },
+        {
+          "dep": "conj",
+          "head": 9,
+          "i": 11,
+          "lemma": "mountain",
+          "offset": 47,
+          "pos": "NOUN",
+          "text": "mountains"
+        },
+        {
+          "dep": "prep",
+          "head": 9,
+          "i": 12,
+          "lemma": "in",
+          "offset": 57,
+          "pos": "ADP",
+          "text": "in"
+        },
+        {
+          "dep": "det",
+          "head": 14,
+          "i": 13,
+          "lemma": "the",
+          "offset": 60,
+          "pos": "DET",
+          "text": "the"
+        },
+        {
+          "dep": "pobj",
+          "head": 12,
+          "i": 14,
+          "lemma": "background",
+          "offset": 64,
+          "pos": "NOUN",
+          "text": "background"
+        },
+        {
+          "dep": "punct",
+          "head": 2,
+          "i": 15,
+          "lemma": ".",
+          "offset": 74,
+          "pos": "PUNCT",
+          "text": "."
+        }
+      ]
+    },
+    {
+      "entities": [
+        {
+          "end": 9,
+          "label": "PERSON",
+          "start": 8,
+          "text": "Alice"
+        }
+      ],
+      "id": "named",
+      "text": "The cow was in a big pasture with Alice and mountains in the background.",
+      "tokens": [
+        {
+          "dep": "det",
+          "head": 1,
+          "i": 0,
+          "lemma": "the",
+          "offset": 0,
+          "pos": "DET",
+          "text": "The"
+        },
+        {
+          "dep": "nsubj",
+          "head": 2,
+          "i": 1,
+          "lemma": "cow",
+          "offset": 4,
+          "pos": "NOUN",
+          "text": "cow"
+        },
+        {
+          "dep": "ROOT",
+          "head": 2,
+          "i": 2,
+          "lemma": "be",
+          "offset": 8,
+          "pos": "AUX",
+          "text": "was"
+        },
+        {
+          "dep": "prep",
+          "head": 2,
+          "i": 3,
+          "lemma": "in",
+          "offset": 12,
+          "pos": "ADP",
+          "text": "in"
+        },
+        {
+          "dep": "det",
+          "head": 6,
+          "i": 4,
+          "lemma": "a",
+          "offset": 15,
+          "pos": "DET",
+          "text": "a"
+        },
+        {
+          "dep": "amod",
+          "head": 6,
+          "i": 5,
+          "lemma": "big",
+          "offset": 17,
+          "pos": "ADJ",
+          "text": "big"
+        },
+        {
+          "dep": "pobj",
+          "head": 3,
+          "i": 6,
+          "lemma": "pasture",
+          "offset": 21,
+          "pos": "NOUN",
+          "text": "pasture"
+        },
+        {
+          "dep": "prep",
+          "head": 6,
+          "i": 7,
+          "lemma": "with",
+          "offset": 29,
+          "pos": "ADP",
+          "text": "with"
+        },
+        {
+          "dep": "pobj",
+          "head": 7,
+          "i": 8,
+          "lemma": "Alice",
+          "offset": 34,
+          "pos": "PROPN",
+          "text": "Alice"
+        },
+        {
+          "dep": "cc",
+          "head": 8,
+          "i": 9,
+          "lemma": "and",
+          "offset": 40,
+          "pos": "CCONJ",
+          "text": "and"
+        },
+        {
+          "dep": "conj",
+          "head": 8,
+          "i": 10,
+          "lemma": "mountain",
+          "offset": 44,
+          "pos": "NOUN",
+          "text": "mountains"
+        },
+        {
+          "dep": "prep",
+          "head": 6,
+          "i": 11,
+          "lemma": "in",
+          "offset": 54,
+          "pos": "ADP",
+          "text": "in"
+        },
+        {
+          "dep": "det",
+          "head": 13,
+          "i": 12,
+          "lemma": "the",
+          "offset": 57,
+          "pos": "DET",
+          "text": "the"
+        },
+        {
+          "dep": "pobj",
+          "head": 11,
+          "i": 13,
+          "lemma": "background",
+          "offset": 61,
+          "pos": "NOUN",
+          "text": "background"
+        },
+        {
+          "dep": "punct",
+          "head": 2,
+          "i": 14,
+          "lemma": ".",
+          "offset": 71,
+          "pos": "PUNCT",
+          "text": "."
+        }
+      ]
+    },
+    {
+      "entities": [
+        {
+          "end": 11,
+          "label": "ORG",
+          "start": 10,
+          "text": "fox"
+        }
+      ],
+      "id": "unrelated",
+      "text": "The cow was in a pasture with goats while a fox ran.",
+      "tokens": [
+        {
+          "dep": "det",
+          "head": 1,
+          "i": 0,
+          "lemma": "the",
+          "offset": 0,
+          "pos": "DET",
+          "text": "The"
+        },
+        {
+          "dep": "nsubj",
+          "head": 2,
+          "i": 1,
+          "lemma": "cow",
+          "offset": 4,
+          "pos": "NOUN",
+          "text": "cow"
+        },
+        {
+          "dep": "ROOT",
+          "head": 2,
+          "i": 2,
+          "lemma": "be",
+          "offset": 8,
+          "pos": "AUX",
+          "text": "was"
+        },
+        {
+          "dep": "prep",
+          "head": 2,
+          "i": 3,
+          "lemma": "in",
+          "offset": 12,
+          "pos": "ADP",
+          "text": "in"
+        },
+        {
+          "dep": "det",
+          "head": 5,
+          "i": 4,
+          "lemma": "a",
+          "offset": 15,
+          "pos": "DET",
+          "text": "a"
+        },
+        {
+          "dep": "pobj",
+          "head": 3,
+          "i": 5,
+          "lemma": "pasture",
+          "offset": 17,
+          "pos": "NOUN",
+          "text": "pasture"
+        },
+        {
+          "dep": "prep",
+          "head": 5,
+          "i": 6,
+          "lemma": "with",
+          "offset": 25,
+          "pos": "ADP",
+          "text": "with"
+        },
+        {
+          "dep": "pobj",
+          "head": 6,
+          "i": 7,
+          "lemma": "goat",
+          "offset": 30,
+          "pos": "NOUN",
+          "text": "goats"
+        },
+        {
+          "dep": "mark",
+          "head": 11,
+          "i": 8,
+          "lemma": "while",
+          "offset": 36,
+          "pos": "SCONJ",
+          "text": "while"
+        },
+        {
+          "dep": "det",
+          "head": 10,
+          "i": 9,
+          "lemma": "a",
+          "offset": 42,
+          "pos": "DET",
+          "text": "a"
+        },
+        {
+          "dep": "nsubj",
+          "head": 11,
+          "i": 10,
+          "lemma": "fox",
+          "offset": 44,
+          "pos": "NOUN",
+          "text": "fox"
+        },
+        {
+          "dep": "advcl",
+          "head": 2,
+          "i": 11,
+          "lemma": "run",
+          "offset": 48,
+          "pos": "VERB",
+          "text": "ran"
+        },
+        {
+          "dep": "punct",
+          "head": 2,
+          "i": 12,
+          "lemma": ".",
+          "offset": 51,
+          "pos": "PUNCT",
+          "text": "."
+        }
+      ]
+    },
+    {
+      "entities": [],
+      "id": "clipped",
+      "text": "The cow was in a pasture with goats and moun-",
+      "tokens": [
+        {
+          "dep": "det",
+          "head": 1,
+          "i": 0,
+          "lemma": "the",
+          "offset": 0,
+          "pos": "DET",
+          "text": "The"
+        },
+        {
+          "dep": "nsubj",
+          "head": 2,
+          "i": 1,
+          "lemma": "cow",
+          "offset": 4,
+          "pos": "NOUN",
+          "text": "cow"
+        },
+        {
+          "dep": "ROOT",
+          "head": 2,
+          "i": 2,
+          "lemma": "be",
+          "offset": 8,
+          "pos": "AUX",
+          "text": "was"
+        },
+        {
+          "dep": "prep",
+          "head": 2,
+          "i": 3,
+          "lemma": "in",
+          "offset": 12,
+          "pos": "ADP",
+          "text": "in"
+        },
+        {
+          "dep": "det",
+          "head": 5,
+          "i": 4,
+          "lemma": "a",
+          "offset": 15,
+          "pos": "DET",
+          "text": "a"
+        },
+        {
+          "dep": "pobj",
+          "head": 3,
+          "i": 5,
+          "lemma": "pasture",
+          "offset": 17,
+          "pos": "NOUN",
+          "text": "pasture"
+        },
+        {
+          "dep": "prep",
+          "head": 5,
+          "i": 6,
+          "lemma": "with",
+          "offset": 25,
+          "pos": "ADP",
+          "text": "with"
+        },
+        {
+          "dep": "pobj",
+          "head": 6,
+          "i": 7,
+          "lemma": "goat",
+          "offset": 30,
+          "pos": "NOUN",
+          "text": "goats"
+        },
+        {
+          "dep": "cc",
+          "head": 5,
+          "i": 8,
+          "lemma": "and",
+          "offset": 36,
+          "pos": "CCONJ",
+          "text": "and"
+        },
+        {
+          "dep": "punct",
+          "head": 2,
+          "i": 9,
+          "lemma": "moun-",
+          "offset": 40,
+          "pos": "ADJ",
+          "text": "moun-"
+        }
+      ]
+    },
+    {
+      "entities": [],
+      "id": "or",
+      "text": "The cow was in a pasture with goats or mountains in the background.",
+      "tokens": [
+        {
+          "dep": "det",
+          "head": 1,
+          "i": 0,
+          "lemma": "the",
+          "offset": 0,
+          "pos": "DET",
+          "text": "The"
+        },
+        {
+          "dep": "nsubj",
+          "head": 2,
+          "i": 1,
+          "lemma": "cow",
+          "offset": 4,
+          "pos": "NOUN",
+          "text": "cow"
+        },
+        {
+          "dep": "ROOT",
+          "head": 2,
+          "i": 2,
+          "lemma": "be",
+          "offset": 8,
+          "pos": "AUX",
+          "text": "was"
+        },
+        {
+          "dep": "prep",
+          "head": 2,
+          "i": 3,
+          "lemma": "in",
+          "offset": 12,
+          "pos": "ADP",
+          "text": "in"
+        },
+        {
+          "dep": "det",
+          "head": 5,
+          "i": 4,
+          "lemma": "a",
+          "offset": 15,
+          "pos": "DET",
+          "text": "a"
+        },
+        {
+          "dep": "pobj",
+          "head": 3,
+          "i": 5,
+          "lemma": "pasture",
+          "offset": 17,
+          "pos": "NOUN",
+          "text": "pasture"
+        },
+        {
+          "dep": "prep",
+          "head": 5,
+          "i": 6,
+          "lemma": "with",
+          "offset": 25,
+          "pos": "ADP",
+          "text": "with"
+        },
+        {
+          "dep": "pobj",
+          "head": 6,
+          "i": 7,
+          "lemma": "goat",
+          "offset": 30,
+          "pos": "NOUN",
+          "text": "goats"
+        },
+        {
+          "dep": "cc",
+          "head": 7,
+          "i": 8,
+          "lemma": "or",
+          "offset": 36,
+          "pos": "CCONJ",
+          "text": "or"
+        },
+        {
+          "dep": "conj",
+          "head": 7,
+          "i": 9,
+          "lemma": "mountain",
+          "offset": 39,
+          "pos": "NOUN",
+          "text": "mountains"
+        },
+        {
+          "dep": "prep",
+          "head": 7,
+          "i": 10,
+          "lemma": "in",
+          "offset": 49,
+          "pos": "ADP",
+          "text": "in"
+        },
+        {
+          "dep": "det",
+          "head": 12,
+          "i": 11,
+          "lemma": "the",
+          "offset": 52,
+          "pos": "DET",
+          "text": "the"
+        },
+        {
+          "dep": "pobj",
+          "head": 10,
+          "i": 12,
+          "lemma": "background",
+          "offset": 56,
+          "pos": "NOUN",
+          "text": "background"
+        },
+        {
+          "dep": "punct",
+          "head": 2,
+          "i": 13,
+          "lemma": ".",
+          "offset": 66,
+          "pos": "PUNCT",
+          "text": "."
+        }
+      ]
+    },
+    {
+      "entities": [],
+      "id": "owner",
+      "text": "The cow in a pasture was with goats and mountains in the background.",
+      "tokens": [
+        {
+          "dep": "det",
+          "head": 1,
+          "i": 0,
+          "lemma": "the",
+          "offset": 0,
+          "pos": "DET",
+          "text": "The"
+        },
+        {
+          "dep": "nsubj",
+          "head": 5,
+          "i": 1,
+          "lemma": "cow",
+          "offset": 4,
+          "pos": "NOUN",
+          "text": "cow"
+        },
+        {
+          "dep": "prep",
+          "head": 1,
+          "i": 2,
+          "lemma": "in",
+          "offset": 8,
+          "pos": "ADP",
+          "text": "in"
+        },
+        {
+          "dep": "det",
+          "head": 4,
+          "i": 3,
+          "lemma": "a",
+          "offset": 11,
+          "pos": "DET",
+          "text": "a"
+        },
+        {
+          "dep": "pobj",
+          "head": 2,
+          "i": 4,
+          "lemma": "pasture",
+          "offset": 13,
+          "pos": "NOUN",
+          "text": "pasture"
+        },
+        {
+          "dep": "ROOT",
+          "head": 5,
+          "i": 5,
+          "lemma": "be",
+          "offset": 21,
+          "pos": "AUX",
+          "text": "was"
+        },
+        {
+          "dep": "prep",
+          "head": 5,
+          "i": 6,
+          "lemma": "with",
+          "offset": 25,
+          "pos": "ADP",
+          "text": "with"
+        },
+        {
+          "dep": "pobj",
+          "head": 6,
+          "i": 7,
+          "lemma": "goat",
+          "offset": 30,
+          "pos": "NOUN",
+          "text": "goats"
+        },
+        {
+          "dep": "cc",
+          "head": 7,
+          "i": 8,
+          "lemma": "and",
+          "offset": 36,
+          "pos": "CCONJ",
+          "text": "and"
+        },
+        {
+          "dep": "conj",
+          "head": 7,
+          "i": 9,
+          "lemma": "mountain",
+          "offset": 40,
+          "pos": "NOUN",
+          "text": "mountains"
+        },
+        {
+          "dep": "prep",
+          "head": 7,
+          "i": 10,
+          "lemma": "in",
+          "offset": 50,
+          "pos": "ADP",
+          "text": "in"
+        },
+        {
+          "dep": "det",
+          "head": 12,
+          "i": 11,
+          "lemma": "the",
+          "offset": 53,
+          "pos": "DET",
+          "text": "the"
+        },
+        {
+          "dep": "pobj",
+          "head": 10,
+          "i": 12,
+          "lemma": "background",
+          "offset": 57,
+          "pos": "NOUN",
+          "text": "background"
+        },
+        {
+          "dep": "punct",
+          "head": 5,
+          "i": 13,
+          "lemma": ".",
+          "offset": 67,
+          "pos": "PUNCT",
+          "text": "."
+        }
+      ]
+    },
+    {
+      "entities": [],
+      "id": "only",
+      "text": "The cow was in a pasture with only goats and mountains in the background.",
+      "tokens": [
+        {
+          "dep": "det",
+          "head": 1,
+          "i": 0,
+          "lemma": "the",
+          "offset": 0,
+          "pos": "DET",
+          "text": "The"
+        },
+        {
+          "dep": "nsubj",
+          "head": 2,
+          "i": 1,
+          "lemma": "cow",
+          "offset": 4,
+          "pos": "NOUN",
+          "text": "cow"
+        },
+        {
+          "dep": "ROOT",
+          "head": 2,
+          "i": 2,
+          "lemma": "be",
+          "offset": 8,
+          "pos": "AUX",
+          "text": "was"
+        },
+        {
+          "dep": "prep",
+          "head": 2,
+          "i": 3,
+          "lemma": "in",
+          "offset": 12,
+          "pos": "ADP",
+          "text": "in"
+        },
+        {
+          "dep": "det",
+          "head": 5,
+          "i": 4,
+          "lemma": "a",
+          "offset": 15,
+          "pos": "DET",
+          "text": "a"
+        },
+        {
+          "dep": "pobj",
+          "head": 3,
+          "i": 5,
+          "lemma": "pasture",
+          "offset": 17,
+          "pos": "NOUN",
+          "text": "pasture"
+        },
+        {
+          "dep": "prep",
+          "head": 5,
+          "i": 6,
+          "lemma": "with",
+          "offset": 25,
+          "pos": "ADP",
+          "text": "with"
+        },
+        {
+          "dep": "amod",
+          "head": 8,
+          "i": 7,
+          "lemma": "only",
+          "offset": 30,
+          "pos": "ADJ",
+          "text": "only"
+        },
+        {
+          "dep": "pobj",
+          "head": 6,
+          "i": 8,
+          "lemma": "goat",
+          "offset": 35,
+          "pos": "NOUN",
+          "text": "goats"
+        },
+        {
+          "dep": "cc",
+          "head": 8,
+          "i": 9,
+          "lemma": "and",
+          "offset": 41,
+          "pos": "CCONJ",
+          "text": "and"
+        },
+        {
+          "dep": "conj",
+          "head": 8,
+          "i": 10,
+          "lemma": "mountain",
+          "offset": 45,
+          "pos": "NOUN",
+          "text": "mountains"
+        },
+        {
+          "dep": "prep",
+          "head": 8,
+          "i": 11,
+          "lemma": "in",
+          "offset": 55,
+          "pos": "ADP",
+          "text": "in"
+        },
+        {
+          "dep": "det",
+          "head": 13,
+          "i": 12,
+          "lemma": "the",
+          "offset": 58,
+          "pos": "DET",
+          "text": "the"
+        },
+        {
+          "dep": "pobj",
+          "head": 11,
+          "i": 13,
+          "lemma": "background",
+          "offset": 62,
+          "pos": "NOUN",
+          "text": "background"
+        },
+        {
+          "dep": "punct",
+          "head": 2,
+          "i": 14,
+          "lemma": ".",
+          "offset": 72,
+          "pos": "PUNCT",
+          "text": "."
+        }
+      ]
+    },
+    {
+      "entities": [
+        {
+          "end": 8,
+          "label": "CARDINAL",
+          "start": 7,
+          "text": "zero"
+        }
+      ],
+      "id": "zero",
+      "text": "The cow was in a pasture with zero goats and mountains in the background.",
+      "tokens": [
+        {
+          "dep": "det",
+          "head": 1,
+          "i": 0,
+          "lemma": "the",
+          "offset": 0,
+          "pos": "DET",
+          "text": "The"
+        },
+        {
+          "dep": "nsubj",
+          "head": 2,
+          "i": 1,
+          "lemma": "cow",
+          "offset": 4,
+          "pos": "NOUN",
+          "text": "cow"
+        },
+        {
+          "dep": "ROOT",
+          "head": 2,
+          "i": 2,
+          "lemma": "be",
+          "offset": 8,
+          "pos": "AUX",
+          "text": "was"
+        },
+        {
+          "dep": "prep",
+          "head": 2,
+          "i": 3,
+          "lemma": "in",
+          "offset": 12,
+          "pos": "ADP",
+          "text": "in"
+        },
+        {
+          "dep": "det",
+          "head": 5,
+          "i": 4,
+          "lemma": "a",
+          "offset": 15,
+          "pos": "DET",
+          "text": "a"
+        },
+        {
+          "dep": "pobj",
+          "head": 3,
+          "i": 5,
+          "lemma": "pasture",
+          "offset": 17,
+          "pos": "NOUN",
+          "text": "pasture"
+        },
+        {
+          "dep": "prep",
+          "head": 5,
+          "i": 6,
+          "lemma": "with",
+          "offset": 25,
+          "pos": "ADP",
+          "text": "with"
+        },
+        {
+          "dep": "nummod",
+          "head": 8,
+          "i": 7,
+          "lemma": "zero",
+          "offset": 30,
+          "pos": "NUM",
+          "text": "zero"
+        },
+        {
+          "dep": "pobj",
+          "head": 6,
+          "i": 8,
+          "lemma": "goat",
+          "offset": 35,
+          "pos": "NOUN",
+          "text": "goats"
+        },
+        {
+          "dep": "cc",
+          "head": 8,
+          "i": 9,
+          "lemma": "and",
+          "offset": 41,
+          "pos": "CCONJ",
+          "text": "and"
+        },
+        {
+          "dep": "conj",
+          "head": 8,
+          "i": 10,
+          "lemma": "mountain",
+          "offset": 45,
+          "pos": "NOUN",
+          "text": "mountains"
+        },
+        {
+          "dep": "prep",
+          "head": 8,
+          "i": 11,
+          "lemma": "in",
+          "offset": 55,
+          "pos": "ADP",
+          "text": "in"
+        },
+        {
+          "dep": "det",
+          "head": 13,
+          "i": 12,
+          "lemma": "the",
+          "offset": 58,
+          "pos": "DET",
+          "text": "the"
+        },
+        {
+          "dep": "pobj",
+          "head": 11,
+          "i": 13,
+          "lemma": "background",
+          "offset": 62,
+          "pos": "NOUN",
+          "text": "background"
+        },
+        {
+          "dep": "punct",
+          "head": 2,
+          "i": 14,
+          "lemma": ".",
+          "offset": 72,
+          "pos": "PUNCT",
+          "text": "."
+        }
+      ]
+    },
+    {
+      "entities": [
+        {
+          "end": 9,
+          "label": "CARDINAL",
+          "start": 8,
+          "text": "two"
+        }
+      ],
+      "id": "long",
+      "text": "The cow was in a big pasture with two white goats and mountains in the background.",
+      "tokens": [
+        {
+          "dep": "det",
+          "head": 1,
+          "i": 0,
+          "lemma": "the",
+          "offset": 0,
+          "pos": "DET",
+          "text": "The"
+        },
+        {
+          "dep": "nsubj",
+          "head": 2,
+          "i": 1,
+          "lemma": "cow",
+          "offset": 4,
+          "pos": "NOUN",
+          "text": "cow"
+        },
+        {
+          "dep": "ROOT",
+          "head": 2,
+          "i": 2,
+          "lemma": "be",
+          "offset": 8,
+          "pos": "AUX",
+          "text": "was"
+        },
+        {
+          "dep": "prep",
+          "head": 2,
+          "i": 3,
+          "lemma": "in",
+          "offset": 12,
+          "pos": "ADP",
+          "text": "in"
+        },
+        {
+          "dep": "det",
+          "head": 6,
+          "i": 4,
+          "lemma": "a",
+          "offset": 15,
+          "pos": "DET",
+          "text": "a"
+        },
+        {
+          "dep": "amod",
+          "head": 6,
+          "i": 5,
+          "lemma": "big",
+          "offset": 17,
+          "pos": "ADJ",
+          "text": "big"
+        },
+        {
+          "dep": "pobj",
+          "head": 3,
+          "i": 6,
+          "lemma": "pasture",
+          "offset": 21,
+          "pos": "NOUN",
+          "text": "pasture"
+        },
+        {
+          "dep": "prep",
+          "head": 6,
+          "i": 7,
+          "lemma": "with",
+          "offset": 29,
+          "pos": "ADP",
+          "text": "with"
+        },
+        {
+          "dep": "nummod",
+          "head": 10,
+          "i": 8,
+          "lemma": "two",
+          "offset": 34,
+          "pos": "NUM",
+          "text": "two"
+        },
+        {
+          "dep": "amod",
+          "head": 10,
+          "i": 9,
+          "lemma": "white",
+          "offset": 38,
+          "pos": "ADJ",
+          "text": "white"
+        },
+        {
+          "dep": "pobj",
+          "head": 7,
+          "i": 10,
+          "lemma": "goat",
+          "offset": 44,
+          "pos": "NOUN",
+          "text": "goats"
+        },
+        {
+          "dep": "cc",
+          "head": 10,
+          "i": 11,
+          "lemma": "and",
+          "offset": 50,
+          "pos": "CCONJ",
+          "text": "and"
+        },
+        {
+          "dep": "conj",
+          "head": 10,
+          "i": 12,
+          "lemma": "mountain",
+          "offset": 54,
+          "pos": "NOUN",
+          "text": "mountains"
+        },
+        {
+          "dep": "prep",
+          "head": 10,
+          "i": 13,
+          "lemma": "in",
+          "offset": 64,
+          "pos": "ADP",
+          "text": "in"
+        },
+        {
+          "dep": "det",
+          "head": 15,
+          "i": 14,
+          "lemma": "the",
+          "offset": 67,
+          "pos": "DET",
+          "text": "the"
+        },
+        {
+          "dep": "pobj",
+          "head": 13,
+          "i": 15,
+          "lemma": "background",
+          "offset": 71,
+          "pos": "NOUN",
+          "text": "background"
+        },
+        {
+          "dep": "punct",
+          "head": 2,
+          "i": 16,
+          "lemma": ".",
+          "offset": 81,
+          "pos": "PUNCT",
+          "text": "."
+        }
+      ]
+    },
+    {
+      "entities": [],
+      "id": "other_clause",
+      "text": "The cow was in a pasture with goats and a fox was near a river.",
+      "tokens": [
+        {
+          "dep": "det",
+          "head": 1,
+          "i": 0,
+          "lemma": "the",
+          "offset": 0,
+          "pos": "DET",
+          "text": "The"
+        },
+        {
+          "dep": "nsubj",
+          "head": 2,
+          "i": 1,
+          "lemma": "cow",
+          "offset": 4,
+          "pos": "NOUN",
+          "text": "cow"
+        },
+        {
+          "dep": "ROOT",
+          "head": 2,
+          "i": 2,
+          "lemma": "be",
+          "offset": 8,
+          "pos": "AUX",
+          "text": "was"
+        },
+        {
+          "dep": "prep",
+          "head": 2,
+          "i": 3,
+          "lemma": "in",
+          "offset": 12,
+          "pos": "ADP",
+          "text": "in"
+        },
+        {
+          "dep": "det",
+          "head": 5,
+          "i": 4,
+          "lemma": "a",
+          "offset": 15,
+          "pos": "DET",
+          "text": "a"
+        },
+        {
+          "dep": "pobj",
+          "head": 3,
+          "i": 5,
+          "lemma": "pasture",
+          "offset": 17,
+          "pos": "NOUN",
+          "text": "pasture"
+        },
+        {
+          "dep": "prep",
+          "head": 5,
+          "i": 6,
+          "lemma": "with",
+          "offset": 25,
+          "pos": "ADP",
+          "text": "with"
+        },
+        {
+          "dep": "pobj",
+          "head": 6,
+          "i": 7,
+          "lemma": "goat",
+          "offset": 30,
+          "pos": "NOUN",
+          "text": "goats"
+        },
+        {
+          "dep": "cc",
+          "head": 7,
+          "i": 8,
+          "lemma": "and",
+          "offset": 36,
+          "pos": "CCONJ",
+          "text": "and"
+        },
+        {
+          "dep": "det",
+          "head": 10,
+          "i": 9,
+          "lemma": "a",
+          "offset": 40,
+          "pos": "DET",
+          "text": "a"
+        },
+        {
+          "dep": "conj",
+          "head": 7,
+          "i": 10,
+          "lemma": "fox",
+          "offset": 42,
+          "pos": "NOUN",
+          "text": "fox"
+        },
+        {
+          "dep": "advcl",
+          "head": 2,
+          "i": 11,
+          "lemma": "be",
+          "offset": 46,
+          "pos": "AUX",
+          "text": "was"
+        },
+        {
+          "dep": "prep",
+          "head": 11,
+          "i": 12,
+          "lemma": "near",
+          "offset": 50,
+          "pos": "ADP",
+          "text": "near"
+        },
+        {
+          "dep": "det",
+          "head": 14,
+          "i": 13,
+          "lemma": "a",
+          "offset": 55,
+          "pos": "DET",
+          "text": "a"
+        },
+        {
+          "dep": "pobj",
+          "head": 12,
+          "i": 14,
+          "lemma": "river",
+          "offset": 57,
+          "pos": "NOUN",
+          "text": "river"
+        },
+        {
+          "dep": "punct",
+          "head": 2,
+          "i": 15,
+          "lemma": ".",
+          "offset": 62,
+          "pos": "PUNCT",
+          "text": "."
+        }
+      ]
+    },
+    {
+      "entities": [],
+      "id": "compound_relation",
+      "text": "A cow is in a pasture with goats in front of mountains.",
+      "tokens": [
+        {
+          "dep": "det",
+          "head": 1,
+          "i": 0,
+          "lemma": "a",
+          "offset": 0,
+          "pos": "DET",
+          "text": "A"
+        },
+        {
+          "dep": "nsubj",
+          "head": 2,
+          "i": 1,
+          "lemma": "cow",
+          "offset": 2,
+          "pos": "NOUN",
+          "text": "cow"
+        },
+        {
+          "dep": "ROOT",
+          "head": 2,
+          "i": 2,
+          "lemma": "be",
+          "offset": 6,
+          "pos": "AUX",
+          "text": "is"
+        },
+        {
+          "dep": "prep",
+          "head": 2,
+          "i": 3,
+          "lemma": "in",
+          "offset": 9,
+          "pos": "ADP",
+          "text": "in"
+        },
+        {
+          "dep": "det",
+          "head": 5,
+          "i": 4,
+          "lemma": "a",
+          "offset": 12,
+          "pos": "DET",
+          "text": "a"
+        },
+        {
+          "dep": "pobj",
+          "head": 3,
+          "i": 5,
+          "lemma": "pasture",
+          "offset": 14,
+          "pos": "NOUN",
+          "text": "pasture"
+        },
+        {
+          "dep": "prep",
+          "head": 5,
+          "i": 6,
+          "lemma": "with",
+          "offset": 22,
+          "pos": "ADP",
+          "text": "with"
+        },
+        {
+          "dep": "pobj",
+          "head": 6,
+          "i": 7,
+          "lemma": "goat",
+          "offset": 27,
+          "pos": "NOUN",
+          "text": "goats"
+        },
+        {
+          "dep": "prep",
+          "head": 7,
+          "i": 8,
+          "lemma": "in",
+          "offset": 33,
+          "pos": "ADP",
+          "text": "in"
+        },
+        {
+          "dep": "pobj",
+          "head": 8,
+          "i": 9,
+          "lemma": "front",
+          "offset": 36,
+          "pos": "NOUN",
+          "text": "front"
+        },
+        {
+          "dep": "prep",
+          "head": 9,
+          "i": 10,
+          "lemma": "of",
+          "offset": 42,
+          "pos": "ADP",
+          "text": "of"
+        },
+        {
+          "dep": "pobj",
+          "head": 10,
+          "i": 11,
+          "lemma": "mountain",
+          "offset": 45,
+          "pos": "NOUN",
+          "text": "mountains"
+        },
+        {
+          "dep": "punct",
+          "head": 2,
+          "i": 12,
+          "lemma": ".",
+          "offset": 54,
+          "pos": "PUNCT",
+          "text": "."
+        }
+      ]
+    },
+    {
+      "entities": [],
+      "id": "time_context",
+      "text": "A cow is in a pasture with goats at sunset.",
+      "tokens": [
+        {
+          "dep": "det",
+          "head": 1,
+          "i": 0,
+          "lemma": "a",
+          "offset": 0,
+          "pos": "DET",
+          "text": "A"
+        },
+        {
+          "dep": "nsubj",
+          "head": 2,
+          "i": 1,
+          "lemma": "cow",
+          "offset": 2,
+          "pos": "NOUN",
+          "text": "cow"
+        },
+        {
+          "dep": "ROOT",
+          "head": 2,
+          "i": 2,
+          "lemma": "be",
+          "offset": 6,
+          "pos": "AUX",
+          "text": "is"
+        },
+        {
+          "dep": "prep",
+          "head": 2,
+          "i": 3,
+          "lemma": "in",
+          "offset": 9,
+          "pos": "ADP",
+          "text": "in"
+        },
+        {
+          "dep": "det",
+          "head": 5,
+          "i": 4,
+          "lemma": "a",
+          "offset": 12,
+          "pos": "DET",
+          "text": "a"
+        },
+        {
+          "dep": "pobj",
+          "head": 3,
+          "i": 5,
+          "lemma": "pasture",
+          "offset": 14,
+          "pos": "NOUN",
+          "text": "pasture"
+        },
+        {
+          "dep": "prep",
+          "head": 5,
+          "i": 6,
+          "lemma": "with",
+          "offset": 22,
+          "pos": "ADP",
+          "text": "with"
+        },
+        {
+          "dep": "pobj",
+          "head": 6,
+          "i": 7,
+          "lemma": "goat",
+          "offset": 27,
+          "pos": "NOUN",
+          "text": "goats"
+        },
+        {
+          "dep": "prep",
+          "head": 7,
+          "i": 8,
+          "lemma": "at",
+          "offset": 33,
+          "pos": "ADP",
+          "text": "at"
+        },
+        {
+          "dep": "pobj",
+          "head": 8,
+          "i": 9,
+          "lemma": "sunset",
+          "offset": 36,
+          "pos": "NOUN",
+          "text": "sunset"
+        },
+        {
+          "dep": "punct",
+          "head": 2,
+          "i": 10,
+          "lemma": ".",
+          "offset": 42,
+          "pos": "PUNCT",
+          "text": "."
+        }
+      ]
+    }
+  ],
+  "spacy_version": "3.8.11"
+}

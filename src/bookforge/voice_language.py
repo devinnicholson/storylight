@@ -11,12 +11,13 @@ from bookforge.privacy_policy import COLOR_WORDS, COUNT_WORDS
 from bookforge.scene_facts import SceneFactsV2
 from bookforge.voice_dependencies import (
     audit_nominal_spans,
+    copular_location_continuation,
     extract,
     normalize_breed_subjects,
     static_nominal_head,
 )
 
-REVISION = "dependency-scene-draft-v3"
+REVISION = "dependency-scene-draft-v4"
 RELATIONS = {
     "in": "inside",
     "inside": "inside",
@@ -85,7 +86,8 @@ def graph_from_row(row, visual_style, *, nominal_head_pos=None):
         for token in row["tokens"]:
             if token["pos"] == "PROPN":
                 token["pos"] = "NOUN"
-    draft = extract(row, static_subject=nominal)
+    continuation = copular_location_continuation(row)
+    draft = extract(row, static_subject=nominal, location_continuation=continuation)
     result = {
         "revision": REVISION,
         "status": "needs_review",
@@ -192,6 +194,8 @@ def graph_from_row(row, visual_style, *, nominal_head_pos=None):
                                 + ents[relation["target"]]["phrase"].casefold()
                             )
                     actions.append(action)
+                    if continuation is not None and event["token"] == continuation["predicate"]:
+                        actions.append(continuation["phrase"].casefold())
                 value["actions"] = list(dict.fromkeys(actions))
                 subjects.append(value)
             else:

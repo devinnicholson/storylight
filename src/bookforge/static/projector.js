@@ -1545,7 +1545,8 @@ function renderLiveGenerationBadge(snapshot, {activated = true, fallbackMode = n
     || state.liveStage === "failed"
     || snapshot.complete === true
     || snapshot.terminal === true;
-  state.liveTerminal = snapshotTerminal && activated;
+  const awaitingPresentation = liveSnapshotAwaitsPresentation(snapshot);
+  state.liveTerminal = snapshotTerminal && (activated || awaitingPresentation);
   const timestampElapsed = Date.parse(snapshot.updated_at || "") - Date.parse(snapshot.created_at || "");
   state.liveElapsedMs = Number.isFinite(snapshot.metrics?.elapsed_ms)
     ? snapshot.metrics.elapsed_ms
@@ -1558,7 +1559,8 @@ function renderLiveGenerationBadge(snapshot, {activated = true, fallbackMode = n
   elements.liveGenerationBadge.classList.remove("hidden");
   elements.liveGenerationBadge.dataset.stage = state.liveStage;
   elements.liveGenerationBadge.dataset.terminal = String(state.liveTerminal);
-  elements.liveGenerationStage.textContent = (
+  elements.liveGenerationStage.textContent = awaitingPresentation
+    ? "Waiting for verified description" : (
     activated ? readyStageLabels[state.liveStage] : pendingStageLabels[state.liveStage]
   ) || readyStageLabels[state.liveStage] || state.liveStage.replaceAll("_", " ");
   const roles = liveArtifactRoles(snapshot);
@@ -1570,7 +1572,9 @@ function renderLiveGenerationBadge(snapshot, {activated = true, fallbackMode = n
   const hardware = snapshot.metrics?.gpu
     ? `${snapshot.metrics.warm_state || "unknown"} · ${snapshot.metrics.gpu}`
     : null;
-  const fallback = fallbackMode === "master-fallback"
+  const fallback = awaitingPresentation
+    ? "completed artwork held for presentation approval"
+    : fallbackMode === "master-fallback"
     ? "artwork fallback · depth retrying"
     : fallbackMode === "depth-composed"
       ? "depth fallback · video retrying"
@@ -1646,6 +1650,11 @@ function invalidateLiveRender({jobId, revision, serverInstanceId, sessionRevisio
     displayWhenComplete,
     signal: state.liveRenderAbortController.signal,
   };
+}
+
+function liveSnapshotAwaitsPresentation(snapshot) {
+  return snapshot.complete === true && snapshot.stage !== "failed"
+    && snapshot.request?.defer_presentation === true && snapshot.presentation_ready !== true;
 }
 
 function liveModeSatisfiesStage(stage, mode) {
@@ -1732,7 +1741,8 @@ function queueLiveSceneSnapshot(envelope) {
     if (!liveSnapshotCanDisplay(snapshot)) {
       state.liveRenderPending = false;
       renderLiveGenerationBadge(snapshot, {activated: !snapshot.story_pack});
-      setEvent("scene.generating", `${snapshot.stage || "queued"} · revision ${revision}`);
+      setEvent(liveSnapshotAwaitsPresentation(snapshot) ? "scene.awaiting-presentation" : "scene.generating",
+        `${snapshot.stage || "queued"} · revision ${revision}`);
       return;
     }
     renderLiveGenerationBadge(snapshot, {activated: false});

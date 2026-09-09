@@ -317,7 +317,7 @@ def _learned_parser(api_client, monkeypatch):
     return text
 
 
-@pytest.mark.parametrize("case", ["breed", "dish_title", "balloon"])
+@pytest.mark.parametrize("case", ["breed", "dish_title", "balloon", "cow"])
 def test_actual_parser_row_requires_confirmation_then_reaches_fake_renderer(
     api_client, monkeypatch, case,
 ):
@@ -331,6 +331,10 @@ def test_actual_parser_row_requires_confirmation_then_reaches_fake_renderer(
     if case == "breed":
         row = json.loads((root / "benchmarks/voice-retriever-2026-09-08/parser.json")
                          .read_bytes())["row"]
+        parsed = graph_from_row(row, "watercolor")
+    elif case == "cow":
+        row = next(r for r in json.loads((root / "tests/fixtures/voice-copular-location-rows.json")
+                                        .read_bytes())["rows"] if r["id"] == "exact")
         parsed = graph_from_row(row, "watercolor")
     else:
         directory = root / "benchmarks/voice-static-subject-2026-09-08"
@@ -361,7 +365,12 @@ def test_actual_parser_row_requires_confirmation_then_reaches_fake_renderer(
         assert prepared.json()["local_omissions"][0]["local_text"] == "Paris"
     else:
         assert prepared.json()["local_omissions"] == []
-        assert prepared.json()["visual_facts"]["subjects"][0]["actions"] == []
+        if case != "cow":
+            assert prepared.json()["visual_facts"]["subjects"][0]["actions"] == []
+        else:
+            assert prepared.json()["visual_facts"]["subjects"][0]["actions"] == [
+                "was in big pasture", "with goats and mountains in the background",
+            ]
     assert state.renderer.calls == []
     unconfirmed = state.client.post("/v1/live-scenes", json=payload)
     assert unconfirmed.status_code == 422
@@ -497,6 +506,7 @@ def test_parser_response_cannot_bypass_fact_grounding_or_provider_confirmation(
     for changed in (
         {"revision": "dependency-scene-draft-v1"},
         {"revision": "dependency-scene-draft-v2"},
+        {"revision": "dependency-scene-draft-v3"},
         {"revision": "dependency-scene-draft-old"},
         {"renderer_prompt_preview": "an unrelated picture"},
         {"facts": {**original["facts"], "subjects": [

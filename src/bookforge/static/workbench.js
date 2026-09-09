@@ -751,9 +751,20 @@ function offerVoiceTranscript(text, {final = false, epoch = recordingEpoch} = {}
 
 async function pumpVoiceGeneration() {
   if (!voiceMode || finalizing || starting || generationSubmitting || pendingSubmission
-    || activeLiveJobId || voiceGeneration.publishing) return;
+    || voiceGeneration.publishing) return;
   const intent = voiceGeneration.latest;
   if (!intent || intent.epoch !== recordingEpoch) return;
+  if (voiceGeneration.checking) return;
+  if (activeLiveJobId) {
+    if (intent.final && intent.refusal) {
+      elements.voiceReview.textContent = intent.refusal;
+      elements.interim.textContent = "The description could not be verified. Your previous scene is unchanged; edit it or describe the scene again.";
+    }
+    if (voiceGeneration.active?.key !== intent.key && !intent.checked && !intent.refusal) {
+      await checkQueuedVoiceIntent(intent);
+    }
+    return;
+  }
   if (voiceGeneration.completed?.key === intent.key) {
     await tryPresentVoiceGeneration();
     return;
@@ -761,6 +772,24 @@ async function pumpVoiceGeneration() {
   if (voiceGeneration.attempted.has(intent.key)) return;
   voiceGeneration.attempted.add(intent.key);
   await compileStory({voiceIntent: intent});
+}
+
+async function checkQueuedVoiceIntent(intent) {
+  voiceGeneration.checking = intent;
+  const current = () => voiceGeneration.latest?.key === intent.key
+    && voiceGeneration.latest.epoch === intent.epoch && recordingEpoch === intent.epoch;
+  try {
+    voiceTimingEvent("scene_check_started", {}, intent.epoch);
+    const checked = await checkVoiceDescription({text: intent.text, visual_style: intent.style,
+      session_id: readerSessionId, reviewed_description: true});
+    if (current()) voiceGeneration.latest.checked = checked;
+    voiceTimingEvent("scene_check_completed", {}, intent.epoch);
+  } catch (error) {
+    if (current()) voiceGeneration.latest.refusal = error.message;
+  } finally {
+    voiceGeneration.checking = null;
+    void pumpVoiceGeneration();
+  }
 }
 
 async function tryPresentVoiceGeneration() {
@@ -1628,6 +1657,7 @@ async function compileStory(options = {}) {
     elements.compileButton.textContent = "Checking description…";
     elements.voiceReview.textContent = "Checking the scene locally before generation.";
     try {
+      if (voiceIntent?.refusal) throw new Error(voiceIntent.refusal);
       let checked = voiceIntent?.checked;
       if (!checked) {
         voiceTimingEvent("scene_check_started", {}, timingEpoch);

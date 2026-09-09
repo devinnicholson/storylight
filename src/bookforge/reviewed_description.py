@@ -29,8 +29,8 @@ from bookforge.live_scene_planner import (
 from bookforge.privacy_policy import COUNT_WORDS, privacy_tokens
 from bookforge.scene_facts import SceneFactsV2
 
-REVISION = "reviewed-language-v3"
-PARSER_REVISION = "dependency-scene-draft-v3"
+REVISION = "reviewed-language-v4"
+PARSER_REVISION = "dependency-scene-draft-v4"
 AUDITED_REVISION = "reviewed-language-bounded-v1"
 AUDIT_REVISION = "dependency-nominal-audit-v1"
 CURRENT_REVISIONS = frozenset((BOUNDED_REVISION, REVISION, AUDITED_REVISION))
@@ -53,7 +53,7 @@ class _SyntaxIssue(FrozenStrictModel):
 
 
 class _ParserResponse(FrozenStrictModel):
-    revision: Literal["dependency-scene-draft-v3"]
+    revision: Literal["dependency-scene-draft-v4"]
     status: Literal["draft_ready", "omission_review", "needs_review"]
     facts: SceneFactsV2 | None
     reason: Annotated[str, StringConstraints(max_length=100)] | None
