@@ -1,0 +1,14 @@
+{
+  "reviewer": "decoding_verification",
+  "verified": true,
+  "packages_sha256": "681a5407958e8afe08b5c69498c4692fe7533ad366c3b7a95e2e9a630974bde9",
+  "after_packages_byte_identical_to_prior": true,
+  "only_package_delta": "regex 2026.9.10 -> 2026.9.3",
+  "pre_gpu_adjustment_scope": "Recorded by root setup review; no independent timestamped install replay",
+  "reviewed_files": 25,
+  "credential_pattern_hits": [],
+  "private_gold_or_model_file_paths": [],
+  "production_sources_changed": false,
+  "source_edits": false,
+  "gpu_actions": false
+}

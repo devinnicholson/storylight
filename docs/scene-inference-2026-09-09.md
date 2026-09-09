@@ -1,6 +1,6 @@
 # Scene extraction: training and serving results
 
-The V5 experiment improved learned scene extraction, but failed its refusal gate. A separate serving experiment reduced median paired warm latency by 59.49% across 128 descriptions, preserving every output token. Independent replay verified all 260 calls, including warmups. These are GCP L4 extraction measurements; the live voice demo and image generator are unchanged.
+The V5 experiment improved learned scene extraction, but failed its refusal gate. A separate serving experiment reduced median paired warm latency by 59.49% across 128 descriptions, preserving every output token. Independent replay verified all 260 calls, including warmups. A controlled restart experiment also reduced first compiled preparation by 79.41% through reproducible compiler-cache reuse. These are GCP L4 extraction measurements; the live voice demo and image generator are unchanged.
 
 ## What was tested
 
@@ -32,7 +32,19 @@ The candidate therefore keeps dynamic prompt processing, selects the first token
 
 The median paired reduction was **60.95%**. All 54 outputs, including warmups, matched across the three modes. The trace recorded CUDA graph execution. The first compiled preparation request took **111.35 seconds**, including generation; it is not an isolated compilation timer. Model loading and merging are separate costs. This derivative run did not record memory usage.
 
-A new-process repeat reused the saved compiler directories and preserved all 54 outputs. Its first compiled preparation still took **103.45 seconds**, versus 111.35 seconds originally—only 7.09% less. The compiler reported two AOTAutograd and two FX graph cache misses again; existing Triton files remained unchanged while new higher-level graph artifacts appeared. Reusing these directories therefore did not solve preparation latency. The exact cache-key mismatch remains unknown. This repeat warmed the model and GPU in preceding modes, so it does not measure full service startup.
+A new-process repeat reused the saved compiler directories and preserved all 54 outputs. Its first compiled preparation still took **103.45 seconds**, versus 111.35 seconds originally—only 7.09% less. The compiler reported two AOTAutograd and two FX graph cache misses again; existing Triton files remained unchanged while new higher-level graph artifacts appeared. Reusing these directories therefore did not solve preparation latency. That run did not isolate why the higher-level cache keys changed. This repeat warmed the model and GPU in preceding modes, so it does not measure full service startup.
+
+The follow-up found a concrete cause to test: the model iterates a Python set of attention-layer types. Changing Python's hash seed reverses the rotary-input order. CPU subprocesses reproduced that behavior, and the actual GPU model recorded the same reversal. A three-process experiment held the wrapper, imports, weights and complete package set constant:
+
+| Process | First compiled preparation | AOT / FX graph cache |
+| --- | ---: | --- |
+| Seed 0, new compiler cache | 109.25 s | 2 misses / 2 misses |
+| Seed 0, reused compiler cache | 22.49 s | 2 hits / 2 hits |
+| Seed 1, reused compiler cache | 102.61 s | 2 misses / 2 misses |
+
+The same-seed restart reduced preparation by **79.41%**. All 162 generated streams passed independent token/grammar replay, and each restart preserved all 54 prior outputs. Generated decoder partitions from the changed-seed run matched the originals after swapping only the two rotary-argument names; independent static analysis reproduced that comparison without executing downloaded code. This supports seed-sensitive graph caching and the rotary-order explanation in this runtime. The intervention also changes other hash-sensitive behavior, so it does not isolate rotary ordering as the only possible cause.
+
+These are eight training probes and one three-process cycle. Every compiled preparation follows dynamic/eager modes that already warm the model and GPU; **22.49 seconds is not whole-service startup**. The measured fix is a reproducible launch configuration with saved compiler artifacts. See [the restart report](../experiments/scene-compiler-restart-2026-09-09/RESULTS.md) for receipts and timing scope.
 
 Removing grammar enforcement was also tested separately. It saved only 4.73% on matching outputs and introduced one malformed graph. That experiment supports retaining the grammar.
 
@@ -44,4 +56,4 @@ Neither warm L4 latency nor cache-transfer correctness establishes Jetson latenc
 
 The best live-demo checkpoint remains `checkpoints/best-demo-2026-09-08`. Experiment code, raw receipts and independent reviews are versioned; model and adapter binaries remain local and ignored. A Git clone alone is insufficient for weight replay.
 
-The completed allocation was cleaned up: its VM, boot disk and dedicated firewall rules were verified absent. Its VM/disk/IPv4 list-rate estimate is **$3.63**, excluding transfer and earlier allocations; this is not an account spending total.
+Both completed allocations were cleaned up: their VMs, boot disks and dedicated firewall rules were verified absent. Their VM/disk/IPv4 list-rate estimates are **$3.63** for the training/serving campaign and **$0.46** for the controlled restart, excluding transfer and earlier allocations. These estimates are not an account spending total.

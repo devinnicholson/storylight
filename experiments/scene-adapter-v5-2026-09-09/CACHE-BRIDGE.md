@@ -115,6 +115,21 @@ identify why their cache keys differed or attribute the full time to one stage.
 
 This measures a fresh Python process with warm compiler artifacts, not a cold
 service, cold GPU or fresh machine. The first preparation timer includes generation
-and does not isolate compilation or whole-process startup. Further work should
-explain the graph-cache misses and measure startup separately before choosing a
-persistent-worker or packaged-graph deployment strategy.
+and does not isolate compilation or whole-process startup. The controlled follow-up below tests a specific graph-cache explanation;
+whole-process startup still needs a separate measurement.
+
+## Controlled hash-seed follow-up
+
+A separate three-process experiment keeps the wrapper and helper module names
+fixed. With seed 0 and new compiler directories, its first compiled preparation
+request takes 109.25 seconds. Reusing those artifacts with seed 0 takes **22.49
+seconds**, a **79.41% reduction**, and records two AOT and two FX graph cache hits.
+Changing to seed 1 restores both pairs of cache misses and takes 102.61 seconds.
+All 162 calls pass independent token/grammar replay and retain exact output parity.
+
+The actual model's rotary-buffer order changes with the seed. Static inspection of
+both new generated decoder partitions shows that swapping only the two rotary
+argument names makes their syntax trees match the original partitions exactly.
+This supports the ordering explanation, while other hash-sensitive behavior remains
+part of the intervention. It does not establish whole-service startup performance
+or a production fix. See [the controlled findings](../scene-compiler-restart-2026-09-09/GENERATED-ORDER.md).

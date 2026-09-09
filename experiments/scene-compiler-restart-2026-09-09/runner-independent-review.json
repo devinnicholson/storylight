@@ -1,0 +1,23 @@
+{
+  "reviewer": "review_followups",
+  "decision": "GO for bounded three-arm seed-controlled GPU diagnostic",
+  "source_hashes": {
+    "run.py": "4a3c44494e45821817b56fe5bb846d520e30a0bd0e28797160316710aaa37e00",
+    "test_run.py": "27bcc911dd70cb4b5776764929cf7e45c9ddb8848f8b604dfa072f88d2c35852",
+    "launch.sh": "c104d116196f638869df05c5dbbcd9b48f2dd0ba1db698ae6526d5cb08f2dbf2",
+    "cleanup.sh": "6b0264b92bd69f1c70db19ca342a8ede86085e6510c4327e8abe820a6a2c6e43"
+  },
+  "checks": [
+    "Fullsource review; unchanged b308 generationexecutor pinned",
+    "Stable module names across cold0/reuse0/reuse1 and launchseed requirement",
+    "Actual postmerge Gemma layerorder/buffer receipts compared with independentlyreproduced CPUproof",
+    "Priorcompleted/source/model/armchain and exactcompilerafter-before fileinventory binding",
+    "One CPU inventory test,Ruff,bash-n allocation/cleanup passed"
+  ],
+  "limitations": [
+    "Compiledphase follows dynamic/eager probes; not firstservice request",
+    "Filehash inventory is a runtime receipt, not proof ofallcachelayer coldness",
+    "Seed1control remains necessary for seed-specificcausal evidence"
+  ],
+  "cpu_gate_review_sha256": "3197e44c968f7a0f18a3096da132f62332e3a6a8ba8f24f7418dfe8995ebc315"
+}

@@ -1,0 +1,19 @@
+{
+  "reviewed_sources": {
+    "run.py": "4a3c44494e45821817b56fe5bb846d520e30a0bd0e28797160316710aaa37e00",
+    "run-gpu.sh": "0bdcb21ae57a8bfe4b0633712f7708553d2fce09dd9e80bafada3c80643e5ad1",
+    "launch.sh": "c104d116196f638869df05c5dbbcd9b48f2dd0ba1db698ae6526d5cb08f2dbf2",
+    "cleanup.sh": "6b0264b92bd69f1c70db19ca342a8ede86085e6510c4327e8abe820a6a2c6e43"
+  },
+  "independent_reviewer": "review_followups",
+  "root_review": "GO",
+  "cpu_proof": "See ../scene-compile-order-2026-09-09/independent-review.json",
+  "focused_test": "1 passed",
+  "bash_syntax": "passed",
+  "scope": "Synthetic experiment only; no production deployment",
+  "approved_budget_usd": 100,
+  "vm_maximum_seconds": 7200,
+  "per_arm_internal_seconds": 900,
+  "per_arm_outer_seconds": 960,
+  "outer_kill_grace_seconds": 30
+}

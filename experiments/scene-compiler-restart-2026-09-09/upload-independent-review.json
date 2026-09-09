@@ -1,0 +1,15 @@
+{
+  "reviewer": "decoding_verification",
+  "verified": true,
+  "archive_sha256": "760af19fb5cd752f6abb13414bc458afc83ef060ceec5072ccef48125dafa8d2",
+  "inventory_sha256": "d7bc415651f890282832f024d519d69d829edebb0ba2b2cb1322494b37753a88",
+  "files": 33,
+  "all_archive_bytes_match_inventory_and_originals": true,
+  "only_regular_relative_unique_paths": true,
+  "no_private_gold_voice_or_test_inputs": true,
+  "no_credential_patterns_in_text": true,
+  "selected_adapter_matches_verified_training": true,
+  "setup_sha256": "43d35428fa5560112d7ffddf208b717c961bc3acd5c1342c8b521dac8c11adf3",
+  "setup_unchanged_from_checkpoint": true,
+  "model_or_compiler_code_executed": false
+}

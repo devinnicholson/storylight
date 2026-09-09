@@ -1,0 +1,139 @@
+{
+  "scope": "Frozen synthetic training examples, selected training-run artifacts and reviewed runtime code; no test gold or private voice input",
+  "files": {
+    "payload/train.py": {
+      "sha256": "c77f744bd70196babc4a5edb84c11ffe4f5b785382bc460c6e8f72d809479355",
+      "bytes": 16674
+    },
+    "payload/v2-train.py": {
+      "sha256": "376016c465efdb0a030ad306d758ccd832360532ef4ee2c5cfa6b0c4bac9948d",
+      "bytes": 29277
+    },
+    "payload/data/manifest.json": {
+      "sha256": "a8d5cd1c73258e858f4eaee3c140d50ac61c1e0f0e871e4dad96dac7160862a9",
+      "bytes": 1879
+    },
+    "payload/data/train-messages.jsonl": {
+      "sha256": "96a566c1d53f1e6c02607b188a09caece3f40307a2e3f24e33f78d80b2baa1e9",
+      "bytes": 11845448
+    },
+    "comparison/run.py": {
+      "sha256": "bf567c749842ceede7e97ba21bd740ac5624dd12323809bf94efd34eed698c7b",
+      "bytes": 17330
+    },
+    "comparison/v3-run.py": {
+      "sha256": "8a62d71cf77ce7647c5e14b9bed84c868d1da44530bdcbb2f45354322dd25d50",
+      "bytes": 22326
+    },
+    "comparison/grammar.ebnf": {
+      "sha256": "622bc2bf36a2182c21a7e8a889f292f9b10a91dd149ee0aa913dd70ad20404df",
+      "bytes": 2344
+    },
+    "comparison/serving-profile.py": {
+      "sha256": "300cd393fc0ba40b1a34270579adb6d4d173ad19bbf6451563f5b94a8adb1ade",
+      "bytes": 13326
+    },
+    "support/cache-bridge-compiled.py": {
+      "sha256": "b308c7e236ef81b30915fe416639a6b8032e7a5faa2b94a422754082d62a4939",
+      "bytes": 19113
+    },
+    "support/cache-bridge-reuse.py": {
+      "sha256": "e42f6ca4a24d60a756c29122ea323b151ae9d89b4631a6fbba63e64adfd31a31",
+      "bytes": 3305
+    },
+    "training-01/completed.json": {
+      "sha256": "66326bd05dd934feae4ec1375a7b004f6efb0d267c0e0be72bfd3881f781768c",
+      "bytes": 2435
+    },
+    "training-01/adapter-1200/README.md": {
+      "sha256": "a88fae2747a513c2f742beeaa2ca23c95141420b88c1223957fde236ad905cda",
+      "bytes": 5164
+    },
+    "training-01/adapter-1200/adapter_config.json": {
+      "sha256": "ee075b82e39630599262248f637b3aa0ab7342ca9a98af868ff581ea3589159b",
+      "bytes": 3760
+    },
+    "training-01/adapter-1200/adapter_model.safetensors": {
+      "sha256": "408945fe55b5e32162573cd8038e9b6f86ca269e27567cac327484df84423d94",
+      "bytes": 10729912
+    },
+    "training-01/adapter-2400/README.md": {
+      "sha256": "a88fae2747a513c2f742beeaa2ca23c95141420b88c1223957fde236ad905cda",
+      "bytes": 5164
+    },
+    "training-01/adapter-2400/adapter_config.json": {
+      "sha256": "ee075b82e39630599262248f637b3aa0ab7342ca9a98af868ff581ea3589159b",
+      "bytes": 3760
+    },
+    "training-01/adapter-2400/adapter_model.safetensors": {
+      "sha256": "8acf87bdb245a4e1f92e91fc3b2495b9e5c5492a5038fd7d2432f93c6e980123",
+      "bytes": 10729912
+    },
+    "training-01/adapter-4800/README.md": {
+      "sha256": "a88fae2747a513c2f742beeaa2ca23c95141420b88c1223957fde236ad905cda",
+      "bytes": 5164
+    },
+    "training-01/adapter-4800/adapter_config.json": {
+      "sha256": "ee075b82e39630599262248f637b3aa0ab7342ca9a98af868ff581ea3589159b",
+      "bytes": 3760
+    },
+    "training-01/adapter-4800/adapter_model.safetensors": {
+      "sha256": "2a19a27e858e005b92d3cd6c77657ccb6a5c505fbeec512f3e3cc2fe0ce3e508",
+      "bytes": 10729912
+    },
+    "training-01/checkpoint-1200.json": {
+      "sha256": "b694162e30e460eab8f863fd8e79fa5c61ea8080b2abea0144f73abe439e2d06",
+      "bytes": 533
+    },
+    "training-01/checkpoint-2400.json": {
+      "sha256": "46dab9243520e39aba39820952c43acd96897df3868a7baa8fa12ebc219a2667",
+      "bytes": 533
+    },
+    "training-01/checkpoint-4800.json": {
+      "sha256": "22f29c26d7b319a9936bece2cd402a51399586fae901af0c8f8d3d1d7c74d458",
+      "bytes": 533
+    },
+    "training-01/development-1200.json": {
+      "sha256": "1b8701a778f006336f3515b325a5dec901117ac31c9958cfe680ac108e30e3ea",
+      "bytes": 206
+    },
+    "training-01/development-1200.jsonl": {
+      "sha256": "aebfcf67d5301e4bcca348de7a9db083e6896edca0182f3ca66317fb481b8180",
+      "bytes": 30763
+    },
+    "training-01/development-2400.json": {
+      "sha256": "b237e4b478e2b97c013ca1e620f40588ca2ead35931357b85a8c259d2b84d57d",
+      "bytes": 206
+    },
+    "training-01/development-2400.jsonl": {
+      "sha256": "3726fdc3f74aa48dc6ad2f778371daed8a28355a993306e70d55a74ca5aa9ccf",
+      "bytes": 30795
+    },
+    "training-01/development-4800.json": {
+      "sha256": "f1245219e6f240ed5cd5fde5added6ee06cc1f367c9a80cb4e7701a6a762d6cd",
+      "bytes": 206
+    },
+    "training-01/development-4800.jsonl": {
+      "sha256": "571be2b0e34e32b09f049ded748d27278ebf2eaaf95e8abc87e76f10bdeb6575",
+      "bytes": 30808
+    },
+    "training-01/loaded.json": {
+      "sha256": "cc4db549d4c9fb2e3892eeb5c476056563ede1818614d6fd5deaa16bb5c214bd",
+      "bytes": 2882
+    },
+    "training-01/protocol.json": {
+      "sha256": "dc865878ad018eccdd6d73b5688091b257f7ef8dfb04e78c6899336120ebf782",
+      "bytes": 2058
+    },
+    "training-01/selection.json": {
+      "sha256": "7687be6895f5bb4fd37bf560c35b0294ef0ab88ebdf10a3a28a42f01f0f40fdd",
+      "bytes": 899
+    },
+    "training-01/training.jsonl": {
+      "sha256": "c228ab562b0404a17b2f8f07630f2e7794c56bba2d825a36f9ad7bdf3f3f05f7",
+      "bytes": 1285514
+    }
+  },
+  "archive_sha256": "760af19fb5cd752f6abb13414bc458afc83ef060ceec5072ccef48125dafa8d2",
+  "archive_bytes": 30161338
+}

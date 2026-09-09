@@ -1,0 +1,11 @@
+{
+  "model_manifest_sha256": "703bbb89d61aaed083846d7cb3d4ee1a68220e25de93a035b1f4b49d24062f2d",
+  "setup_script_sha256": "43d35428fa5560112d7ffddf208b717c961bc3acd5c1342c8b521dac8c11adf3",
+  "package_adjustment": "Pinned regex from 2026.9.10 back to 2026.9.3 before any GPU arm",
+  "observed_remote_packages_sha256": "681a5407958e8afe08b5c69498c4692fe7533ad366c3b7a95e2e9a630974bde9",
+  "packages_identical_to_previous_allocation": true,
+  "gpu": "NVIDIA L4",
+  "driver": "580.173.02",
+  "gpu_memory_mib": 23034,
+  "setup_exit_code": 0
+}
