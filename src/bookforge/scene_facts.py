@@ -834,7 +834,12 @@ def validate_scene_facts_grounding(facts: SceneFactsV2, *, source_text: str) -> 
             secondary,
             action_sentences,
             entity_labels=entity_labels,
-            target_entity=entity_by_ref[relationship.target],
+            entities=tuple(entity_by_ref.values()),
+            secondary_entity=(
+                entity_by_ref[relationship.secondary_target]
+                if relationship.secondary_target is not None
+                else None
+            ),
         ):
             issues.append(f"relationships[{index}]")
 
@@ -1342,13 +1347,18 @@ def _explicit_carried_sentences(
     return tuple(result)
 
 
-def _passive_noun_matches(phrase: str, entity: SceneSubjectFact | SceneObjectFact) -> bool:
-    tokens = _normalized_phrase(phrase)
+def _passive_noun_matches(
+    phrase: str | tuple[str, ...],
+    entity: SceneSubjectFact | SceneObjectFact,
+    *,
+    extra_modifiers: tuple[str, ...] = (),
+) -> bool:
+    tokens = _normalized_phrase(phrase) if isinstance(phrase, str) else phrase
     label = _normalized_phrase(entity.label)
     if not label or tokens[-len(label) :] != label:
         return False
     modifiers = {"a", "an", "the"}
-    for value in (entity.color, *entity.attributes):
+    for value in (entity.color, *entity.attributes, *extra_modifiers):
         if value:
             modifiers.update(_normalized_phrase(value))
     if entity.count is not None:
@@ -1585,6 +1595,95 @@ def _salience_grounded(
     return False
 
 
+def _relation_noun_matches(
+    phrase: tuple[str, ...], entity: SceneSubjectFact | SceneObjectFact
+) -> bool:
+    states = entity.states if isinstance(entity, SceneObjectFact) else ()
+    counts = tuple(value for words in _COUNT_WORDS.values() for value in words)
+    return _passive_noun_matches(
+        phrase, entity, extra_modifiers=(*states, *counts, *(str(n) for n in _COUNT_WORDS))
+    )
+
+
+def _coordinated_relation_targets(
+    tokens: tuple[str, ...],
+    entities: tuple[SceneSubjectFact | SceneObjectFact, ...],
+    *,
+    right: str,
+    right_end: int,
+) -> bool:
+    if "and" not in tokens:
+        return False
+    cuts = [-1, *(i for i, token in enumerate(tokens) if token == "and"), len(tokens)]
+    spans = tuple((left + 1, end) for left, end in zip(cuts[:-1], cuts[1:], strict=True))
+    if not all(
+        any(_relation_noun_matches(tokens[start:end], entity) for entity in entities)
+        for start, end in spans
+    ):
+        return False
+    return any(
+        end == right_end
+        and entity.label == right
+        and _relation_noun_matches(tokens[start:end], entity)
+        for start, end in spans
+        for entity in entities
+    )
+
+
+def _relation_pair_bound(
+    sentence: tuple[str, ...],
+    *,
+    left: str,
+    right: str,
+    left_end: int,
+    marker_start: int,
+    marker_end: int,
+    right_start: int,
+    right_end: int,
+    entity_labels: tuple[str, ...],
+    entities: tuple[SceneSubjectFact | SceneObjectFact, ...],
+) -> bool:
+    if not left_end <= marker_start <= marker_end <= right_start:
+        return False
+    before = sentence[left_end:marker_start]
+    after = sentence[marker_end:right_start]
+    coordinated = _coordinated_relation_targets(
+        sentence[marker_end:], entities, right=right, right_end=right_end - marker_end
+    )
+    direct = any(
+        entity.label == right and _relation_noun_matches(sentence[marker_end:right_end], entity)
+        for entity in entities
+    )
+    if not direct and not coordinated:
+        return False
+    # A later noun is not a target when another clause or predicate intervenes.
+    if (
+        _has_binding_boundary(before)
+        or _NEGATION_MARKERS.intersection(before)
+        or (not coordinated and _has_action_binding_boundary(after))
+    ):
+        return False
+    return not (
+        _has_intervening_entity(
+            sentence,
+            start=left_end,
+            end=marker_start,
+            excluded=(left,),
+            entity_labels=entity_labels,
+        )
+        or (
+            not coordinated
+            and _has_intervening_entity(
+                sentence,
+                start=marker_end,
+                end=right_start,
+                excluded=(right,),
+                entity_labels=entity_labels,
+            )
+        )
+    )
+
+
 def _relationship_grounded(
     relation: SceneRelationKind,
     source: str,
@@ -1593,100 +1692,65 @@ def _relationship_grounded(
     sentences: tuple[tuple[str, ...], ...],
     *,
     entity_labels: tuple[str, ...],
-    target_entity: SceneSubjectFact | SceneObjectFact,
+    entities: tuple[SceneSubjectFact | SceneObjectFact, ...],
+    secondary_entity: SceneSubjectFact | SceneObjectFact | None,
 ) -> bool:
     for sentence in sentences:
         source_positions = _phrase_positions(sentence, source)
         target_positions = _phrase_positions(sentence, target)
-        if not source_positions or not target_positions:
-            continue
         secondary_positions = _phrase_positions(sentence, secondary) if secondary else ()
-        if secondary is not None and not secondary_positions:
-            continue
         for marker in _RELATION_MARKERS[relation]:
-            marker_positions = _token_positions(sentence, marker)
-            for source_start, source_end in source_positions:
-                for target_start, target_end in target_positions:
-                    for marker_start, marker_end in marker_positions:
-                        if _position_negated(sentence, marker_start):
-                            continue
-                        if marker == ("in",) and not _passive_noun_matches(
-                            " ".join(sentence[marker_end:target_end]), target_entity
-                        ):
-                            continue
-                        forward = source_end <= marker_start and marker_end <= target_start
-                        reverse = target_end <= marker_start and marker_end <= source_start
-                        if relation in _SYMMETRIC_RELATIONS:
-                            if forward and not (
-                                _has_binding_boundary(sentence[source_end:marker_start])
-                                or _has_intervening_entity(
-                                    sentence,
-                                    start=source_end,
-                                    end=marker_start,
-                                    excluded=(source, target),
-                                    entity_labels=entity_labels,
-                                )
-                                or _has_intervening_entity(
-                                    sentence,
-                                    start=marker_end,
-                                    end=target_start,
-                                    excluded=(source, target),
-                                    entity_labels=entity_labels,
-                                )
-                            ):
-                                return True
-                            if reverse and not (
-                                _has_binding_boundary(sentence[marker_end:source_start])
-                                or _has_intervening_entity(
-                                    sentence,
-                                    start=target_end,
-                                    end=marker_start,
-                                    excluded=(source, target),
-                                    entity_labels=entity_labels,
-                                )
-                                or _has_intervening_entity(
-                                    sentence,
-                                    start=marker_end,
-                                    end=source_start,
-                                    excluded=(source, target),
-                                    entity_labels=entity_labels,
-                                )
-                            ):
-                                return True
-                            continue
-                        if relation is SceneRelationKind.CONTAINS:
-                            if (
-                                marker == ("contain",)
-                                and forward
-                                and not _has_binding_boundary(sentence[source_end:marker_start])
-                            ):
-                                return True
-                            if (
-                                marker == ("inside",)
-                                and reverse
-                                and not _has_binding_boundary(sentence[marker_end:source_start])
-                            ):
-                                return True
-                            continue
-                        if relation is SceneRelationKind.OWNS and marker == ("belong", "to"):
-                            if reverse:
-                                return True
-                            continue
-                        if not forward:
-                            continue
-                        if _has_binding_boundary(sentence[source_end:marker_start]):
-                            continue
-                        if _has_intervening_entity(
+            for marker_start, marker_end in _token_positions(sentence, marker):
+                if _position_negated(sentence, marker_start):
+                    continue
+                for source_start, source_end in source_positions:
+                    for target_start, target_end in target_positions:
+                        forward = _relation_pair_bound(
                             sentence,
-                            start=source_end,
-                            end=marker_start,
-                            excluded=(source, target, *((secondary,) if secondary else ())),
+                            left=source,
+                            right=target,
+                            left_end=source_end,
+                            marker_start=marker_start,
+                            marker_end=marker_end,
+                            right_start=target_start,
+                            right_end=target_end,
                             entity_labels=entity_labels,
+                            entities=entities,
+                        )
+                        inverse = (
+                            relation in _SYMMETRIC_RELATIONS
+                            or (relation is SceneRelationKind.CONTAINS and marker == ("inside",))
+                            or (relation is SceneRelationKind.OWNS and marker == ("belong", "to"))
+                        )
+                        if inverse and _relation_pair_bound(
+                            sentence,
+                            left=target,
+                            right=source,
+                            left_end=target_end,
+                            marker_start=marker_start,
+                            marker_end=marker_end,
+                            right_start=source_start,
+                            right_end=source_end,
+                            entity_labels=entity_labels,
+                            entities=entities,
+                        ):
+                            return True
+                        if (
+                            not forward
+                            or (relation is SceneRelationKind.CONTAINS and marker == ("inside",))
+                            or (relation is SceneRelationKind.OWNS and marker == ("belong", "to"))
                         ):
                             continue
                         if relation is not SceneRelationKind.BETWEEN:
                             return True
-                        if any(target_end <= start for start, _ in secondary_positions):
+                        if secondary_entity is not None and any(
+                            target_end < start
+                            and sentence[target_end] == "and"
+                            and _relation_noun_matches(
+                                sentence[target_end + 1 : end], secondary_entity
+                            )
+                            for start, end in secondary_positions
+                        ):
                             return True
     return False
 
