@@ -17,7 +17,7 @@ from bookforge.voice_dependencies import (
     static_nominal_head,
 )
 
-REVISION = "dependency-scene-draft-v4"
+REVISION = "dependency-scene-draft-v5"
 RELATIONS = {
     "in": "inside",
     "inside": "inside",
@@ -117,6 +117,9 @@ def graph_from_row(row, visual_style, *, nominal_head_pos=None):
         result["reason"] = "named_actor_or_target"
         return result
     absents = set(draft["absent"])
+    if withheld & absents:
+        result["reason"] = "named_absence"
+        return result
     if actors & absents:
         result["reason"] = "contradictory_absence"
         return result

@@ -263,6 +263,39 @@ def extract(row, *, static_subject=None, location_continuation=None):
         covered.add(index)
     for token in ts:
         index = token["i"]
+        if token["text"].casefold() == "without":
+            targets = [c for c in children[index] if ts[c]["dep"] == "pobj"]
+            span = {index}
+            pending = [index]
+            while pending:
+                current = pending.pop()
+                for child in children[current]:
+                    if child not in span:
+                        span.add(child)
+                        pending.append(child)
+            allowed = {("NOUN", "pobj"), ("NOUN", "compound"),
+                       ("ADJ", "amod"), ("DET", "det")}
+            # An unqualified nominal absence is distinct from a negated action
+            # or an absence attached to one object in a larger scene.
+            if (
+                token["dep"] != "prep"
+                or len(events) != 1
+                or token["head"] != events[0]["token"]
+                or events[0]["object"] is not None
+                or len(targets) != 1
+                or span != set(range(index, max(span) + 1))
+                or any((ts[i]["pos"], ts[i]["dep"]) not in allowed for i in span - {index})
+                or any(ts[i]["dep"] == "det" and ts[i]["text"].casefold()
+                       not in {"a", "an", "any"} for i in span - {index})
+                or any(ts[i]["text"].casefold() in {
+                    "few", "many", "more", "less", "other", "enough", "only", "some",
+                } for i in span - {index})
+            ):
+                issues.append({"kind": "unresolved_absence_scope", "token": index})
+                continue
+            absent.append(noun(targets[0]))
+            covered.update(span)
+            continue
         if token["pos"] in {"NOUN", "PROPN"} and any(
             ts[c]["text"].casefold() == "no" and ts[c]["dep"] == "det" for c in children[index]
         ):

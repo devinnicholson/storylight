@@ -1,0 +1,1362 @@
+{
+  "spacy_version": "3.8.11",
+  "model": "en_core_web_sm",
+  "model_version": "3.8.0",
+  "rows": [
+    {
+      "id": "exact",
+      "text": "A red lobster walks without any notebooks.",
+      "tokens": [
+        {
+          "i": 0,
+          "text": "A",
+          "offset": 0,
+          "lemma": "a",
+          "pos": "DET",
+          "dep": "det",
+          "head": 2
+        },
+        {
+          "i": 1,
+          "text": "red",
+          "offset": 2,
+          "lemma": "red",
+          "pos": "ADJ",
+          "dep": "amod",
+          "head": 2
+        },
+        {
+          "i": 2,
+          "text": "lobster",
+          "offset": 6,
+          "lemma": "lobster",
+          "pos": "NOUN",
+          "dep": "nsubj",
+          "head": 3
+        },
+        {
+          "i": 3,
+          "text": "walks",
+          "offset": 14,
+          "lemma": "walk",
+          "pos": "VERB",
+          "dep": "ROOT",
+          "head": 3
+        },
+        {
+          "i": 4,
+          "text": "without",
+          "offset": 20,
+          "lemma": "without",
+          "pos": "ADP",
+          "dep": "prep",
+          "head": 3
+        },
+        {
+          "i": 5,
+          "text": "any",
+          "offset": 28,
+          "lemma": "any",
+          "pos": "DET",
+          "dep": "det",
+          "head": 6
+        },
+        {
+          "i": 6,
+          "text": "notebooks",
+          "offset": 32,
+          "lemma": "notebook",
+          "pos": "NOUN",
+          "dep": "pobj",
+          "head": 4
+        },
+        {
+          "i": 7,
+          "text": ".",
+          "offset": 41,
+          "lemma": ".",
+          "pos": "PUNCT",
+          "dep": "punct",
+          "head": 3
+        }
+      ],
+      "entities": []
+    },
+    {
+      "id": "bare",
+      "text": "A dog runs without hats.",
+      "tokens": [
+        {
+          "i": 0,
+          "text": "A",
+          "offset": 0,
+          "lemma": "a",
+          "pos": "DET",
+          "dep": "det",
+          "head": 1
+        },
+        {
+          "i": 1,
+          "text": "dog",
+          "offset": 2,
+          "lemma": "dog",
+          "pos": "NOUN",
+          "dep": "nsubj",
+          "head": 2
+        },
+        {
+          "i": 2,
+          "text": "runs",
+          "offset": 6,
+          "lemma": "run",
+          "pos": "VERB",
+          "dep": "ROOT",
+          "head": 2
+        },
+        {
+          "i": 3,
+          "text": "without",
+          "offset": 11,
+          "lemma": "without",
+          "pos": "ADP",
+          "dep": "prep",
+          "head": 2
+        },
+        {
+          "i": 4,
+          "text": "hats",
+          "offset": 19,
+          "lemma": "hat",
+          "pos": "NOUN",
+          "dep": "pobj",
+          "head": 3
+        },
+        {
+          "i": 5,
+          "text": ".",
+          "offset": 23,
+          "lemma": ".",
+          "pos": "PUNCT",
+          "dep": "punct",
+          "head": 2
+        }
+      ],
+      "entities": []
+    },
+    {
+      "id": "compound",
+      "text": "A cat walks without any paper cups.",
+      "tokens": [
+        {
+          "i": 0,
+          "text": "A",
+          "offset": 0,
+          "lemma": "a",
+          "pos": "DET",
+          "dep": "det",
+          "head": 1
+        },
+        {
+          "i": 1,
+          "text": "cat",
+          "offset": 2,
+          "lemma": "cat",
+          "pos": "NOUN",
+          "dep": "nsubj",
+          "head": 2
+        },
+        {
+          "i": 2,
+          "text": "walks",
+          "offset": 6,
+          "lemma": "walk",
+          "pos": "VERB",
+          "dep": "ROOT",
+          "head": 2
+        },
+        {
+          "i": 3,
+          "text": "without",
+          "offset": 12,
+          "lemma": "without",
+          "pos": "ADP",
+          "dep": "prep",
+          "head": 2
+        },
+        {
+          "i": 4,
+          "text": "any",
+          "offset": 20,
+          "lemma": "any",
+          "pos": "DET",
+          "dep": "det",
+          "head": 6
+        },
+        {
+          "i": 5,
+          "text": "paper",
+          "offset": 24,
+          "lemma": "paper",
+          "pos": "NOUN",
+          "dep": "compound",
+          "head": 6
+        },
+        {
+          "i": 6,
+          "text": "cups",
+          "offset": 30,
+          "lemma": "cup",
+          "pos": "NOUN",
+          "dep": "pobj",
+          "head": 3
+        },
+        {
+          "i": 7,
+          "text": ".",
+          "offset": 34,
+          "lemma": ".",
+          "pos": "PUNCT",
+          "dep": "punct",
+          "head": 2
+        }
+      ],
+      "entities": []
+    },
+    {
+      "id": "color",
+      "text": "A horse walks without red ribbons.",
+      "tokens": [
+        {
+          "i": 0,
+          "text": "A",
+          "offset": 0,
+          "lemma": "a",
+          "pos": "DET",
+          "dep": "det",
+          "head": 1
+        },
+        {
+          "i": 1,
+          "text": "horse",
+          "offset": 2,
+          "lemma": "horse",
+          "pos": "NOUN",
+          "dep": "nsubj",
+          "head": 2
+        },
+        {
+          "i": 2,
+          "text": "walks",
+          "offset": 8,
+          "lemma": "walk",
+          "pos": "VERB",
+          "dep": "ROOT",
+          "head": 2
+        },
+        {
+          "i": 3,
+          "text": "without",
+          "offset": 14,
+          "lemma": "without",
+          "pos": "ADP",
+          "dep": "prep",
+          "head": 2
+        },
+        {
+          "i": 4,
+          "text": "red",
+          "offset": 22,
+          "lemma": "red",
+          "pos": "ADJ",
+          "dep": "amod",
+          "head": 5
+        },
+        {
+          "i": 5,
+          "text": "ribbons",
+          "offset": 26,
+          "lemma": "ribbon",
+          "pos": "NOUN",
+          "dep": "pobj",
+          "head": 3
+        },
+        {
+          "i": 6,
+          "text": ".",
+          "offset": 33,
+          "lemma": ".",
+          "pos": "PUNCT",
+          "dep": "punct",
+          "head": 2
+        }
+      ],
+      "entities": []
+    },
+    {
+      "id": "setting",
+      "text": "A cat walks without hats in a field.",
+      "tokens": [
+        {
+          "i": 0,
+          "text": "A",
+          "offset": 0,
+          "lemma": "a",
+          "pos": "DET",
+          "dep": "det",
+          "head": 1
+        },
+        {
+          "i": 1,
+          "text": "cat",
+          "offset": 2,
+          "lemma": "cat",
+          "pos": "NOUN",
+          "dep": "nsubj",
+          "head": 2
+        },
+        {
+          "i": 2,
+          "text": "walks",
+          "offset": 6,
+          "lemma": "walk",
+          "pos": "VERB",
+          "dep": "ROOT",
+          "head": 2
+        },
+        {
+          "i": 3,
+          "text": "without",
+          "offset": 12,
+          "lemma": "without",
+          "pos": "ADP",
+          "dep": "prep",
+          "head": 2
+        },
+        {
+          "i": 4,
+          "text": "hats",
+          "offset": 20,
+          "lemma": "hat",
+          "pos": "NOUN",
+          "dep": "pobj",
+          "head": 3
+        },
+        {
+          "i": 5,
+          "text": "in",
+          "offset": 25,
+          "lemma": "in",
+          "pos": "ADP",
+          "dep": "prep",
+          "head": 2
+        },
+        {
+          "i": 6,
+          "text": "a",
+          "offset": 28,
+          "lemma": "a",
+          "pos": "DET",
+          "dep": "det",
+          "head": 7
+        },
+        {
+          "i": 7,
+          "text": "field",
+          "offset": 30,
+          "lemma": "field",
+          "pos": "NOUN",
+          "dep": "pobj",
+          "head": 5
+        },
+        {
+          "i": 8,
+          "text": ".",
+          "offset": 35,
+          "lemma": ".",
+          "pos": "PUNCT",
+          "dep": "punct",
+          "head": 2
+        }
+      ],
+      "entities": []
+    },
+    {
+      "id": "positive",
+      "text": "A cat walks with hats.",
+      "tokens": [
+        {
+          "i": 0,
+          "text": "A",
+          "offset": 0,
+          "lemma": "a",
+          "pos": "DET",
+          "dep": "det",
+          "head": 1
+        },
+        {
+          "i": 1,
+          "text": "cat",
+          "offset": 2,
+          "lemma": "cat",
+          "pos": "NOUN",
+          "dep": "nsubj",
+          "head": 2
+        },
+        {
+          "i": 2,
+          "text": "walks",
+          "offset": 6,
+          "lemma": "walk",
+          "pos": "VERB",
+          "dep": "ROOT",
+          "head": 2
+        },
+        {
+          "i": 3,
+          "text": "with",
+          "offset": 12,
+          "lemma": "with",
+          "pos": "ADP",
+          "dep": "prep",
+          "head": 2
+        },
+        {
+          "i": 4,
+          "text": "hats",
+          "offset": 17,
+          "lemma": "hat",
+          "pos": "NOUN",
+          "dep": "pobj",
+          "head": 3
+        },
+        {
+          "i": 5,
+          "text": ".",
+          "offset": 21,
+          "lemma": ".",
+          "pos": "PUNCT",
+          "dep": "punct",
+          "head": 2
+        }
+      ],
+      "entities": []
+    },
+    {
+      "id": "nested",
+      "text": "A cat walks without hats on dogs.",
+      "tokens": [
+        {
+          "i": 0,
+          "text": "A",
+          "offset": 0,
+          "lemma": "a",
+          "pos": "DET",
+          "dep": "det",
+          "head": 1
+        },
+        {
+          "i": 1,
+          "text": "cat",
+          "offset": 2,
+          "lemma": "cat",
+          "pos": "NOUN",
+          "dep": "nsubj",
+          "head": 2
+        },
+        {
+          "i": 2,
+          "text": "walks",
+          "offset": 6,
+          "lemma": "walk",
+          "pos": "VERB",
+          "dep": "ROOT",
+          "head": 2
+        },
+        {
+          "i": 3,
+          "text": "without",
+          "offset": 12,
+          "lemma": "without",
+          "pos": "ADP",
+          "dep": "prep",
+          "head": 2
+        },
+        {
+          "i": 4,
+          "text": "hats",
+          "offset": 20,
+          "lemma": "hat",
+          "pos": "NOUN",
+          "dep": "pobj",
+          "head": 3
+        },
+        {
+          "i": 5,
+          "text": "on",
+          "offset": 25,
+          "lemma": "on",
+          "pos": "ADP",
+          "dep": "prep",
+          "head": 2
+        },
+        {
+          "i": 6,
+          "text": "dogs",
+          "offset": 28,
+          "lemma": "dog",
+          "pos": "NOUN",
+          "dep": "pobj",
+          "head": 5
+        },
+        {
+          "i": 7,
+          "text": ".",
+          "offset": 32,
+          "lemma": ".",
+          "pos": "PUNCT",
+          "dep": "punct",
+          "head": 2
+        }
+      ],
+      "entities": []
+    },
+    {
+      "id": "verb",
+      "text": "A cat walks without carrying books.",
+      "tokens": [
+        {
+          "i": 0,
+          "text": "A",
+          "offset": 0,
+          "lemma": "a",
+          "pos": "DET",
+          "dep": "det",
+          "head": 1
+        },
+        {
+          "i": 1,
+          "text": "cat",
+          "offset": 2,
+          "lemma": "cat",
+          "pos": "NOUN",
+          "dep": "nsubj",
+          "head": 2
+        },
+        {
+          "i": 2,
+          "text": "walks",
+          "offset": 6,
+          "lemma": "walk",
+          "pos": "VERB",
+          "dep": "ROOT",
+          "head": 2
+        },
+        {
+          "i": 3,
+          "text": "without",
+          "offset": 12,
+          "lemma": "without",
+          "pos": "ADP",
+          "dep": "prep",
+          "head": 2
+        },
+        {
+          "i": 4,
+          "text": "carrying",
+          "offset": 20,
+          "lemma": "carry",
+          "pos": "VERB",
+          "dep": "pcomp",
+          "head": 3
+        },
+        {
+          "i": 5,
+          "text": "books",
+          "offset": 29,
+          "lemma": "book",
+          "pos": "NOUN",
+          "dep": "dobj",
+          "head": 4
+        },
+        {
+          "i": 6,
+          "text": ".",
+          "offset": 34,
+          "lemma": ".",
+          "pos": "PUNCT",
+          "dep": "punct",
+          "head": 2
+        }
+      ],
+      "entities": []
+    },
+    {
+      "id": "named",
+      "text": "A cat walks without Beatrice.",
+      "tokens": [
+        {
+          "i": 0,
+          "text": "A",
+          "offset": 0,
+          "lemma": "a",
+          "pos": "DET",
+          "dep": "det",
+          "head": 1
+        },
+        {
+          "i": 1,
+          "text": "cat",
+          "offset": 2,
+          "lemma": "cat",
+          "pos": "NOUN",
+          "dep": "nsubj",
+          "head": 2
+        },
+        {
+          "i": 2,
+          "text": "walks",
+          "offset": 6,
+          "lemma": "walk",
+          "pos": "VERB",
+          "dep": "ROOT",
+          "head": 2
+        },
+        {
+          "i": 3,
+          "text": "without",
+          "offset": 12,
+          "lemma": "without",
+          "pos": "ADP",
+          "dep": "prep",
+          "head": 2
+        },
+        {
+          "i": 4,
+          "text": "Beatrice",
+          "offset": 20,
+          "lemma": "Beatrice",
+          "pos": "PROPN",
+          "dep": "pobj",
+          "head": 3
+        },
+        {
+          "i": 5,
+          "text": ".",
+          "offset": 28,
+          "lemma": ".",
+          "pos": "PUNCT",
+          "dep": "punct",
+          "head": 2
+        }
+      ],
+      "entities": [
+        {
+          "text": "Beatrice",
+          "label": "ORG",
+          "start": 4,
+          "end": 5
+        }
+      ]
+    },
+    {
+      "id": "possessive",
+      "text": "A cat walks without her notebook.",
+      "tokens": [
+        {
+          "i": 0,
+          "text": "A",
+          "offset": 0,
+          "lemma": "a",
+          "pos": "DET",
+          "dep": "det",
+          "head": 1
+        },
+        {
+          "i": 1,
+          "text": "cat",
+          "offset": 2,
+          "lemma": "cat",
+          "pos": "NOUN",
+          "dep": "nsubj",
+          "head": 2
+        },
+        {
+          "i": 2,
+          "text": "walks",
+          "offset": 6,
+          "lemma": "walk",
+          "pos": "VERB",
+          "dep": "ROOT",
+          "head": 2
+        },
+        {
+          "i": 3,
+          "text": "without",
+          "offset": 12,
+          "lemma": "without",
+          "pos": "ADP",
+          "dep": "prep",
+          "head": 2
+        },
+        {
+          "i": 4,
+          "text": "her",
+          "offset": 20,
+          "lemma": "her",
+          "pos": "PRON",
+          "dep": "poss",
+          "head": 5
+        },
+        {
+          "i": 5,
+          "text": "notebook",
+          "offset": 24,
+          "lemma": "notebook",
+          "pos": "NOUN",
+          "dep": "pobj",
+          "head": 3
+        },
+        {
+          "i": 6,
+          "text": ".",
+          "offset": 32,
+          "lemma": ".",
+          "pos": "PUNCT",
+          "dep": "punct",
+          "head": 2
+        }
+      ],
+      "entities": []
+    },
+    {
+      "id": "partial",
+      "text": "A cat walks without any",
+      "tokens": [
+        {
+          "i": 0,
+          "text": "A",
+          "offset": 0,
+          "lemma": "a",
+          "pos": "DET",
+          "dep": "det",
+          "head": 1
+        },
+        {
+          "i": 1,
+          "text": "cat",
+          "offset": 2,
+          "lemma": "cat",
+          "pos": "NOUN",
+          "dep": "nsubj",
+          "head": 2
+        },
+        {
+          "i": 2,
+          "text": "walks",
+          "offset": 6,
+          "lemma": "walk",
+          "pos": "VERB",
+          "dep": "ROOT",
+          "head": 2
+        },
+        {
+          "i": 3,
+          "text": "without",
+          "offset": 12,
+          "lemma": "without",
+          "pos": "ADP",
+          "dep": "prep",
+          "head": 2
+        },
+        {
+          "i": 4,
+          "text": "any",
+          "offset": 20,
+          "lemma": "any",
+          "pos": "PRON",
+          "dep": "pobj",
+          "head": 3
+        }
+      ],
+      "entities": []
+    },
+    {
+      "id": "and",
+      "text": "A cat walks without hats and bags.",
+      "tokens": [
+        {
+          "i": 0,
+          "text": "A",
+          "offset": 0,
+          "lemma": "a",
+          "pos": "DET",
+          "dep": "det",
+          "head": 1
+        },
+        {
+          "i": 1,
+          "text": "cat",
+          "offset": 2,
+          "lemma": "cat",
+          "pos": "NOUN",
+          "dep": "nsubj",
+          "head": 2
+        },
+        {
+          "i": 2,
+          "text": "walks",
+          "offset": 6,
+          "lemma": "walk",
+          "pos": "VERB",
+          "dep": "ROOT",
+          "head": 2
+        },
+        {
+          "i": 3,
+          "text": "without",
+          "offset": 12,
+          "lemma": "without",
+          "pos": "ADP",
+          "dep": "prep",
+          "head": 2
+        },
+        {
+          "i": 4,
+          "text": "hats",
+          "offset": 20,
+          "lemma": "hat",
+          "pos": "NOUN",
+          "dep": "pobj",
+          "head": 3
+        },
+        {
+          "i": 5,
+          "text": "and",
+          "offset": 25,
+          "lemma": "and",
+          "pos": "CCONJ",
+          "dep": "cc",
+          "head": 4
+        },
+        {
+          "i": 6,
+          "text": "bags",
+          "offset": 29,
+          "lemma": "bag",
+          "pos": "NOUN",
+          "dep": "conj",
+          "head": 4
+        },
+        {
+          "i": 7,
+          "text": ".",
+          "offset": 33,
+          "lemma": ".",
+          "pos": "PUNCT",
+          "dep": "punct",
+          "head": 2
+        }
+      ],
+      "entities": []
+    },
+    {
+      "id": "or",
+      "text": "A cat walks without hats or bags.",
+      "tokens": [
+        {
+          "i": 0,
+          "text": "A",
+          "offset": 0,
+          "lemma": "a",
+          "pos": "DET",
+          "dep": "det",
+          "head": 1
+        },
+        {
+          "i": 1,
+          "text": "cat",
+          "offset": 2,
+          "lemma": "cat",
+          "pos": "NOUN",
+          "dep": "nsubj",
+          "head": 2
+        },
+        {
+          "i": 2,
+          "text": "walks",
+          "offset": 6,
+          "lemma": "walk",
+          "pos": "VERB",
+          "dep": "ROOT",
+          "head": 2
+        },
+        {
+          "i": 3,
+          "text": "without",
+          "offset": 12,
+          "lemma": "without",
+          "pos": "ADP",
+          "dep": "prep",
+          "head": 2
+        },
+        {
+          "i": 4,
+          "text": "hats",
+          "offset": 20,
+          "lemma": "hat",
+          "pos": "NOUN",
+          "dep": "pobj",
+          "head": 3
+        },
+        {
+          "i": 5,
+          "text": "or",
+          "offset": 25,
+          "lemma": "or",
+          "pos": "CCONJ",
+          "dep": "cc",
+          "head": 4
+        },
+        {
+          "i": 6,
+          "text": "bags",
+          "offset": 28,
+          "lemma": "bag",
+          "pos": "NOUN",
+          "dep": "conj",
+          "head": 4
+        },
+        {
+          "i": 7,
+          "text": ".",
+          "offset": 32,
+          "lemma": ".",
+          "pos": "PUNCT",
+          "dep": "punct",
+          "head": 2
+        }
+      ],
+      "entities": []
+    },
+    {
+      "id": "count",
+      "text": "A cat walks without two hats.",
+      "tokens": [
+        {
+          "i": 0,
+          "text": "A",
+          "offset": 0,
+          "lemma": "a",
+          "pos": "DET",
+          "dep": "det",
+          "head": 1
+        },
+        {
+          "i": 1,
+          "text": "cat",
+          "offset": 2,
+          "lemma": "cat",
+          "pos": "NOUN",
+          "dep": "nsubj",
+          "head": 2
+        },
+        {
+          "i": 2,
+          "text": "walks",
+          "offset": 6,
+          "lemma": "walk",
+          "pos": "VERB",
+          "dep": "ROOT",
+          "head": 2
+        },
+        {
+          "i": 3,
+          "text": "without",
+          "offset": 12,
+          "lemma": "without",
+          "pos": "ADP",
+          "dep": "prep",
+          "head": 2
+        },
+        {
+          "i": 4,
+          "text": "two",
+          "offset": 20,
+          "lemma": "two",
+          "pos": "NUM",
+          "dep": "nummod",
+          "head": 5
+        },
+        {
+          "i": 5,
+          "text": "hats",
+          "offset": 24,
+          "lemma": "hat",
+          "pos": "NOUN",
+          "dep": "pobj",
+          "head": 3
+        },
+        {
+          "i": 6,
+          "text": ".",
+          "offset": 28,
+          "lemma": ".",
+          "pos": "PUNCT",
+          "dep": "punct",
+          "head": 2
+        }
+      ],
+      "entities": [
+        {
+          "text": "two",
+          "label": "CARDINAL",
+          "start": 4,
+          "end": 5
+        }
+      ]
+    },
+    {
+      "id": "qualifier",
+      "text": "A cat walks without enough hats.",
+      "tokens": [
+        {
+          "i": 0,
+          "text": "A",
+          "offset": 0,
+          "lemma": "a",
+          "pos": "DET",
+          "dep": "det",
+          "head": 1
+        },
+        {
+          "i": 1,
+          "text": "cat",
+          "offset": 2,
+          "lemma": "cat",
+          "pos": "NOUN",
+          "dep": "nsubj",
+          "head": 2
+        },
+        {
+          "i": 2,
+          "text": "walks",
+          "offset": 6,
+          "lemma": "walk",
+          "pos": "VERB",
+          "dep": "ROOT",
+          "head": 2
+        },
+        {
+          "i": 3,
+          "text": "without",
+          "offset": 12,
+          "lemma": "without",
+          "pos": "ADP",
+          "dep": "prep",
+          "head": 2
+        },
+        {
+          "i": 4,
+          "text": "enough",
+          "offset": 20,
+          "lemma": "enough",
+          "pos": "ADJ",
+          "dep": "amod",
+          "head": 5
+        },
+        {
+          "i": 5,
+          "text": "hats",
+          "offset": 27,
+          "lemma": "hat",
+          "pos": "NOUN",
+          "dep": "pobj",
+          "head": 3
+        },
+        {
+          "i": 6,
+          "text": ".",
+          "offset": 31,
+          "lemma": ".",
+          "pos": "PUNCT",
+          "dep": "punct",
+          "head": 2
+        }
+      ],
+      "entities": []
+    },
+    {
+      "id": "multi",
+      "text": "A cat walks without hats while a dog carries hats.",
+      "tokens": [
+        {
+          "i": 0,
+          "text": "A",
+          "offset": 0,
+          "lemma": "a",
+          "pos": "DET",
+          "dep": "det",
+          "head": 1
+        },
+        {
+          "i": 1,
+          "text": "cat",
+          "offset": 2,
+          "lemma": "cat",
+          "pos": "NOUN",
+          "dep": "nsubj",
+          "head": 2
+        },
+        {
+          "i": 2,
+          "text": "walks",
+          "offset": 6,
+          "lemma": "walk",
+          "pos": "VERB",
+          "dep": "ROOT",
+          "head": 2
+        },
+        {
+          "i": 3,
+          "text": "without",
+          "offset": 12,
+          "lemma": "without",
+          "pos": "ADP",
+          "dep": "prep",
+          "head": 2
+        },
+        {
+          "i": 4,
+          "text": "hats",
+          "offset": 20,
+          "lemma": "hat",
+          "pos": "NOUN",
+          "dep": "pobj",
+          "head": 3
+        },
+        {
+          "i": 5,
+          "text": "while",
+          "offset": 25,
+          "lemma": "while",
+          "pos": "SCONJ",
+          "dep": "mark",
+          "head": 8
+        },
+        {
+          "i": 6,
+          "text": "a",
+          "offset": 31,
+          "lemma": "a",
+          "pos": "DET",
+          "dep": "det",
+          "head": 7
+        },
+        {
+          "i": 7,
+          "text": "dog",
+          "offset": 33,
+          "lemma": "dog",
+          "pos": "NOUN",
+          "dep": "nsubj",
+          "head": 8
+        },
+        {
+          "i": 8,
+          "text": "carries",
+          "offset": 37,
+          "lemma": "carry",
+          "pos": "VERB",
+          "dep": "advcl",
+          "head": 2
+        },
+        {
+          "i": 9,
+          "text": "hats",
+          "offset": 45,
+          "lemma": "hat",
+          "pos": "NOUN",
+          "dep": "dobj",
+          "head": 8
+        },
+        {
+          "i": 10,
+          "text": ".",
+          "offset": 49,
+          "lemma": ".",
+          "pos": "PUNCT",
+          "dep": "punct",
+          "head": 2
+        }
+      ],
+      "entities": []
+    },
+    {
+      "id": "attachment",
+      "text": "A cat carries a box without a lid.",
+      "tokens": [
+        {
+          "i": 0,
+          "text": "A",
+          "offset": 0,
+          "lemma": "a",
+          "pos": "DET",
+          "dep": "det",
+          "head": 1
+        },
+        {
+          "i": 1,
+          "text": "cat",
+          "offset": 2,
+          "lemma": "cat",
+          "pos": "NOUN",
+          "dep": "nsubj",
+          "head": 2
+        },
+        {
+          "i": 2,
+          "text": "carries",
+          "offset": 6,
+          "lemma": "carry",
+          "pos": "VERB",
+          "dep": "ROOT",
+          "head": 2
+        },
+        {
+          "i": 3,
+          "text": "a",
+          "offset": 14,
+          "lemma": "a",
+          "pos": "DET",
+          "dep": "det",
+          "head": 4
+        },
+        {
+          "i": 4,
+          "text": "box",
+          "offset": 16,
+          "lemma": "box",
+          "pos": "NOUN",
+          "dep": "dobj",
+          "head": 2
+        },
+        {
+          "i": 5,
+          "text": "without",
+          "offset": 20,
+          "lemma": "without",
+          "pos": "ADP",
+          "dep": "prep",
+          "head": 2
+        },
+        {
+          "i": 6,
+          "text": "a",
+          "offset": 28,
+          "lemma": "a",
+          "pos": "DET",
+          "dep": "det",
+          "head": 7
+        },
+        {
+          "i": 7,
+          "text": "lid",
+          "offset": 30,
+          "lemma": "lid",
+          "pos": "NOUN",
+          "dep": "pobj",
+          "head": 5
+        },
+        {
+          "i": 8,
+          "text": ".",
+          "offset": 33,
+          "lemma": ".",
+          "pos": "PUNCT",
+          "dep": "punct",
+          "head": 2
+        }
+      ],
+      "entities": []
+    },
+    {
+      "id": "negative",
+      "text": "A cat does not walk without hats.",
+      "tokens": [
+        {
+          "i": 0,
+          "text": "A",
+          "offset": 0,
+          "lemma": "a",
+          "pos": "DET",
+          "dep": "det",
+          "head": 1
+        },
+        {
+          "i": 1,
+          "text": "cat",
+          "offset": 2,
+          "lemma": "cat",
+          "pos": "NOUN",
+          "dep": "nsubj",
+          "head": 4
+        },
+        {
+          "i": 2,
+          "text": "does",
+          "offset": 6,
+          "lemma": "do",
+          "pos": "AUX",
+          "dep": "aux",
+          "head": 4
+        },
+        {
+          "i": 3,
+          "text": "not",
+          "offset": 11,
+          "lemma": "not",
+          "pos": "PART",
+          "dep": "neg",
+          "head": 4
+        },
+        {
+          "i": 4,
+          "text": "walk",
+          "offset": 15,
+          "lemma": "walk",
+          "pos": "VERB",
+          "dep": "ROOT",
+          "head": 4
+        },
+        {
+          "i": 5,
+          "text": "without",
+          "offset": 20,
+          "lemma": "without",
+          "pos": "ADP",
+          "dep": "prep",
+          "head": 4
+        },
+        {
+          "i": 6,
+          "text": "hats",
+          "offset": 28,
+          "lemma": "hat",
+          "pos": "NOUN",
+          "dep": "pobj",
+          "head": 5
+        },
+        {
+          "i": 7,
+          "text": ".",
+          "offset": 32,
+          "lemma": ".",
+          "pos": "PUNCT",
+          "dep": "punct",
+          "head": 4
+        }
+      ],
+      "entities": []
+    }
+  ]
+}
