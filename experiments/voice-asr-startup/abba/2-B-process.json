@@ -1,0 +1,9 @@
+{
+  "pid": 12467,
+  "exit_code": 0,
+  "process_wall_seconds": 3.554803458042443,
+  "reaped": true,
+  "failure_type": null,
+  "stdout_sha256": "c36a8c790d42a3890aff3f43f1675f45da148823269f4aac4856f10b1cfbd4d9",
+  "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+}

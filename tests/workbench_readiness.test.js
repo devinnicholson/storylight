@@ -172,9 +172,118 @@ async function generateDoesNotWaitForBackgroundPlannerWarmup() {
   assert.equal(context.edgePlannerWarmUntil, context.EDGE_PLANNER_KEEP_WARM_MS);
 }
 
+function sessionStreamHarness() {
+  const streams = [];
+  const pointers = [];
+  const timing = [];
+  let polls = 0;
+  const context = {
+    readerSessionId: "synthetic-reader", liveSessionEventSource: null,
+    liveSessionStreamHealthy: false, livePollTimer: 17,
+    voiceMode: true, recordingEpoch: 3, pendingSubmission: null,
+    elements: {interim: {textContent: "Scene ready."}},
+    window: {clearTimeout() {}},
+    voiceTimingEvent(type, _details, epoch) { timing.push({type, epoch}); },
+    startLivePollingFallback() { polls += 1; },
+    handleLiveSceneSessionPointer(pointer) {
+      pointers.push(pointer);
+      return false; // Same-revision snapshots deliberately leave status unchanged.
+    },
+    EventSource: class {
+      constructor() { this.listeners = {}; streams.push(this); }
+      addEventListener(type, callback) { this.listeners[type] = callback; }
+      close() { this.closed = true; }
+      emit(type, event = {}) { this.listeners[type](event); }
+    },
+  };
+  vm.createContext(context);
+  const source = fs.readFileSync("src/bookforge/static/workbench.js", "utf8");
+  vm.runInContext(source.slice(
+    source.indexOf("function connectLiveSceneSessionEvents("), source.indexOf("function renderPack("),
+  ), context);
+  return {context, streams, pointers, timing, polls: () => polls,
+    update: {data: JSON.stringify({
+      session_id: "synthetic-reader", server_instance_id: `server_${"a".repeat(32)}`,
+      session_revision: 1, job: {job_id: "scene-current", request: {session_id: "synthetic-reader"}},
+    })}};
+}
+
+function sessionStreamRecoveryRestoresOnlyItsOwnWarning() {
+  const app = sessionStreamHarness();
+  app.context.connectLiveSceneSessionEvents();
+  const stream = app.streams[0];
+  stream.emit("scene.session", app.update);
+  stream.emit("error");
+  stream.emit("error");
+  assert.match(app.context.elements.interim.textContent, /reconnecting/);
+  assert.equal(app.context.liveSessionStreamHealthy, false);
+  stream.emit("scene.session", app.update);
+  assert.equal(app.context.elements.interim.textContent, "Scene ready.");
+  assert.equal(app.context.liveSessionStreamHealthy, true);
+  assert.equal(app.context.livePollTimer, null);
+  assert.equal(app.pointers.length, 2);
+  assert.deepEqual(app.timing, [
+    {type: "session_stream_disconnected", epoch: 3},
+    {type: "session_stream_recovered", epoch: 3},
+  ]);
+
+  for (const newerStatus of ["Recognized: a red balloon.", "Description needs another detail."]) {
+    stream.emit("error");
+    app.context.elements.interim.textContent = newerStatus;
+    stream.emit("error");
+    assert.equal(app.context.elements.interim.textContent, newerStatus);
+    stream.emit("message", app.update);
+    assert.equal(app.context.elements.interim.textContent, newerStatus);
+    assert.equal(app.context.liveSessionStreamHealthy, true);
+  }
+}
+
+function supersededSessionStreamCannotParseOrChangeStatus() {
+  const app = sessionStreamHarness();
+  app.context.connectLiveSceneSessionEvents();
+  const old = app.streams[0];
+  app.context.connectLiveSceneSessionEvents();
+  assert.equal(old.closed, true);
+  app.streams[1].emit("scene.session", app.update);
+  old.emit("scene.session", {get data() { throw new Error("stale payload was read"); }});
+  old.emit("message", app.update);
+  old.emit("error");
+  assert.equal(app.pointers.length, 1);
+  assert.equal(app.context.liveSessionStreamHealthy, true);
+  assert.equal(app.context.elements.interim.textContent, "Scene ready.");
+  assert.equal(app.polls(), 0);
+  assert.deepEqual(app.timing, []);
+
+  app.streams[1].emit("message", {data: "invalid JSON"});
+  assert.equal(app.context.liveSessionStreamHealthy, false);
+  assert.match(app.context.elements.interim.textContent, /invalid session update/);
+  app.streams[1].emit("message", app.update);
+  assert.equal(app.context.elements.interim.textContent, "Scene ready.");
+
+  for (const invalid of [
+    {}, {...JSON.parse(app.update.data), session_id: "another-session"},
+    {...JSON.parse(app.update.data), session_revision: "1"},
+    {...JSON.parse(app.update.data), server_instance_id: "invalid"},
+    {...JSON.parse(app.update.data), job: null},
+  ]) {
+    const before = app.pointers.length;
+    app.streams[1].emit("message", {data: JSON.stringify(invalid)});
+    assert.equal(app.context.liveSessionStreamHealthy, false);
+    assert.equal(app.pointers.length, before);
+    assert.match(app.context.elements.interim.textContent, /invalid session update/);
+  }
+  app.streams[1].emit("scene.session", {data: JSON.stringify({
+    ...JSON.parse(app.update.data), session_revision: 0, job: null,
+  })});
+  assert.equal(app.context.liveSessionStreamHealthy, true);
+  assert.equal(app.context.elements.interim.textContent, "Scene ready.");
+}
+
 (async () => {
   await slowPlannerPreservesRendererExpiry();
   await warmReuseDoesNotPrewarmOrExtendExpiry();
   await generateDoesNotWaitForBackgroundPlannerWarmup();
+  sessionStreamRecoveryRestoresOnlyItsOwnWarning();
+  supersededSessionStreamCannotParseOrChangeStatus();
   console.log("Workbench readiness: expiry preserved; Generate does not await background warmup.");
 })().catch((error) => { console.error(error); process.exitCode = 1; });

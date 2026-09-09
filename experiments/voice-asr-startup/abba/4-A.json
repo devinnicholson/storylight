@@ -1,0 +1,21 @@
+{
+  "arm": "A",
+  "pid": 12525,
+  "records": [
+    {
+      "role": "target",
+      "audio_sha256": "54c6702bdac9ec9dd5e65aac00a8bcb8217c7dca15233635d9322fd4db31eed5",
+      "audio_bytes": 19513,
+      "model_loaded_before": false,
+      "total_ms": 3233.82,
+      "call_wall_seconds": 3.2351292916573584,
+      "text": "A cat chasing a mouse.",
+      "language": "en"
+    }
+  ],
+  "setup_seconds": 0.1283016251400113,
+  "worker_wall_seconds": 3.363500792067498,
+  "peak_rss_bytes_macos": 907460608,
+  "queue_contenders": 0,
+  "network_forbidden": true
+}

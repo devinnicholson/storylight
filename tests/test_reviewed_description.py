@@ -211,6 +211,34 @@ def test_reviewed_rejection_precedes_renderer_preview_prewarm_and_model_cache(
         state.adapter.provider = original
 
 
+def test_unfinished_words_and_corrections_stop_before_parser_or_render(api_client, monkeypatch):
+    state = api_client
+    previous = create(state.client, text="A rhino runs.")
+    pointer = state.client.get("/v1/live-scene-sessions/reviewed-test").json()
+    assert previous["complete"]
+    socket = Path("/tmp/bookforge-test-scene-parser.sock")
+    app.state.settings.reviewed_scene_parser_socket = socket
+    state.adapter.reviewed_scene_parser_socket = socket
+
+    async def forbidden(*args, **kwargs):
+        raise AssertionError("unfinished source must stop before parser or image submission")
+
+    monkeypatch.setattr("bookforge.reviewed_description._parser_request", forbidden)
+    monkeypatch.setattr(app.state.live_scenes, "submit", forbidden)
+    for text in (
+        "A cat chasing a ma-", "A fox carrying a lan‐", "A bird flying—",
+        "A cat chasing a mouse. No.", "A dog runs! NO", "No!",
+    ):
+        payload = dict(text=text, visual_style="watercolor", session_id="reviewed-test",
+                       reviewed_description=True)
+        for route in ("/v1/live-scene-planner/prepare", "/v1/live-scenes"):
+            response = state.client.post(route, json=payload)
+            assert response.status_code == 422
+            assert text not in response.text
+        assert state.client.get("/v1/live-scene-sessions/reviewed-test").json() == pointer
+    assert len(state.renderer.calls) == 1
+
+
 def test_completed_old_mode_and_model_cache_cannot_shadow_reviewed_mode(api_client, monkeypatch):
     state = api_client
     first = create(state.client)

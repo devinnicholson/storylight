@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import hashlib
 import json
+import re
 from collections import Counter
 from dataclasses import dataclass
 from pathlib import Path
@@ -110,6 +111,8 @@ async def review_description(
     text: str, visual_style: str, seed: int, *, parser_socket: Path | None = None,
 ) -> ReviewedDescription:
     started = perf_counter()
+    if re.search(r"\w[-‐‑–—]\s*$|(?:^|[.!?]\s*)no[.!?]?\s*$", text, re.IGNORECASE):
+        raise LiveScenePlannerError("Finish the word or correction before generating")
     try:
         bounded = plan_bounded_description(text, visual_style, seed)
     except LiveScenePlannerError:

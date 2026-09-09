@@ -1,0 +1,24 @@
+{
+  "tag": "checkpoints/best-demo-2026-09-08",
+  "temporary_port": 18769,
+  "production_gateway_restarted": false,
+  "image_requests": 0,
+  "verified": [
+    {
+      "route": "/workbench?voice=1",
+      "status": 200,
+      "sha256": "8a75adbf359e4bbace06b14ab5ddb22906da5ef4585d19d7e6b4670ce4a32607"
+    },
+    {
+      "route": "/workbench-assets/workbench.js",
+      "status": 200,
+      "sha256": "9f5d0800dffab52c7951d868de4a80109e27c9597c9c229e3cffebb2ed56e261"
+    },
+    {
+      "route": "/workbench-assets/voice-timing.js",
+      "status": 200,
+      "sha256": "9db808826cacfae30a9c2ae698c8411f30967c447b6dec1bb7bcfb8d39aa9651"
+    }
+  ],
+  "temporary_gateway_stopped": true
+}

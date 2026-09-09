@@ -1,0 +1,31 @@
+{
+  "arm": "B",
+  "pid": 12467,
+  "records": [
+    {
+      "role": "primer",
+      "audio_sha256": "2e699a02d72c7f6a1287df02ad030378c2dd1c0ba75696ede20d77d7c34436d4",
+      "audio_bytes": 27831,
+      "model_loaded_before": false,
+      "total_ms": 2445.93,
+      "call_wall_seconds": 2.4483747091144323,
+      "text": "The quick brown fox jumps over the lazy dog.",
+      "language": "en"
+    },
+    {
+      "role": "target",
+      "audio_sha256": "54c6702bdac9ec9dd5e65aac00a8bcb8217c7dca15233635d9322fd4db31eed5",
+      "audio_bytes": 19513,
+      "model_loaded_before": true,
+      "total_ms": 354.11,
+      "call_wall_seconds": 0.3544347924180329,
+      "text": "A cat chasing a mouse.",
+      "language": "en"
+    }
+  ],
+  "setup_seconds": 0.12294375011697412,
+  "worker_wall_seconds": 2.9260560828261077,
+  "peak_rss_bytes_macos": 907345920,
+  "queue_contenders": 0,
+  "network_forbidden": true
+}

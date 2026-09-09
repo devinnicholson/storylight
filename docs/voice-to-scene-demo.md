@@ -1,5 +1,9 @@
 # Voice to a new scene
 
+The user-designated best build is retained as `checkpoints/best-demo-2026-09-08`.
+The [checkpoint and rollback instructions](checkpoints/best-demo-2026-09-08/README.md)
+include the exact deployed Jetson source and a verified isolated gateway startup.
+
 Open [the voice interface](http://127.0.0.1:18767/workbench?voice=1&session=voice-demo), press **Describe scene**, and speak. Generation starts automatically from a usable partial transcript while you continue talking. The finished artwork appears once it matches the latest stable description. **Finish recording** stops capture and immediately processes the final transcript; it is not a separate generation approval. You can also edit the text and use **Generate scene** to retry.
 
 The Mac captures and transcribes audio locally. A loopback-only gateway sends scene requests through SSH to the Jetson's existing API. The bounded description compiler remains available. An optional isolated CPU language service uses spaCy syntax predictions to prepare additional scene drafts, checked against the original description. Its configured managed GCP image route creates the artwork. The Jetson kiosk follows the same `voice-demo` session directly on port 8080. Raw audio never crosses the SSH tunnel or reaches GCP. This is separate from the fixed-passage reading mode.
@@ -17,6 +21,12 @@ Simple noun-only descriptions such as “A red balloon” and “A Chicken Lolli
 The prior scene stays visible while generation runs. Voice jobs withhold drafts and incomplete artwork from both the workbench and the physical projector. Completed artwork and depth are presented only when the job still matches the latest description. A changed transcript supersedes a speculative result; one image job runs at a time and intermediate queued descriptions are replaced by the newest one. Already-started image calls may still incur cost even when superseded.
 
 Transcription and submission have timeouts. If a submission response is lost, the interface checks the existing session rather than automatically submitting another billable request. An unresolved result offers **Check generation status**. Rejected descriptions can be edited and retried.
+
+Clipped final words such as “ma-” and a standalone trailing “No.” now wait for a
+complete description instead of generating from those fragments. The
+[admission repair](../benchmarks/voice-incomplete-source-2026-09-08/README.md)
+compares the checkpoint and repaired bridge against the same local parser.
+This does not infer a replacement scene from an unfinished correction.
 
 ### Speech scheduling and timing
 
@@ -65,6 +75,12 @@ activation. It is separate from the server's presentation acknowledgement and
 does not measure a remote physical monitor or completion of the visual crossfade.
 Job and recording identity checks exclude unrelated older generation events.
 
+Connection warnings now clear after a valid session stream recovery even when
+the replayed job revision is unchanged. Recovery preserves any newer microphone
+or refusal message; callbacks from a replaced stream are ignored. Recording
+traces include stream-disconnect/recovery events for the same recording epoch.
+The existing 600-second gateway stream deadline and polling fallback are unchanged.
+
 The [scheduling benchmark](../benchmarks/voice-scheduling-2026-09-08/README.md)
 retains synthetic recordings, real local Whisper responses, scheduling policies
 and their limitations. It makes no image-inference or human-microphone accuracy
@@ -81,6 +97,14 @@ Reload the workbench to receive the new frontend; no Jetson package or image
 provider change is needed.
 
 ## Running setup
+
+Two further experiments remain separate from production: the
+[launch-policy replay](../experiments/voice-launch-policy/README.md) found no basis
+for a universal two-observation gate, while the
+[ASR startup screen](../experiments/voice-asr-startup/README.md) supports testing
+one-time model execution before service readiness. Its preparation cost remains
+visible; it does not explain the already-running service's latency or enable
+per-recording warmup.
 
 The current processes are:
 

@@ -1364,18 +1364,46 @@ function connectLiveSceneSessionEvents() {
     `/v1/live-scene-sessions/${encodeURIComponent(readerSessionId)}/events`,
   );
   liveSessionEventSource = source;
+  let warning = null;
+  let disconnectedEpoch = null;
+  const showConnectionWarning = (message) => {
+    if (disconnectedEpoch === null) {
+      disconnectedEpoch = recordingEpoch;
+      voiceTimingEvent("session_stream_disconnected", {}, disconnectedEpoch);
+    }
+    if (!warning) warning = {previous: elements.interim.textContent, message};
+    else if (elements.interim.textContent !== warning.message) return;
+    warning.message = message;
+    elements.interim.textContent = message;
+  };
   const receive = (event) => {
+    if (source !== liveSessionEventSource) return;
     try {
-      handleLiveSceneSessionPointer(JSON.parse(event.data), {restoreInputs: true});
+      const pointer = JSON.parse(event.data);
+      if (pointer?.session_id !== readerSessionId
+        || !/^server_[a-f0-9]{32}$/.test(pointer.server_instance_id || "")
+        || !Number.isInteger(pointer.session_revision) || pointer.session_revision < 0
+        || (pointer.job === null ? pointer.session_revision !== 0
+          : pointer.session_revision < 1 || !pointer.job?.job_id
+            || pointer.job.request?.session_id !== readerSessionId)) {
+        throw new Error("Invalid session pointer");
+      }
+      handleLiveSceneSessionPointer(pointer, {restoreInputs: true});
       if (voiceMode && pendingSubmission && !generationReconciling) void reconcileGeneration();
-      if (source === liveSessionEventSource) {
-        liveSessionStreamHealthy = true;
-        window.clearTimeout(livePollTimer);
-        livePollTimer = null;
+      liveSessionStreamHealthy = true;
+      window.clearTimeout(livePollTimer);
+      livePollTimer = null;
+      if (warning && elements.interim.textContent === warning.message) {
+        elements.interim.textContent = warning.previous;
+      }
+      warning = null;
+      if (disconnectedEpoch !== null) {
+        voiceTimingEvent("session_stream_recovered", {}, disconnectedEpoch);
+        disconnectedEpoch = null;
       }
     } catch (_) {
       liveSessionStreamHealthy = false;
-      elements.interim.textContent = "Ignored an invalid session update; polling remains active.";
+      showConnectionWarning("Ignored an invalid session update; polling remains active.");
       startLivePollingFallback();
     }
   };
@@ -1384,7 +1412,7 @@ function connectLiveSceneSessionEvents() {
   source.addEventListener("error", () => {
     if (source !== liveSessionEventSource) return;
     liveSessionStreamHealthy = false;
-    elements.interim.textContent = "Session updates reconnecting; status polling remains available.";
+    showConnectionWarning("Session updates reconnecting; status polling remains available.");
     startLivePollingFallback();
   });
 }
