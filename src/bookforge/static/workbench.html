@@ -265,6 +265,12 @@
 
           <div class="error hidden" id="errorBox"></div>
 
+          <details class="technical-details" hidden>
+            <summary>Recording timing</summary>
+            <p>Local timings in milliseconds. Audio activity is an estimate; Finish recording is a button press, not the end of speech. Preview timing measures this browser, not the physical projector. Null means the event has not been measured. No audio or transcript is retained here.</p>
+            <pre id="voiceTimingSummary"></pre>
+          </details>
+
 
         </article>
       </section>
@@ -274,6 +280,7 @@
       </footer>
     </main>
     <script src="/workbench-assets/anticipatory-workbench.js?v=1"></script>
-    <script src="/workbench-assets/workbench.js?v=0.2.0-voice6"></script>
+    <script src="/workbench-assets/voice-timing.js?v=1"></script>
+    <script src="/workbench-assets/workbench.js?v=0.2.0-voice7"></script>
   </body>
 </html>

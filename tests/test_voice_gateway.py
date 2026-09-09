@@ -57,6 +57,8 @@ def test_local_assets_asr_scene_headers_and_sse_cleanup():
         page = client.get("/workbench?voice=1")
         assert page.status_code == 200 and 'id="micButton"' in page.text
         assert client.get("/workbench-assets/workbench.js").status_code == 200
+        assert '/workbench-assets/voice-timing.js?v=1' in page.text
+        assert client.get("/workbench-assets/voice-timing.js").status_code == 200
         assert client.get("/projector?reader=0").status_code == 200
         demo = client.get("/workbench?demo=1&redirect=https://evil.example", follow_redirects=False)
         assert demo.status_code == 303

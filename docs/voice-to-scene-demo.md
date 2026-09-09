@@ -38,12 +38,22 @@ before sending the full final recording. A timeout uses the chunks already
 available. The [recording specification](https://www.w3.org/TR/mediastream-recording/)
 defines the asynchronous data event; exact timing depends on the browser.
 
-The existing 350 ms submission debounce, local scene-fact checks, one-image-job
-limit, latest-description queue and completed-scene reuse remain in place.
+Local scene checks now start when a partial transcript arrives, overlapping the
+existing 350 ms submission debounce. Submission waits for both the check and the
+debounce; a final transcript can bypass the debounce. A checked result is reused
+only for the exact text, style and recording, with independent backend digest
+validation preserved. Changed descriptions replace queued work; there is still
+one image job at a time. Rapid corrections can add local checks, but superseded
+checks cannot submit images. Repeated noun-only partials reuse their local check
+and still wait for Finish recording. The [overlap benchmark](../benchmarks/voice-preflight-overlap-2026-09-08/README.md)
+separates simulated scheduling gains from measured local parser time.
 Punctuation changes are checked through the existing fact comparison; the
 frontend does not guess that two different descriptions mean the same thing.
 
-For a rehearsal, `window.bookforgeVoiceTiming()` returns the latest recording's
+The collapsed **Recording timing** panel shows the latest recording's local
+trace and intervals to browser preview, correlated to the displayed job. Missing
+events remain null; Finish recording measures the button press, not speech end.
+For a rehearsal, `window.bookforgeVoiceTiming()` also returns the latest recording's
 bounded, memory-only event trace. It includes recording start, first detected
 audio activity, ASR completion, scene checks, image submission/completion,
 presentation acknowledgement and preview activation. No transcript or audio is

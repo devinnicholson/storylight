@@ -423,6 +423,11 @@ function voiceTimingEvent(type, details = {}, epoch = recordingEpoch) {
   if (voiceTiming.jobIds.size > 128) voiceTiming.jobIds.delete(voiceTiming.jobIds.values().next().value);
   voiceTiming.events.push(event);
   if (voiceTiming.events.length > 256) voiceTiming.events.shift();
+  try {
+    window.renderBookforgeVoiceTiming?.(voiceTiming.events);
+  } catch (_) {
+    // Optional diagnostics must not interrupt recording or generation.
+  }
 }
 
 async function preconnectVoiceProvider(epoch) {
@@ -717,26 +722,30 @@ function offerVoiceTranscript(text, {final = false, epoch = recordingEpoch} = {}
   const style = elements.style.value.trim() || "luminous paper theater";
   const key = voiceIntentKey(text, style);
   const previous = voiceGeneration.latest;
+  const sameIntent = previous?.key === key && previous.epoch === epoch;
   voiceTimingEvent("transcript", {final, changed: previous?.key !== key});
   voiceGeneration.latest = {
     key, text, style, epoch,
-    observations: previous?.key === key ? previous.observations + 1 : 1,
-    final: final || (previous?.key === key && previous.final),
-    refusal: previous?.key === key ? previous.refusal : null,
+    observations: sameIntent ? previous.observations + 1 : 1,
+    final: final || (sameIntent && previous.final),
+    dispatchReady: final || (sameIntent && previous.final),
+    checked: sameIntent ? previous.checked : null,
+    refusal: sameIntent ? previous.refusal : null,
   };
   elements.story.value = text;
   delete elements.compileButton.dataset.visualVariation;
   invalidatePreparation();
   window.clearTimeout(voiceGeneration.timer);
   voiceGeneration.timer = null;
-  if (final) {
-    if (!finalizing) void pumpVoiceGeneration();
-  } else {
+  if (!final) {
     voiceGeneration.timer = window.setTimeout(() => {
       voiceGeneration.timer = null;
+      if (voiceGeneration.latest?.key !== key || voiceGeneration.latest.epoch !== epoch) return;
+      voiceGeneration.latest.dispatchReady = true;
       void pumpVoiceGeneration();
     }, 350);
   }
+  if (!finalizing) void pumpVoiceGeneration();
   void tryPresentVoiceGeneration();
 }
 
@@ -1514,25 +1523,6 @@ async function checkVoiceDescription(request) {
       || !/^[a-f0-9]{64}$/.test(result.visual_fact_digest))) {
       throw new Error("The local scene review is incomplete. No image was requested.");
     }
-    const facts = result.visual_facts;
-    const describe = (entity) => [entity.count, entity.color, ...entity.attributes, entity.label]
-      .filter(Boolean).join(" ");
-    const labels = Object.fromEntries([...facts.subjects, ...facts.objects].map((entity) => [entity.ref, describe(entity)]));
-    const descriptions = facts.subjects.map((subject) => subject.actions.length
-      ? `${describe(subject)}: ${subject.actions.join("; ")}` : describe(subject));
-    if (facts.setting.label !== "unspecified") descriptions.push(`Setting: ${[
-      ...facts.setting.attributes, facts.setting.label,
-    ].join(" ")}`);
-    if (facts.objects.length) descriptions.push(`Also visible: ${facts.objects.map(describe).join(", ")}`);
-    for (const relation of facts.relationships) descriptions.push([
-      labels[relation.source], relation.relation.replaceAll("_", " "), labels[relation.target],
-      relation.secondary_target ? `and ${labels[relation.secondary_target]}` : "",
-    ].filter(Boolean).join(" "));
-    for (const negative of facts.negatives) descriptions.push(negative.target
-      ? `${labels[negative.target]}: not ${negative.value}` : `Exclude: ${negative.value}`);
-    const omissions = result.local_omissions || [];
-    if (omissions.length) descriptions.push(`Kept on this device: ${omissions.map((item) => item.local_text).join(", ")}. These details will not appear in the image request.`);
-    elements.voiceReview.textContent = `Scene to generate\n${descriptions.join("\n")}`;
     return result;
   } catch (error) {
     throw controller.signal.aborted
@@ -1541,6 +1531,28 @@ async function checkVoiceDescription(request) {
   } finally {
     window.clearTimeout(timer);
   }
+}
+
+function renderVoiceDescription(result) {
+  const facts = result.visual_facts;
+  const describe = (entity) => [entity.count, entity.color, ...entity.attributes, entity.label]
+    .filter(Boolean).join(" ");
+  const labels = Object.fromEntries([...facts.subjects, ...facts.objects].map((entity) => [entity.ref, describe(entity)]));
+  const descriptions = facts.subjects.map((subject) => subject.actions.length
+    ? `${describe(subject)}: ${subject.actions.join("; ")}` : describe(subject));
+  if (facts.setting.label !== "unspecified") descriptions.push(`Setting: ${[
+    ...facts.setting.attributes, facts.setting.label,
+  ].join(" ")}`);
+  if (facts.objects.length) descriptions.push(`Also visible: ${facts.objects.map(describe).join(", ")}`);
+  for (const relation of facts.relationships) descriptions.push([
+    labels[relation.source], relation.relation.replaceAll("_", " "), labels[relation.target],
+    relation.secondary_target ? `and ${labels[relation.secondary_target]}` : "",
+  ].filter(Boolean).join(" "));
+  for (const negative of facts.negatives) descriptions.push(negative.target
+    ? `${labels[negative.target]}: not ${negative.value}` : `Exclude: ${negative.value}`);
+  const omissions = result.local_omissions || [];
+  if (omissions.length) descriptions.push(`Kept on this device: ${omissions.map((item) => item.local_text).join(", ")}. These details will not appear in the image request.`);
+  elements.voiceReview.textContent = `Scene to generate\n${descriptions.join("\n")}`;
 }
 
 async function compileStory(options = {}) {
@@ -1588,20 +1600,26 @@ async function compileStory(options = {}) {
     elements.compileButton.textContent = "Checking description…";
     elements.voiceReview.textContent = "Checking the scene locally before generation.";
     try {
-      voiceTimingEvent("scene_check_started", {}, timingEpoch);
-      const checked = await checkVoiceDescription(submission.request);
-      voiceTimingEvent("scene_check_completed", {}, timingEpoch);
+      let checked = voiceIntent?.checked;
+      if (!checked) {
+        voiceTimingEvent("scene_check_started", {}, timingEpoch);
+        checked = await checkVoiceDescription(submission.request);
+        voiceTimingEvent("scene_check_completed", {}, timingEpoch);
+      }
       if (elements.story.value.trim() !== submission.request.text
         || (elements.style.value.trim() || "luminous paper theater") !== submission.request.visual_style) {
         throw new Error("The description changed during the check. Review it and try again.");
       }
-      if (automatic && voiceGeneration.latest?.key !== voiceIntent.key) {
+      if (automatic && (voiceGeneration.latest?.key !== voiceIntent.key
+        || voiceGeneration.latest.epoch !== voiceIntent.epoch || recordingEpoch !== voiceIntent.epoch)) {
         throw new Error("A newer description is ready; checking that instead.");
       }
+      renderVoiceDescription(checked);
       const facts = checked.visual_facts;
       const staticSubject = Array.isArray(facts?.subjects) && facts.subjects.length > 0
         && facts.subjects.every((subject) => Array.isArray(subject.actions) && !subject.actions.length)
         && !facts.events?.length && !facts.motions?.length;
+      if (automatic) voiceGeneration.latest.checked = checked;
       if (automatic && staticSubject && !voiceGeneration.latest.final) {
         voiceGeneration.attempted.delete(voiceIntent.key);
         generationSubmitting = false;
@@ -1609,6 +1627,15 @@ async function compileStory(options = {}) {
         elements.compileButton.disabled = listening || finalizing;
         elements.compileButton.textContent = "Generate scene";
         elements.interim.textContent = "Keep describing, or finish recording to generate this subject.";
+        updateMicAvailability();
+        return;
+      }
+      if (automatic && (!voiceGeneration.latest.dispatchReady || finalizing || starting)) {
+        voiceGeneration.attempted.delete(voiceIntent.key);
+        generationSubmitting = false;
+        setSceneInputsDisabled(false);
+        elements.compileButton.disabled = listening || finalizing;
+        elements.compileButton.textContent = "Generate scene";
         updateMicAvailability();
         return;
       }
@@ -1645,7 +1672,8 @@ async function compileStory(options = {}) {
       elements.compileButton.disabled = listening || finalizing;
       elements.compileButton.textContent = "Check description again";
       updateMicAvailability();
-      if (automatic && voiceGeneration.latest?.key !== voiceIntent.key) {
+      if (automatic && (voiceGeneration.latest?.key !== voiceIntent.key
+        || voiceGeneration.latest.epoch !== voiceIntent.epoch || recordingEpoch !== voiceIntent.epoch)) {
         voiceGeneration.attempted.delete(voiceIntent.key);
         void pumpVoiceGeneration();
       }
@@ -1702,7 +1730,8 @@ async function compileStory(options = {}) {
       elements.interim.textContent = "The current scene is still generating. Wait for it to finish before submitting another.";
       return;
     }
-    if (automatic && voiceGeneration.latest?.key !== voiceIntent.key) {
+    if (automatic && (voiceGeneration.latest?.key !== voiceIntent.key
+      || voiceGeneration.latest.epoch !== voiceIntent.epoch || recordingEpoch !== voiceIntent.epoch)) {
       voiceGeneration.attempted.delete(voiceIntent.key);
       return;
     }
@@ -1728,7 +1757,8 @@ async function compileStory(options = {}) {
     } finally {
       window.clearTimeout(timer);
     }
-    voiceTimingEvent("generation_response", {status: response.status, jobId: snapshot?.job_id}, timingEpoch);
+    voiceTimingEvent("generation_response", {status: response.status, jobId: snapshot?.job_id,
+      submissionId: submission.request.submission_id}, timingEpoch);
     if (response.status === 409) {
       if (voiceMode) voiceGeneration.attempted.add(voiceIntentKey(text, submission.request.visual_style));
       const current = await fetchLiveSceneSession();

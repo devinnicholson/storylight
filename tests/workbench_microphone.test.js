@@ -3,7 +3,7 @@ const fs = require("fs");
 const vm = require("vm");
 const SERVER_ID = `server_${"a".repeat(32)}`;
 
-const source = fs.readFileSync("src/bookforge/static/workbench.js", "utf8");
+const source = fs.readFileSync(process.env.WORKBENCH_SOURCE || "src/bookforge/static/workbench.js", "utf8");
 for (const [query, expected] of [
   ["?voice=1", "voice-demo"], ["?demo=1", "bookforge-live"],
   ["?voice=1&session=my-projection", "my-projection"],
@@ -1108,5 +1108,154 @@ async function providerPreconnect() {
   assert.ok(!read.requests.includes(route));
 }
 
-(async () => { await lifecycle(); await voiceToScene(); await partialScheduling(); await adaptiveCadence(); await timingIsolation(); await recorderFlush(); await finalRefusalStatus(); await staticPartialAdmission(); await providerPreconnect(); })().then(() => console.log("Workbench microphone: cleanup, recorder flush, adaptive ASR cadence, optional preconnect, latest-only presentation and no duplicate paid requests passed."))
+function delayedChecks(milliseconds) {
+  const h = generationHarness();
+  h.context.listening = true;
+  const respond = h.context.respond;
+  h.checkStarts = [];
+  h.dispatchTimes = [];
+  h.context.respond = (url, options) => {
+    if (url === "/v1/live-scene-planner/prepare") {
+      h.checkStarts.push({at: h.now(), text: JSON.parse(options.body).text});
+      return new Promise((resolve) => h.context.window.setTimeout(
+        () => resolve(respond(url, options)), milliseconds));
+    }
+    if (url === "/v1/live-scenes") h.dispatchTimes.push(h.now());
+    return respond(url, options);
+  };
+  return h;
+}
+
+async function measureCheckOverlap() {
+  const rows = [];
+  for (const checkMs of [100, 500]) {
+    const h = delayedChecks(checkMs);
+    const began = h.now();
+    h.context.offerVoiceTranscript("A cat chasing a mouse.");
+    await h.advance(1200);
+    assert.equal(h.submitted.length, 1);
+    assert.equal(h.presented.length, 0);
+    rows.push({checkMs, firstCheckMs: h.checkStarts[0].at - began,
+      dispatchMs: h.dispatchTimes[0] - began, checks: h.checkStarts.length,
+      imageRequests: h.submitted.length});
+  }
+  return rows;
+}
+
+async function localCheckOverlap() {
+  assert.deepEqual(await measureCheckOverlap(), [
+    {checkMs: 100, firstCheckMs: 0, dispatchMs: 350, checks: 1, imageRequests: 1},
+    {checkMs: 500, firstCheckMs: 0, dispatchMs: 500, checks: 1, imageRequests: 1},
+  ]);
+
+  // Multiple corrections during one slow check coalesce to the latest source.
+  const correction = delayedChecks(500);
+  correction.context.offerVoiceTranscript("A cat chasing a mouse.");
+  await correction.advance(100);
+  correction.context.offerVoiceTranscript("A cat chasing two mice.");
+  await correction.advance(100);
+  correction.context.offerVoiceTranscript("A cat chasing three mice.");
+  await correction.advance(799);
+  assert.equal(correction.submitted.length, 0);
+  assert.deepEqual(correction.checkStarts.map((item) => item.text), [
+    "A cat chasing a mouse.", "A cat chasing three mice.",
+  ]);
+  await correction.advance(1);
+  assert.equal(correction.submitted.length, 1);
+  assert.equal(correction.submitted[0].text, "A cat chasing three mice.");
+  assert.equal(correction.presented.length, 0);
+
+  // An early successful check cannot bypass the stability window. A final
+  // transcript can, after microphone finalization has released its owner.
+  const final = delayedChecks(100);
+  final.context.offerVoiceTranscript("A cat chasing a mouse.");
+  await final.advance(100);
+  assert.equal(final.submitted.length, 0);
+  final.context.finalizing = true;
+  final.context.offerVoiceTranscript("A cat chasing a mouse.", {final: true});
+  await final.context.pumpVoiceGeneration();
+  assert.equal(final.submitted.length, 0);
+  final.context.finalizing = false;
+  await final.context.pumpVoiceGeneration();
+  assert.equal(final.submitted.length, 1);
+  assert.equal(final.checkStarts.length, 1);
+  assert.equal(final.dispatchTimes[0] - 100, 100);
+
+  const staticCase = delayedChecks(100);
+  const ready = staticCase.state.ready;
+  staticCase.state.ready = (request) => {
+    const result = ready(request);
+    result.visual_facts.subjects[0].actions = [];
+    result.visual_facts.objects = [];
+    return result;
+  };
+  staticCase.context.offerVoiceTranscript("A cat");
+  await staticCase.advance(400);
+  staticCase.context.offerVoiceTranscript("A cat");
+  await staticCase.advance(400);
+  assert.equal(staticCase.checkStarts.length, 1);
+  assert.equal(staticCase.submitted.length, 0);
+  assert.match(staticCase.elements.voiceReview.textContent, /^Scene to generate\n/);
+  staticCase.context.offerVoiceTranscript("A cat", {final: true});
+  await flush();
+  assert.equal(staticCase.checkStarts.length, 1);
+  assert.equal(staticCase.submitted.length, 1);
+
+  // A new recording cannot consume even an identical previous epoch's check.
+  const epoch = delayedChecks(500);
+  epoch.context.offerVoiceTranscript("A cat chasing a mouse.");
+  await epoch.advance(100);
+  epoch.context.recordingEpoch += 1;
+  epoch.context.offerVoiceTranscript("A cat chasing a mouse.", {final: true});
+  await epoch.advance(400);
+  assert.equal(epoch.submitted.length, 0);
+  assert.equal(epoch.checkStarts.length, 2);
+  await epoch.advance(500);
+  assert.equal(epoch.submitted.length, 1);
+
+  // If a newer partial arrives after the first check completed but before
+  // dispatch, the old cached proof must never create an image.
+  const early = delayedChecks(100);
+  early.context.offerVoiceTranscript("A cat chasing a mouse.");
+  await early.advance(150);
+  early.context.offerVoiceTranscript("A dog chasing a ball.");
+  await early.advance(349);
+  assert.equal(early.submitted.length, 0);
+  await early.advance(1);
+  assert.equal(early.submitted.length, 1);
+  assert.equal(early.submitted[0].text, "A dog chasing a ball.");
+}
+
+async function optionalTimingFailure() {
+  const h = generationHarness();
+  h.context.window.renderBookforgeVoiceTiming = () => { throw new Error("broken diagnostics"); };
+  const respond = h.context.respond;
+  h.context.respond = (url, options) => url === "/v1/audio:transcribe"
+    ? h.response(200, {text: "A cat chasing a mouse.", total_ms: 10}) : respond(url, options);
+  await h.context.startSpeaking();
+  assert.equal(h.context.listening, true);
+  const recorder = h.context.mediaRecorder;
+  recorder.handlers.dataavailable({data: new Blob(["a".repeat(1200)])});
+  h.context.stopSpeaking();
+  await recorder.handlers.stop();
+  await flush();
+  assert.equal(h.context.finalizing, false);
+  assert.equal(h.submitted.length, 1);
+  h.complete();
+  await flush();
+  assert.deepEqual(h.displayed, ["job-1"]);
+  assert.equal(h.presented.length, 1);
+}
+
+(async () => {
+  if (process.env.VOICE_CHECK_BENCHMARK === "1") {
+    console.log(JSON.stringify({kind: "mocked-local-check-timing", rows: await measureCheckOverlap()}));
+    return;
+  }
+  await lifecycle(); await voiceToScene(); await partialScheduling(); await adaptiveCadence();
+  await timingIsolation(); await recorderFlush(); await finalRefusalStatus();
+  await staticPartialAdmission(); await providerPreconnect(); await localCheckOverlap();
+  await optionalTimingFailure();
+  console.log("Workbench microphone: cleanup, recorder flush, adaptive ASR cadence, optional preconnect, overlapped local checks, latest-only presentation and no duplicate paid requests passed.");
+})()
   .catch((error) => { console.error(error); process.exitCode = 1; });
