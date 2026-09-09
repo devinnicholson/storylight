@@ -1,0 +1,87 @@
+{
+  "decision": {
+    "failure_action": "Retain current production implementation and all failure evidence. New independent confirmation requires new frozen cases.",
+    "further_integration_consideration_requires": [
+      "New positive both-repetition exact count strictly exceeds frozen V4 old",
+      "All32refusal cases literalREFUSE in both new repetitions",
+      "Zero schema-valid outputs on refusal controls",
+      "All128cases/two repetitions/512calls complete",
+      "Separate actual-demo baseline with positive strict scores and manual source-preservation diagnostic: every currently correct behavior preserved; unclassified422 is never refusal credit",
+      "No production promotion from this experiment alone"
+    ],
+    "production_promotion": false
+  },
+  "development": {
+    "manifest": "development-manifest.json",
+    "messages": "development-messages.jsonl",
+    "positive_rows": 192,
+    "refusal_rows": 64,
+    "role": "Checkpoint selection only; independently authored sources and targets, separate manifest bound to frozen training manifest and shared prompt. Development is not held-out test evidence.",
+    "rows": 256,
+    "training_author_access": "No development sources or labels before training corpus freeze"
+  },
+  "execution": {
+    "arms": [
+      "old",
+      "new"
+    ],
+    "automatic_retries": 0,
+    "batch_size": 1,
+    "greedy": true,
+    "incomplete_rule": "Missing or failed repetitions are reported as incomplete. Do not silently downgrade to one repetition or count invalid/non-EOS output as REFUSE. Any later repetition-count amendment must precede any screen inference.",
+    "matcher": "Fresh matcher on every request in both arms, identical SHA-pinned V3 grammar and tokenizer",
+    "max_new_tokens": 256,
+    "order": "Within each of128cases and each repetition, old then new when(case_index+repetition)is even; reverse otherwise. Exactly512calls if complete.",
+    "paid_lifecycle": "Parent-owned finite singleL4 VM, provider deadline and per-phase limits; this evaluation protocol does not authorize allocations or extend budgets.",
+    "repetitions": 2,
+    "same_process_and_weights": "Same BF16 base, separate unmerged old/new adapters switched and frozen per call; never hold two full base models."
+  },
+  "experiment": "scene-adapter-v5-2026-09-09",
+  "freeze": {
+    "authoring": "Evaluator authors development and test sources separately from the training author, without using current-parser predictions as gold. Test remains private through source/data freeze. Schema/source/privacy validation and overlap checks precede release; all pre-release authoring corrections are disclosed.",
+    "grammar_development_inputs": "Previously exposed training/development and V2 regression cases only",
+    "release_order": "Training author freezes train-only corpus and manifest before receiving independent development. Freeze trainer, runtime, evaluator, protocol, grammar and all training/development data before root authorizes fresh answer-free screen release. Screen generation occurs only after checkpoint selection. Test gold and authoring source never go to GPU.",
+    "repair_policy": "A defect or incompatibility is retained as failure. Any permitted setup repair must precede fresh screen generation and be explicitly recorded; no output-dependent retries or prompt/grammar repairs."
+  },
+  "limitations": [
+    "Small authored and correlated stress set, not statistical traffic accuracy",
+    "Grammar can enforce serialization but cannot establish intended facts, safe identities or complete correction semantics",
+    "Two repetitions and balanced order reduce some order effects but do not establish broad repeatable latency",
+    "No images, human microphone recordings, physical display or production deployment are evaluated",
+    "All previously exposed V1/V2/V3 cases are regression data only, never fresh independent confirmation",
+    "The intervention changes the supervised data and checkpoint-selection development set together; it does not isolate a single template or prove training-data causality beyond this fixed comparison.",
+    "Reserved dev/test nominal inventories are disjoint from new training; shared colors/verbs/constructions and the historical fewshot prompt are intentionally reused. Each family is correlated authored constructions, not independent random traffic.",
+    "Pre-freeze authoring: natural reverse after-clause temporal sources failed the unchanged grounding contract; substituted explicit before/then order, never labeled those valid sourcesREFUSE. Test remains limited by validator expressivity."
+  ],
+  "model": {
+    "base_revision": "3e22461f65e89153144f8adb70e3b8c2cc9845a7",
+    "mode": "One original BF16 base with two verified unmerged named adapters; both arms use identical frozen V3 grammar",
+    "new_adapter": "Pilot Q/V rank16 and all text decoder linear rank16 for1200steps each, same seeded4800-row training order. Each pilot selects400/800/1200 by lowest256-row token-weighted dev loss. Choose recipe by that minimum loss, Q/V wins exact ties. Train chosen recipe fresh for4800steps, selecting1200/2400/4800 on the same dev criterion, earliest checkpoint breaks ties. No test outputs influence either choice.",
+    "new_training": true,
+    "old_adapter_sha256": "d8127b1421e5aa9bfae01efe6f2b1d9646a88d59fc25666be71ecca2508162ba",
+    "old_checkpoint_step": 800,
+    "prompt_file_sha256": "759a9002a7c6209e377f3ea67a7f706c0055de7ea59de19396d068f5eee47f41",
+    "screen_based_checkpoint_selection": false,
+    "v2_training_manifest_sha256": "b3affe31bb33680653a4781236e0180af593d9e6999ee93eba9f9b6d22bbb7bf"
+  },
+  "purpose": "Compare a dev-selected expanded-data recipe to the frozen V4 adapter and separately the actual demo parser, using independent development and hidden test.",
+  "schema_version": 1,
+  "scoring": {
+    "primary": "A case is exact for an arm only if both repetitions are exact. Report per-repetition exact counts as secondary evidence.",
+    "semantic_diagnostic": "Manually classify representation-only differences separately from missing, invented or misbound visible facts. This does not change strict primary scoring or turn unknown rejection intoREFUSE.",
+    "semantics": "Unchanged V1/V2 typed atom equality plus source grounding/privacy; literal REFUSE required on refusal controls. Reference renaming and valid ordering differences are neutral; no synonym, article, morphology, attachment or action repair.",
+    "strict_scorer_sha256": "85a4e6085bead918e1fc86480b30516de2834c152416f3f3c603630ffff0ea2d",
+    "syntax": "Report wire validity separately from semantic exactness, grounding/privacy, omissions, extras and correct refusal.",
+    "timing": "Adapter selection, tokenization, constrained generation and decoded output are included in per-call timing; report adapter selection, grammar compilation and model/adapter loading separately. Report all-case paired times and token-identical subsets with sizes and lengths. Both arms are unmerged; do not compare directly with prior merged V3 latency or attribute differences to kernels. Actual demo inclusiveHTTP timing includes SSH/tunnel/API/validation; adapter timing is local model execution excluding HTTP service/queue/loading. Differences are descriptive, not matched serving benchmarks.",
+    "unexpected_admissions": "Count schema-valid outputs on refusal controls separately from those also passing grounding/privacy. Either is a gate failure, not proof of an actual paid request."
+  },
+  "screen": {
+    "disjointness": "Normalized source, complete positive target and nominal label combinations checked against new training/development, demonstrations and V1/V2/V3 screens. Common colors, verbs and grammar constructions may recur.",
+    "distribution": "Independently authored lexical and phrasing stress screen; not representative random voice traffic",
+    "families": 16,
+    "gold_boundary": "Every positive gold must pass unchanged SceneFactsV2 schema, original-source grounding, privacy and wire roundtrip. This constrains the screen; it does not independently prove validator completeness.",
+    "positive_rows": 96,
+    "refusal_rows": 32,
+    "rows": 128
+  }
+}

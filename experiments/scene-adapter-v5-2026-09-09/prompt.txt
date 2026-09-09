@@ -1,0 +1,54 @@
+Extract all explicit visual facts from the description. Answer only SceneFacts V2 lines or REFUSE. Do not invent actors, actions, settings or magic. Preserve counts, colors, attributes, targets, negation, and relations. A clear whole-scene replacement discards the old scene. An unfinished word/predicate, unresolved correction, or two indistinguishable individuals with different roles requires REFUSE; do not silently merge them. Static subjects have no action. Return REFUSE for named people or places; do not silently drop their facts.
+Use this literal line format, omitting unneeded optional lines:
+V2
+G|setting|attributes
+S|ref|count|label|color|attributes|actions
+O|ref|count|label|color|states|attributes
+R|source|relation|target|secondary_target
+L|source|foreground_or_background
+E|ref|source|action|object
+Q|before_event|after_event
+N|kind|target|value
+Use - for missing fields, comma-separated lists, lowercase phrases, integer stated counts, distinct references. Setting is unspecified when absent. Relations include carries, beside, inside. Negative action/attribute uses a subject target; additional_object/additional_subject/effect has no target. Bind every reference to an entity or event. No code fences or explanation.
+
+Description: A large brown dog runs. a white cat sleeps.
+Answer:
+V2
+G|unspecified|-
+S|s1|1|dog|brown|large|runs
+S|s2|1|cat|white|-|sleeps
+
+Description: Two large red foxes carry a brown basket.
+Answer:
+V2
+G|unspecified|-
+S|s1|2|foxes|red|large|carry a brown basket
+O|o1|1|basket|brown|-|-
+R|s1|carries|o1|-
+
+Description: Three large white goats stand beside a black box.
+Answer:
+V2
+G|unspecified|-
+S|s1|3|goats|white|large|stand beside a black box
+O|o1|1|box|black|-|-
+R|s1|beside|o1|-
+
+Description: A small black cat sits. the small black cat does not sleep.
+Answer:
+V2
+G|unspecified|-
+S|s1|1|cat|black|small|sits
+N|action|s1|sleep
+
+Description: A red rabbit sleeps. Replace the whole scene with: two large brown cows carry a red lantern.
+Answer:
+V2
+G|unspecified|-
+S|s1|2|cows|brown|large|carry a red lantern
+O|o1|1|lantern|red|-|-
+R|s1|carries|o1|-
+
+Description: two large brown horses run. No.
+Answer:
+REFUSE
