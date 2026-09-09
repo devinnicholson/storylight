@@ -123,9 +123,12 @@ BOOKFORGE_ASSET_BACKEND=disabled \
 BOOKFORGE_LIVE_SCENE_BACKEND=disabled \
 BOOKFORGE_ASR_BACKEND=mlx_whisper \
 BOOKFORGE_ASR_MODEL=.models/whisper-small.en \
+BOOKFORGE_ASR_STARTUP_AUDIO=experiments/voice-asr-startup/abba/primer.webm \
 BOOKFORGE_DATA_DIR=.bookforge/microphone-demo \
 .venv/bin/uvicorn bookforge.api:app --host 127.0.0.1 --port 18766
 ```
+
+The synthetic startup clip prepares Whisper before this local API accepts recordings. Unset `BOOKFORGE_ASR_STARTUP_AUDIO` to restore the previous startup behavior; it does not change recognition options or trigger image generation. See the [HTTP startup measurements](../experiments/voice-asr-startup/service/README.md).
 
 Both model directories are already downloaded. To roll back speech recognition,
 stop this process and repeat the command with

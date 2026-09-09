@@ -1,0 +1,16 @@
+{
+  "pid": 18722,
+  "verification": {
+    "18766": {
+      "ready": true,
+      "name": "mlx_whisper",
+      "detail": "prepared in 2717.94 ms"
+    },
+    "18767": {
+      "ready": true,
+      "name": "mlx_whisper",
+      "detail": "prepared in 2717.94 ms"
+    }
+  },
+  "image_requests": 0
+}

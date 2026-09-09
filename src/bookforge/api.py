@@ -37,7 +37,7 @@ from bookforge.anticipatory_playback import (
     PrepareProjectionRequest,
     PrewarmProjectionRequest,
 )
-from bookforge.asr import TranscriptionError, build_asr_backend
+from bookforge.asr import LocalTranscriber, TranscriptionError, build_asr_backend
 from bookforge.asr_backend import AsrBackend, AsrBackendError, AsrBackendUnavailableError
 from bookforge.asset_cache import AssetCache, AssetCacheError
 from bookforge.asset_generator import (
@@ -193,11 +193,16 @@ def _build_live_scene_planner_client(
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     settings = get_settings()
+    transcriber = build_asr_backend(settings)
+    if settings.asr_startup_audio:
+        if not isinstance(transcriber, LocalTranscriber):
+            raise ValueError("ASR startup audio requires mlx_whisper")
+        await transcriber.prepare()
     client = build_model_client(settings)
     planner_client = _build_live_scene_planner_client(settings, fallback=client)
     app.state.settings = settings
     app.state.service = BookforgeService(settings, client)
-    app.state.transcriber = build_asr_backend(settings)
+    app.state.transcriber = transcriber
     app.state.projector_telemetry = {}
     app.state.reader_events = ReaderEventHub()
     app.state.reader_sessions = ReaderSessionRegistry()
@@ -501,7 +506,12 @@ async def runtime_status(request: Request) -> RuntimeStatus:
         asr=RuntimeComponent(
             ready=transcriber.available,
             name=transcriber.name,
-            detail="available" if transcriber.available else "disabled or unavailable",
+            detail=(
+                f"prepared in {transcriber.preparation_ms:.2f} ms"
+                if isinstance(transcriber, LocalTranscriber)
+                and transcriber.preparation_ms is not None
+                else "available" if transcriber.available else "disabled or unavailable"
+            ),
         ),
         storage=RuntimeComponent(
             ready=store.ready,

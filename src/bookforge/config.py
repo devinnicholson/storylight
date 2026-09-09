@@ -131,6 +131,7 @@ class Settings(BaseSettings):
     asr_backend: Literal["mlx_whisper", "whisper_trt", "disabled", "test"] = "mlx_whisper"
     asr_model: str = ".models/whisper-base.en"
     asr_engine_path: str = ""
+    asr_startup_audio: str = ""
     asr_max_audio_mb: int = 20
     data_dir: Path = Path(".bookforge/data")
     cache_dir: Path = Path(".bookforge/cache")

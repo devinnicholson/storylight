@@ -18,6 +18,21 @@ class LocalTranscriber:
     def __init__(self, settings: Settings):
         self.settings = settings
         self._transcribe_lock = asyncio.Lock()
+        self.preparation_ms: float | None = None
+
+    async def prepare(self) -> None:
+        if not self.settings.asr_startup_audio or self.preparation_ms is not None:
+            return
+        path = Path(self.settings.asr_startup_audio)
+        if not path.is_file():
+            raise TranscriptionError("Startup audio must be a regular local file")
+        if path.suffix.lower() not in {".webm", ".wav", ".ogg", ".mp4", ".m4a"}:
+            raise TranscriptionError("Unsupported startup audio format")
+        maximum = self.settings.asr_max_audio_mb * 1024 * 1024
+        with path.open("rb") as source:
+            audio = source.read(maximum + 1)
+        result = await self.transcribe(audio, f"audio/{path.suffix[1:].lower()}")
+        self.preparation_ms = result.total_ms
 
     @property
     def name(self) -> str:
