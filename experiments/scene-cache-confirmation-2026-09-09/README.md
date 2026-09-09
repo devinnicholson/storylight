@@ -1,0 +1,15 @@
+# Broader cache confirmation
+
+This conditional experiment tests whether the dynamic-prefill/compiled-static-decode candidate preserves the dynamic decoder's outputs across all 128 previously exposed V5 descriptions. It may run only after the preceding 54-call compiled-bridge experiment passes its parity review. It cannot provide fresh held-out accuracy or reverse V5's failed promotion gate.
+
+The answer-free input file contains two fixed training warmups (training indices 0 and 1), followed by the original 128 V5 input rows in their existing order. Each arm runs both warmups, then every screen input once: dynamic in original order, compiled bridge in reverse order. There are exactly 260 calls, including four retained warmups. One checked, merged BF16 base remains resident for both arms. There is no additional model selection, training, answer-based input selection or retry.
+
+The dynamic arm creates a new dynamic cache for each request. The bridge performs dynamic prefill, transfers the cache to a reusable static cache with verified reset and stable buffer addresses, then compiles decoding. Both use the existing grammar, prompt, greedy decoding, EOS IDs 1/106/50 and 256-token output cap. Static capacity is 1,024. CPU tokenization of all 130 answer-free inputs gives 638–654 prompt tokens and a maximum total budget of 910; this is a narrow prompt-length range, not a general long-context test.
+
+The runner must bind its own reviewed source separately from this protocol, enforce a 1,600-second process limit and run under the root supervisor's 1,660-second timeout before the existing VM deletion deadline. Fresh local Inductor/Triton directories are required; they do not establish cold driver or operating-system caches. No private answer files go to the GPU.
+
+Retain all dispatches, outputs, token IDs, prompt hashes, EOS/grammar results, cache reset/transfer evidence, compilation evidence, cold warmup costs and failure receipts. Verify all 260 calls offline before reporting a gain. Require exact token parity across all 128 measured pairs for this runtime confirmation; unchanged local schema, source and privacy validation must not regress. Report medians and paired reductions only with their token-match counts, and retain discrepancies rather than relabeling or repairing outputs. Any strict answer-key score is an exposed-case diagnostic performed locally afterward.
+
+The fixed phase order, opposite input orders and one repetition leave order effects unresolved. These are L4 scene-extraction timings, not image-generation, microphone-to-display or Jetson timings. A positive result supports further runtime investigation; it does not authorize production promotion.
+
+`prepare.py` produced `inputs.jsonl`, `protocol.json` and `cpu-preflight.json` using the actual pinned tokenizer without loading model weights or reading gold. Generated files are exclusive outputs and are not overwritten on rerun. Runner implementation and execution receipts are reviewed separately.

@@ -1,0 +1,11 @@
+{
+  "focused_tests": 18,
+  "focused_tests_passed": true,
+  "seconds": 4.88,
+  "pytest_import_mode": "importlib",
+  "note": "Importlib mode isolates equal test basenames across experiment directories; initial default collection hit a module-name collision.",
+  "ruff_active_experiment_sources_passed": true,
+  "frozen_source_files_rechecked": 38,
+  "frozen_source_files_unchanged": true,
+  "production_sources_changed": false
+}

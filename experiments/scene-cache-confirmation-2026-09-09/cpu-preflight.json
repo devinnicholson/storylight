@@ -1,0 +1,674 @@
+{
+  "all_completion_free_inputs": true,
+  "capacity": 1024,
+  "input_sha256": "4ffc9adc3c15fbb6e684197a05b4b8bc2281f616ea02888f38989fff3acf58fb",
+  "max_prompt_tokens": 654,
+  "max_with_generation_budget": 910,
+  "min_prompt_tokens": 638,
+  "no_gold_read": true,
+  "no_inference": true,
+  "no_model_load": true,
+  "protocol_sha256": "1a2579008b49f64d2a2d45f00a2c4ed5c63c0621d1ca6accbf0637ff4f79bd69",
+  "rows": [
+    {
+      "id": "train-named_actor_valid-000-0",
+      "prompt_sha256": "72fb1a46250a1e0e63fd9af59f576a07286b64ca63c2ccba1de26adbbccbccc6",
+      "prompt_tokens": 642
+    },
+    {
+      "id": "train-named_actor-000-0",
+      "prompt_sha256": "3b3e8f6b446d2625223bc97e20a39dc25ffb0f9a08c5ce033e38f4a1f16867ea",
+      "prompt_tokens": 644
+    },
+    {
+      "id": "v5-test-static_descriptors-00",
+      "prompt_sha256": "d6c90f9673dd9d101ce8e4bbf2a61c07da1467e456ea466047bd16df31ed8f9e",
+      "prompt_tokens": 639
+    },
+    {
+      "id": "v5-test-counted_action-00",
+      "prompt_sha256": "ef23251df7f87b59e72c0ffd9f3ce585874b4c6e669a8c8f2b18479c139e7c1f",
+      "prompt_tokens": 642
+    },
+    {
+      "id": "v5-test-spatial_targets-00",
+      "prompt_sha256": "6e56aeaada548a8f066add68e91058c635d387ec6407a2dcf8ecbeb72a4c739d",
+      "prompt_tokens": 645
+    },
+    {
+      "id": "v5-test-setting_word_order-00",
+      "prompt_sha256": "55d770add1a4aeae934860ca67b32274b5f8b7914cc349cf3afa725a8070dfa7",
+      "prompt_tokens": 645
+    },
+    {
+      "id": "v5-test-direct_targets-00",
+      "prompt_sha256": "983473c62821b6c73bb43a3e0a178cdac29b41b686f45094af3b751552d90602",
+      "prompt_tokens": 651
+    },
+    {
+      "id": "v5-test-independent_actors-00",
+      "prompt_sha256": "e26deda74fe22a5c527b6ff61a36b551894ddfe682b9b8feef906df115ed0b75",
+      "prompt_tokens": 648
+    },
+    {
+      "id": "v5-test-shared_predicate_actor_binding-00",
+      "prompt_sha256": "97f4d3dd1232005f93e956805d84609691f20d3184b5c1d64745eb6cbb3f3d8b",
+      "prompt_tokens": 654
+    },
+    {
+      "id": "v5-test-explicit_negative_action-00",
+      "prompt_sha256": "4420f9455bb374fbba9d62a0d908724f4a74fec2ec540a3d4a5b4def0611d381",
+      "prompt_tokens": 643
+    },
+    {
+      "id": "v5-test-excluded_objects-00",
+      "prompt_sha256": "b362353ad080914b869cb281ae45b295fd7c233dfb459e7afe90ce1bc0537191",
+      "prompt_tokens": 644
+    },
+    {
+      "id": "v5-test-composition_depth-00",
+      "prompt_sha256": "659645223ad2ce9fc11c3d9eeeef9f1109af740966f682d071a0b593429b2739",
+      "prompt_tokens": 644
+    },
+    {
+      "id": "v5-test-ordered_events-00",
+      "prompt_sha256": "3c5337fff5fd4dcb1145d394048d19611d642d0697058e67de7bb237f1e2de0f",
+      "prompt_tokens": 648
+    },
+    {
+      "id": "v5-test-resolved_replacement-00",
+      "prompt_sha256": "e4340f761f0946adbb430cc6c8a3f7ce51fba1495e4fd8bdef73684f6b6683bd",
+      "prompt_tokens": 654
+    },
+    {
+      "id": "v5-test-incomplete_predicate-00",
+      "prompt_sha256": "2e771d71bd050e82b39fc15aefa8475e9d3da3d6b3273f2c4032cf43dbbb0e82",
+      "prompt_tokens": 640
+    },
+    {
+      "id": "v5-test-unfinished_correction-00",
+      "prompt_sha256": "48e68e2c5fdd44079684654f6ae58d00bfa4560f7176b4a07157cdec0df2dbb2",
+      "prompt_tokens": 643
+    },
+    {
+      "id": "v5-test-unresolved_actor_identity-00",
+      "prompt_sha256": "9516e62d8dd3d9b2ee6a448e9ec9a2cbc96897d5c81985ede914f89ff16543b4",
+      "prompt_tokens": 648
+    },
+    {
+      "id": "v5-test-protected_identity-00",
+      "prompt_sha256": "381a4b71ed25ee8b2e2eb1d348902cda080ca465d898659c928f8b155a984458",
+      "prompt_tokens": 643
+    },
+    {
+      "id": "v5-test-static_descriptors-01",
+      "prompt_sha256": "68f0f0003ca39520a9053fe79ee075dcfc497a73d498a78a20f06a278cdee4e2",
+      "prompt_tokens": 639
+    },
+    {
+      "id": "v5-test-counted_action-01",
+      "prompt_sha256": "0a765a1ef2c509a8a6e373820c03549f2d09e5ace98658e3d50c858ad2177fba",
+      "prompt_tokens": 642
+    },
+    {
+      "id": "v5-test-spatial_targets-01",
+      "prompt_sha256": "a5dd617ceb8a241ea338654ca09058298edae7d333623ca42354905aa21f96f2",
+      "prompt_tokens": 644
+    },
+    {
+      "id": "v5-test-setting_word_order-01",
+      "prompt_sha256": "8c455833877d2f99f53f501d74b3869fb5dad31d91a91d9f730909302424905b",
+      "prompt_tokens": 643
+    },
+    {
+      "id": "v5-test-direct_targets-01",
+      "prompt_sha256": "40620a6ac9c62ce4027cb6f8511b89b6056e0016e08f870d0083d79d70817d1a",
+      "prompt_tokens": 649
+    },
+    {
+      "id": "v5-test-independent_actors-01",
+      "prompt_sha256": "46cb9b2ea7c8862e82fcfdaf28dbadfe3bd6393245a85e3ee3715b355774d13d",
+      "prompt_tokens": 646
+    },
+    {
+      "id": "v5-test-shared_predicate_actor_binding-01",
+      "prompt_sha256": "6b26b004726f947f9d79fb7b9436a6a981a06e86ec36eeec2f4af151969c24de",
+      "prompt_tokens": 651
+    },
+    {
+      "id": "v5-test-explicit_negative_action-01",
+      "prompt_sha256": "50004c94df08b39cc6dbfe244c2b4a320679c3d27fa2dc62ae1e8fb80ccbd0ac",
+      "prompt_tokens": 648
+    },
+    {
+      "id": "v5-test-excluded_objects-01",
+      "prompt_sha256": "1c752e89ffe0d1c82f68801c6c87099e680e62f738d284e17e7497147bf4833f",
+      "prompt_tokens": 646
+    },
+    {
+      "id": "v5-test-composition_depth-01",
+      "prompt_sha256": "40fdae299a51cbc1341f6b8cdb2d3cc996ebbe06034093b5f948b1d0f11bb51f",
+      "prompt_tokens": 643
+    },
+    {
+      "id": "v5-test-ordered_events-01",
+      "prompt_sha256": "59a92369e0cbd59cf6da3a8a127451275079e1189e4ed52f7eef16b924682987",
+      "prompt_tokens": 647
+    },
+    {
+      "id": "v5-test-resolved_replacement-01",
+      "prompt_sha256": "89d8a56bfae48df2e7b94f3867c2f7eb377927cfb032a85f07a409ad05a07dca",
+      "prompt_tokens": 652
+    },
+    {
+      "id": "v5-test-incomplete_predicate-01",
+      "prompt_sha256": "87dc24803082091fa7693438b71fc7beb051afa4cb0c76ca01fd1992f32366e7",
+      "prompt_tokens": 640
+    },
+    {
+      "id": "v5-test-unfinished_correction-01",
+      "prompt_sha256": "429432e87cc840adb630a48b2bc0afe4e16f605385529894db13457a4a1553e5",
+      "prompt_tokens": 644
+    },
+    {
+      "id": "v5-test-unresolved_actor_identity-01",
+      "prompt_sha256": "bbc884a955dd87854f2d9d0d408759cea70709e8b4206cd0e91251e10ce0670a",
+      "prompt_tokens": 648
+    },
+    {
+      "id": "v5-test-protected_identity-01",
+      "prompt_sha256": "3b169b826f8e7521abf4eb5ee6493385ea382b79c7b57a7154ea0019ac9ec763",
+      "prompt_tokens": 642
+    },
+    {
+      "id": "v5-test-static_descriptors-02",
+      "prompt_sha256": "34cdf6f5b1f0a12e1747dc041eaf9a09316a89b30e71a5b994ca666eb8087386",
+      "prompt_tokens": 639
+    },
+    {
+      "id": "v5-test-counted_action-02",
+      "prompt_sha256": "e68abe321b7d7391553fb039144f268b26b8da99f223614c24ef93189f77f5d7",
+      "prompt_tokens": 642
+    },
+    {
+      "id": "v5-test-spatial_targets-02",
+      "prompt_sha256": "fa21a194c8255a907fa150a29efa215b7b1823d57385786cb5bce4fa30756754",
+      "prompt_tokens": 646
+    },
+    {
+      "id": "v5-test-setting_word_order-02",
+      "prompt_sha256": "ae01bbe8f34dd56857387cb18f1578775205f59ee39f36c05e34ba20ac93adec",
+      "prompt_tokens": 644
+    },
+    {
+      "id": "v5-test-direct_targets-02",
+      "prompt_sha256": "38b5bdc5da2a1b67f07b3b7dffc93bca721e0dcf0eff3d6b55fe835421c540f3",
+      "prompt_tokens": 648
+    },
+    {
+      "id": "v5-test-independent_actors-02",
+      "prompt_sha256": "a91bc26ff5dbae81c23fd558ed37b6fc6fdf5f0d6471591391e0e9553187ecc4",
+      "prompt_tokens": 645
+    },
+    {
+      "id": "v5-test-shared_predicate_actor_binding-02",
+      "prompt_sha256": "46c01c92e5a68ab6889f4dbf6397e3d63c0d7914bdde486460ae22c77d55e12a",
+      "prompt_tokens": 650
+    },
+    {
+      "id": "v5-test-explicit_negative_action-02",
+      "prompt_sha256": "f7809a7907065ca3ba8fed18355aaa5839ff7c55af0962ecedc8713886eabcc6",
+      "prompt_tokens": 642
+    },
+    {
+      "id": "v5-test-excluded_objects-02",
+      "prompt_sha256": "cc07c41f5c95a5e94e0e1996a2db6b0107646bff17cdcdf974e9dafa0552f385",
+      "prompt_tokens": 644
+    },
+    {
+      "id": "v5-test-composition_depth-02",
+      "prompt_sha256": "987f4838278ffdbdb3319266913ef66a59fd82e6274afc2636eaa6a5812cb3f7",
+      "prompt_tokens": 643
+    },
+    {
+      "id": "v5-test-ordered_events-02",
+      "prompt_sha256": "b84645564c4c07b6cf968ed1141ed5d967896c1fa4d1194d104f512c95ea30bf",
+      "prompt_tokens": 646
+    },
+    {
+      "id": "v5-test-resolved_replacement-02",
+      "prompt_sha256": "b7270f9fb7adb712c7fea51a7fcc9abd823ec010e9e26c6e7267befa5f8a29ab",
+      "prompt_tokens": 651
+    },
+    {
+      "id": "v5-test-incomplete_predicate-02",
+      "prompt_sha256": "da5db8dd19ef5988ccda3b5794b2d286420a09e88a667a2730a634a1718e3e61",
+      "prompt_tokens": 639
+    },
+    {
+      "id": "v5-test-unfinished_correction-02",
+      "prompt_sha256": "afa19543dd14fb8980f731b36b8e7e52caade4f0b7aa4d326501c48995435981",
+      "prompt_tokens": 643
+    },
+    {
+      "id": "v5-test-unresolved_actor_identity-02",
+      "prompt_sha256": "d6be040a8c3e1fc6cbf743aad8a4bc26b5ad42f4f045c220ac1f96d8e7cf608e",
+      "prompt_tokens": 648
+    },
+    {
+      "id": "v5-test-protected_identity-02",
+      "prompt_sha256": "df22532bfafd6c96135cad076d1c0dbcdf13d04151f96e073052845d27651d3a",
+      "prompt_tokens": 642
+    },
+    {
+      "id": "v5-test-static_descriptors-03",
+      "prompt_sha256": "7d1e9eb89d3abc7e65a0bd36afa825cb732076533cfcdac9aac4eec3da5a72c0",
+      "prompt_tokens": 639
+    },
+    {
+      "id": "v5-test-counted_action-03",
+      "prompt_sha256": "e5eba15c1a2d5b16e7ad3685b9f68478650882bf458ba06b09b5e6a48112b5a3",
+      "prompt_tokens": 641
+    },
+    {
+      "id": "v5-test-spatial_targets-03",
+      "prompt_sha256": "75b92a1909c07815aaddd87a5fe66290d23001b549b3f1445ec77a6541d357c8",
+      "prompt_tokens": 643
+    },
+    {
+      "id": "v5-test-setting_word_order-03",
+      "prompt_sha256": "25abfe60d4320749f40a24920684826047e17452abd9a462c69706feab1e461c",
+      "prompt_tokens": 642
+    },
+    {
+      "id": "v5-test-direct_targets-03",
+      "prompt_sha256": "6eda1bce79d083480b341d60dac7181f4c986e322d68bc093572e61a6933258a",
+      "prompt_tokens": 647
+    },
+    {
+      "id": "v5-test-independent_actors-03",
+      "prompt_sha256": "209963aed65d5ec6d36be6bd8368f77b90e6a50ce9d08d8df05fd5552ab8217a",
+      "prompt_tokens": 644
+    },
+    {
+      "id": "v5-test-shared_predicate_actor_binding-03",
+      "prompt_sha256": "7036ceba34bac91cd2c8983af53d19f34aad9835fe558e9a988608f699c9668b",
+      "prompt_tokens": 648
+    },
+    {
+      "id": "v5-test-explicit_negative_action-03",
+      "prompt_sha256": "9cf5a216ed2494023d9b3486b017ea01041b2a20cf3fadb2ba6f7bde46d4e87b",
+      "prompt_tokens": 646
+    },
+    {
+      "id": "v5-test-excluded_objects-03",
+      "prompt_sha256": "a7c2af9c4b1f091ae0b4654e439a4ffcbb1521e8ca2613a965baf8bb531838d0",
+      "prompt_tokens": 644
+    },
+    {
+      "id": "v5-test-composition_depth-03",
+      "prompt_sha256": "5282d49b500380285bd4b8e98b80fd5025dd5fe11aa3ee5526b95bb5f931660f",
+      "prompt_tokens": 642
+    },
+    {
+      "id": "v5-test-ordered_events-03",
+      "prompt_sha256": "2856e25584b3df596020febd41edc973a2e95ad52fa8241470e29149a12356de",
+      "prompt_tokens": 645
+    },
+    {
+      "id": "v5-test-resolved_replacement-03",
+      "prompt_sha256": "45df3995b0018a80eb5c7f82d6b65998af3a5b9a8a4e6f445ff037dcdc1d1c58",
+      "prompt_tokens": 650
+    },
+    {
+      "id": "v5-test-incomplete_predicate-03",
+      "prompt_sha256": "ad9e0843ffb612dec5dba23b3dba46f62d3f52f271ddd4fbf8ff62dc734a1dde",
+      "prompt_tokens": 640
+    },
+    {
+      "id": "v5-test-unfinished_correction-03",
+      "prompt_sha256": "6681cb1c28f65b72ea17f2372b1b57fdaadacf5aea90fba0875ce246f6f853b7",
+      "prompt_tokens": 642
+    },
+    {
+      "id": "v5-test-unresolved_actor_identity-03",
+      "prompt_sha256": "53d45317f61fc725a265c5a3128840f026e0f4654717125cb05934b370f0f5e7",
+      "prompt_tokens": 646
+    },
+    {
+      "id": "v5-test-protected_identity-03",
+      "prompt_sha256": "fe73a371c37b8b1ea2872679131807c0d0754b1ec6335fa9948efd2304ce0d2e",
+      "prompt_tokens": 641
+    },
+    {
+      "id": "v5-test-static_descriptors-04",
+      "prompt_sha256": "b203ec78804e58257b780f5f9d916a87483874206b69c121638f4f409956590d",
+      "prompt_tokens": 639
+    },
+    {
+      "id": "v5-test-counted_action-04",
+      "prompt_sha256": "0d3a2dea6b5b8a029c9a5218e36b91c2e3de440f87fe4c10d691a517305b102c",
+      "prompt_tokens": 640
+    },
+    {
+      "id": "v5-test-spatial_targets-04",
+      "prompt_sha256": "327c673f2630493397e43a1e377c05641c4188b9ca03460edaceec452cb9af6b",
+      "prompt_tokens": 643
+    },
+    {
+      "id": "v5-test-setting_word_order-04",
+      "prompt_sha256": "c063e119ea50582ec3c125cdcd5a54c760a4893c483116d827c4f65009acafdf",
+      "prompt_tokens": 644
+    },
+    {
+      "id": "v5-test-direct_targets-04",
+      "prompt_sha256": "bc9777fbadc50f9cef10ec91ec5542557c2d4dbff0ad0877e320a4e7e031b90a",
+      "prompt_tokens": 648
+    },
+    {
+      "id": "v5-test-independent_actors-04",
+      "prompt_sha256": "b1388c956575d1463f83fee48aa280bfdec31eda4b24497054fafd3d4d55468b",
+      "prompt_tokens": 645
+    },
+    {
+      "id": "v5-test-shared_predicate_actor_binding-04",
+      "prompt_sha256": "c4394d7d2e75e1849918da9ede009099228408415ef4df48aa2a3951583a59ec",
+      "prompt_tokens": 649
+    },
+    {
+      "id": "v5-test-explicit_negative_action-04",
+      "prompt_sha256": "9dc3980f2e8803eaea279ba950d1f2e7afa35afd607e719c690fe45b3cfe61b5",
+      "prompt_tokens": 641
+    },
+    {
+      "id": "v5-test-excluded_objects-04",
+      "prompt_sha256": "656079e437a69049ca913d53e42c224bdccc82892b572929bc80fb750fb29071",
+      "prompt_tokens": 642
+    },
+    {
+      "id": "v5-test-composition_depth-04",
+      "prompt_sha256": "76524c7b0a2a345e84be24541a49922ec9d6f7487598a417b9fbe0e8c8ace0bb",
+      "prompt_tokens": 642
+    },
+    {
+      "id": "v5-test-ordered_events-04",
+      "prompt_sha256": "e9aa8c1ee32beabfcd096484ea9030913833ac89f0e81cb908734c702ea5f122",
+      "prompt_tokens": 644
+    },
+    {
+      "id": "v5-test-resolved_replacement-04",
+      "prompt_sha256": "df5c11b79e8c3b332a432dc9a9f827853ca9d98ceae8839f4168f3c9b0782302",
+      "prompt_tokens": 651
+    },
+    {
+      "id": "v5-test-incomplete_predicate-04",
+      "prompt_sha256": "d409583f86f8412a644d649be4fb1faf1089170e1b9250c64c3cf98ca4e1d7c0",
+      "prompt_tokens": 638
+    },
+    {
+      "id": "v5-test-unfinished_correction-04",
+      "prompt_sha256": "d38b9f567b25a02cd3f25a6937a54a6f0515904012ff3f07be1c0dd635968220",
+      "prompt_tokens": 641
+    },
+    {
+      "id": "v5-test-unresolved_actor_identity-04",
+      "prompt_sha256": "9dfbfd573865af9e8071f10af98aea11d749f95a5e99591489fa53b1edea54d5",
+      "prompt_tokens": 646
+    },
+    {
+      "id": "v5-test-protected_identity-04",
+      "prompt_sha256": "24f86a05c0c470157a823ae9329a6a4966e47c6cb0d16cb6cf74c5c2c3f82f69",
+      "prompt_tokens": 641
+    },
+    {
+      "id": "v5-test-static_descriptors-05",
+      "prompt_sha256": "2a82b0b9bc00aeca98b63b4f885d82569d5696cd47ed7d9291b23b068f991934",
+      "prompt_tokens": 639
+    },
+    {
+      "id": "v5-test-counted_action-05",
+      "prompt_sha256": "3160bf1f03e63d3b74bce3f83a75f97b44509e88806cd65a5878e493399ce9ad",
+      "prompt_tokens": 640
+    },
+    {
+      "id": "v5-test-spatial_targets-05",
+      "prompt_sha256": "8f9855cf83af1405435014f4022f414a708d686ba5ae34dd96387d61881ec6c9",
+      "prompt_tokens": 643
+    },
+    {
+      "id": "v5-test-setting_word_order-05",
+      "prompt_sha256": "3e6b876432e9a99aa8cab761af165c057add6444c91c418d62330b86ca34beb8",
+      "prompt_tokens": 642
+    },
+    {
+      "id": "v5-test-direct_targets-05",
+      "prompt_sha256": "e3bdb564b9222e71b26119e30d9b293880e1d2a626e3ac9e7357a4665cc04036",
+      "prompt_tokens": 647
+    },
+    {
+      "id": "v5-test-independent_actors-05",
+      "prompt_sha256": "6614accfb34f21d38ff58fa72b7d191e34e74804093a578ffab2c2a2f0ffe7e2",
+      "prompt_tokens": 644
+    },
+    {
+      "id": "v5-test-shared_predicate_actor_binding-05",
+      "prompt_sha256": "92bc01086dc45a43560a18572415ee863c2494f70944d87f5ae0e285666ee747",
+      "prompt_tokens": 648
+    },
+    {
+      "id": "v5-test-explicit_negative_action-05",
+      "prompt_sha256": "acc47e4744c256e78c2517d4747e8d89dba263c0a32946301d454f065c35e33e",
+      "prompt_tokens": 646
+    },
+    {
+      "id": "v5-test-excluded_objects-05",
+      "prompt_sha256": "9bcea539beceaaaedd06c9aa98d12becb6346bb766ac04586932ee0ff231915c",
+      "prompt_tokens": 644
+    },
+    {
+      "id": "v5-test-composition_depth-05",
+      "prompt_sha256": "bd9cdac96fb1e204e949ed6feb201f9206fdd0191f59f88e46298ae8bf2101a9",
+      "prompt_tokens": 642
+    },
+    {
+      "id": "v5-test-ordered_events-05",
+      "prompt_sha256": "232dab2b4a725c0eb121f24e101150fd2adc60c200992f1af21966de126a6311",
+      "prompt_tokens": 645
+    },
+    {
+      "id": "v5-test-resolved_replacement-05",
+      "prompt_sha256": "bb70238338594cde26e6569f315611124e70f30b9def8a9170b290e9d37a7518",
+      "prompt_tokens": 650
+    },
+    {
+      "id": "v5-test-incomplete_predicate-05",
+      "prompt_sha256": "f1248482e792930ff08e1fd979872fd3911b182356a4d32c3317c2f2fe856d26",
+      "prompt_tokens": 639
+    },
+    {
+      "id": "v5-test-unfinished_correction-05",
+      "prompt_sha256": "e4736534c65255217a46e7fa3500bf35c61245910b32ab8097a05be53ac6f1c7",
+      "prompt_tokens": 643
+    },
+    {
+      "id": "v5-test-unresolved_actor_identity-05",
+      "prompt_sha256": "61266976a0d73f4eb6fbdcf048e17bdacc3e89254a0e7d72fa575c16dd194675",
+      "prompt_tokens": 646
+    },
+    {
+      "id": "v5-test-protected_identity-05",
+      "prompt_sha256": "45fa4ce79da96fd3def8f60610118f06dfa2c4c7bd6b31714fe456e6c18da8f6",
+      "prompt_tokens": 641
+    },
+    {
+      "id": "v5-test-static_descriptors-06",
+      "prompt_sha256": "6d3e067af2d4e4a6dccf3dae489223288938b4e151e411bfd20c446ec75d9c33",
+      "prompt_tokens": 639
+    },
+    {
+      "id": "v5-test-counted_action-06",
+      "prompt_sha256": "0538fac9d41b4e4c5981af126070b8e3910706be5e2ec623624c458ab164fc8d",
+      "prompt_tokens": 641
+    },
+    {
+      "id": "v5-test-spatial_targets-06",
+      "prompt_sha256": "3688beefb2152c9bf6fe838db6c2ad16967497c50ca23269bc203d8b37362622",
+      "prompt_tokens": 645
+    },
+    {
+      "id": "v5-test-setting_word_order-06",
+      "prompt_sha256": "f190bd6e3af2a51d61984e2a529108327c88871ceb0bc2f3dedd4064055aaeb7",
+      "prompt_tokens": 643
+    },
+    {
+      "id": "v5-test-direct_targets-06",
+      "prompt_sha256": "cb15f31cab204752b4d4be745bc85ade0bcd72dde4f99d04d24f9c0edf854931",
+      "prompt_tokens": 647
+    },
+    {
+      "id": "v5-test-independent_actors-06",
+      "prompt_sha256": "629b431aed17672166dde0bc2850a8e780f41c414ba1feb2cc43c6afc0f8470a",
+      "prompt_tokens": 644
+    },
+    {
+      "id": "v5-test-shared_predicate_actor_binding-06",
+      "prompt_sha256": "461c371ad99b8e4a406310b82c2307c623c104fdc6366bc9e095299491063f5e",
+      "prompt_tokens": 648
+    },
+    {
+      "id": "v5-test-explicit_negative_action-06",
+      "prompt_sha256": "b61d221d9ec1284305fdc2345cf8ec91264a0b68c168f176a1bbbd63f75a1808",
+      "prompt_tokens": 641
+    },
+    {
+      "id": "v5-test-excluded_objects-06",
+      "prompt_sha256": "a04493cbba77cf80933a2ae209eb6addce7f0d8008e9dea72e5e5089c2af5dcf",
+      "prompt_tokens": 642
+    },
+    {
+      "id": "v5-test-composition_depth-06",
+      "prompt_sha256": "468b0a0be0427be022a94b914752f7b6b516474c5e2c869be06a5d6f164d37be",
+      "prompt_tokens": 642
+    },
+    {
+      "id": "v5-test-ordered_events-06",
+      "prompt_sha256": "675f9c256c230807a8f40a4af04a02071c82ae154233ec9aefda5883e645a2cf",
+      "prompt_tokens": 644
+    },
+    {
+      "id": "v5-test-resolved_replacement-06",
+      "prompt_sha256": "ed39097ceb390be2deef865b9b54a4a3ddd0d4ab976b635cc5b9b835f0824f88",
+      "prompt_tokens": 650
+    },
+    {
+      "id": "v5-test-incomplete_predicate-06",
+      "prompt_sha256": "12b88262ba645f1b3aa2501d9da88bb1c8924db91e01247a62011213365b25d3",
+      "prompt_tokens": 638
+    },
+    {
+      "id": "v5-test-unfinished_correction-06",
+      "prompt_sha256": "3041ee2bdb52b2b1ebdd9a1c82eb2fe85f690a46af1174e80ec5ef51e7ac046e",
+      "prompt_tokens": 642
+    },
+    {
+      "id": "v5-test-unresolved_actor_identity-06",
+      "prompt_sha256": "5e2ac41a2ef138cbaf0764fe4343830fec585f941e8bdc5d82a8684667c3437f",
+      "prompt_tokens": 647
+    },
+    {
+      "id": "v5-test-protected_identity-06",
+      "prompt_sha256": "f066708f3011be7f4dfcd0e1929dcc292db1ec8ebb96ade180b73226eed60d19",
+      "prompt_tokens": 641
+    },
+    {
+      "id": "v5-test-static_descriptors-07",
+      "prompt_sha256": "dc97ed6ee273e2ced720b4525914a8952fb816449120d7ad48ae65794ca169e5",
+      "prompt_tokens": 639
+    },
+    {
+      "id": "v5-test-counted_action-07",
+      "prompt_sha256": "d6e600cb080f799601c0749672804bdf079448a490837c6443761d1566e2ab4b",
+      "prompt_tokens": 642
+    },
+    {
+      "id": "v5-test-spatial_targets-07",
+      "prompt_sha256": "139066b92519d3a1803996479d90ad58a27493a41a9c2fc87ca823a05ed5e9ed",
+      "prompt_tokens": 645
+    },
+    {
+      "id": "v5-test-setting_word_order-07",
+      "prompt_sha256": "609d81760e0a7e25f9b68806b881eb12463f6d9a18cdb5b038d787210c1531d6",
+      "prompt_tokens": 644
+    },
+    {
+      "id": "v5-test-direct_targets-07",
+      "prompt_sha256": "9884a83163eccf8ee1f62519b243670045e336d7cbea045bedda01a36fa31099",
+      "prompt_tokens": 650
+    },
+    {
+      "id": "v5-test-independent_actors-07",
+      "prompt_sha256": "29e438812fe140f3cad7cdd5daecb6d1889513d59ee1b2454e8aae0b0186b7de",
+      "prompt_tokens": 647
+    },
+    {
+      "id": "v5-test-shared_predicate_actor_binding-07",
+      "prompt_sha256": "4c3e1de5f8c8af0f390aa57fb53e83725e85db45821320a6e9283f99971f9bb9",
+      "prompt_tokens": 652
+    },
+    {
+      "id": "v5-test-explicit_negative_action-07",
+      "prompt_sha256": "4c5ccf6d459651ef7c68a72dc63f5e83f31fbd0503709aa6359de6169bb95b00",
+      "prompt_tokens": 650
+    },
+    {
+      "id": "v5-test-excluded_objects-07",
+      "prompt_sha256": "41a3d75b61f4b28c3623317238ada1d18ad0dc1afd4e138e86a60b554ff464be",
+      "prompt_tokens": 646
+    },
+    {
+      "id": "v5-test-composition_depth-07",
+      "prompt_sha256": "a77edfffca880323bf7273ae5a2b091b1b3cb2dfebe8bac165ca92b475d6be6e",
+      "prompt_tokens": 644
+    },
+    {
+      "id": "v5-test-ordered_events-07",
+      "prompt_sha256": "7bf7742a14b3c2dcb575928c8c66773d006faf39ace0b837911e02b9f5343f9c",
+      "prompt_tokens": 649
+    },
+    {
+      "id": "v5-test-resolved_replacement-07",
+      "prompt_sha256": "945a16991f411c5de5a18d11ebb6f9328e60bd3f8bcad9776e9ece009825afbd",
+      "prompt_tokens": 653
+    },
+    {
+      "id": "v5-test-incomplete_predicate-07",
+      "prompt_sha256": "b5358fdb952b73d230076aff3bddabe4b28178614e3d3adf7cb89b9e958f3d3a",
+      "prompt_tokens": 642
+    },
+    {
+      "id": "v5-test-unfinished_correction-07",
+      "prompt_sha256": "36420f6e5d811adbdd4e7e01f017f59f1e97dc0638e4a53b24cad45bf8b559d2",
+      "prompt_tokens": 644
+    },
+    {
+      "id": "v5-test-unresolved_actor_identity-07",
+      "prompt_sha256": "78dd914dc8d71056a0a999f9de0295b9524dcb2dfcaded27f68ef6b97d4ff8b7",
+      "prompt_tokens": 649
+    },
+    {
+      "id": "v5-test-protected_identity-07",
+      "prompt_sha256": "a12967c2b7a3219d583b42efd1bbc22a17f18cf678a8e2eef97d4834a93221e6",
+      "prompt_tokens": 643
+    }
+  ],
+  "source_sha256": "9ecaa9e0cc4034bfe64e60e7d1304297ac58b5406d6fba377b7a4a90baa7d794",
+  "tokenizer_files": {
+    "chat_template.jinja": "0a2c8073c878ab1da004bee933a998606537bbb62016310352c7285c3f01c5b5",
+    "config.json": "1b28f3d2c3100f6c594754b81107428bd7b822a7f48272ca681dae9d2ec38330",
+    "generation_config.json": "d4226bbe3117d2d253ba4609720ba82c6c4ce4627a9a6ae05387c78983ac03de",
+    "tokenizer.json": "cc8d3a0ce36466ccc1278bf987df5f71db1719b9ca6b4118264f45cb627bfe0f",
+    "tokenizer_config.json": "9f4fec4b1dc6ecddf8f4a92e9caea5971c0e67d81309f3f9066a2bee8c362633"
+  },
+  "tokenizer_version": "5.13.0",
+  "unique_inputs": 130
+}

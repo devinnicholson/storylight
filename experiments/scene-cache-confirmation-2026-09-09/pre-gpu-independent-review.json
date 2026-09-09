@@ -1,0 +1,23 @@
+{
+  "reviewer": "review_followups",
+  "decision": "Conditional GO after independent54-call compiledbridge parity verification",
+  "source_hashes": {
+    "run.py": "1c3f0ecb5111fec4f4756f4f776af2ef5977d2cf222330414e3bc6c3d8132fd3",
+    "protocol.json": "1a2579008b49f64d2a2d45f00a2c4ed5c63c0621d1ca6accbf0637ff4f79bd69",
+    "inputs.jsonl": "4ffc9adc3c15fbb6e684197a05b4b8bc2281f616ea02888f38989fff3acf58fb",
+    "test_run.py": "4f931f592eb33580db2990b4ee672524c805c64b2ea49243c07367926c0f2701",
+    "run-gpu.sh": "de781c4b4e063eacd6cff9711a25e95876f4556acb33b0296a93594a3d11b2db"
+  },
+  "checks": [
+    "Reviewed complete diff against b308 compiledbridge; generation/transfer/merge/trace code unchanged",
+    "CPU loader/schedule test and Ruff passed",
+    "Confirmed all128 exposed inputJSON records preserved after two training warmups",
+    "Wrapper bash-n, exactCLI/pins, exclusive paths and1600/1660+30 bounds",
+    "Wrapper requires54call completion hash and both allparity flags true"
+  ],
+  "limitations": [
+    "Already exposed cases, no heldout accuracy claim",
+    "Mode order fixed; compiledmode caseorder reversed",
+    "No production promotion even if paritypasses"
+  ]
+}

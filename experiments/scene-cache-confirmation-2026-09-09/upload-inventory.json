@@ -1,0 +1,11 @@
+{
+  "archive_sha256": "f0c43ffdb69f2eb4231b1641905e0aec38c8e1d943543d1c32ce590b5ba8c2c4",
+  "files": {
+    "run.py": "1c3f0ecb5111fec4f4756f4f776af2ef5977d2cf222330414e3bc6c3d8132fd3",
+    "protocol.json": "1a2579008b49f64d2a2d45f00a2c4ed5c63c0621d1ca6accbf0637ff4f79bd69",
+    "inputs.jsonl": "4ffc9adc3c15fbb6e684197a05b4b8bc2281f616ea02888f38989fff3acf58fb",
+    "run-gpu.sh": "de781c4b4e063eacd6cff9711a25e95876f4556acb33b0296a93594a3d11b2db"
+  },
+  "answer_free": true,
+  "no_gold": true
+}

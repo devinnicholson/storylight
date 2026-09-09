@@ -1,0 +1,11 @@
+{
+  "independent_cpu_reproduction": true,
+  "byte_identical": [
+    "inputs.jsonl",
+    "protocol.json",
+    "cpu-preflight.json"
+  ],
+  "no_gold_read": true,
+  "no_model_load": true,
+  "protocol_sha256": "1a2579008b49f64d2a2d45f00a2c4ed5c63c0621d1ca6accbf0637ff4f79bd69"
+}
