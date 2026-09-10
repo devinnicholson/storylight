@@ -72,7 +72,9 @@ let voiceGeneration = {
 let projectorPreviewUrl = null;
 const workbenchQuery = new URLSearchParams(window.location.search);
 const voiceMode = workbenchQuery.get("voice") === "1";
-const cueMode = voiceMode && workbenchQuery.get("cues") === "alice";
+const bookMode = voiceMode && workbenchQuery.get("book") === "alice";
+const cueMode = voiceMode && (workbenchQuery.get("cues") === "alice" || bookMode);
+let readingBook = null;
 let cueRecordingMatched = false;
 const cueState = {scenes: null, desired: null, shown: null, busy: false};
 const demoMode = !voiceMode && workbenchQuery.get("demo") === "1";
@@ -370,7 +372,8 @@ function setSceneReady(ready) {
   elements.projectionPreview.classList.toggle("hidden", !ready);
   if (ready && !listening && !starting && !finalizing) {
     elements.interim.textContent = voiceMode
-      ? (cueMode ? "Read one complete sentence to show its prepared artwork."
+      ? (bookMode ? "Read the selected passage to reveal its illustration."
+        : cueMode ? "Read one complete sentence to show its prepared artwork."
         : "Describe a scene. Generation starts as you speak; only completed artwork appears.")
       : "Press Start reading and read the page aloud.";
   }
@@ -727,6 +730,14 @@ function voiceSnapshotMatchesIntent(snapshot, intent) {
 async function loadDemoCues() {
   if (cueState.scenes) return;
   const catalog = await readerRequest("/v1/demo-cues", {cache: "no-store"});
+  if (bookMode) {
+    readingBook = await StorylightBook.mount(elements.voiceReview, {
+      onSelect: () => { cueState.desired = null; elements.story.value = ""; },
+      isRecording: () => listening || starting || finalizing || cueState.busy,
+    });
+    cueState.scenes = catalog.scenes;
+    return;
+  }
   cueState.scenes = catalog.scenes;
   elements.voiceReview.style.whiteSpace = "pre-line";
   elements.voiceReview.textContent = "Read one full sentence:\n"
@@ -738,7 +749,10 @@ async function offerDemoCue(text) {
   elements.story.value = text;
   try {
     await loadDemoCues();
-    const scene = StorylightCues.matchCue(text, cueState.scenes);
+    const passageScene = bookMode ? readingBook.match(text) : null;
+    const scene = bookMode
+      ? cueState.scenes.find((item) => item.scene_id === passageScene)
+      : StorylightCues.matchCue(text, cueState.scenes);
     if (!scene) return;
     if (listening) {
       cueRecordingMatched = true;
@@ -965,8 +979,10 @@ async function transcribeRecording() {
       if (!text) throw new Error("No speech was recognized. Describe the scene again, or type it below.");
       if (cueMode) {
         await offerDemoCue(text);
-        if (!StorylightCues.matchCue(text, cueState.scenes)) {
-          elements.interim.textContent = "No matching sentence heard. Press Describe scene to try again.";
+        if (!(bookMode ? readingBook.match(text) : StorylightCues.matchCue(text, cueState.scenes))) {
+          elements.interim.textContent = bookMode
+            ? "The full passage was not recognized. Press Describe scene and read it again from the beginning."
+            : "No matching sentence heard. Press Describe scene to try again.";
         }
         return;
       }
@@ -1223,7 +1239,9 @@ function finishLiveJob(snapshot) {
     setSceneInputsDisabled(false);
     elements.compileButton.disabled = listening || finalizing;
     elements.compileButton.textContent = "Show prepared scene";
-    elements.interim.textContent = "Prepared scene showing. Read another sentence to change it.";
+    elements.interim.textContent = bookMode
+      ? "Illustration showing. Choose another passage to continue reading."
+      : "Prepared scene showing. Read another sentence to change it.";
     setStatus("idle", "Prepared scene showing");
     return;
   }
@@ -2076,6 +2094,22 @@ if (cueMode) {
   elements.rendererPreflight.style.display = "none";
   elements.prewarmButton.disabled = true;
   void loadDemoCues().catch((error) => { elements.interim.textContent = error.message; });
+}
+if (bookMode) {
+  document.querySelector("h1.voice-only").textContent = "Read Alice. See Wonderland.";
+  document.querySelector(".voice-only.lede").textContent =
+    "Lewis Carroll’s words, freely available through Project Gutenberg. Read a passage aloud to reveal its prepared illustration.";
+  document.querySelector(".input-card h2.voice-only").textContent = "Alice’s Adventures in Wonderland";
+  document.querySelector(".input-card > .instruction").textContent =
+    "Choose a passage, then press Describe scene and read from the beginning. Its artwork appears when the passage is recognized.";
+  document.querySelector(".page-field").hidden = true;
+  document.querySelector(".page-field").style.display = "none";
+  document.querySelector(".options").style.display = "none";
+  document.querySelector("#readerHeading .voice-only").textContent = "Read the passage aloud.";
+  document.querySelector(".deferred-reader-body > div > p.voice-only:not(.section-label)").textContent =
+    "Recording stops automatically when the passage matches. Stop listening ends it manually.";
+  document.querySelector(".generate-note.voice-only").textContent =
+    "Prepared illustrations interpret the text; they do not reproduce every detail. No new image request is made while reading.";
 }
 if (demoMode) {
   elements.compileButton.disabled = true;

@@ -57,3 +57,29 @@ Open `/workbench?voice=1&cues=alice&session=alice-demo`, then the projector at `
 This is prepared-scene playback. The reported request time excludes speech recognition and physical display latency; it is not a fresh-generation benchmark. Sentence recognition supports the listed French sentence, not general French scene understanding. Raw audio remains on the configured local transcription service.
 
 This is a fixed-sentence demonstration, separate from a Gutenberg reading pack. The English rendering description for the French sentence is prepared in advance.
+
+## Read Alice with Project Gutenberg
+
+With the prepared catalog and local multilingual speech model configured above, open
+`/workbench?voice=1&book=alice&session=alice-reading`.
+Choose one of four original passages: the White Rabbit, the Cheshire Cat, the tea party,
+or the French croquet passage. Press **Describe scene** and read the selected passage
+from the beginning. Progress follows the local transcript; a complete match reveals
+its saved illustration and stops recording automatically. Choose another passage to continue.
+
+The reader includes vocabulary notes and complete English and French editions for download.
+The texts are bundled with their Gutenberg licenses, so reading and playback need no
+internet connection once the speech model and artwork are downloaded. The Jetson may
+serve as a separate display when it is running; it is not required for local playback.
+
+The four excerpts are verbatim paragraphs with line wrapping and plain-text emphasis
+markers normalized. Source URLs and SHA-256 checksums are recorded in
+`src/storylight/static/books/alice.json`; a test checks each excerpt against its edition.
+English is Lewis Carroll’s text, French is Henri Bué’s translation. The editions are
+public domain in the USA; copyright status elsewhere depends on local law.
+
+Alignment compares only the selected passage, tolerates a small number of recognition
+errors, and requires its final words. It does not score pronunciation or assess reading
+ability. Keyword fragments cannot skip to the end. These are four selected passages,
+not automatic illustration of the entire novel. The prepared artwork is an interpretation
+of each scene and does not depict every character or detail in the excerpt.

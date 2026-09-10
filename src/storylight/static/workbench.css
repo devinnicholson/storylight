@@ -216,3 +216,11 @@ footer { margin-top: 20px; text-align: center; }
 .next-page p { line-height: 1.5; }
 .next-page .live-actions { flex-wrap: wrap; gap: .5rem; margin-top: 1rem; }
 .next-page button:disabled { opacity: .5; cursor: not-allowed; }
+
+.alice-reader { margin: 1.5rem 0; }
+.alice-reader select { display: block; width: 100%; padding: .75rem; margin-top: .5rem; font: inherit; }
+.alice-reader blockquote { margin: 1.5rem 0; padding: 1.25rem; border-left: 3px solid #857b55; background: #f8f3e8; color: #272a28; font: 1.2rem/1.8 Georgia, serif; }
+.alice-reader progress { width: 100%; accent-color: #467364; }
+.alice-reader dt { font-weight: 600; margin-top: .6rem; }
+.alice-reader dd { margin: .25rem 0 .75rem; }
+.alice-reader a { text-decoration: underline; }

@@ -1,0 +1,68 @@
+{
+  "title": "Alice’s Adventures in Wonderland",
+  "author": "Lewis Carroll",
+  "translator": "Henri Bué (French)",
+  "sources": {
+    "en": {
+      "url": "https://www.gutenberg.org/ebooks/11",
+      "file": "/workbench-assets/books/alice-en.txt",
+      "sha256": "01b38ea4c710a84bc18d0bd41271a5a1a92b94e97b2812f4dece97d4a694725e"
+    },
+    "fr": {
+      "url": "https://www.gutenberg.org/ebooks/55456",
+      "file": "/workbench-assets/books/alice-fr.txt",
+      "sha256": "8f8eb3c45645e87e2e5dd4c950d42dff287104bc2b2e8393f3b3787f99a40e0b"
+    }
+  },
+  "text_note": "Verbatim paragraphs; line wrapping and plain-text emphasis markers normalized. Original editions and licenses are included.",
+  "art_note": "Prepared illustrations inspired by these scenes. They simplify the passages and add visual details; they are not literal reconstructions.",
+  "passages": [
+    {
+      "scene_id": "white-rabbit",
+      "title": "The White Rabbit",
+      "language": "en",
+      "chapter": "I · Down the Rabbit-Hole",
+      "text": "So she was considering in her own mind (as well as she could, for the hot day made her feel very sleepy and stupid), whether the pleasure of making a daisy-chain would be worth the trouble of getting up and picking the daisies, when suddenly a White Rabbit with pink eyes ran close by her.",
+      "vocabulary": {
+        "daisy-chain": "Daisies joined by their stems to make a necklace or crown.",
+        "worth the trouble": "Enjoyable or useful enough to justify the effort."
+      }
+    },
+    {
+      "scene_id": "cheshire-cat",
+      "title": "The Cheshire Cat",
+      "language": "en",
+      "chapter": "VI · Pig and Pepper",
+      "text": "The Cat only grinned when it saw Alice. It looked good-natured, she thought: still it had very long claws and a great many teeth, so she felt that it ought to be treated with respect.",
+      "vocabulary": {
+        "grinned": "Smiled broadly.",
+        "good-natured": "Friendly and pleasant.",
+        "claws": "Sharp, curved nails on an animal’s feet."
+      }
+    },
+    {
+      "scene_id": "tea-party",
+      "title": "A Mad Tea-Party",
+      "language": "en",
+      "chapter": "VII · A Mad Tea-Party",
+      "text": "There was a table set out under a tree in front of the house, and the March Hare and the Hatter were having tea at it: a Dormouse was sitting between them, fast asleep, and the other two were using it as a cushion, resting their elbows on it, and talking over its head. “Very uncomfortable for the Dormouse,” thought Alice; “only, as it’s asleep, I suppose it doesn’t mind.”",
+      "vocabulary": {
+        "Dormouse": "A small rodent, known for long periods of sleep.",
+        "cushion": "A soft pad used for comfort or support."
+      }
+    },
+    {
+      "scene_id": "croquet-fr",
+      "title": "Le croquet de la Reine",
+      "language": "fr",
+      "chapter": "VIII · Le croquet de la Reine",
+      "text": "Alice n'avait de sa vie vu de jeu de croquet aussi curieux que celui-là. Le terrain n'était que billons et sillons; des hérissons vivants servaient de boules, et des flamants de maillets. Les soldats, courbés en deux, avaient à se tenir la tête et les pieds sur le sol pour former des arches.",
+      "vocabulary": {
+        "hérissons": "hedgehogs",
+        "flamants": "flamingos",
+        "maillets": "mallets",
+        "sillons": "furrows, or long grooves in the ground"
+      }
+    }
+  ]
+}

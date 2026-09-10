@@ -52,7 +52,7 @@ function harness() {
     elements, AbortController, Blob, Uint8Array, MediaRecorder: Recorder,
     performance: {now: () => now},
     canRecordAudio: true, sceneReady: true, demoMode: false, voiceMode: false,
-    cueMode: false, cueRecordingMatched: false,
+    cueMode: false, bookMode: false, cueRecordingMatched: false,
     voiceProjectionLive: false, projectorPreviewUrl: null,
     generationSubmitting: false, pendingSubmission: null, pendingVoiceReview: null, generationReconciling: false,
     activeLiveJobId: null, latestLiveSnapshot: null,
@@ -1261,10 +1261,14 @@ async function localCheckOverlap() {
   assert.equal(early.submitted[0].text, "A dog chasing a ball.");
 }
 
-async function automaticPreparedSentence() {
+async function automaticPreparedSentence(bookMode = false) {
   const h = generationHarness();
   const c = h.context;
   c.cueMode = true;
+  c.bookMode = bookMode;
+  const passage = require("../src/storylight/static/books/alice.json").passages[0];
+  c.readingBook = {match: text => c.StorylightCues.passageProgress(text, passage.text).complete
+    ? passage.scene_id : null};
   c.cueState = {scenes: require('../examples/alice-demo.json').scenes,
     desired: null, shown: null, busy: false};
   c.StorylightCues = require('../src/storylight/static/demo-cues.js');
@@ -1287,7 +1291,7 @@ async function automaticPreparedSentence() {
   await flush();
   assert.equal(c.listening, true);
   assert.equal(activations, 0);
-  c.offerVoiceTranscript(c.cueState.scenes[0].spoken_example);
+  c.offerVoiceTranscript(bookMode ? passage.text : c.cueState.scenes[0].spoken_example);
   await flush();
   assert.equal(activations, 1);
   assert.equal(c.listening, false);
@@ -1329,6 +1333,7 @@ async function optionalTimingFailure() {
   await staticPartialAdmission(); await providerPreconnect(); await localCheckOverlap();
   await optionalTimingFailure();
   await automaticPreparedSentence();
+  await automaticPreparedSentence(true);
   console.log("Workbench microphone: cleanup, recorder flush, adaptive ASR cadence, optional preconnect, overlapped local checks, latest-only presentation and no duplicate paid requests passed.");
 })()
   .catch((error) => { console.error(error); process.exitCode = 1; });
