@@ -204,6 +204,7 @@ async function inspectRendererReadiness() {
 }
 
 async function warmEdgePlanner() {
+  if (cueMode) return false;
   try {
     // Fixed synthetic input only. This can load the private Jetson model while
     // the reader types, but never transmits or stores the story textarea.
@@ -368,7 +369,8 @@ function setSceneReady(ready) {
   elements.projectionPreview.classList.toggle("hidden", !ready);
   if (ready && !listening && !starting && !finalizing) {
     elements.interim.textContent = voiceMode
-      ? "Describe a scene. Generation starts as you speak; only completed artwork appears."
+      ? (cueMode ? "Read one complete sentence to show its prepared artwork."
+        : "Describe a scene. Generation starts as you speak; only completed artwork appears.")
       : "Press Start reading and read the page aloud.";
   }
 }
@@ -722,8 +724,9 @@ async function loadDemoCues() {
   if (cueState.scenes) return;
   const catalog = await readerRequest("/v1/demo-cues", {cache: "no-store"});
   cueState.scenes = catalog.scenes;
-  elements.voiceReview.textContent = "Prepared artwork · Speak a cue: "
-    + catalog.scenes.map((scene) => scene.cues[0]).join(" · ");
+  elements.voiceReview.style.whiteSpace = "pre-line";
+  elements.voiceReview.textContent = "Read one full sentence:\n"
+    + catalog.scenes.map((scene, i) => `${i + 1}. ${scene.cues[0]}`).join("\n");
 }
 
 async function offerDemoCue(text) {
@@ -1135,6 +1138,7 @@ function renderGenerationProgress(snapshot) {
 }
 
 function setGenerateButtonForStage(stage) {
+  if (cueMode) { elements.compileButton.textContent = "Show prepared scene"; return; }
   if (pendingSubmission) {
     elements.compileButton.disabled = generationReconciling;
     elements.compileButton.textContent = "Check generation status";
@@ -1198,6 +1202,15 @@ function finishLiveJob(snapshot) {
   });
   stopLiveJobTransport();
   activeLiveJobId = null;
+  if (cueMode) {
+    updateMicAvailability();
+    setSceneInputsDisabled(false);
+    elements.compileButton.disabled = listening || finalizing;
+    elements.compileButton.textContent = "Show prepared scene";
+    elements.interim.textContent = "Prepared scene showing. Read another sentence to change it.";
+    setStatus("idle", "Prepared scene showing");
+    return;
+  }
   if (voiceMode) {
     const key = voiceSnapshotKey(snapshot) || voiceGeneration.active?.key;
     const semanticKey = voiceGeneration.active?.key === key
@@ -1966,6 +1979,7 @@ elements.projectorLink.addEventListener("click", (event) => {
 });
 [elements.style, elements.story].forEach((element) => {
   element.addEventListener("input", () => {
+    if (cueMode) { cueState.desired = null; return; }
     delete elements.compileButton.dataset.visualVariation;
     invalidatePreparation();
     invalidateScene();
@@ -2024,6 +2038,20 @@ if (voiceMode) {
   updateMicAvailability();
 }
 if (cueMode) {
+  document.querySelector("h1.voice-only").textContent = "Read a sentence. See its scene.";
+  document.querySelector(".voice-only.lede").textContent =
+    "Four sentences, with artwork prepared in advance. Read one aloud to show its scene.";
+  document.querySelector(".input-card h2.voice-only").textContent = "Your spoken sentence";
+  document.querySelector(".input-card > .instruction").textContent =
+    "Choose one sentence below. Read it completely, then finish recording before the next one.";
+  document.querySelector("#readerHeading .voice-only").textContent = "Read one sentence aloud.";
+  document.querySelector(".deferred-reader-body > div > p.voice-only:not(.section-label)").textContent =
+    "Press Describe scene, read a complete sentence, then press Finish recording.";
+  document.querySelector(".generate-note.voice-only").textContent =
+    "These images are already generated. Sentence recognition selects the matching artwork.";
+  elements.interim.textContent = "Ready for one of the four sentences.";
+  elements.compileButton.textContent = "Show prepared scene";
+  elements.rendererPreflight.style.display = "none";
   elements.prewarmButton.disabled = true;
   void loadDemoCues().catch((error) => { elements.interim.textContent = error.message; });
 }

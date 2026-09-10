@@ -5,16 +5,8 @@
       .toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
   }
   function matchCue(text, scenes) {
-    const words = ` ${normalize(text)} `;
-    let match = null;
-    let position = -1;
-    for (const scene of scenes) {
-      for (const cue of scene.cues) {
-        const index = words.lastIndexOf(` ${normalize(cue)} `);
-        if (index > position) { match = scene; position = index; }
-      }
-    }
-    return match;
+    const sentence = normalize(text);
+    return scenes.find((scene) => scene.cues.some((cue) => normalize(cue) === sentence)) || null;
   }
   root.StorylightCues = {matchCue};
   if (typeof module !== "undefined") module.exports = {matchCue};

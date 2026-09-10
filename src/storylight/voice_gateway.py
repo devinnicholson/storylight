@@ -150,6 +150,9 @@ def create_voice_gateway(
                 or _route_allowed(request.method, route)
                 or (request.method == "POST" and route == "/v1/live-scene-provider/preconnect")
                 or (request.method == "POST" and route == "/v1/projector-telemetry")
+                or (request.method, route) in {
+                    ("GET", "/v1/demo-cues"), ("POST", "/v1/demo-cues/activate"),
+                }
             )
         ):
             raise HTTPException(status_code=403, detail="Voice gateway route is not exposed")

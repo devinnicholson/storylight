@@ -29,16 +29,16 @@ For a separate display, open `/projector?pack=latest&session=voice-demo&present=
 
 The simulated setup above intentionally cannot transcribe your microphone or produce model-generated artwork. It is the quickest way to inspect the interface and local request flow.
 
-## Alice: four prepared voice cues
+## Four prepared sentences
 
-The cue demo uses *Alice's Adventures in Wonderland*: [English text](https://www.gutenberg.org/ebooks/11) and [Henri Bué's French translation](https://www.gutenberg.org/ebooks/55456). Project Gutenberg lists both editions as public domain in the USA. The descriptions in [`examples/alice-demo.json`](../examples/alice-demo.json) are demo adaptations, not quotations.
+The sentence demo is inspired by *Alice's Adventures in Wonderland*: [English text](https://www.gutenberg.org/ebooks/11) and [Henri Bué's French translation](https://www.gutenberg.org/ebooks/55456). Project Gutenberg lists both editions as public domain in the USA. The descriptions in [`examples/alice-demo.json`](../examples/alice-demo.json) are demo adaptations, not quotations.
 
-| Spoken cue | Prepared illustration |
+| Read this sentence | Prepared illustration |
 | --- | --- |
-| “white rabbit” or “pocket watch” | The rabbit checking a golden watch |
-| “Cheshire cat” or “grinning cat” | The cat on a woodland branch |
-| “tea party” or “Mad Hatter” | A table of mismatched teacups beneath flowering trees |
-| “flamant rose” or “partie de croquet” | The Queen's croquet game |
+| “A white rabbit checks a golden pocket watch in a meadow.” | Rabbit with a watch |
+| “A grinning cat sits on a tree branch in a moonlit forest.” | Cat in a moonlit tree |
+| “A hare sits beside a teapot in a garden.” | Hare beside a teapot |
+| “La reine tient un flamant rose dans le jardin.” | Queen holding a pink flamingo |
 
 Generate the artwork once against a configured rendering API. This command can make four billable generation requests. Disable optional motion for this preparation; playback requires a master image and depth map.
 
@@ -50,8 +50,10 @@ uv run python scripts/prepare_demo_cues.py \
 
 Keep the catalog with the API's existing asset cache and set `STORYLIGHT_DEMO_CUES_PATH` to its absolute path before restarting that API. If preparation runs through a gateway, copy the catalog to the API host; the asset cache is already on that host.
 
-For English and French speech, use a local multilingual MLX Whisper model and set `STORYLIGHT_ASR_LANGUAGE=auto` on the transcription service. English-only `.en` models cannot support the French cue. `fr` selects French explicitly; the default remains `en` for existing demos. This setting applies to the MLX backend.
+For English and French speech, use a local multilingual MLX Whisper model and set `STORYLIGHT_ASR_LANGUAGE=auto` on the transcription service. English-only `.en` models cannot support the French sentence. `fr` selects French explicitly; the default remains `en` for existing demos. This setting applies to the MLX backend.
 
-Open `/workbench?voice=1&cues=alice&session=alice-demo`, then the projector at `/projector?session=alice-demo&present=1&reader=0&live=1&complete_only=1`. Press **Describe scene** and speak a cue. Cumulative speech selects the most recent matching phrase. Unmatched speech does not start generation in this mode.
+Open `/workbench?voice=1&cues=alice&session=alice-demo`, then the projector at `/projector?session=alice-demo&present=1&reader=0&live=1&complete_only=1`. Press **Describe scene** and read one complete sentence per recording. Matching ignores punctuation and capitalization, but keywords or incomplete sentences do not trigger playback. Unmatched speech does not start generation in this mode.
 
-This is prepared-scene playback. The reported request time excludes speech recognition and physical display latency; it is not a fresh-generation benchmark. Cue recognition supports the listed French phrases, not general French scene understanding. Raw audio remains on the configured local transcription service.
+This is prepared-scene playback. The reported request time excludes speech recognition and physical display latency; it is not a fresh-generation benchmark. Sentence recognition supports the listed French sentence, not general French scene understanding. Raw audio remains on the configured local transcription service.
+
+This is a fixed-sentence demonstration, separate from a Gutenberg reading pack. The English rendering description for the French sentence is prepared in advance.

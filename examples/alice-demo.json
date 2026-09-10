@@ -11,39 +11,39 @@
       "scene_id": "white-rabbit",
       "title": "The White Rabbit",
       "cues": [
-        "white rabbit",
-        "pocket watch"
+        "A white rabbit checks a golden pocket watch in a meadow."
       ],
-      "text": "A white rabbit in a waistcoat looks at a golden pocket watch beside a rabbit hole in a flowering meadow."
+      "text": "A white rabbit checks a golden pocket watch in a meadow.",
+      "spoken_example": "A white rabbit checks a golden pocket watch in a meadow."
     },
     {
       "scene_id": "cheshire-cat",
       "title": "The Cheshire Cat",
       "cues": [
-        "cheshire cat",
-        "grinning cat"
+        "A grinning cat sits on a tree branch in a moonlit forest."
       ],
-      "text": "A grinning striped cat rests on a twisting tree branch above a woodland path in a mysterious forest."
+      "text": "A grinning cat sits on a tree branch in a moonlit forest.",
+      "spoken_example": "A grinning cat sits on a tree branch in a moonlit forest."
     },
     {
       "scene_id": "tea-party",
       "title": "The Tea Party",
       "cues": [
-        "tea party",
-        "mad hatter"
+        "A hare sits beside a teapot in a garden.",
+        "A hair sits beside a teapot in a garden."
       ],
-      "text": "A man wearing an oversized top hat and a hare sit at a long outdoor tea table covered in mismatched teacups beneath flowering trees."
+      "text": "A hare sits beside a teapot in a garden.",
+      "spoken_example": "A hare sits beside a teapot in a garden."
     },
     {
       "scene_id": "croquet-fr",
-      "title": "Le croquet de la Reine",
+      "title": "La Reine et le flamant rose",
       "cues": [
-        "flamant rose",
-        "partie de croquet",
-        "flamand rose"
+        "La reine tient un flamant rose dans le jardin.",
+        "La reine tient un flamand rose dans le jardin."
       ],
-      "spoken_example": "La Reine joue au croquet avec un flamant rose.",
-      "text": "A queen in a red heart-patterned gown holds a pink flamingo like a croquet mallet on a green lawn surrounded by rose bushes."
+      "spoken_example": "La reine tient un flamant rose dans le jardin.",
+      "text": "A queen holds a pink flamingo in a garden."
     }
   ]
 }

@@ -15,6 +15,8 @@ def main():
     parser.add_argument("--api", required=True)
     parser.add_argument("--output", type=Path, required=True)
     parser.add_argument("--scenes", type=Path, default=Path("examples/alice-demo.json"))
+    parser.add_argument("--reviewed", action="store_true",
+                        help="Use local fact checks for these curated descriptions")
     args = parser.parse_args()
     if args.output.exists():
         parser.error("Output already exists; choose a new catalog path")
@@ -22,10 +24,24 @@ def main():
     prepared = []
     with httpx.Client(base_url=args.api.rstrip("/"), timeout=120) as client:
         for scene in scenes:
-            response = client.post("/v1/live-scenes", json={
+            payload = {
                 "text": scene["text"], "visual_style": STYLE, "seed": 42,
                 "display_when_complete": True,
-            })
+            }
+            if args.reviewed:
+                checked = client.post("/v1/live-scene-planner/prepare", json={
+                    "text": scene["text"], "visual_style": STYLE, "seed": 42,
+                    "reviewed_description": True,
+                })
+                checked.raise_for_status()
+                facts = checked.json()
+                if facts.get("local_omissions"):
+                    raise ValueError(f"Unresolved scene details: {scene['scene_id']}")
+                payload.update(reviewed_description=True)
+                if facts.get("requires_fact_review"):
+                    payload.update(confirm_visual_facts=True,
+                                   visual_fact_digest=facts["visual_fact_digest"])
+            response = client.post("/v1/live-scenes", json=payload)
             response.raise_for_status()
             job = response.json()
             deadline = time.monotonic() + 300
@@ -38,9 +54,13 @@ def main():
                 job = response.json()
             if job["stage"] == "failed" or not job.get("story_pack"):
                 raise RuntimeError(f"Scene preparation failed: {job['job_id']}")
+            providers = {asset["provider"].split(":", 1)[0]
+                         for asset in job["story_pack"]["assets"]}
+            if len(providers) != 1:
+                raise ValueError("Prepared assets must share one rendering provider")
             prepared.append({key: scene[key] for key in ("scene_id", "title", "cues")}
                             | {"request": job["request"], "pack": job["story_pack"],
-                               "provider": job["provider"]})
+                               "provider": providers.pop()})
             print(f"Prepared {scene['title']}", flush=True)
     args.output.parent.mkdir(parents=True, exist_ok=True)
     with args.output.open("x") as target:

@@ -83,6 +83,10 @@ def test_local_assets_asr_scene_headers_and_sse_cleanup():
         assert calls[-1].content == b"audio"
         assert client.get("/v1/runtime:status").status_code == 200
         assert calls[-1].url.port == 18766
+        assert client.get("/v1/demo-cues").status_code == 200
+        assert calls[-1].url.port == 18768
+        assert client.post("/v1/demo-cues/activate", json={}).status_code == 202
+        assert calls[-1].url.port == 18768
         response = client.post("/v1/live-scenes", json={"text": "public synthetic scene"})
         assert response.status_code == 202 and calls[-1].url.port == 18768
         assert response.headers["x-storylight-server-instance-id"] == "instance-a"
@@ -114,6 +118,8 @@ def test_loopback_scope_limits_and_single_attempt_errors():
         for method, path in (
             ("POST", "/v1/story-packs:compile"),
             ("GET", "/openapi.json"),
+            ("POST", "/v1/demo-cues"),
+            ("GET", "/v1/demo-cues/activate"),
             ("POST", "/v1/audio:transcribe/extra"),
             ("POST", "/v1/live-scene-provider/prewarm"),
             ("GET", "/v1/assets/%252e%252e/config"),
