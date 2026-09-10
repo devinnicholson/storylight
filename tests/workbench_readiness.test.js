@@ -14,7 +14,7 @@ function harness() {
     rendererReadiness: {}, rendererReadinessDetail: {},
   };
   const context = {
-    voiceMode: false,
+    voiceMode: false, cueMode: false,
     elements, readerSessionId: "synthetic-reader", rendererPrewarming: false,
     rendererWarmUntil: 0, rendererWarmExpiryTimer: null, preparedPlanKey: null,
     Date: {now: () => now},
@@ -180,7 +180,7 @@ function sessionStreamHarness() {
   const context = {
     readerSessionId: "synthetic-reader", liveSessionEventSource: null,
     liveSessionStreamHealthy: false, livePollTimer: 17,
-    voiceMode: true, recordingEpoch: 3, pendingSubmission: null,
+    voiceMode: true, cueMode: false, recordingEpoch: 3, pendingSubmission: null,
     elements: {interim: {textContent: "Scene ready."}},
     window: {clearTimeout() {}},
     voiceTimingEvent(type, _details, epoch) { timing.push({type, epoch}); },
