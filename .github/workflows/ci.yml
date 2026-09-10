@@ -53,4 +53,4 @@ jobs:
         run: uv run pytest -q
 
       - name: Test projector interaction and playback
-        run: node --test tests/anticipatory_workbench.test.js tests/hand_interaction.test.js
+        run: node --test tests/anticipatory_workbench.test.js tests/hand_interaction.test.js tests/demo_cues.test.js

@@ -72,10 +72,12 @@ let voiceGeneration = {
 let projectorPreviewUrl = null;
 const workbenchQuery = new URLSearchParams(window.location.search);
 const voiceMode = workbenchQuery.get("voice") === "1";
+const cueMode = voiceMode && workbenchQuery.get("cues") === "alice";
+const cueState = {scenes: null, desired: null, shown: null, busy: false};
 const demoMode = !voiceMode && workbenchQuery.get("demo") === "1";
 document.body.dataset.demo = String(demoMode);
 document.body.dataset.voice = String(voiceMode);
-const readerSessionId = workbenchQuery.get("session") || (voiceMode ? "voice-demo" : "storylight-live");
+const readerSessionId = workbenchQuery.get("session") || (cueMode ? "alice-demo" : voiceMode ? "voice-demo" : "storylight-live");
 const restoreLatestScene = !workbenchQuery.has("session")
   || workbenchQuery.get("restore") === "latest";
 let liveSessionEventSource = null;
@@ -540,6 +542,7 @@ async function startSpeaking() {
   elements.compileButton.disabled = true;
   setSceneInputsDisabled(true);
   try {
+    if (cueMode) await loadDemoCues();
     const pageText = elements.story.value.trim();
     if (!voiceMode && !pageText) throw new Error("Enter the trusted page text before starting the reader.");
     const runtime = await readerRequest("/v1/runtime:status", {cache: "no-store"}, 10000);
@@ -715,10 +718,56 @@ function voiceSnapshotMatchesIntent(snapshot, intent) {
     && completed.sourceKey === voiceSnapshotKey(snapshot));
 }
 
+async function loadDemoCues() {
+  if (cueState.scenes) return;
+  const catalog = await readerRequest("/v1/demo-cues", {cache: "no-store"});
+  cueState.scenes = catalog.scenes;
+  elements.voiceReview.textContent = "Prepared artwork · Speak a cue: "
+    + catalog.scenes.map((scene) => scene.cues[0]).join(" · ");
+}
+
+async function offerDemoCue(text) {
+  let ownsWork = false;
+  elements.story.value = text;
+  try {
+    await loadDemoCues();
+    const scene = StorylightCues.matchCue(text, cueState.scenes);
+    if (!scene) return;
+    cueState.desired = scene;
+    if (cueState.busy) return;
+    cueState.busy = true;
+    ownsWork = true;
+    while (cueState.desired && cueState.desired.scene_id !== cueState.shown) {
+      const selected = cueState.desired;
+      const empty = {};
+      const pointer = await fetchLiveSceneSession(empty);
+      if (selected !== cueState.desired) continue;
+      const startedAt = performance.now();
+      const shown = await readerRequest("/v1/demo-cues/activate", {
+        method: "POST", headers: {"Content-Type": "application/json"},
+        body: JSON.stringify({scene_id: selected.scene_id, session_id: readerSessionId,
+          activation_id: crypto.randomUUID(),
+          server_instance_id: pointer?.server_instance_id || empty.serverInstanceId,
+          session_revision: pointer?.session_revision || 0}),
+      });
+      cueState.shown = selected.scene_id;
+      handleLiveSceneSessionPointer(shown, {restoreInputs: false});
+      ensureProjectionPreview();
+      elements.interim.textContent = `${selected.title} · prepared scene loaded in `
+        + `${Math.round(performance.now() - startedAt)} ms (request time)`;
+    }
+  } catch (error) {
+    elements.interim.textContent = `Prepared scene unavailable: ${error.message}`;
+  } finally {
+    if (ownsWork) cueState.busy = false;
+  }
+}
+
 function offerVoiceTranscript(text, {final = false, epoch = recordingEpoch} = {}) {
   if (!voiceMode || epoch !== recordingEpoch || typeof text !== "string") return;
   text = text.trim();
   if (!text) return;
+  if (cueMode) { void offerDemoCue(text); return; }
   const style = elements.style.value.trim() || "luminous paper theater";
   const key = voiceIntentKey(text, style);
   const previous = voiceGeneration.latest;
@@ -1620,6 +1669,7 @@ async function compileStory(options = {}) {
   if ((!automatic && (starting || listening || finalizing))
     || generationSubmitting || activeLiveJobId) return;
   const text = voiceIntent?.text || elements.story.value.trim();
+  if (cueMode) { await offerDemoCue(text); return; }
   if (voiceMode && !automatic && voiceGeneration.completed?.key === voiceIntentKey(text,
     elements.style.value.trim() || "luminous paper theater")
     && !voiceGeneration.completed.snapshot.presentation_ready) {
@@ -1972,6 +2022,10 @@ if (voiceMode) {
   elements.interim.textContent = "Describe what you want to see. Generation starts as you speak; completed artwork appears automatically.";
   elements.story.placeholder = "Your spoken description appears here. Edit it to refine or retry the scene.";
   updateMicAvailability();
+}
+if (cueMode) {
+  elements.prewarmButton.disabled = true;
+  void loadDemoCues().catch((error) => { elements.interim.textContent = error.message; });
 }
 if (demoMode) {
   elements.compileButton.disabled = true;

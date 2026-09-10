@@ -101,7 +101,8 @@ class LocalTranscriber:
                 result = mlx_whisper.transcribe(
                     str(audio_path),
                     path_or_hf_repo=str(model),
-                    language="en",
+                    language=(None if self.settings.asr_language == "auto"
+                              else self.settings.asr_language),
                     verbose=None,
                     condition_on_previous_text=False,
                     # Do not let a confident decoded token override the model's

@@ -47,6 +47,7 @@ from storylight.asset_generator import (
     build_depth_estimator,
 )
 from storylight.config import Settings, get_settings
+from storylight.demo_cues import CueActivation, load_catalog
 from storylight.domain import (
     CompileResponse,
     InterventionRequest,
@@ -741,6 +742,49 @@ async def create_live_scene(
         raise HTTPException(status_code=429, detail=str(error)) from error
     except LiveSceneRegistryClosedError as error:
         raise HTTPException(status_code=503, detail=str(error)) from error
+
+
+def _cue_catalog(request: Request):
+    if not _is_local_connection(request):
+        raise HTTPException(status_code=403, detail="Demo controls are local-only")
+    path = request.app.state.settings.demo_cues_path
+    if path is None:
+        raise HTTPException(status_code=409, detail="Prepared demo scenes are not configured")
+    try:
+        return load_catalog(path)
+    except (OSError, ValueError) as error:
+        raise HTTPException(503, "Prepared demo catalog is unavailable") from error
+
+
+@app.get("/v1/demo-cues")
+async def demo_cues(request: Request):
+    return {"scenes": [{"scene_id": scene.scene_id, "title": scene.title, "cues": scene.cues}
+                       for scene in _cue_catalog(request).scenes]}
+
+
+@app.post("/v1/demo-cues/activate", response_model=LiveSceneSessionStatus)
+async def activate_demo_cue(payload: CueActivation, request: Request):
+    catalog = _cue_catalog(request)
+    scene = next((item for item in catalog.scenes if item.scene_id == payload.scene_id), None)
+    if scene is None:
+        raise HTTPException(status_code=404, detail="Unknown prepared scene")
+    scene_request = scene.request.model_copy(update={
+        "session_id": payload.session_id, "defer_presentation": False,
+        "display_when_complete": True, "submission_id": None,
+        "expected_server_instance_id": None, "expected_session_revision": None,
+    })
+    try:
+        return await request.app.state.live_scenes.activate_prepared_pack(
+            activation_id=payload.activation_id, request=scene_request, pack=scene.pack,
+            provider=scene.provider, expected_server_instance_id=payload.server_instance_id,
+            expected_session_revision=payload.session_revision,
+        )
+    except LiveSceneConflictError as error:
+        raise HTTPException(status_code=409, detail=str(error)) from error
+    except LiveSceneCapacityError as error:
+        raise HTTPException(status_code=429, detail=str(error)) from error
+    except (ValueError, RuntimeError) as error:
+        raise HTTPException(503, "Prepared artwork could not be loaded") from error
 
 
 @app.post("/v1/live-scenes/{job_id}/present", response_model=LiveSceneJob)

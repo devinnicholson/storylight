@@ -129,6 +129,8 @@ class Settings(BaseSettings):
     live_scene_max_retained_jobs: Annotated[int, Field(ge=1, le=256)] = 64
     live_scene_event_queue_size: Annotated[int, Field(ge=1, le=128)] = 8
     asr_backend: Literal["mlx_whisper", "whisper_trt", "disabled", "test"] = "mlx_whisper"
+    demo_cues_path: Path | None = None
+    asr_language: Literal["en", "fr", "auto"] = "en"
     asr_model: str = ".models/whisper-base.en"
     asr_engine_path: str = ""
     asr_startup_audio: str = ""

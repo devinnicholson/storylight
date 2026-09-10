@@ -31,3 +31,19 @@ def test_local_asr_uses_native_no_speech_gate_without_rewriting_text(tmp_path, m
         "condition_on_previous_text": False,
         "logprob_threshold": None,
     }
+
+
+def test_multilingual_asr_allows_french_without_forcing_english(tmp_path, monkeypatch):
+    calls = []
+
+    def transcribe(path, **options):
+        calls.append(options)
+        return {"text": "Un flamant rose.", "language": "fr"}
+
+    monkeypatch.setitem(sys.modules, "mlx_whisper", SimpleNamespace(transcribe=transcribe))
+    for language, expected in [("auto", None), ("fr", "fr")]:
+        backend = LocalTranscriber(Settings(
+            asr_backend="mlx_whisper", asr_model=str(tmp_path), asr_language=language,
+        ))
+        assert backend._transcribe_sync(b"audio", ".webm") == ("Un flamant rose.", "fr")
+        assert calls[-1]["language"] == expected

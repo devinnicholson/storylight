@@ -1,0 +1,49 @@
+{
+  "title": "Alice's Adventures in Wonderland",
+  "author": "Lewis Carroll",
+  "sources": {
+    "en": "https://www.gutenberg.org/ebooks/11",
+    "fr": "https://www.gutenberg.org/ebooks/55456"
+  },
+  "text_note": "Original demo descriptions inspired by the book, not verbatim excerpts. French edition translated by Henri Bué.",
+  "scenes": [
+    {
+      "scene_id": "white-rabbit",
+      "title": "The White Rabbit",
+      "cues": [
+        "white rabbit",
+        "pocket watch"
+      ],
+      "text": "A white rabbit in a waistcoat looks at a golden pocket watch beside a rabbit hole in a flowering meadow."
+    },
+    {
+      "scene_id": "cheshire-cat",
+      "title": "The Cheshire Cat",
+      "cues": [
+        "cheshire cat",
+        "grinning cat"
+      ],
+      "text": "A grinning striped cat rests on a twisting tree branch above a woodland path in a mysterious forest."
+    },
+    {
+      "scene_id": "tea-party",
+      "title": "The Tea Party",
+      "cues": [
+        "tea party",
+        "mad hatter"
+      ],
+      "text": "A man wearing an oversized top hat and a hare sit at a long outdoor tea table covered in mismatched teacups beneath flowering trees."
+    },
+    {
+      "scene_id": "croquet-fr",
+      "title": "Le croquet de la Reine",
+      "cues": [
+        "flamant rose",
+        "partie de croquet",
+        "flamand rose"
+      ],
+      "spoken_example": "La Reine joue au croquet avec un flamant rose.",
+      "text": "A queen in a red heart-patterned gown holds a pink flamingo like a croquet mallet on a green lawn surrounded by rose bushes."
+    }
+  ]
+}

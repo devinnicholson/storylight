@@ -28,3 +28,30 @@ The previous scene stays visible until complete artwork matches the latest descr
 For a separate display, open `/projector?pack=latest&session=voice-demo&present=1&reader=0&live=1&complete_only=1` on the same API. A Jetson connected to a monitor can run that page in a fullscreen browser. Sharing the session connects the displays; it does not automatically configure HDMI, a kiosk or a network tunnel.
 
 The simulated setup above intentionally cannot transcribe your microphone or produce model-generated artwork. It is the quickest way to inspect the interface and local request flow.
+
+## Alice: four prepared voice cues
+
+The cue demo uses *Alice's Adventures in Wonderland*: [English text](https://www.gutenberg.org/ebooks/11) and [Henri Bué's French translation](https://www.gutenberg.org/ebooks/55456). Project Gutenberg lists both editions as public domain in the USA. The descriptions in [`examples/alice-demo.json`](../examples/alice-demo.json) are demo adaptations, not quotations.
+
+| Spoken cue | Prepared illustration |
+| --- | --- |
+| “white rabbit” or “pocket watch” | The rabbit checking a golden watch |
+| “Cheshire cat” or “grinning cat” | The cat on a woodland branch |
+| “tea party” or “Mad Hatter” | A table of mismatched teacups beneath flowering trees |
+| “flamant rose” or “partie de croquet” | The Queen's croquet game |
+
+Generate the artwork once against a configured rendering API. This command can make four billable generation requests. Disable optional motion for this preparation; playback requires a master image and depth map.
+
+```sh
+uv run python scripts/prepare_demo_cues.py \
+  --api http://127.0.0.1:8080 \
+  --output .storylight/alice-cues.json
+```
+
+Keep the catalog with the API's existing asset cache and set `STORYLIGHT_DEMO_CUES_PATH` to its absolute path before restarting that API. If preparation runs through a gateway, copy the catalog to the API host; the asset cache is already on that host.
+
+For English and French speech, use a local multilingual MLX Whisper model and set `STORYLIGHT_ASR_LANGUAGE=auto` on the transcription service. English-only `.en` models cannot support the French cue. `fr` selects French explicitly; the default remains `en` for existing demos. This setting applies to the MLX backend.
+
+Open `/workbench?voice=1&cues=alice&session=alice-demo`, then the projector at `/projector?session=alice-demo&present=1&reader=0&live=1&complete_only=1`. Press **Describe scene** and speak a cue. Cumulative speech selects the most recent matching phrase. Unmatched speech does not start generation in this mode.
+
+This is prepared-scene playback. The reported request time excludes speech recognition and physical display latency; it is not a fresh-generation benchmark. Cue recognition supports the listed French phrases, not general French scene understanding. Raw audio remains on the configured local transcription service.
