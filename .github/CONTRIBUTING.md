@@ -1,6 +1,8 @@
 # Contributing to Storylight
 
-Use Python 3.11 or later and `uv`. Install the development dependencies and start the local API with:
+Use Python 3.11 or later, `uv`, and Node.js 20 or later. Node is used only
+for the dependency-free browser-side tests. Install the development
+dependencies and start the local API with:
 
 ```sh
 make install

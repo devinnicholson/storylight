@@ -1,4 +1,4 @@
-.PHONY: install dev test lint model-serve model-pull model-probe asr-model-pull compile-demo anticipatory-simulate anticipatory-gke-preflight
+.PHONY: install dev test test-python test-js lint model-serve model-pull model-probe asr-model-pull compile-demo anticipatory-simulate anticipatory-gke-preflight
 
 install:
 	uv sync --dev --extra modal-authoring
@@ -6,8 +6,13 @@ install:
 dev:
 	uv run uvicorn storylight.api:app --reload --host 127.0.0.1 --port 8080 --timeout-graceful-shutdown 3
 
-test:
+test: test-python test-js
+
+test-python:
 	uv run pytest
+
+test-js:
+	node --test tests/*.test.js
 
 lint:
 	uv run ruff check src tests scripts deploy infra

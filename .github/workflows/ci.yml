@@ -38,6 +38,7 @@ jobs:
       - uses: astral-sh/setup-uv@c771a70e6277c0a99b617c7a806ffedaca235ff9 # v9.0.0
         with:
           version: "0.11.6"
+          python-version: "3.11"
           enable-cache: false
 
       - name: Install locked development environment
@@ -52,5 +53,5 @@ jobs:
       - name: Run repository tests and fidelity validation
         run: uv run pytest -q
 
-      - name: Test projector interaction and playback
-        run: node --test tests/anticipatory_workbench.test.js tests/hand_interaction.test.js tests/demo_cues.test.js
+      - name: Test browser-side interaction and playback
+        run: node --test tests/*.test.js

@@ -1,0 +1,26 @@
+name: Feature request
+description: Propose a focused improvement to Storylight
+title: "[Feature]: "
+labels: ["enhancement"]
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem
+      description: What reader or operator need would this address?
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed behavior
+      description: Describe the smallest useful change and its expected tradeoffs.
+    validations:
+      required: true
+  - type: textarea
+    id: inference
+    attributes:
+      label: Inference, privacy, and cost impact
+      description: Note new models, remote data flows, hardware requirements, or paid services.
+    validations:
+      required: true

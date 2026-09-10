@@ -1,0 +1,43 @@
+name: Bug report
+description: Report reproducible incorrect behavior in Storylight
+title: "[Bug]: "
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: Do not include credentials, private transcripts, recordings, or account identifiers.
+  - type: textarea
+    id: behavior
+    attributes:
+      label: Observed behavior
+      description: What happened, and what did you expect instead?
+    validations:
+      required: true
+  - type: textarea
+    id: reproduction
+    attributes:
+      label: Reproduction
+      description: Provide the smallest reproduction using synthetic input.
+    validations:
+      required: true
+  - type: input
+    id: revision
+    attributes:
+      label: Storylight revision
+      description: Commit hash or release version.
+    validations:
+      required: true
+  - type: textarea
+    id: environment
+    attributes:
+      label: Environment
+      description: OS, Python version, hardware, and enabled backends.
+    validations:
+      required: true
+  - type: checkboxes
+    id: privacy
+    attributes:
+      label: Privacy check
+      options:
+        - label: I removed credentials, private recordings, transcripts, and personal information.
+          required: true

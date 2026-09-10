@@ -3,3 +3,13 @@ Copyright 2026 Devin Nicholson
 
 Original project code is licensed under the Apache License, Version 2.0.
 Third-party components retain their own copyright and license notices.
+
+The bundled English and French editions of Alice's Adventures in Wonderland
+come from Project Gutenberg eBooks 11 and 55456. Each text file includes its
+source header and the complete Project Gutenberg License.
+
+Demo artwork and media produced for Storylight are distributed under the
+project license unless a file states otherwise.
+
+Files under deploy/jetson/tensorrt-edge-llm-overrides retain NVIDIA's
+copyright notices and Apache-2.0 license headers.
