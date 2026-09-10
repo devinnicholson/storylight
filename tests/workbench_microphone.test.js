@@ -52,6 +52,7 @@ function harness() {
     elements, AbortController, Blob, Uint8Array, MediaRecorder: Recorder,
     performance: {now: () => now},
     canRecordAudio: true, sceneReady: true, demoMode: false, voiceMode: false,
+    cueMode: false, cueRecordingMatched: false,
     voiceProjectionLive: false, projectorPreviewUrl: null,
     generationSubmitting: false, pendingSubmission: null, pendingVoiceReview: null, generationReconciling: false,
     activeLiveJobId: null, latestLiveSnapshot: null,
@@ -1260,6 +1261,43 @@ async function localCheckOverlap() {
   assert.equal(early.submitted[0].text, "A dog chasing a ball.");
 }
 
+async function automaticPreparedSentence() {
+  const h = generationHarness();
+  const c = h.context;
+  c.cueMode = true;
+  c.cueState = {scenes: require('../examples/alice-demo.json').scenes,
+    desired: null, shown: null, busy: false};
+  c.StorylightCues = require('../src/storylight/static/demo-cues.js');
+  c.crypto = require('crypto').webcrypto;
+  c.fetchLiveSceneSession = async () => ({server_instance_id: SERVER_ID, session_revision: 0});
+  c.handleLiveSceneSessionPointer = () => {};
+  const respond = c.respond;
+  let activations = 0;
+  c.respond = (url, options) => {
+    if (url === '/v1/demo-cues/activate') {
+      activations += 1;
+      assert.equal(JSON.parse(options.body).scene_id, 'white-rabbit');
+      return h.response(200, {});
+    }
+    return respond(url, options);
+  };
+  await c.startSpeaking();
+  const recorder = c.mediaRecorder;
+  c.offerVoiceTranscript('A white rabbit checks');
+  await flush();
+  assert.equal(c.listening, true);
+  assert.equal(activations, 0);
+  c.offerVoiceTranscript(c.cueState.scenes[0].spoken_example);
+  await flush();
+  assert.equal(activations, 1);
+  assert.equal(c.listening, false);
+  assert.ok(h.events.includes('track-stop'));
+  await recorder.handlers.stop();
+  assert.equal(c.finalizing, false);
+  assert.equal(h.requests.includes('/v1/audio:transcribe'), false);
+  assert.equal(h.submitted.length, 0);
+}
+
 async function optionalTimingFailure() {
   const h = generationHarness();
   h.context.window.renderStorylightVoiceTiming = () => { throw new Error("broken diagnostics"); };
@@ -1290,6 +1328,7 @@ async function optionalTimingFailure() {
   await timingIsolation(); await recorderFlush(); await finalRefusalStatus();
   await staticPartialAdmission(); await providerPreconnect(); await localCheckOverlap();
   await optionalTimingFailure();
+  await automaticPreparedSentence();
   console.log("Workbench microphone: cleanup, recorder flush, adaptive ASR cadence, optional preconnect, overlapped local checks, latest-only presentation and no duplicate paid requests passed.");
 })()
   .catch((error) => { console.error(error); process.exitCode = 1; });

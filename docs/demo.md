@@ -52,7 +52,7 @@ Keep the catalog with the API's existing asset cache and set `STORYLIGHT_DEMO_CU
 
 For English and French speech, use a local multilingual MLX Whisper model and set `STORYLIGHT_ASR_LANGUAGE=auto` on the transcription service. English-only `.en` models cannot support the French sentence. `fr` selects French explicitly; the default remains `en` for existing demos. This setting applies to the MLX backend.
 
-Open `/workbench?voice=1&cues=alice&session=alice-demo`, then the projector at `/projector?session=alice-demo&present=1&reader=0&live=1&complete_only=1`. Press **Describe scene** and read one complete sentence per recording. Matching ignores punctuation and capitalization, but keywords or incomplete sentences do not trigger playback. Unmatched speech does not start generation in this mode.
+Open `/workbench?voice=1&cues=alice&session=alice-demo`, then the projector at `/projector?session=alice-demo&present=1&reader=0&live=1&complete_only=1`. Press **Describe scene** and read one complete sentence. Recognition automatically shows its artwork and stops recording; there is no second button to press. Press **Describe scene** again for another sentence. Matching ignores punctuation and capitalization, but keywords or incomplete sentences do not trigger playback. Unmatched speech does not start generation in this mode; **Stop listening** ends the recording manually.
 
 This is prepared-scene playback. The reported request time excludes speech recognition and physical display latency; it is not a fresh-generation benchmark. Sentence recognition supports the listed French sentence, not general French scene understanding. Raw audio remains on the configured local transcription service.
 

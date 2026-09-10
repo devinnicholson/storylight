@@ -73,6 +73,7 @@ let projectorPreviewUrl = null;
 const workbenchQuery = new URLSearchParams(window.location.search);
 const voiceMode = workbenchQuery.get("voice") === "1";
 const cueMode = voiceMode && workbenchQuery.get("cues") === "alice";
+let cueRecordingMatched = false;
 const cueState = {scenes: null, desired: null, shown: null, busy: false};
 const demoMode = !voiceMode && workbenchQuery.get("demo") === "1";
 document.body.dataset.demo = String(demoMode);
@@ -556,6 +557,7 @@ async function startSpeaking() {
     }
     await startAudioMeter();
     audioChunks = [];
+    cueRecordingMatched = false;
     partialBytes = 0;
     partialInFlight = Promise.resolve();
     recordingEpoch += 1;
@@ -585,14 +587,16 @@ async function startSpeaking() {
     listening = true;
     elements.micButton.disabled = false;
     elements.micButton.classList.add("listening");
-    elements.micButtonText.textContent = voiceMode ? "Finish recording" : "Stop reading";
+    elements.micButtonText.textContent = cueMode ? "Stop listening" : voiceMode ? "Finish recording" : "Stop reading";
     elements.compileButton.disabled = true;
-    elements.interim.textContent = voiceMode
+    elements.interim.textContent = cueMode
+      ? "Listening. The artwork appears automatically when the full sentence is recognized."
+      : voiceMode
       ? "Listening locally. Generation starts as your description becomes clear; only completed scenes will appear."
       : "Listening locally—read the exact page text above.";
     if (voiceMode) {
       scheduleVoicePartial(epoch);
-      void preconnectVoiceProvider(epoch);
+      if (!cueMode) void preconnectVoiceProvider(epoch);
     } else partialTimer = window.setInterval(() => {
       if (!partialBusy) partialInFlight = transcribePartialRecording(epoch);
     }, 2000);
@@ -736,6 +740,10 @@ async function offerDemoCue(text) {
     await loadDemoCues();
     const scene = StorylightCues.matchCue(text, cueState.scenes);
     if (!scene) return;
+    if (listening) {
+      cueRecordingMatched = true;
+      stopSpeaking();
+    }
     cueState.desired = scene;
     if (cueState.busy) return;
     cueState.busy = true;
@@ -946,6 +954,7 @@ async function transcribeRecording() {
   const generation = readerGeneration;
   try {
     await partialInFlight;
+    if (cueMode && cueRecordingMatched) return;
     if (voiceMode) await voiceGeneration.presentationInFlight;
     if (recording.size < 1000) throw new Error("Recording was too short. Try speaking for a little longer.");
     voiceTimingEvent("asr_started", {final: true, bytes: recording.size});
@@ -954,6 +963,13 @@ async function transcribeRecording() {
     if (voiceMode) {
       const text = typeof payload.text === "string" ? payload.text.trim() : "";
       if (!text) throw new Error("No speech was recognized. Describe the scene again, or type it below.");
+      if (cueMode) {
+        await offerDemoCue(text);
+        if (!StorylightCues.matchCue(text, cueState.scenes)) {
+          elements.interim.textContent = "No matching sentence heard. Press Describe scene to try again.";
+        }
+        return;
+      }
       offerVoiceTranscript(text, {final: true});
       if (voiceGeneration.latest?.refusal) {
         elements.voiceReview.textContent = voiceGeneration.latest.refusal;
@@ -1979,7 +1995,11 @@ elements.projectorLink.addEventListener("click", (event) => {
 });
 [elements.style, elements.story].forEach((element) => {
   element.addEventListener("input", () => {
-    if (cueMode) { cueState.desired = null; return; }
+    if (cueMode) {
+      cueState.desired = null;
+      if (element === elements.story) void offerDemoCue(elements.story.value);
+      return;
+    }
     delete elements.compileButton.dataset.visualVariation;
     invalidatePreparation();
     invalidateScene();
@@ -2043,14 +2063,16 @@ if (cueMode) {
     "Four sentences, with artwork prepared in advance. Read one aloud to show its scene.";
   document.querySelector(".input-card h2.voice-only").textContent = "Your spoken sentence";
   document.querySelector(".input-card > .instruction").textContent =
-    "Choose one sentence below. Read it completely, then finish recording before the next one.";
+    "Choose one sentence below. Its artwork appears automatically when the full sentence is recognized.";
   document.querySelector("#readerHeading .voice-only").textContent = "Read one sentence aloud.";
   document.querySelector(".deferred-reader-body > div > p.voice-only:not(.section-label)").textContent =
-    "Press Describe scene, read a complete sentence, then press Finish recording.";
+    "Press Describe scene and read a complete sentence. Recording stops automatically when it matches.";
   document.querySelector(".generate-note.voice-only").textContent =
     "These images are already generated. Sentence recognition selects the matching artwork.";
   elements.interim.textContent = "Ready for one of the four sentences.";
   elements.compileButton.textContent = "Show prepared scene";
+  elements.compileButton.hidden = true;
+  elements.compileButton.style.display = "none";
   elements.rendererPreflight.style.display = "none";
   elements.prewarmButton.disabled = true;
   void loadDemoCues().catch((error) => { elements.interim.textContent = error.message; });
