@@ -1,0 +1,37 @@
+{
+  "schema_version": "1.0",
+  "recorded_at": "2026-09-07",
+  "scope": "Synthetic end-to-end voice smoke test",
+  "request": {
+    "text": "A cat chasing a mouse in a dark alleyway.",
+    "synthetic": true
+  },
+  "checked_description_to_artwork": {
+    "elapsed_ms": 4319.633,
+    "provider_ms": 4127.179,
+    "planning_ms": 104.218,
+    "packaging_ms": 7.582,
+    "scene_cache_hit": false,
+    "gpu": "vertex-managed",
+    "image_model": "gemini-3.1-flash-lite-image",
+    "result": "master_ready"
+  },
+  "local_whisper": {
+    "cold_total_ms": 4362.48,
+    "warm_total_ms": 717.41,
+    "language": "en",
+    "model": "whisper-small.en",
+    "transcript": "A cat chasing a mouse."
+  },
+  "method": {
+    "artwork_timing": "Accepted checked description through completed Vertex artwork; local transcription measured separately.",
+    "asr_timing": "Local transcription of synthetic audio; warm value follows one process-local first run.",
+    "visual_review": "Browser inspection found one cat chasing one mouse through a detailed dark alleyway."
+  },
+  "limitations": [
+    "This is one synthetic smoke-test request, not a latency distribution.",
+    "The artwork timing does not include local speech transcription.",
+    "The warm ASR timing does not include process startup or model loading.",
+    "The managed GPU warm state was not independently observed."
+  ]
+}
