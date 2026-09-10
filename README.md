@@ -30,9 +30,9 @@ Image-generation work includes open-weight FLUX.2 Klein 4B and SANA-Sprint backe
 
 ## JAX and MaxText: training the scene planner
 
-We built an offline Gemma 4 E2B training pipeline with JAX and Google's MaxText, using LoRA to teach the model the structured scene descriptions consumed by the application. The work covered Hugging Face checkpoint conversion into MaxText and merged export back, with checks on model outputs across conversion. This used ordinary LoRA, separate from the later quantized training experiment.
+The offline Gemma 4 E2B training pipeline uses JAX and Google's MaxText, with LoRA training on the structured scene descriptions consumed by the application. The work covered Hugging Face checkpoint conversion into MaxText and merged export back, with checks on model outputs across conversion. This used ordinary LoRA, separate from the later quantized training experiment.
 
-On two NVIDIA L4 GPUs, we verified that the native training state contained 205 paired LoRA modules and that training produced nonzero gradients and changed adapter weights. Persistent JAX compilation caching reduced the measured cold/warm job duration from 738 to 331 seconds, with provider cost falling from about $0.64 to $0.32. These were Modal runs using Google's training software on NVIDIA hardware, not Google Cloud measurements.
+Checks on two NVIDIA L4 GPUs confirmed 205 paired LoRA modules in the native training state, with nonzero gradients and changed adapter weights after training. Persistent JAX compilation caching reduced the measured cold/warm job duration from 738 to 331 seconds, with provider cost falling from about $0.64 to $0.32. These were Modal runs using Google's training software on NVIDIA hardware, not Google Cloud measurements.
 
 That shorter turnaround makes repeated specialization experiments cheaper to run. The training harness is archived, and its adapters have not replaced the live planner; the result demonstrates training and compilation reuse rather than faster scene generation.
 
@@ -40,7 +40,7 @@ That shorter turnaround makes repeated specialization experiments cheaper to run
 
 A child's voice should stay on local hardware, and their name should never become part of a cloud image prompt. In the documented demo, recordings are transcribed locally and descriptions are checked locally. The renderer receives a visual prompt with recognized private names and contact details excluded. It receives neither the recording nor the original transcript.
 
-Open weights let us run speech and language processing on hardware we control. Access to the implementation lets us inspect what leaves the device and change the inference code that slows it down. Publishing Storylight's source gives other people that same freedom to adapt it for their readers.
+Open weights allow speech and language processing on operator-controlled hardware. The implementation is available to inspect what leaves the device and modify the inference code. Publishing Storylight's source gives other people that same freedom to adapt it for their readers.
 
 The application code is licensed under Apache 2.0. Model weights have separate licenses; see the [model notes](docs/research-results.md#models-and-licensing). Managed Vertex image generation still requires cloud access.
 
@@ -54,7 +54,7 @@ The QLoRA and compiled-decoding experiments used Gemma 4 E2B on an NVIDIA L4 in 
 
 QLoRA trains small adapters attached to a quantized model. This experiment used 4,800 synthetic training examples and 256 independently authored development examples to select the recipe and checkpoint, without collecting readers' voices or reading histories.
 
-The next direction is adapters for specific reading tasks. A reader practicing “under” and “behind” needs the picture to preserve that distinction, and task-specific training lets us target it directly. Sharing adapters trained on curated or synthetic examples would let others extend that work to the vocabulary their readers need.
+The next direction is adapters for specific reading tasks. A reader practicing “under” and “behind” needs the picture to preserve that distinction, and task-specific training targets that distinction directly. Sharing adapters trained on curated or synthetic examples would let others extend that work to the vocabulary their readers need.
 
 Multilingual adapters remain future work. The current candidate needs further quality and device validation before deployment; the [research notes](docs/research-results.md) contain the full evaluation, including refusal behavior.
 
@@ -72,9 +72,9 @@ These measurements cover one cycle with eight training probes, after earlier inf
 
 ### Nemotron: reviewing artwork and reusing TensorRT engines
 
-We ran NVIDIA Llama 3.1 Nemotron Nano VL 8B through NIM 1.3.1 on a Google Kubernetes Engine L4. It reviews a generated image against a bounded visual brief and returns a structured verdict, with a correction when needed. Its input excludes the reader's recording and original transcript. In the prepared-page workflow, the Jetson verifies downloaded asset hashes and dimensions before staging the approved scene. Nemotron review is optional and stays off the live demo's first-image path.
+The visual review experiment ran NVIDIA Llama 3.1 Nemotron Nano VL 8B through NIM 1.3.1 on a Google Kubernetes Engine L4. It reviews a generated image against a bounded visual brief and returns a structured verdict, with a correction when needed. Its input excludes the reader's recording and original transcript. In the prepared-page workflow, the Jetson verifies downloaded asset hashes and dimensions before staging the approved scene. Nemotron review is optional and stays off the live demo's first-image path.
 
-We also persisted NIM's TensorRT vision and language engines so they could be reused after a restart. Container-start-to-ready time fell from 631 to 229 seconds, a 63.7% reduction, with all 12 baseline review verdicts unchanged. This was a same-node restart comparison, not a clean-node cold start. Review prompts still need broader fidelity testing; the next-page integration and the engine-reuse result are implemented work, not evidence that visual review catches every mistake.
+Persisting NIM's TensorRT vision and language engines allowed reuse after a restart. Container-start-to-ready time fell from 631 to 229 seconds, a 63.7% reduction, with all 12 baseline review verdicts unchanged. This was a same-node restart comparison, not a clean-node cold start. Review prompts still need broader fidelity testing; the next-page integration and the engine-reuse result are implemented work, not evidence that visual review catches every mistake.
 
 The [research notes](docs/research-results.md) and [numeric summary](research/results.json) document the Gemma results and their limits. The [Nemotron client](src/storylight/nemotron_critic.py) and [GKE deployment](infra/gcp/k8s/anticipatory.yaml) contain the review integration. Original operational receipts and large artifacts remain private, so the published material is not yet a complete reproduction package.
 
