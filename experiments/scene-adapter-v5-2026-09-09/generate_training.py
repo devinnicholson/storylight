@@ -15,8 +15,7 @@ from storylight.scene_facts import SceneFactsV2
 
 HERE = Path(__file__).resolve().parent
 ROOT = HERE.parents[1]
-V2 = HERE.parent / "scene-adapter-v2-2026-09-08"
-V3 = HERE.parent / "scene-adapter-v3-2026-09-09"
+SUPPORT = HERE / "support"
 PROMPT_SHA = "759a9002a7c6209e377f3ea67a7f706c0055de7ea59de19396d068f5eee47f41"
 GRAMMAR_SHA = "622bc2bf36a2182c21a7e8a889f292f9b10a91dd149ee0aa913dd70ad20404df"
 ANIMALS = (
@@ -642,7 +641,7 @@ def candidate_combos():
 def build():
     if importlib.metadata.version("xgrammar") != "0.2.6":
         raise ValueError("requires pinned XGrammar")
-    grammar_data = (V3 / "grammar.ebnf").read_bytes()
+    grammar_data = (SUPPORT / "grammar.ebnf").read_bytes()
     if sha(grammar_data) != GRAMMAR_SHA:
         raise ValueError("grammar changed")
     compiled = xgr.GrammarCompiler(xgr.TokenizerInfo([])).compile_grammar(grammar_data.decode())
@@ -726,7 +725,7 @@ def build():
 
 
 def materialize(directory=HERE):
-    prompt_data = (V2 / "prompt.txt").read_bytes()
+    prompt_data = (HERE / "prompt.txt").read_bytes()
     if sha(prompt_data) != PROMPT_SHA:
         raise ValueError("prompt changed")
     rows = build()

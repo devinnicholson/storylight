@@ -31,7 +31,7 @@ documents the narrower sampling interface. JSON-only output would also change
 the frozen V2/REFUSE wire contract.
 
 The concrete local path would require a **new C++ runtime integration**, not a
-request flag: compile the [frozen EBNF](../scene-adapter-v3-2026-09-09/grammar.ebnf)
+request flag: compile the [frozen EBNF](support/grammar.ebnf)
 against the exact tokenizer, keep one fresh matcher per request, apply its hard
 mask before the first and every subsequent argmax, and advance it with each
 selected token. EOS must remain masked until grammar completion; all three EOS

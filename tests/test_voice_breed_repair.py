@@ -12,7 +12,7 @@ from storylight.reviewed_description import review_description
 from storylight.scene_facts import SceneFactsV2
 from storylight.voice_language import graph_from_row
 
-DIRECTORY = Path(__file__).resolve().parents[1] / "research/benchmarks/voice-retriever-2026-09-08"
+DIRECTORY = Path(__file__).resolve().parent / "fixtures/voice-retriever"
 RAW = (DIRECTORY / "breed-adversarial-rows.json").read_bytes()
 ROWS = {row["id"]: row for row in json.loads(RAW)["rows"]}
 

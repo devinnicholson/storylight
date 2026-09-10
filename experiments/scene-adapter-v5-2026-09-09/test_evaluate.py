@@ -13,7 +13,7 @@ spec.loader.exec_module(evaluation)
 
 
 def fixture():
-    previous = HERE.parent / 'scene-adapter-v4-2026-09-09/screen-gold.jsonl'
+    previous = HERE / "support/v4-screen-gold.jsonl"
     gold = [{**json.loads(line), 'id': f'exposed-{copy}-{json.loads(line)["id"]}'}
             for copy in range(2) for line in previous.read_text().splitlines()]
     records = [dict(id=r['id'], arm=arm, repetition=rep, output=r['target'], latency_ms=2.)

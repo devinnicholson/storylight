@@ -14,6 +14,7 @@ build/
 *.egg-info/
 .gcloud/
 experiments/jax-fidelity-lab/*.json.artifacts/
+experiments/**/results/
 terraform.tfstate
 terraform.tfstate.*
 .terraform/

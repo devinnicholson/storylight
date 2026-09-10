@@ -1,8 +1,5 @@
 # Research
 
-Start with [the results summary](../docs/research-results.md) and [measured numbers](results.json).
+Start with [the results summary](../docs/research-results.md) and [measured numbers](results.json). The retained dataset contains the synthetic populations and manifests used by the fidelity work. Stable parser observations used by the test suite live under [`tests/fixtures`](../tests/fixtures/); they are regression inputs rather than benchmark claims.
 
-- `benchmarks/` holds published measurements and experiment records. Paths inside those records describe the original runs.
-- `datasets/` holds synthetic training and development populations with their manifests.
-
-Historical runners can require private artifacts at their original paths. Experiment runners remain in [`experiments/`](../experiments/). The sample Story Pack and its artwork are in [`examples/artifacts/`](../examples/artifacts/visual-lab/handoff/silver-fox-lost-words/).
+The public experiment sources retain the final scene-planner, compiled-cache, prepared-rendering, and ASR methods. Historical receipts, superseded candidates, private inputs, model weights, and cloud-specific run records are intentionally excluded. The sample Story Pack and artwork are in [`examples/artifacts`](../examples/artifacts/visual-lab/handoff/silver-fox-lost-words/).

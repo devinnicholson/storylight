@@ -1,0 +1,31 @@
+# Canonical SceneFacts V2 serialization or a whole-response refusal.
+# References, uniqueness, contradictions, source grounding, privacy and the
+# 4096-byte document limit still require the existing semantic/wire validators.
+root ::= "REFUSE" | scene
+scene ::= "V2\n" setting (subject{1,4} object{0,6} | object{1,6}) relationship{0,8} motion{0,4} salience{0,4} event{0,6} temporal{0,6} negative{0,6} transformation?
+setting ::= "G|" phrase "|" atoms3
+subject ::= "\nS|" reference "|" count "|" phrase "|" optional-atom "|" atoms4 "|" phrases3
+object ::= "\nO|" reference "|" count "|" phrase "|" optional-atom "|" atoms3 "|" atoms4
+relationship ::= "\nR|" reference "|" (binary-relation "|" reference "|-" | "between|" reference "|" reference)
+binary-relation ::= "above" | "attached_to" | "behind" | "below" | "beside" | "carries" | "contains" | "holds" | "in_front_of" | "inside" | "left_of" | "looks_at" | "next_to" | "on" | "outside" | "owns" | "right_of" | "touches" | "under" | "wears"
+motion ::= "\nM|" reference "|" (direction "|" optional-reference | "-|" reference)
+direction ::= "falls" | "rises"
+salience ::= "\nL|" reference "|" ("background" | "foreground")
+event ::= "\nE|" reference "|" reference "|" atom "|" optional-reference
+temporal ::= "\nQ|" reference "|" reference
+negative ::= "\nN|" (("action" | "attribute") "|" reference | ("additional_object" | "additional_subject" | "effect") "|-") "|" phrase
+transformation ::= "\nT|" reference "|" phrase "|" optional-atom "|" atoms3 ("|" explicit-count)?
+reference ::= [a-z] [a-z0-9_]{0,23}
+optional-reference ::= "-" | reference
+explicit-count ::= [1-9] | "1" [0-2]
+count ::= "-" | explicit-count
+optional-atom ::= "-" | atom
+atoms3 ::= "-" | atom ("," atom){0,2}
+atoms4 ::= "-" | atom ("," atom){0,3}
+phrases3 ::= "-" | phrase ("," phrase){0,2}
+# Trimmed Unicode phrases; '-' alone is reserved for an absent value.
+phrase ::= single | edge character{0,62} edge
+atom ::= single | edge character{0,26} edge
+character ::= [\x20-\x2b\x2d-\x7b\x7d-\x7e\u00a0-\ud7ff\ue000-\U0010ffff]
+edge ::= [\x21-\x2b\x2d-\x7b\x7d-\x7e\u00a1-\u167f\u1681-\u1fff\u200b-\u2027\u202a-\u202e\u2030-\u205e\u2060-\u2fff\u3001-\ud7ff\ue000-\U0010ffff]
+single ::= [\x21-\x2b\x2e-\x7b\x7d-\x7e\u00a1-\u167f\u1681-\u1fff\u200b-\u2027\u202a-\u202e\u2030-\u205e\u2060-\u2fff\u3001-\ud7ff\ue000-\U0010ffff]

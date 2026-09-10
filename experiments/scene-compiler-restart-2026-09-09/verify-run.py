@@ -343,7 +343,7 @@ def verify(args):
     check(dispatch == plan, "dispatch order")
     raw = [json.loads(s) for s in (directory / "raw.jsonl").read_text().splitlines()]
     check(len(raw) == 54, "raw count")
-    grammar = ROOT.parent / "scene-adapter-v3-2026-09-09/grammar.ebnf"
+    grammar = ROOT / "support/grammar.ebnf"
     check(digest(grammar) == protocol["grammar_sha256"] == GRAMMAR_SHA, "grammar pin")
     info = xgr.TokenizerInfo.from_huggingface(
         tokenizer, vocab_size=262144, stop_token_ids=[1, 106, 50]

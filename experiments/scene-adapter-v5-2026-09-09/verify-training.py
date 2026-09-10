@@ -103,7 +103,7 @@ def context(freeze_path, freeze_sha, cpu_path, cpu_sha):
     trainer = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(trainer)
     helper = trainer.load_module(
-        HERE.parent / "scene-adapter-v2-2026-09-08/train.py",
+        HERE / "support/training-support.py",
         trainer.V2_SHA256,
         "verified_v5_parent",
     )

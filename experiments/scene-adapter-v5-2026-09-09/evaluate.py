@@ -10,7 +10,7 @@ from statistics import median
 
 HERE = Path(__file__).resolve().parent
 ROOT = HERE.parents[1]
-SCORER = HERE.parent / "scene-adapter-2026-09-08/evaluate.py"
+SCORER = HERE / "support/base-evaluate.py"
 SCORER_SHA256 = "85a4e6085bead918e1fc86480b30516de2834c152416f3f3c603630ffff0ea2d"
 ARMS = ("old", "new")
 

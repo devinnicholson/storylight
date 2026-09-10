@@ -213,7 +213,7 @@ def verify(args):
     wrapper = load(HERE / "train.py", profile.TRAINER_SHA, "profile_training")
     runner = load(HERE / "run.py", profile.RUNNER_SHA, "profile_runtime")
     helper = wrapper.load_module(
-        HERE.parent / "scene-adapter-v2-2026-09-08/train.py", wrapper.V2_SHA256, "profile_parent"
+        HERE / "support/training-support.py", wrapper.V2_SHA256, "profile_parent"
     )
     training = v.pinned(args.training_proof, args.training_proof_sha256)
     v.require(

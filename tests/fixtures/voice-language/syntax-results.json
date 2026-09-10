@@ -1,0 +1,3212 @@
+{
+  "schema": "local-dependency-observations-v1",
+  "python": "3.12.12",
+  "spacy": "3.8.11",
+  "model": {
+    "lang": "en",
+    "name": "core_web_sm",
+    "version": "3.8.0",
+    "description": "English pipeline optimized for CPU. Components: tok2vec, tagger, parser, senter, ner, attribute_ruler, lemmatizer.",
+    "author": "Explosion",
+    "email": "contact@explosion.ai",
+    "url": "https://explosion.ai",
+    "license": "MIT",
+    "spacy_version": ">=3.8.0,<3.9.0",
+    "spacy_git_version": "5010fcbd3",
+    "vectors": {
+      "width": 0,
+      "vectors": 0,
+      "keys": 0,
+      "name": null,
+      "mode": "default"
+    },
+    "labels": {
+      "tok2vec": [],
+      "tagger": [
+        "$",
+        "''",
+        ",",
+        "-LRB-",
+        "-RRB-",
+        ".",
+        ":",
+        "ADD",
+        "AFX",
+        "CC",
+        "CD",
+        "DT",
+        "EX",
+        "FW",
+        "HYPH",
+        "IN",
+        "JJ",
+        "JJR",
+        "JJS",
+        "LS",
+        "MD",
+        "NFP",
+        "NN",
+        "NNP",
+        "NNPS",
+        "NNS",
+        "PDT",
+        "POS",
+        "PRP",
+        "PRP$",
+        "RB",
+        "RBR",
+        "RBS",
+        "RP",
+        "SYM",
+        "TO",
+        "UH",
+        "VB",
+        "VBD",
+        "VBG",
+        "VBN",
+        "VBP",
+        "VBZ",
+        "WDT",
+        "WP",
+        "WP$",
+        "WRB",
+        "XX",
+        "_SP",
+        "``"
+      ],
+      "parser": [
+        "ROOT",
+        "acl",
+        "acomp",
+        "advcl",
+        "advmod",
+        "agent",
+        "amod",
+        "appos",
+        "attr",
+        "aux",
+        "auxpass",
+        "case",
+        "cc",
+        "ccomp",
+        "compound",
+        "conj",
+        "csubj",
+        "csubjpass",
+        "dative",
+        "dep",
+        "det",
+        "dobj",
+        "expl",
+        "intj",
+        "mark",
+        "meta",
+        "neg",
+        "nmod",
+        "npadvmod",
+        "nsubj",
+        "nsubjpass",
+        "nummod",
+        "oprd",
+        "parataxis",
+        "pcomp",
+        "pobj",
+        "poss",
+        "preconj",
+        "predet",
+        "prep",
+        "prt",
+        "punct",
+        "quantmod",
+        "relcl",
+        "xcomp"
+      ],
+      "attribute_ruler": [],
+      "lemmatizer": [],
+      "ner": [
+        "CARDINAL",
+        "DATE",
+        "EVENT",
+        "FAC",
+        "GPE",
+        "LANGUAGE",
+        "LAW",
+        "LOC",
+        "MONEY",
+        "NORP",
+        "ORDINAL",
+        "ORG",
+        "PERCENT",
+        "PERSON",
+        "PRODUCT",
+        "QUANTITY",
+        "TIME",
+        "WORK_OF_ART"
+      ]
+    },
+    "pipeline": [
+      "tok2vec",
+      "tagger",
+      "parser",
+      "attribute_ruler",
+      "lemmatizer",
+      "ner"
+    ],
+    "components": [
+      "tok2vec",
+      "tagger",
+      "parser",
+      "senter",
+      "attribute_ruler",
+      "lemmatizer",
+      "ner"
+    ],
+    "disabled": [
+      "senter"
+    ],
+    "performance": {
+      "token_acc": 0.9986194413,
+      "token_p": 0.9956819193,
+      "token_r": 0.9957659295000001,
+      "token_f": 0.9957239226000001,
+      "tag_acc": 0.9729372620000001,
+      "sents_p": 0.9200841934,
+      "sents_r": 0.8939244013000001,
+      "sents_f": 0.9068156724,
+      "dep_uas": 0.9176955214,
+      "dep_las": 0.8991533598,
+      "dep_las_per_type": {
+        "prep": {
+          "p": 0.8541604085000001,
+          "r": 0.8631379245,
+          "f": 0.8586257006
+        },
+        "det": {
+          "p": 0.9768729642,
+          "r": 0.9782271875,
+          "f": 0.9775496068
+        },
+        "pobj": {
+          "p": 0.9620664033,
+          "r": 0.966071078,
+          "f": 0.9640645819
+        },
+        "nsubj": {
+          "p": 0.9573684677000001,
+          "r": 0.9454983571000001,
+          "f": 0.9513963894
+        },
+        "aux": {
+          "p": 0.9792295402000001,
+          "r": 0.982106294,
+          "f": 0.9806658074000001
+        },
+        "advmod": {
+          "p": 0.8525198045,
+          "r": 0.8510853104,
+          "f": 0.8518019535
+        },
+        "relcl": {
+          "p": 0.7660107335,
+          "r": 0.776850508,
+          "f": 0.7713925419000001
+        },
+        "root": {
+          "p": 0.9179682195000001,
+          "r": 0.8917474767,
+          "f": 0.9046678936
+        },
+        "xcomp": {
+          "p": 0.8814035088000001,
+          "r": 0.9016511127,
+          "f": 0.8914123492
+        },
+        "amod": {
+          "p": 0.9161996611000001,
+          "r": 0.9109167477000001,
+          "f": 0.9135505669
+        },
+        "compound": {
+          "p": 0.916113822,
+          "r": 0.9305524616,
+          "f": 0.9232766957
+        },
+        "poss": {
+          "p": 0.9741586538,
+          "r": 0.9788647343,
+          "f": 0.9765060241
+        },
+        "ccomp": {
+          "p": 0.7786216062,
+          "r": 0.8352342159,
+          "f": 0.8059349514
+        },
+        "attr": {
+          "p": 0.8972491909,
+          "r": 0.9327165685000001,
+          "f": 0.9146391753
+        },
+        "case": {
+          "p": 0.9782608696,
+          "r": 0.9909909910000001,
+          "f": 0.9845847837
+        },
+        "mark": {
+          "p": 0.9028511088000001,
+          "r": 0.906200318,
+          "f": 0.9045226131
+        },
+        "intj": {
+          "p": 0.6679841897000001,
+          "r": 0.619047619,
+          "f": 0.6425855513000001
+        },
+        "advcl": {
+          "p": 0.6656519533,
+          "r": 0.6607907328,
+          "f": 0.6632124352000001
+        },
+        "cc": {
+          "p": 0.8345964153000001,
+          "r": 0.8298050472,
+          "f": 0.8321938347000001
+        },
+        "neg": {
+          "p": 0.9475786321,
+          "r": 0.9523331661000001,
+          "f": 0.9499499499
+        },
+        "conj": {
+          "p": 0.7649689441,
+          "r": 0.7751762336,
+          "f": 0.7700387645
+        },
+        "nsubjpass": {
+          "p": 0.9159021407,
+          "r": 0.9215384615000001,
+          "f": 0.9187116564000001
+        },
+        "auxpass": {
+          "p": 0.9494232476000001,
+          "r": 0.9749430524,
+          "f": 0.9620139357
+        },
+        "dobj": {
+          "p": 0.9231431478000001,
+          "r": 0.9399155311,
+          "f": 0.9314538419
+        },
+        "nummod": {
+          "p": 0.9353284301,
+          "r": 0.9313131313,
+          "f": 0.9333164621000001
+        },
+        "npadvmod": {
+          "p": 0.7748267898000001,
+          "r": 0.7150976909,
+          "f": 0.7437650102000001
+        },
+        "prt": {
+          "p": 0.8148760331,
+          "r": 0.8835125448000001,
+          "f": 0.8478073947
+        },
+        "pcomp": {
+          "p": 0.8693820225000001,
+          "r": 0.8669467787,
+          "f": 0.8681626928
+        },
+        "expl": {
+          "p": 0.9789029536,
+          "r": 0.9935760171,
+          "f": 0.9861849097000001
+        },
+        "acl": {
+          "p": 0.7417295415,
+          "r": 0.6972176759000001,
+          "f": 0.7187851519
+        },
+        "agent": {
+          "p": 0.8994889267,
+          "r": 0.9462365591,
+          "f": 0.9222707424000001
+        },
+        "dative": {
+          "p": 0.7669172932,
+          "r": 0.7018348624,
+          "f": 0.7329341317
+        },
+        "acomp": {
+          "p": 0.9132441163,
+          "r": 0.8975056689,
+          "f": 0.9053064959
+        },
+        "dep": {
+          "p": 0.3686006826,
+          "r": 0.1753246753,
+          "f": 0.23762376240000002
+        },
+        "csubj": {
+          "p": 0.7039106145,
+          "r": 0.7455621302000001,
+          "f": 0.724137931
+        },
+        "quantmod": {
+          "p": 0.8625336927,
+          "r": 0.7798537774000001,
+          "f": 0.8191126280000001
+        },
+        "nmod": {
+          "p": 0.7528868360000001,
+          "r": 0.5959780622,
+          "f": 0.6653061224
+        },
+        "appos": {
+          "p": 0.6866606983,
+          "r": 0.6655097614000001,
+          "f": 0.6759198061
+        },
+        "predet": {
+          "p": 0.8406374502,
+          "r": 0.9055793991000001,
+          "f": 0.8719008264
+        },
+        "preconj": {
+          "p": 0.5591397849,
+          "r": 0.6046511628,
+          "f": 0.5810055866
+        },
+        "oprd": {
+          "p": 0.8287671233,
+          "r": 0.7223880597,
+          "f": 0.7719298246
+        },
+        "parataxis": {
+          "p": 0.5860215054,
+          "r": 0.4728850325,
+          "f": 0.5234093637
+        },
+        "meta": {
+          "p": 0.8,
+          "r": 0.4615384615,
+          "f": 0.5853658537
+        },
+        "csubjpass": {
+          "p": 0.625,
+          "r": 0.8333333333,
+          "f": 0.7142857143
+        }
+      },
+      "ents_p": 0.8429743795,
+      "ents_r": 0.8436498397000001,
+      "ents_f": 0.8433119744,
+      "ents_per_type": {
+        "DATE": {
+          "p": 0.8531038722000001,
+          "r": 0.8812698413000001,
+          "f": 0.8669581512000001
+        },
+        "GPE": {
+          "p": 0.9142205757,
+          "r": 0.8948396095000001,
+          "f": 0.9044262757
+        },
+        "ORDINAL": {
+          "p": 0.7741046832,
+          "r": 0.8726708075,
+          "f": 0.8204379562
+        },
+        "ORG": {
+          "p": 0.7904834996000001,
+          "r": 0.8191940615000001,
+          "f": 0.8045827366
+        },
+        "CARDINAL": {
+          "p": 0.8149386845000001,
+          "r": 0.8692033294,
+          "f": 0.8411967779
+        },
+        "FAC": {
+          "p": 0.3904761905,
+          "r": 0.3153846154,
+          "f": 0.3489361702
+        },
+        "PERSON": {
+          "p": 0.8574969021000001,
+          "r": 0.9033942559,
+          "f": 0.8798474253
+        },
+        "NORP": {
+          "p": 0.9031224980000001,
+          "r": 0.9024000000000001,
+          "f": 0.9027611044
+        },
+        "TIME": {
+          "p": 0.7454545455,
+          "r": 0.7192982456,
+          "f": 0.7321428571
+        },
+        "LOC": {
+          "p": 0.7356321839000001,
+          "r": 0.6114649682000001,
+          "f": 0.667826087
+        },
+        "MONEY": {
+          "p": 0.915274463,
+          "r": 0.9055489965,
+          "f": 0.9103857567
+        },
+        "QUANTITY": {
+          "p": 0.8153846154000001,
+          "r": 0.5824175824,
+          "f": 0.6794871795
+        },
+        "WORK_OF_ART": {
+          "p": 0.47445255470000003,
+          "r": 0.3350515464,
+          "f": 0.3927492447
+        },
+        "EVENT": {
+          "p": 0.6341463415,
+          "r": 0.29885057470000004,
+          "f": 0.40625000000000006
+        },
+        "LAW": {
+          "p": 0.44642857140000003,
+          "r": 0.390625,
+          "f": 0.4166666667
+        },
+        "PERCENT": {
+          "p": 0.9153354633,
+          "r": 0.8774885145,
+          "f": 0.8960125098
+        },
+        "LANGUAGE": {
+          "p": 0.7692307692,
+          "r": 0.625,
+          "f": 0.6896551724000001
+        },
+        "PRODUCT": {
+          "p": 0.5287356322,
+          "r": 0.2180094787,
+          "f": 0.3087248322
+        }
+      },
+      "speed": 9426.1029865937
+    },
+    "sources": [
+      {
+        "name": "OntoNotes 5",
+        "url": "https://catalog.ldc.upenn.edu/LDC2013T19",
+        "license": "commercial (licensed by Explosion)",
+        "author": "Ralph Weischedel, Martha Palmer, Mitchell Marcus, Eduard Hovy, Sameer Pradhan, Lance Ramshaw, Nianwen Xue, Ann Taylor, Jeff Kaufman, Michelle Franchini, Mohammed El-Bachouti, Robert Belvin, Ann Houston"
+      },
+      {
+        "name": "ClearNLP Constituent-to-Dependency Conversion",
+        "url": "https://github.com/clir/clearnlp-guidelines/blob/master/md/components/dependency_conversion.md",
+        "license": "Citation provided for reference, no code packaged with model",
+        "author": "Emory University"
+      },
+      {
+        "name": "WordNet 3.0",
+        "url": "https://wordnet.princeton.edu/",
+        "author": "Princeton University",
+        "license": "WordNet 3.0 License"
+      }
+    ],
+    "requirements": []
+  },
+  "packages": {
+    "shellingham": "1.5.4",
+    "numpy": "2.5.3",
+    "spacy": "3.8.11",
+    "thinc": "8.3.11",
+    "packaging": "26.3",
+    "preshed": "3.0.13",
+    "charset-normalizer": "3.5.1",
+    "srsly": "2.5.3",
+    "Pygments": "2.21.0",
+    "requests": "2.34.2",
+    "rich": "15.0.0",
+    "spacy-legacy": "3.0.12",
+    "spacy-loggers": "1.0.5",
+    "pydantic_core": "2.46.5",
+    "catalogue": "2.0.10",
+    "click": "8.1.8",
+    "typer-slim": "0.24.0",
+    "confection": "0.1.5",
+    "en_core_web_sm": "3.8.0",
+    "cymem": "2.0.13",
+    "setuptools": "84.0.0",
+    "wrapt": "2.4.0",
+    "pydantic": "2.13.5",
+    "mdurl": "0.1.2",
+    "blis": "1.3.3",
+    "idna": "3.19",
+    "wasabi": "1.1.3",
+    "certifi": "2026.7.22",
+    "Jinja2": "3.1.6",
+    "annotated-types": "0.8.0",
+    "markdown-it-py": "4.2.0",
+    "annotated-doc": "0.0.5",
+    "MarkupSafe": "3.0.3",
+    "murmurhash": "1.0.15",
+    "typing-inspection": "0.4.4",
+    "tqdm": "4.70.0",
+    "smart_open": "7.7.1",
+    "urllib3": "2.7.0",
+    "typing_extensions": "4.16.0",
+    "cloudpathlib": "0.25.0",
+    "weasel": "0.4.3",
+    "typer": "0.27.2"
+  },
+  "source_sha256": "e8ac876d2d36d7277b7064dc55e4a03af3a54e2d60c8b25dadd2f739f41228f5",
+  "cases_sha256": "08ad4b056fcdd5de19a82b85fcc950934c2286e936626452e366b2f19c0d88ea",
+  "import_ms": 619.7392079047859,
+  "load_ms": 274.67420930042863,
+  "first_pass_median_ms": 5.083937430754304,
+  "warm_100_median_ms": 3.9713538717478514,
+  "warm_100_max_ms": 6.895833183079958,
+  "warm_100_ms": [
+    2.7951658703386784,
+    2.3051253519952297,
+    4.020958207547665,
+    3.991999663412571,
+    4.144667182117701,
+    3.533624578267336,
+    6.018000189214945,
+    2.8050406835973263,
+    2.521499991416931,
+    2.2731670178472996,
+    2.082166727632284,
+    2.4599581956863403,
+    2.6046247221529484,
+    2.8281668201088905,
+    4.625292029231787,
+    4.776750225573778,
+    4.825083073228598,
+    6.348374765366316,
+    6.263290997594595,
+    3.725707996636629,
+    4.563749767839909,
+    2.8724591247737408,
+    3.428417257964611,
+    5.583417136222124,
+    2.9181670397520065,
+    2.8886673972010612,
+    2.4219583719968796,
+    2.0843329839408398,
+    5.507875233888626,
+    4.3659997172653675,
+    3.38570773601532,
+    4.887166898697615,
+    5.804374814033508,
+    4.23020776361227,
+    3.7044589407742023,
+    6.895833183079958,
+    5.171416327357292,
+    4.394750110805035,
+    4.95875021442771,
+    3.4365830942988396,
+    2.8861663304269314,
+    2.7408748865127563,
+    2.49849958345294,
+    2.990333829075098,
+    2.031874842941761,
+    2.33391672372818,
+    2.6377090252935886,
+    2.0458754152059555,
+    2.5472501292824745,
+    2.177624963223934,
+    3.0055828392505646,
+    5.1009999588131905,
+    4.227292258292437,
+    5.175333004444838,
+    5.90849993750453,
+    4.687041975557804,
+    4.669541027396917,
+    4.950749687850475,
+    3.371541853994131,
+    4.1197920218110085,
+    2.669957932084799,
+    4.781416151672602,
+    2.827499993145466,
+    3.2620830461382866,
+    2.1252078004181385,
+    2.444624900817871,
+    4.022791050374508,
+    5.653708707541227,
+    4.286374896764755,
+    2.233124803751707,
+    4.75245900452137,
+    4.132249858230352,
+    2.6987502351403236,
+    5.948249716311693,
+    6.240000016987324,
+    4.811124876141548,
+    2.8550829738378525,
+    2.9301666654646397,
+    3.950708080083132,
+    4.533166065812111,
+    3.643750213086605,
+    4.5010000467300415,
+    5.815333686769009,
+    5.142959300428629,
+    2.3708748631179333,
+    2.606999594718218,
+    2.448457758873701,
+    2.2390829399228096,
+    4.041958134621382,
+    4.866749979555607,
+    4.1352082043886185,
+    5.724999587982893,
+    6.583749782294035,
+    4.8210411332547665,
+    4.1708750650286674,
+    3.515416756272316,
+    4.095250274986029,
+    3.6026672460138798,
+    3.0532078817486763,
+    4.882209002971649
+  ],
+  "rows": [
+    {
+      "id": "01",
+      "text": "A cat chasing a mouse in a dark alleyway in London.",
+      "elapsed_ms": 13.925708830356598,
+      "tokens": [
+        {
+          "i": 0,
+          "text": "A",
+          "offset": 0,
+          "lemma": "a",
+          "pos": "DET",
+          "dep": "det",
+          "head": 1
+        },
+        {
+          "i": 1,
+          "text": "cat",
+          "offset": 2,
+          "lemma": "cat",
+          "pos": "NOUN",
+          "dep": "ROOT",
+          "head": 1
+        },
+        {
+          "i": 2,
+          "text": "chasing",
+          "offset": 6,
+          "lemma": "chase",
+          "pos": "VERB",
+          "dep": "acl",
+          "head": 1
+        },
+        {
+          "i": 3,
+          "text": "a",
+          "offset": 14,
+          "lemma": "a",
+          "pos": "DET",
+          "dep": "det",
+          "head": 4
+        },
+        {
+          "i": 4,
+          "text": "mouse",
+          "offset": 16,
+          "lemma": "mouse",
+          "pos": "NOUN",
+          "dep": "dobj",
+          "head": 2
+        },
+        {
+          "i": 5,
+          "text": "in",
+          "offset": 22,
+          "lemma": "in",
+          "pos": "ADP",
+          "dep": "prep",
+          "head": 2
+        },
+        {
+          "i": 6,
+          "text": "a",
+          "offset": 25,
+          "lemma": "a",
+          "pos": "DET",
+          "dep": "det",
+          "head": 8
+        },
+        {
+          "i": 7,
+          "text": "dark",
+          "offset": 27,
+          "lemma": "dark",
+          "pos": "ADJ",
+          "dep": "amod",
+          "head": 8
+        },
+        {
+          "i": 8,
+          "text": "alleyway",
+          "offset": 32,
+          "lemma": "alleyway",
+          "pos": "NOUN",
+          "dep": "pobj",
+          "head": 5
+        },
+        {
+          "i": 9,
+          "text": "in",
+          "offset": 41,
+          "lemma": "in",
+          "pos": "ADP",
+          "dep": "prep",
+          "head": 8
+        },
+        {
+          "i": 10,
+          "text": "London",
+          "offset": 44,
+          "lemma": "London",
+          "pos": "PROPN",
+          "dep": "pobj",
+          "head": 9
+        },
+        {
+          "i": 11,
+          "text": ".",
+          "offset": 50,
+          "lemma": ".",
+          "pos": "PUNCT",
+          "dep": "punct",
+          "head": 1
+        }
+      ],
+      "noun_chunks": [
+        {
+          "text": "A cat",
+          "start": 0,
+          "end": 2,
+          "root": 1
+        },
+        {
+          "text": "a mouse",
+          "start": 3,
+          "end": 5,
+          "root": 4
+        },
+        {
+          "text": "a dark alleyway",
+          "start": 6,
+          "end": 9,
+          "root": 8
+        },
+        {
+          "text": "London",
+          "start": 10,
+          "end": 11,
+          "root": 10
+        }
+      ],
+      "entities": [
+        {
+          "text": "London",
+          "label": "GPE",
+          "start": 10,
+          "end": 11
+        }
+      ]
+    },
+    {
+      "id": "02",
+      "text": "A quick brown fox jumps over a lazy dog.",
+      "elapsed_ms": 5.1167500205338,
+      "tokens": [
+        {
+          "i": 0,
+          "text": "A",
+          "offset": 0,
+          "lemma": "a",
+          "pos": "DET",
+          "dep": "det",
+          "head": 3
+        },
+        {
+          "i": 1,
+          "text": "quick",
+          "offset": 2,
+          "lemma": "quick",
+          "pos": "ADJ",
+          "dep": "amod",
+          "head": 3
+        },
+        {
+          "i": 2,
+          "text": "brown",
+          "offset": 8,
+          "lemma": "brown",
+          "pos": "ADJ",
+          "dep": "amod",
+          "head": 3
+        },
+        {
+          "i": 3,
+          "text": "fox",
+          "offset": 14,
+          "lemma": "fox",
+          "pos": "NOUN",
+          "dep": "nsubj",
+          "head": 4
+        },
+        {
+          "i": 4,
+          "text": "jumps",
+          "offset": 18,
+          "lemma": "jump",
+          "pos": "VERB",
+          "dep": "ROOT",
+          "head": 4
+        },
+        {
+          "i": 5,
+          "text": "over",
+          "offset": 24,
+          "lemma": "over",
+          "pos": "ADP",
+          "dep": "prep",
+          "head": 4
+        },
+        {
+          "i": 6,
+          "text": "a",
+          "offset": 29,
+          "lemma": "a",
+          "pos": "DET",
+          "dep": "det",
+          "head": 8
+        },
+        {
+          "i": 7,
+          "text": "lazy",
+          "offset": 31,
+          "lemma": "lazy",
+          "pos": "ADJ",
+          "dep": "amod",
+          "head": 8
+        },
+        {
+          "i": 8,
+          "text": "dog",
+          "offset": 36,
+          "lemma": "dog",
+          "pos": "NOUN",
+          "dep": "pobj",
+          "head": 5
+        },
+        {
+          "i": 9,
+          "text": ".",
+          "offset": 39,
+          "lemma": ".",
+          "pos": "PUNCT",
+          "dep": "punct",
+          "head": 4
+        }
+      ],
+      "noun_chunks": [
+        {
+          "text": "A quick brown fox",
+          "start": 0,
+          "end": 4,
+          "root": 3
+        },
+        {
+          "text": "a lazy dog",
+          "start": 6,
+          "end": 9,
+          "root": 8
+        }
+      ],
+      "entities": []
+    },
+    {
+      "id": "03",
+      "text": "A pink fox jumped over a river stream.",
+      "elapsed_ms": 4.855374805629253,
+      "tokens": [
+        {
+          "i": 0,
+          "text": "A",
+          "offset": 0,
+          "lemma": "a",
+          "pos": "DET",
+          "dep": "det",
+          "head": 2
+        },
+        {
+          "i": 1,
+          "text": "pink",
+          "offset": 2,
+          "lemma": "pink",
+          "pos": "ADJ",
+          "dep": "amod",
+          "head": 2
+        },
+        {
+          "i": 2,
+          "text": "fox",
+          "offset": 7,
+          "lemma": "fox",
+          "pos": "NOUN",
+          "dep": "nsubj",
+          "head": 3
+        },
+        {
+          "i": 3,
+          "text": "jumped",
+          "offset": 11,
+          "lemma": "jump",
+          "pos": "VERB",
+          "dep": "ROOT",
+          "head": 3
+        },
+        {
+          "i": 4,
+          "text": "over",
+          "offset": 18,
+          "lemma": "over",
+          "pos": "ADP",
+          "dep": "prep",
+          "head": 3
+        },
+        {
+          "i": 5,
+          "text": "a",
+          "offset": 23,
+          "lemma": "a",
+          "pos": "DET",
+          "dep": "det",
+          "head": 7
+        },
+        {
+          "i": 6,
+          "text": "river",
+          "offset": 25,
+          "lemma": "river",
+          "pos": "NOUN",
+          "dep": "compound",
+          "head": 7
+        },
+        {
+          "i": 7,
+          "text": "stream",
+          "offset": 31,
+          "lemma": "stream",
+          "pos": "NOUN",
+          "dep": "pobj",
+          "head": 4
+        },
+        {
+          "i": 8,
+          "text": ".",
+          "offset": 37,
+          "lemma": ".",
+          "pos": "PUNCT",
+          "dep": "punct",
+          "head": 3
+        }
+      ],
+      "noun_chunks": [
+        {
+          "text": "A pink fox",
+          "start": 0,
+          "end": 3,
+          "root": 2
+        },
+        {
+          "text": "a river stream",
+          "start": 5,
+          "end": 8,
+          "root": 7
+        }
+      ],
+      "entities": []
+    },
+    {
+      "id": "04",
+      "text": "The white golden retriever and the Merle Aussie are playing in the field.",
+      "elapsed_ms": 4.026792012155056,
+      "tokens": [
+        {
+          "i": 0,
+          "text": "The",
+          "offset": 0,
+          "lemma": "the",
+          "pos": "DET",
+          "dep": "det",
+          "head": 3
+        },
+        {
+          "i": 1,
+          "text": "white",
+          "offset": 4,
+          "lemma": "white",
+          "pos": "ADJ",
+          "dep": "amod",
+          "head": 2
+        },
+        {
+          "i": 2,
+          "text": "golden",
+          "offset": 10,
+          "lemma": "golden",
+          "pos": "ADJ",
+          "dep": "amod",
+          "head": 3
+        },
+        {
+          "i": 3,
+          "text": "retriever",
+          "offset": 17,
+          "lemma": "retriever",
+          "pos": "NOUN",
+          "dep": "nsubj",
+          "head": 9
+        },
+        {
+          "i": 4,
+          "text": "and",
+          "offset": 27,
+          "lemma": "and",
+          "pos": "CCONJ",
+          "dep": "cc",
+          "head": 3
+        },
+        {
+          "i": 5,
+          "text": "the",
+          "offset": 31,
+          "lemma": "the",
+          "pos": "DET",
+          "dep": "det",
+          "head": 7
+        },
+        {
+          "i": 6,
+          "text": "Merle",
+          "offset": 35,
+          "lemma": "Merle",
+          "pos": "PROPN",
+          "dep": "compound",
+          "head": 7
+        },
+        {
+          "i": 7,
+          "text": "Aussie",
+          "offset": 41,
+          "lemma": "Aussie",
+          "pos": "PROPN",
+          "dep": "conj",
+          "head": 3
+        },
+        {
+          "i": 8,
+          "text": "are",
+          "offset": 48,
+          "lemma": "be",
+          "pos": "AUX",
+          "dep": "aux",
+          "head": 9
+        },
+        {
+          "i": 9,
+          "text": "playing",
+          "offset": 52,
+          "lemma": "play",
+          "pos": "VERB",
+          "dep": "ROOT",
+          "head": 9
+        },
+        {
+          "i": 10,
+          "text": "in",
+          "offset": 60,
+          "lemma": "in",
+          "pos": "ADP",
+          "dep": "prep",
+          "head": 9
+        },
+        {
+          "i": 11,
+          "text": "the",
+          "offset": 63,
+          "lemma": "the",
+          "pos": "DET",
+          "dep": "det",
+          "head": 12
+        },
+        {
+          "i": 12,
+          "text": "field",
+          "offset": 67,
+          "lemma": "field",
+          "pos": "NOUN",
+          "dep": "pobj",
+          "head": 10
+        },
+        {
+          "i": 13,
+          "text": ".",
+          "offset": 72,
+          "lemma": ".",
+          "pos": "PUNCT",
+          "dep": "punct",
+          "head": 9
+        }
+      ],
+      "noun_chunks": [
+        {
+          "text": "The white golden retriever",
+          "start": 0,
+          "end": 4,
+          "root": 3
+        },
+        {
+          "text": "the Merle Aussie",
+          "start": 5,
+          "end": 8,
+          "root": 7
+        },
+        {
+          "text": "the field",
+          "start": 11,
+          "end": 13,
+          "root": 12
+        }
+      ],
+      "entities": [
+        {
+          "text": "the Merle Aussie",
+          "label": "ORG",
+          "start": 5,
+          "end": 8
+        }
+      ]
+    },
+    {
+      "id": "05",
+      "text": "Two brown foxes chase three white rabbits.",
+      "elapsed_ms": 4.1994997300207615,
+      "tokens": [
+        {
+          "i": 0,
+          "text": "Two",
+          "offset": 0,
+          "lemma": "two",
+          "pos": "NUM",
+          "dep": "nummod",
+          "head": 2
+        },
+        {
+          "i": 1,
+          "text": "brown",
+          "offset": 4,
+          "lemma": "brown",
+          "pos": "ADJ",
+          "dep": "amod",
+          "head": 2
+        },
+        {
+          "i": 2,
+          "text": "foxes",
+          "offset": 10,
+          "lemma": "fox",
+          "pos": "NOUN",
+          "dep": "nsubj",
+          "head": 3
+        },
+        {
+          "i": 3,
+          "text": "chase",
+          "offset": 16,
+          "lemma": "chase",
+          "pos": "VERB",
+          "dep": "ROOT",
+          "head": 3
+        },
+        {
+          "i": 4,
+          "text": "three",
+          "offset": 22,
+          "lemma": "three",
+          "pos": "NUM",
+          "dep": "nummod",
+          "head": 6
+        },
+        {
+          "i": 5,
+          "text": "white",
+          "offset": 28,
+          "lemma": "white",
+          "pos": "ADJ",
+          "dep": "amod",
+          "head": 6
+        },
+        {
+          "i": 6,
+          "text": "rabbits",
+          "offset": 34,
+          "lemma": "rabbit",
+          "pos": "NOUN",
+          "dep": "dobj",
+          "head": 3
+        },
+        {
+          "i": 7,
+          "text": ".",
+          "offset": 41,
+          "lemma": ".",
+          "pos": "PUNCT",
+          "dep": "punct",
+          "head": 3
+        }
+      ],
+      "noun_chunks": [
+        {
+          "text": "Two brown foxes",
+          "start": 0,
+          "end": 3,
+          "root": 2
+        },
+        {
+          "text": "three white rabbits",
+          "start": 4,
+          "end": 7,
+          "root": 6
+        }
+      ],
+      "entities": [
+        {
+          "text": "Two",
+          "label": "CARDINAL",
+          "start": 0,
+          "end": 1
+        },
+        {
+          "text": "three",
+          "label": "CARDINAL",
+          "start": 4,
+          "end": 5
+        }
+      ]
+    },
+    {
+      "id": "06",
+      "text": "A red bird is eating a green apple.",
+      "elapsed_ms": 5.051124840974808,
+      "tokens": [
+        {
+          "i": 0,
+          "text": "A",
+          "offset": 0,
+          "lemma": "a",
+          "pos": "DET",
+          "dep": "det",
+          "head": 2
+        },
+        {
+          "i": 1,
+          "text": "red",
+          "offset": 2,
+          "lemma": "red",
+          "pos": "ADJ",
+          "dep": "amod",
+          "head": 2
+        },
+        {
+          "i": 2,
+          "text": "bird",
+          "offset": 6,
+          "lemma": "bird",
+          "pos": "NOUN",
+          "dep": "nsubj",
+          "head": 4
+        },
+        {
+          "i": 3,
+          "text": "is",
+          "offset": 11,
+          "lemma": "be",
+          "pos": "AUX",
+          "dep": "aux",
+          "head": 4
+        },
+        {
+          "i": 4,
+          "text": "eating",
+          "offset": 14,
+          "lemma": "eat",
+          "pos": "VERB",
+          "dep": "ROOT",
+          "head": 4
+        },
+        {
+          "i": 5,
+          "text": "a",
+          "offset": 21,
+          "lemma": "a",
+          "pos": "DET",
+          "dep": "det",
+          "head": 7
+        },
+        {
+          "i": 6,
+          "text": "green",
+          "offset": 23,
+          "lemma": "green",
+          "pos": "ADJ",
+          "dep": "amod",
+          "head": 7
+        },
+        {
+          "i": 7,
+          "text": "apple",
+          "offset": 29,
+          "lemma": "apple",
+          "pos": "NOUN",
+          "dep": "dobj",
+          "head": 4
+        },
+        {
+          "i": 8,
+          "text": ".",
+          "offset": 34,
+          "lemma": ".",
+          "pos": "PUNCT",
+          "dep": "punct",
+          "head": 4
+        }
+      ],
+      "noun_chunks": [
+        {
+          "text": "A red bird",
+          "start": 0,
+          "end": 3,
+          "root": 2
+        },
+        {
+          "text": "a green apple",
+          "start": 5,
+          "end": 8,
+          "root": 7
+        }
+      ],
+      "entities": []
+    },
+    {
+      "id": "07",
+      "text": "A small child reads a blue book beside a tree.",
+      "elapsed_ms": 4.494916182011366,
+      "tokens": [
+        {
+          "i": 0,
+          "text": "A",
+          "offset": 0,
+          "lemma": "a",
+          "pos": "DET",
+          "dep": "det",
+          "head": 2
+        },
+        {
+          "i": 1,
+          "text": "small",
+          "offset": 2,
+          "lemma": "small",
+          "pos": "ADJ",
+          "dep": "amod",
+          "head": 2
+        },
+        {
+          "i": 2,
+          "text": "child",
+          "offset": 8,
+          "lemma": "child",
+          "pos": "NOUN",
+          "dep": "nsubj",
+          "head": 3
+        },
+        {
+          "i": 3,
+          "text": "reads",
+          "offset": 14,
+          "lemma": "read",
+          "pos": "VERB",
+          "dep": "ROOT",
+          "head": 3
+        },
+        {
+          "i": 4,
+          "text": "a",
+          "offset": 20,
+          "lemma": "a",
+          "pos": "DET",
+          "dep": "det",
+          "head": 6
+        },
+        {
+          "i": 5,
+          "text": "blue",
+          "offset": 22,
+          "lemma": "blue",
+          "pos": "ADJ",
+          "dep": "amod",
+          "head": 6
+        },
+        {
+          "i": 6,
+          "text": "book",
+          "offset": 27,
+          "lemma": "book",
+          "pos": "NOUN",
+          "dep": "dobj",
+          "head": 3
+        },
+        {
+          "i": 7,
+          "text": "beside",
+          "offset": 32,
+          "lemma": "beside",
+          "pos": "ADP",
+          "dep": "prep",
+          "head": 3
+        },
+        {
+          "i": 8,
+          "text": "a",
+          "offset": 39,
+          "lemma": "a",
+          "pos": "DET",
+          "dep": "det",
+          "head": 9
+        },
+        {
+          "i": 9,
+          "text": "tree",
+          "offset": 41,
+          "lemma": "tree",
+          "pos": "NOUN",
+          "dep": "pobj",
+          "head": 7
+        },
+        {
+          "i": 10,
+          "text": ".",
+          "offset": 45,
+          "lemma": ".",
+          "pos": "PUNCT",
+          "dep": "punct",
+          "head": 3
+        }
+      ],
+      "noun_chunks": [
+        {
+          "text": "A small child",
+          "start": 0,
+          "end": 3,
+          "root": 2
+        },
+        {
+          "text": "a blue book",
+          "start": 4,
+          "end": 7,
+          "root": 6
+        },
+        {
+          "text": "a tree",
+          "start": 8,
+          "end": 10,
+          "root": 9
+        }
+      ],
+      "entities": []
+    },
+    {
+      "id": "08",
+      "text": "Three yellow ducks swimming across a pond.",
+      "elapsed_ms": 3.7021245807409286,
+      "tokens": [
+        {
+          "i": 0,
+          "text": "Three",
+          "offset": 0,
+          "lemma": "three",
+          "pos": "NUM",
+          "dep": "nummod",
+          "head": 2
+        },
+        {
+          "i": 1,
+          "text": "yellow",
+          "offset": 6,
+          "lemma": "yellow",
+          "pos": "ADJ",
+          "dep": "amod",
+          "head": 2
+        },
+        {
+          "i": 2,
+          "text": "ducks",
+          "offset": 13,
+          "lemma": "duck",
+          "pos": "NOUN",
+          "dep": "nsubj",
+          "head": 3
+        },
+        {
+          "i": 3,
+          "text": "swimming",
+          "offset": 19,
+          "lemma": "swim",
+          "pos": "VERB",
+          "dep": "ROOT",
+          "head": 3
+        },
+        {
+          "i": 4,
+          "text": "across",
+          "offset": 28,
+          "lemma": "across",
+          "pos": "ADP",
+          "dep": "prep",
+          "head": 3
+        },
+        {
+          "i": 5,
+          "text": "a",
+          "offset": 35,
+          "lemma": "a",
+          "pos": "DET",
+          "dep": "det",
+          "head": 6
+        },
+        {
+          "i": 6,
+          "text": "pond",
+          "offset": 37,
+          "lemma": "pond",
+          "pos": "NOUN",
+          "dep": "pobj",
+          "head": 4
+        },
+        {
+          "i": 7,
+          "text": ".",
+          "offset": 41,
+          "lemma": ".",
+          "pos": "PUNCT",
+          "dep": "punct",
+          "head": 3
+        }
+      ],
+      "noun_chunks": [
+        {
+          "text": "Three yellow ducks",
+          "start": 0,
+          "end": 3,
+          "root": 2
+        },
+        {
+          "text": "a pond",
+          "start": 5,
+          "end": 7,
+          "root": 6
+        }
+      ],
+      "entities": [
+        {
+          "text": "Three",
+          "label": "CARDINAL",
+          "start": 0,
+          "end": 1
+        }
+      ]
+    },
+    {
+      "id": "09",
+      "text": "A purple dragon flies above a snowy mountain.",
+      "elapsed_ms": 5.751749966293573,
+      "tokens": [
+        {
+          "i": 0,
+          "text": "A",
+          "offset": 0,
+          "lemma": "a",
+          "pos": "DET",
+          "dep": "det",
+          "head": 3
+        },
+        {
+          "i": 1,
+          "text": "purple",
+          "offset": 2,
+          "lemma": "purple",
+          "pos": "ADJ",
+          "dep": "amod",
+          "head": 2
+        },
+        {
+          "i": 2,
+          "text": "dragon",
+          "offset": 9,
+          "lemma": "dragon",
+          "pos": "NOUN",
+          "dep": "compound",
+          "head": 3
+        },
+        {
+          "i": 3,
+          "text": "flies",
+          "offset": 16,
+          "lemma": "fly",
+          "pos": "NOUN",
+          "dep": "ROOT",
+          "head": 3
+        },
+        {
+          "i": 4,
+          "text": "above",
+          "offset": 22,
+          "lemma": "above",
+          "pos": "ADP",
+          "dep": "prep",
+          "head": 3
+        },
+        {
+          "i": 5,
+          "text": "a",
+          "offset": 28,
+          "lemma": "a",
+          "pos": "DET",
+          "dep": "det",
+          "head": 7
+        },
+        {
+          "i": 6,
+          "text": "snowy",
+          "offset": 30,
+          "lemma": "snowy",
+          "pos": "ADJ",
+          "dep": "amod",
+          "head": 7
+        },
+        {
+          "i": 7,
+          "text": "mountain",
+          "offset": 36,
+          "lemma": "mountain",
+          "pos": "NOUN",
+          "dep": "pobj",
+          "head": 4
+        },
+        {
+          "i": 8,
+          "text": ".",
+          "offset": 44,
+          "lemma": ".",
+          "pos": "PUNCT",
+          "dep": "punct",
+          "head": 3
+        }
+      ],
+      "noun_chunks": [
+        {
+          "text": "A purple dragon flies",
+          "start": 0,
+          "end": 4,
+          "root": 3
+        },
+        {
+          "text": "a snowy mountain",
+          "start": 5,
+          "end": 8,
+          "root": 7
+        }
+      ],
+      "entities": []
+    },
+    {
+      "id": "10",
+      "text": "A black dog carries a red ball.",
+      "elapsed_ms": 5.572832655161619,
+      "tokens": [
+        {
+          "i": 0,
+          "text": "A",
+          "offset": 0,
+          "lemma": "a",
+          "pos": "DET",
+          "dep": "det",
+          "head": 2
+        },
+        {
+          "i": 1,
+          "text": "black",
+          "offset": 2,
+          "lemma": "black",
+          "pos": "ADJ",
+          "dep": "amod",
+          "head": 2
+        },
+        {
+          "i": 2,
+          "text": "dog",
+          "offset": 8,
+          "lemma": "dog",
+          "pos": "NOUN",
+          "dep": "nsubj",
+          "head": 3
+        },
+        {
+          "i": 3,
+          "text": "carries",
+          "offset": 12,
+          "lemma": "carry",
+          "pos": "VERB",
+          "dep": "ROOT",
+          "head": 3
+        },
+        {
+          "i": 4,
+          "text": "a",
+          "offset": 20,
+          "lemma": "a",
+          "pos": "DET",
+          "dep": "det",
+          "head": 6
+        },
+        {
+          "i": 5,
+          "text": "red",
+          "offset": 22,
+          "lemma": "red",
+          "pos": "ADJ",
+          "dep": "amod",
+          "head": 6
+        },
+        {
+          "i": 6,
+          "text": "ball",
+          "offset": 26,
+          "lemma": "ball",
+          "pos": "NOUN",
+          "dep": "dobj",
+          "head": 3
+        },
+        {
+          "i": 7,
+          "text": ".",
+          "offset": 30,
+          "lemma": ".",
+          "pos": "PUNCT",
+          "dep": "punct",
+          "head": 3
+        }
+      ],
+      "noun_chunks": [
+        {
+          "text": "A black dog",
+          "start": 0,
+          "end": 3,
+          "root": 2
+        },
+        {
+          "text": "a red ball",
+          "start": 4,
+          "end": 7,
+          "root": 6
+        }
+      ],
+      "entities": []
+    },
+    {
+      "id": "11",
+      "text": "A white rabbit watches a brown fox.",
+      "elapsed_ms": 4.756249953061342,
+      "tokens": [
+        {
+          "i": 0,
+          "text": "A",
+          "offset": 0,
+          "lemma": "a",
+          "pos": "DET",
+          "dep": "det",
+          "head": 2
+        },
+        {
+          "i": 1,
+          "text": "white",
+          "offset": 2,
+          "lemma": "white",
+          "pos": "ADJ",
+          "dep": "amod",
+          "head": 2
+        },
+        {
+          "i": 2,
+          "text": "rabbit",
+          "offset": 8,
+          "lemma": "rabbit",
+          "pos": "NOUN",
+          "dep": "nsubj",
+          "head": 3
+        },
+        {
+          "i": 3,
+          "text": "watches",
+          "offset": 15,
+          "lemma": "watch",
+          "pos": "VERB",
+          "dep": "ROOT",
+          "head": 3
+        },
+        {
+          "i": 4,
+          "text": "a",
+          "offset": 23,
+          "lemma": "a",
+          "pos": "DET",
+          "dep": "det",
+          "head": 6
+        },
+        {
+          "i": 5,
+          "text": "brown",
+          "offset": 25,
+          "lemma": "brown",
+          "pos": "ADJ",
+          "dep": "amod",
+          "head": 6
+        },
+        {
+          "i": 6,
+          "text": "fox",
+          "offset": 31,
+          "lemma": "fox",
+          "pos": "NOUN",
+          "dep": "dobj",
+          "head": 3
+        },
+        {
+          "i": 7,
+          "text": ".",
+          "offset": 34,
+          "lemma": ".",
+          "pos": "PUNCT",
+          "dep": "punct",
+          "head": 3
+        }
+      ],
+      "noun_chunks": [
+        {
+          "text": "A white rabbit",
+          "start": 0,
+          "end": 3,
+          "root": 2
+        },
+        {
+          "text": "a brown fox",
+          "start": 4,
+          "end": 7,
+          "root": 6
+        }
+      ],
+      "entities": []
+    },
+    {
+      "id": "12",
+      "text": "A robot pushes a wooden cart through a tunnel.",
+      "elapsed_ms": 4.049874842166901,
+      "tokens": [
+        {
+          "i": 0,
+          "text": "A",
+          "offset": 0,
+          "lemma": "a",
+          "pos": "DET",
+          "dep": "det",
+          "head": 1
+        },
+        {
+          "i": 1,
+          "text": "robot",
+          "offset": 2,
+          "lemma": "robot",
+          "pos": "NOUN",
+          "dep": "nsubj",
+          "head": 2
+        },
+        {
+          "i": 2,
+          "text": "pushes",
+          "offset": 8,
+          "lemma": "push",
+          "pos": "VERB",
+          "dep": "ROOT",
+          "head": 2
+        },
+        {
+          "i": 3,
+          "text": "a",
+          "offset": 15,
+          "lemma": "a",
+          "pos": "DET",
+          "dep": "det",
+          "head": 5
+        },
+        {
+          "i": 4,
+          "text": "wooden",
+          "offset": 17,
+          "lemma": "wooden",
+          "pos": "ADJ",
+          "dep": "amod",
+          "head": 5
+        },
+        {
+          "i": 5,
+          "text": "cart",
+          "offset": 24,
+          "lemma": "cart",
+          "pos": "NOUN",
+          "dep": "dobj",
+          "head": 2
+        },
+        {
+          "i": 6,
+          "text": "through",
+          "offset": 29,
+          "lemma": "through",
+          "pos": "ADP",
+          "dep": "prep",
+          "head": 2
+        },
+        {
+          "i": 7,
+          "text": "a",
+          "offset": 37,
+          "lemma": "a",
+          "pos": "DET",
+          "dep": "det",
+          "head": 8
+        },
+        {
+          "i": 8,
+          "text": "tunnel",
+          "offset": 39,
+          "lemma": "tunnel",
+          "pos": "NOUN",
+          "dep": "pobj",
+          "head": 6
+        },
+        {
+          "i": 9,
+          "text": ".",
+          "offset": 45,
+          "lemma": ".",
+          "pos": "PUNCT",
+          "dep": "punct",
+          "head": 2
+        }
+      ],
+      "noun_chunks": [
+        {
+          "text": "A robot",
+          "start": 0,
+          "end": 2,
+          "root": 1
+        },
+        {
+          "text": "a wooden cart",
+          "start": 3,
+          "end": 6,
+          "root": 5
+        },
+        {
+          "text": "a tunnel",
+          "start": 7,
+          "end": 9,
+          "root": 8
+        }
+      ],
+      "entities": []
+    },
+    {
+      "id": "13",
+      "text": "A girl kicks a football while a boy waves.",
+      "elapsed_ms": 8.931375108659267,
+      "tokens": [
+        {
+          "i": 0,
+          "text": "A",
+          "offset": 0,
+          "lemma": "a",
+          "pos": "DET",
+          "dep": "det",
+          "head": 1
+        },
+        {
+          "i": 1,
+          "text": "girl",
+          "offset": 2,
+          "lemma": "girl",
+          "pos": "NOUN",
+          "dep": "nsubj",
+          "head": 2
+        },
+        {
+          "i": 2,
+          "text": "kicks",
+          "offset": 7,
+          "lemma": "kick",
+          "pos": "VERB",
+          "dep": "ROOT",
+          "head": 2
+        },
+        {
+          "i": 3,
+          "text": "a",
+          "offset": 13,
+          "lemma": "a",
+          "pos": "DET",
+          "dep": "det",
+          "head": 4
+        },
+        {
+          "i": 4,
+          "text": "football",
+          "offset": 15,
+          "lemma": "football",
+          "pos": "NOUN",
+          "dep": "dobj",
+          "head": 2
+        },
+        {
+          "i": 5,
+          "text": "while",
+          "offset": 24,
+          "lemma": "while",
+          "pos": "SCONJ",
+          "dep": "mark",
+          "head": 8
+        },
+        {
+          "i": 6,
+          "text": "a",
+          "offset": 30,
+          "lemma": "a",
+          "pos": "DET",
+          "dep": "det",
+          "head": 7
+        },
+        {
+          "i": 7,
+          "text": "boy",
+          "offset": 32,
+          "lemma": "boy",
+          "pos": "NOUN",
+          "dep": "compound",
+          "head": 8
+        },
+        {
+          "i": 8,
+          "text": "waves",
+          "offset": 36,
+          "lemma": "wave",
+          "pos": "NOUN",
+          "dep": "advcl",
+          "head": 2
+        },
+        {
+          "i": 9,
+          "text": ".",
+          "offset": 41,
+          "lemma": ".",
+          "pos": "PUNCT",
+          "dep": "punct",
+          "head": 2
+        }
+      ],
+      "noun_chunks": [
+        {
+          "text": "A girl",
+          "start": 0,
+          "end": 2,
+          "root": 1
+        },
+        {
+          "text": "a football",
+          "start": 3,
+          "end": 5,
+          "root": 4
+        }
+      ],
+      "entities": []
+    },
+    {
+      "id": "14",
+      "text": "A dog and a cat sleep beside a red boat.",
+      "elapsed_ms": 5.822582636028528,
+      "tokens": [
+        {
+          "i": 0,
+          "text": "A",
+          "offset": 0,
+          "lemma": "a",
+          "pos": "DET",
+          "dep": "det",
+          "head": 1
+        },
+        {
+          "i": 1,
+          "text": "dog",
+          "offset": 2,
+          "lemma": "dog",
+          "pos": "NOUN",
+          "dep": "nsubj",
+          "head": 5
+        },
+        {
+          "i": 2,
+          "text": "and",
+          "offset": 6,
+          "lemma": "and",
+          "pos": "CCONJ",
+          "dep": "cc",
+          "head": 1
+        },
+        {
+          "i": 3,
+          "text": "a",
+          "offset": 10,
+          "lemma": "a",
+          "pos": "DET",
+          "dep": "det",
+          "head": 4
+        },
+        {
+          "i": 4,
+          "text": "cat",
+          "offset": 12,
+          "lemma": "cat",
+          "pos": "NOUN",
+          "dep": "conj",
+          "head": 1
+        },
+        {
+          "i": 5,
+          "text": "sleep",
+          "offset": 16,
+          "lemma": "sleep",
+          "pos": "VERB",
+          "dep": "ROOT",
+          "head": 5
+        },
+        {
+          "i": 6,
+          "text": "beside",
+          "offset": 22,
+          "lemma": "beside",
+          "pos": "ADP",
+          "dep": "prep",
+          "head": 5
+        },
+        {
+          "i": 7,
+          "text": "a",
+          "offset": 29,
+          "lemma": "a",
+          "pos": "DET",
+          "dep": "det",
+          "head": 9
+        },
+        {
+          "i": 8,
+          "text": "red",
+          "offset": 31,
+          "lemma": "red",
+          "pos": "ADJ",
+          "dep": "amod",
+          "head": 9
+        },
+        {
+          "i": 9,
+          "text": "boat",
+          "offset": 35,
+          "lemma": "boat",
+          "pos": "NOUN",
+          "dep": "pobj",
+          "head": 6
+        },
+        {
+          "i": 10,
+          "text": ".",
+          "offset": 39,
+          "lemma": ".",
+          "pos": "PUNCT",
+          "dep": "punct",
+          "head": 5
+        }
+      ],
+      "noun_chunks": [
+        {
+          "text": "A dog",
+          "start": 0,
+          "end": 2,
+          "root": 1
+        },
+        {
+          "text": "a cat",
+          "start": 3,
+          "end": 5,
+          "root": 4
+        },
+        {
+          "text": "a red boat",
+          "start": 7,
+          "end": 10,
+          "root": 9
+        }
+      ],
+      "entities": []
+    },
+    {
+      "id": "15",
+      "text": "A blue owl sits on a branch. A red fox sleeps under the tree.",
+      "elapsed_ms": 7.767958100885153,
+      "tokens": [
+        {
+          "i": 0,
+          "text": "A",
+          "offset": 0,
+          "lemma": "a",
+          "pos": "DET",
+          "dep": "det",
+          "head": 2
+        },
+        {
+          "i": 1,
+          "text": "blue",
+          "offset": 2,
+          "lemma": "blue",
+          "pos": "ADJ",
+          "dep": "amod",
+          "head": 2
+        },
+        {
+          "i": 2,
+          "text": "owl",
+          "offset": 7,
+          "lemma": "owl",
+          "pos": "NOUN",
+          "dep": "nsubj",
+          "head": 3
+        },
+        {
+          "i": 3,
+          "text": "sits",
+          "offset": 11,
+          "lemma": "sit",
+          "pos": "VERB",
+          "dep": "ROOT",
+          "head": 3
+        },
+        {
+          "i": 4,
+          "text": "on",
+          "offset": 16,
+          "lemma": "on",
+          "pos": "ADP",
+          "dep": "prep",
+          "head": 3
+        },
+        {
+          "i": 5,
+          "text": "a",
+          "offset": 19,
+          "lemma": "a",
+          "pos": "DET",
+          "dep": "det",
+          "head": 6
+        },
+        {
+          "i": 6,
+          "text": "branch",
+          "offset": 21,
+          "lemma": "branch",
+          "pos": "NOUN",
+          "dep": "pobj",
+          "head": 4
+        },
+        {
+          "i": 7,
+          "text": ".",
+          "offset": 27,
+          "lemma": ".",
+          "pos": "PUNCT",
+          "dep": "punct",
+          "head": 3
+        },
+        {
+          "i": 8,
+          "text": "A",
+          "offset": 29,
+          "lemma": "a",
+          "pos": "DET",
+          "dep": "det",
+          "head": 10
+        },
+        {
+          "i": 9,
+          "text": "red",
+          "offset": 31,
+          "lemma": "red",
+          "pos": "ADJ",
+          "dep": "amod",
+          "head": 10
+        },
+        {
+          "i": 10,
+          "text": "fox",
+          "offset": 35,
+          "lemma": "fox",
+          "pos": "NOUN",
+          "dep": "nsubj",
+          "head": 11
+        },
+        {
+          "i": 11,
+          "text": "sleeps",
+          "offset": 39,
+          "lemma": "sleep",
+          "pos": "NOUN",
+          "dep": "ROOT",
+          "head": 11
+        },
+        {
+          "i": 12,
+          "text": "under",
+          "offset": 46,
+          "lemma": "under",
+          "pos": "ADP",
+          "dep": "prep",
+          "head": 11
+        },
+        {
+          "i": 13,
+          "text": "the",
+          "offset": 52,
+          "lemma": "the",
+          "pos": "DET",
+          "dep": "det",
+          "head": 14
+        },
+        {
+          "i": 14,
+          "text": "tree",
+          "offset": 56,
+          "lemma": "tree",
+          "pos": "NOUN",
+          "dep": "pobj",
+          "head": 12
+        },
+        {
+          "i": 15,
+          "text": ".",
+          "offset": 60,
+          "lemma": ".",
+          "pos": "PUNCT",
+          "dep": "punct",
+          "head": 11
+        }
+      ],
+      "noun_chunks": [
+        {
+          "text": "A blue owl",
+          "start": 0,
+          "end": 3,
+          "root": 2
+        },
+        {
+          "text": "a branch",
+          "start": 5,
+          "end": 7,
+          "root": 6
+        },
+        {
+          "text": "A red fox",
+          "start": 8,
+          "end": 11,
+          "root": 10
+        },
+        {
+          "text": "the tree",
+          "start": 13,
+          "end": 15,
+          "root": 14
+        }
+      ],
+      "entities": []
+    },
+    {
+      "id": "16",
+      "text": "A brown fox stands beside a white dog. The fox does not jump over the dog.",
+      "elapsed_ms": 7.40395812317729,
+      "tokens": [
+        {
+          "i": 0,
+          "text": "A",
+          "offset": 0,
+          "lemma": "a",
+          "pos": "DET",
+          "dep": "det",
+          "head": 2
+        },
+        {
+          "i": 1,
+          "text": "brown",
+          "offset": 2,
+          "lemma": "brown",
+          "pos": "ADJ",
+          "dep": "amod",
+          "head": 2
+        },
+        {
+          "i": 2,
+          "text": "fox",
+          "offset": 8,
+          "lemma": "fox",
+          "pos": "NOUN",
+          "dep": "nsubj",
+          "head": 3
+        },
+        {
+          "i": 3,
+          "text": "stands",
+          "offset": 12,
+          "lemma": "stand",
+          "pos": "VERB",
+          "dep": "ROOT",
+          "head": 3
+        },
+        {
+          "i": 4,
+          "text": "beside",
+          "offset": 19,
+          "lemma": "beside",
+          "pos": "ADP",
+          "dep": "prep",
+          "head": 3
+        },
+        {
+          "i": 5,
+          "text": "a",
+          "offset": 26,
+          "lemma": "a",
+          "pos": "DET",
+          "dep": "det",
+          "head": 7
+        },
+        {
+          "i": 6,
+          "text": "white",
+          "offset": 28,
+          "lemma": "white",
+          "pos": "ADJ",
+          "dep": "amod",
+          "head": 7
+        },
+        {
+          "i": 7,
+          "text": "dog",
+          "offset": 34,
+          "lemma": "dog",
+          "pos": "NOUN",
+          "dep": "pobj",
+          "head": 4
+        },
+        {
+          "i": 8,
+          "text": ".",
+          "offset": 37,
+          "lemma": ".",
+          "pos": "PUNCT",
+          "dep": "punct",
+          "head": 3
+        },
+        {
+          "i": 9,
+          "text": "The",
+          "offset": 39,
+          "lemma": "the",
+          "pos": "DET",
+          "dep": "det",
+          "head": 10
+        },
+        {
+          "i": 10,
+          "text": "fox",
+          "offset": 43,
+          "lemma": "fox",
+          "pos": "NOUN",
+          "dep": "nsubj",
+          "head": 13
+        },
+        {
+          "i": 11,
+          "text": "does",
+          "offset": 47,
+          "lemma": "do",
+          "pos": "AUX",
+          "dep": "aux",
+          "head": 13
+        },
+        {
+          "i": 12,
+          "text": "not",
+          "offset": 52,
+          "lemma": "not",
+          "pos": "PART",
+          "dep": "neg",
+          "head": 13
+        },
+        {
+          "i": 13,
+          "text": "jump",
+          "offset": 56,
+          "lemma": "jump",
+          "pos": "VERB",
+          "dep": "ROOT",
+          "head": 13
+        },
+        {
+          "i": 14,
+          "text": "over",
+          "offset": 61,
+          "lemma": "over",
+          "pos": "ADP",
+          "dep": "prep",
+          "head": 13
+        },
+        {
+          "i": 15,
+          "text": "the",
+          "offset": 66,
+          "lemma": "the",
+          "pos": "DET",
+          "dep": "det",
+          "head": 16
+        },
+        {
+          "i": 16,
+          "text": "dog",
+          "offset": 70,
+          "lemma": "dog",
+          "pos": "NOUN",
+          "dep": "pobj",
+          "head": 14
+        },
+        {
+          "i": 17,
+          "text": ".",
+          "offset": 73,
+          "lemma": ".",
+          "pos": "PUNCT",
+          "dep": "punct",
+          "head": 13
+        }
+      ],
+      "noun_chunks": [
+        {
+          "text": "A brown fox",
+          "start": 0,
+          "end": 3,
+          "root": 2
+        },
+        {
+          "text": "a white dog",
+          "start": 5,
+          "end": 8,
+          "root": 7
+        },
+        {
+          "text": "The fox",
+          "start": 9,
+          "end": 11,
+          "root": 10
+        },
+        {
+          "text": "the dog",
+          "start": 15,
+          "end": 17,
+          "root": 16
+        }
+      ],
+      "entities": [
+        {
+          "text": "fox",
+          "label": "ORG",
+          "start": 10,
+          "end": 11
+        }
+      ]
+    },
+    {
+      "id": "17",
+      "text": "A brown fox stands beside a stream. No dogs.",
+      "elapsed_ms": 3.6260001361370087,
+      "tokens": [
+        {
+          "i": 0,
+          "text": "A",
+          "offset": 0,
+          "lemma": "a",
+          "pos": "DET",
+          "dep": "det",
+          "head": 2
+        },
+        {
+          "i": 1,
+          "text": "brown",
+          "offset": 2,
+          "lemma": "brown",
+          "pos": "ADJ",
+          "dep": "amod",
+          "head": 2
+        },
+        {
+          "i": 2,
+          "text": "fox",
+          "offset": 8,
+          "lemma": "fox",
+          "pos": "NOUN",
+          "dep": "nsubj",
+          "head": 3
+        },
+        {
+          "i": 3,
+          "text": "stands",
+          "offset": 12,
+          "lemma": "stand",
+          "pos": "VERB",
+          "dep": "ROOT",
+          "head": 3
+        },
+        {
+          "i": 4,
+          "text": "beside",
+          "offset": 19,
+          "lemma": "beside",
+          "pos": "ADP",
+          "dep": "prep",
+          "head": 3
+        },
+        {
+          "i": 5,
+          "text": "a",
+          "offset": 26,
+          "lemma": "a",
+          "pos": "DET",
+          "dep": "det",
+          "head": 6
+        },
+        {
+          "i": 6,
+          "text": "stream",
+          "offset": 28,
+          "lemma": "stream",
+          "pos": "NOUN",
+          "dep": "pobj",
+          "head": 4
+        },
+        {
+          "i": 7,
+          "text": ".",
+          "offset": 34,
+          "lemma": ".",
+          "pos": "PUNCT",
+          "dep": "punct",
+          "head": 3
+        },
+        {
+          "i": 8,
+          "text": "No",
+          "offset": 36,
+          "lemma": "no",
+          "pos": "DET",
+          "dep": "det",
+          "head": 9
+        },
+        {
+          "i": 9,
+          "text": "dogs",
+          "offset": 39,
+          "lemma": "dog",
+          "pos": "NOUN",
+          "dep": "ROOT",
+          "head": 9
+        },
+        {
+          "i": 10,
+          "text": ".",
+          "offset": 43,
+          "lemma": ".",
+          "pos": "PUNCT",
+          "dep": "punct",
+          "head": 9
+        }
+      ],
+      "noun_chunks": [
+        {
+          "text": "A brown fox",
+          "start": 0,
+          "end": 3,
+          "root": 2
+        },
+        {
+          "text": "a stream",
+          "start": 5,
+          "end": 7,
+          "root": 6
+        },
+        {
+          "text": "No dogs",
+          "start": 8,
+          "end": 10,
+          "root": 9
+        }
+      ],
+      "entities": []
+    },
+    {
+      "id": "18",
+      "text": "A white rabbit is chased by a brown fox.",
+      "elapsed_ms": 5.131749901920557,
+      "tokens": [
+        {
+          "i": 0,
+          "text": "A",
+          "offset": 0,
+          "lemma": "a",
+          "pos": "DET",
+          "dep": "det",
+          "head": 2
+        },
+        {
+          "i": 1,
+          "text": "white",
+          "offset": 2,
+          "lemma": "white",
+          "pos": "ADJ",
+          "dep": "amod",
+          "head": 2
+        },
+        {
+          "i": 2,
+          "text": "rabbit",
+          "offset": 8,
+          "lemma": "rabbit",
+          "pos": "NOUN",
+          "dep": "nsubjpass",
+          "head": 4
+        },
+        {
+          "i": 3,
+          "text": "is",
+          "offset": 15,
+          "lemma": "be",
+          "pos": "AUX",
+          "dep": "auxpass",
+          "head": 4
+        },
+        {
+          "i": 4,
+          "text": "chased",
+          "offset": 18,
+          "lemma": "chase",
+          "pos": "VERB",
+          "dep": "ROOT",
+          "head": 4
+        },
+        {
+          "i": 5,
+          "text": "by",
+          "offset": 25,
+          "lemma": "by",
+          "pos": "ADP",
+          "dep": "agent",
+          "head": 4
+        },
+        {
+          "i": 6,
+          "text": "a",
+          "offset": 28,
+          "lemma": "a",
+          "pos": "DET",
+          "dep": "det",
+          "head": 8
+        },
+        {
+          "i": 7,
+          "text": "brown",
+          "offset": 30,
+          "lemma": "brown",
+          "pos": "ADJ",
+          "dep": "amod",
+          "head": 8
+        },
+        {
+          "i": 8,
+          "text": "fox",
+          "offset": 36,
+          "lemma": "fox",
+          "pos": "NOUN",
+          "dep": "pobj",
+          "head": 5
+        },
+        {
+          "i": 9,
+          "text": ".",
+          "offset": 39,
+          "lemma": ".",
+          "pos": "PUNCT",
+          "dep": "punct",
+          "head": 4
+        }
+      ],
+      "noun_chunks": [
+        {
+          "text": "A white rabbit",
+          "start": 0,
+          "end": 3,
+          "root": 2
+        },
+        {
+          "text": "a brown fox",
+          "start": 6,
+          "end": 9,
+          "root": 8
+        }
+      ],
+      "entities": []
+    },
+    {
+      "id": "19",
+      "text": "A cat sees a dog beside a mouse. It runs away.",
+      "elapsed_ms": 5.692542064934969,
+      "tokens": [
+        {
+          "i": 0,
+          "text": "A",
+          "offset": 0,
+          "lemma": "a",
+          "pos": "DET",
+          "dep": "det",
+          "head": 1
+        },
+        {
+          "i": 1,
+          "text": "cat",
+          "offset": 2,
+          "lemma": "cat",
+          "pos": "NOUN",
+          "dep": "nsubj",
+          "head": 2
+        },
+        {
+          "i": 2,
+          "text": "sees",
+          "offset": 6,
+          "lemma": "see",
+          "pos": "VERB",
+          "dep": "ROOT",
+          "head": 2
+        },
+        {
+          "i": 3,
+          "text": "a",
+          "offset": 11,
+          "lemma": "a",
+          "pos": "DET",
+          "dep": "det",
+          "head": 4
+        },
+        {
+          "i": 4,
+          "text": "dog",
+          "offset": 13,
+          "lemma": "dog",
+          "pos": "NOUN",
+          "dep": "dobj",
+          "head": 2
+        },
+        {
+          "i": 5,
+          "text": "beside",
+          "offset": 17,
+          "lemma": "beside",
+          "pos": "ADP",
+          "dep": "prep",
+          "head": 2
+        },
+        {
+          "i": 6,
+          "text": "a",
+          "offset": 24,
+          "lemma": "a",
+          "pos": "DET",
+          "dep": "det",
+          "head": 7
+        },
+        {
+          "i": 7,
+          "text": "mouse",
+          "offset": 26,
+          "lemma": "mouse",
+          "pos": "NOUN",
+          "dep": "pobj",
+          "head": 5
+        },
+        {
+          "i": 8,
+          "text": ".",
+          "offset": 31,
+          "lemma": ".",
+          "pos": "PUNCT",
+          "dep": "punct",
+          "head": 2
+        },
+        {
+          "i": 9,
+          "text": "It",
+          "offset": 33,
+          "lemma": "it",
+          "pos": "PRON",
+          "dep": "nsubj",
+          "head": 10
+        },
+        {
+          "i": 10,
+          "text": "runs",
+          "offset": 36,
+          "lemma": "run",
+          "pos": "VERB",
+          "dep": "ROOT",
+          "head": 10
+        },
+        {
+          "i": 11,
+          "text": "away",
+          "offset": 41,
+          "lemma": "away",
+          "pos": "ADV",
+          "dep": "advmod",
+          "head": 10
+        },
+        {
+          "i": 12,
+          "text": ".",
+          "offset": 45,
+          "lemma": ".",
+          "pos": "PUNCT",
+          "dep": "punct",
+          "head": 10
+        }
+      ],
+      "noun_chunks": [
+        {
+          "text": "A cat",
+          "start": 0,
+          "end": 2,
+          "root": 1
+        },
+        {
+          "text": "a dog",
+          "start": 3,
+          "end": 5,
+          "root": 4
+        },
+        {
+          "text": "a mouse",
+          "start": 6,
+          "end": 8,
+          "root": 7
+        },
+        {
+          "text": "It",
+          "start": 9,
+          "end": 10,
+          "root": 9
+        }
+      ],
+      "entities": []
+    },
+    {
+      "id": "20",
+      "text": "A brown fox does not ever under any circumstances jump over a dog.",
+      "elapsed_ms": 3.8085002452135086,
+      "tokens": [
+        {
+          "i": 0,
+          "text": "A",
+          "offset": 0,
+          "lemma": "a",
+          "pos": "DET",
+          "dep": "det",
+          "head": 2
+        },
+        {
+          "i": 1,
+          "text": "brown",
+          "offset": 2,
+          "lemma": "brown",
+          "pos": "ADJ",
+          "dep": "amod",
+          "head": 2
+        },
+        {
+          "i": 2,
+          "text": "fox",
+          "offset": 8,
+          "lemma": "fox",
+          "pos": "NOUN",
+          "dep": "nsubj",
+          "head": 9
+        },
+        {
+          "i": 3,
+          "text": "does",
+          "offset": 12,
+          "lemma": "do",
+          "pos": "AUX",
+          "dep": "aux",
+          "head": 9
+        },
+        {
+          "i": 4,
+          "text": "not",
+          "offset": 17,
+          "lemma": "not",
+          "pos": "PART",
+          "dep": "neg",
+          "head": 5
+        },
+        {
+          "i": 5,
+          "text": "ever",
+          "offset": 21,
+          "lemma": "ever",
+          "pos": "ADV",
+          "dep": "advmod",
+          "head": 6
+        },
+        {
+          "i": 6,
+          "text": "under",
+          "offset": 26,
+          "lemma": "under",
+          "pos": "ADP",
+          "dep": "prep",
+          "head": 9
+        },
+        {
+          "i": 7,
+          "text": "any",
+          "offset": 32,
+          "lemma": "any",
+          "pos": "DET",
+          "dep": "det",
+          "head": 8
+        },
+        {
+          "i": 8,
+          "text": "circumstances",
+          "offset": 36,
+          "lemma": "circumstance",
+          "pos": "NOUN",
+          "dep": "pobj",
+          "head": 6
+        },
+        {
+          "i": 9,
+          "text": "jump",
+          "offset": 50,
+          "lemma": "jump",
+          "pos": "VERB",
+          "dep": "ROOT",
+          "head": 9
+        },
+        {
+          "i": 10,
+          "text": "over",
+          "offset": 55,
+          "lemma": "over",
+          "pos": "ADP",
+          "dep": "prep",
+          "head": 9
+        },
+        {
+          "i": 11,
+          "text": "a",
+          "offset": 60,
+          "lemma": "a",
+          "pos": "DET",
+          "dep": "det",
+          "head": 12
+        },
+        {
+          "i": 12,
+          "text": "dog",
+          "offset": 62,
+          "lemma": "dog",
+          "pos": "NOUN",
+          "dep": "pobj",
+          "head": 10
+        },
+        {
+          "i": 13,
+          "text": ".",
+          "offset": 65,
+          "lemma": ".",
+          "pos": "PUNCT",
+          "dep": "punct",
+          "head": 9
+        }
+      ],
+      "noun_chunks": [
+        {
+          "text": "A brown fox",
+          "start": 0,
+          "end": 3,
+          "root": 2
+        },
+        {
+          "text": "any circumstances",
+          "start": 7,
+          "end": 9,
+          "root": 8
+        },
+        {
+          "text": "a dog",
+          "start": 11,
+          "end": 13,
+          "root": 12
+        }
+      ],
+      "entities": []
+    }
+  ],
+  "cloud_calls": 0,
+  "accepted_scene_claim": false
+}

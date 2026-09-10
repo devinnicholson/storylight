@@ -15,7 +15,7 @@ V5 = ROOT / "experiments/scene-adapter-v5-2026-09-09"
 PROTOCOL_SHA = "1a2579008b49f64d2a2d45f00a2c4ed5c63c0621d1ca6accbf0637ff4f79bd69"
 MANIFEST_SHA = "c6bf8fbc28b139b3ed46dceac7835a426004b2fe27cf1e95945dbfd22a783112"
 GOLD_SHA = "ca8b08ef36fdb63c25b2d127977c4dac08cf6ca03b177682d360d929254a4c70"
-SCORER_SHA = "85a4e6085bead918e1fc86480b30516de2834c152416f3f3c603630ffff0ea2d"
+SCORER_SHA = "c88f662820e7e779cc280357177dd843d90c122a7d4f88130978f7248e271598"
 MODES = ("dynamic", "bridge-compile")
 
 
@@ -99,7 +99,7 @@ def analyze(args):
         == manifest["sources"]["src/storylight/scene_facts.py"],
         "imported validator",
     )
-    scorer_path = ROOT / "experiments/scene-adapter-2026-09-08/evaluate.py"
+    scorer_path = ROOT / "experiments/scene-adapter-v5-2026-09-09/evaluate.py"
     require(digest(scorer_path) == SCORER_SHA, "strict scorer changed")
     spec = importlib.util.spec_from_file_location("strict_cache_score", scorer_path)
     scorer = importlib.util.module_from_spec(spec)

@@ -16,7 +16,7 @@ spec = importlib.util.spec_from_file_location("v5_train_under_test", HERE / "tra
 TRAIN = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(TRAIN)
 PARENT = TRAIN.load_module(
-    HERE.parent / "scene-adapter-v2-2026-09-08/train.py", TRAIN.V2_SHA256, "v5_test_parent"
+    HERE / "support/training-support.py", TRAIN.V2_SHA256, "v5_test_parent"
 )
 
 

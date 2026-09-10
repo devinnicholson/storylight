@@ -182,7 +182,7 @@ def verify(args):
     wrapper = merge.load(HERE / "train.py", merge.profile.TRAINER_SHA, "cache_training")
     runner = merge.load(HERE / "run.py", merge.profile.RUNNER_SHA, "cache_runtime")
     helper = wrapper.load_module(
-        HERE.parent / "scene-adapter-v2-2026-09-08/train.py", wrapper.V2_SHA256, "cache_parent"
+        HERE / "support/training-support.py", wrapper.V2_SHA256, "cache_parent"
     )
     training = v.pinned(args.training_proof, args.training_proof_sha256)
     v.require(

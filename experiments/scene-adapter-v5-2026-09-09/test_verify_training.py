@@ -22,7 +22,7 @@ def load(name, file):
 V = load("training_receipt_verifier", "verify-training.py")
 T = load("training_receipt_trainer", "train.py")
 H = T.load_module(
-    HERE.parent / "scene-adapter-v2-2026-09-08/train.py", T.V2_SHA256, "training_receipt_helper"
+    HERE / "support/training-support.py", T.V2_SHA256, "training_receipt_helper"
 )
 
 

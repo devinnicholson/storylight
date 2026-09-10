@@ -8,7 +8,7 @@ from storylight.bounded_description import plan_bounded_description
 from storylight.voice_dependencies import audit_nominal_spans
 from storylight.voice_language import extract_graph, graph_from_row
 
-ROOT = Path(__file__).resolve().parents[1] / "research/benchmarks/voice-language-2026-09-07"
+ROOT = Path(__file__).resolve().parent / "fixtures/voice-language"
 
 
 class CandidateTests(unittest.TestCase):

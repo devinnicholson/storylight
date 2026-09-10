@@ -1,124 +1,39 @@
 # Google Cloud deployment
 
-## Current live-scene path: private Cloud Run GPU
+Storylight uses Google Cloud for authenticated image generation, optional visual criticism, and finite model-export work. Speech, reader identity, raw transcripts, and projector control stay on local hardware in the documented deployment.
 
-The production migration keeps the privacy and latency split explicit:
+## Live image generation
 
-- Jetson Gemma converts the passage into bounded visual direction locally. Raw reading text,
-  microphone audio, and camera frames do not enter the renderer request.
-- A private Cloud Run service uses one NVIDIA RTX PRO 6000 by default for pinned SANA-Sprint master
-  generation and Depth Anything V2. It scales from zero to at most one instance and accepts only
-  IAM-authenticated requests.
-- Nemotron is a separate asynchronous visual critic. It is not placed on the first-image critical
-  path and must not be presented as pixel-aware until its multimodal deployment is enabled.
-- The Jetson validates checksum-addressed output and performs depth-aware motion locally.
-
-The guarded deployment is in `cloud-run/deploy-live-scene.sh`. It fails before building if the
-regional non-zonal L4 quota is below one, pins the deployed revision to an immutable image digest,
-and retains only two recent images while deleting images older than 30 days.
+The private Cloud Run worker lives in [`deploy/gcp_live_scene_worker`](../../deploy/gcp_live_scene_worker/). The guarded deployment script is [`cloud-run/deploy-live-scene.sh`](cloud-run/deploy-live-scene.sh). It performs a read-only preflight unless the operator supplies the explicit billable-resource authorization variable.
 
 ```bash
 export GOOGLE_CLOUD_PROJECT=your-gcp-project
 export STORYLIGHT_GCP_REGION=us-central1
 export STORYLIGHT_IMAGE_TAG=YYYYMMDD-N
 
-# Inspect the exact scope; creates nothing.
+# Read-only preflight.
 ./infra/gcp/cloud-run/deploy-live-scene.sh
 
-# Explicitly authorize the bounded billable deployment.
+# Explicit billable deployment.
 export STORYLIGHT_GCP_APPLY=I_UNDERSTAND_THIS_CREATES_BILLABLE_RESOURCES
 ./infra/gcp/cloud-run/deploy-live-scene.sh
 ```
 
-The default service configuration is one RTX PRO 6000, 20 vCPU, 80 GiB, concurrency one, minimum
-zero, maximum one, and no unauthenticated access. RTX quota is measured in milliGPUs, so exactly one
-GPU requires a quota value of 1,000. Set `STORYLIGHT_GCP_GPU_TYPE=nvidia-l4` to use the lower-cost
-8-vCPU/32-GiB L4 profile instead. The renderer service account receives no project-wide role. The
-operator account receives only `roles/run.invoker` on this service. For local keyless invocation,
-grant the operator the narrower `roles/iam.serviceAccountOpenIdTokenCreator` role on this dedicated
-account and grant the account `roles/run.invoker` on the service; no service-account key is created.
-
-Run Storylight against the deployed URL with Application Default Credentials:
+The service is IAM-authenticated, scales from zero, permits one GPU worker, and does not grant unauthenticated access. Runtime credentials stay on the Jetson or server process:
 
 ```bash
 export STORYLIGHT_LIVE_SCENE_BACKEND=gcp_cloud_run
-export STORYLIGHT_LIVE_SCENE_GCP_URL='https://SERVICE_HASH.us-central1.run.app'
-export STORYLIGHT_LIVE_SCENE_GCP_AUDIENCE="${STORYLIGHT_LIVE_SCENE_GCP_URL}"
+export STORYLIGHT_LIVE_SCENE_GCP_URL='https://SERVICE_HASH.REGION.run.app'
+export STORYLIGHT_LIVE_SCENE_GCP_AUDIENCE="$STORYLIGHT_LIVE_SCENE_GCP_URL"
 export STORYLIGHT_LIVE_SCENE_GCP_IMPERSONATE_SERVICE_ACCOUNT='storylight-renderer@your-gcp-project.iam.gserviceaccount.com'
-export STORYLIGHT_LIVE_SCENE_GCP_GPU=RTX_PRO_6000
 export STORYLIGHT_LIVE_SCENE_ENABLE_MOTION=false
-export STORYLIGHT_LIVE_SCENE_ENABLE_PREVIEW=false
 ```
 
-Cloud Run verifies the Google-signed identity token; the browser and Jetson projector never receive
-GCP credentials or the private service URL. Keep minimum instances at zero outside a supervised
-demo. The project-scoped billing guard below remains the last-resort containment layer.
+The browser never receives the service URL, identity token, or service-account credentials. Returned assets are checksum-verified before entering the local cache.
 
-The checked-in Cloud Monitoring dashboard at
-`monitoring/live-scene-dashboard.json` uses only built-in Cloud Run metrics. It separates end-to-end
-request latency, container startup, NVIDIA GPU utilization and memory, instance count, and billable
-instance time without adding prompts, passages, session IDs, audio, or camera data as dimensions.
-Apply it once with:
+## Managed Vertex route and safe fallback
 
-```bash
-gcloud monitoring dashboards create \
-  --project "${GOOGLE_CLOUD_PROJECT}" \
-  --config-from-file infra/gcp/monitoring/live-scene-dashboard.json
-```
-
-Use the dashboard ID returned by the create command. Before a paid renderer
-benchmark, declare its sample count and cost ceiling. The harness uses five fixed synthetic visual
-briefs, records only prompt hashes, performs no automatic retry, and refuses to overwrite evidence:
-
-```bash
-.venv/bin/python -m storylight.gcp_scene_benchmark \
-  --base-url "${STORYLIGHT_LIVE_SCENE_GCP_URL}" \
-  --audience "${STORYLIGHT_LIVE_SCENE_GCP_AUDIENCE}" \
-  --impersonate-service-account "${STORYLIGHT_LIVE_SCENE_GCP_IMPERSONATE_SERVICE_ACCOUNT}" \
-  --gpu RTX_PRO_6000 \
-  --mode prepared \
-  --samples 5 \
-  --output-root artifacts/gcp-scene-benchmark/YYYYMMDD \
-  --report research/benchmarks/gcp-scene-benchmark-YYYYMMDD.json
-```
-
-The adapter's `probe` mode checks credential readiness without contacting the renderer. It does
-not prove service reachability or model identity. An explicit `/health` call can activate a billed
-GPU, so include it in supervised resource accounting if used. Paid prewarm and generation verify
-the runtime identity. Historical deployment evidence and the exact immutable revision are recorded in
-`research/benchmarks/gcp-rtx-cloud-run-deployment-2026-08-25.json` (archived).
-SANA Sprint uses its native two-step SCM path; the Storylight GCP adapter rejects any other step
-count locally before a paid request, and the worker validates the same constraint.
-
-## Anticipatory GKE and NVIDIA NIM experiment
-
-GKE is now used for a different, benchmark-gated job: coordinate one known next scene or at most two
-speculative story branches, keep a Nemotron Nano VL NIM warm on one L4, and promote only a
-checksum-verified synthetic scene. It does not replace the Cloud Run renderer. The Jetson removes
-the passage, audio, camera data, learner identity, and stable session identifiers before submitting
-the strict scene contract.
-
-The complete architecture, privacy contract, acceptance gates, deployment commands, and teardown
-procedure are in `docs/anticipatory-story-engine.md` (archived).
-The default Kubernetes Deployment has zero replicas, its Service is ClusterIP-only, and the guarded
-script requires a separate explicit authorization before it creates billable resources:
-
-```bash
-# Read-only; creates nothing.
-./infra/gcp/gke/preflight-anticipatory.sh
-
-# Dry guard; prints the exact billable scope and exits.
-./infra/gcp/gke/deploy-anticipatory.sh
-```
-
-GKE Inference Gateway is not part of the one-replica experiment. It becomes relevant only if quota
-and measured traffic justify multiple NIM replicas that give cache-aware routing a real choice.
-
-## Managed Vertex route and Modal fallback
-
-Cloud Run GPU availability is an optimization, not a runtime dependency. Configure
-`gcp_resilient` to try the existing private RTX service, use managed Vertex image generation when
-the service does not pass readiness, and retain Modal as the final budget-checked fallback:
+The resilient provider can use a private Cloud Run renderer, managed Vertex image generation, and a budget-checked Modal fallback.
 
 ```bash
 export STORYLIGHT_LIVE_SCENE_BACKEND=gcp_resilient
@@ -126,139 +41,65 @@ export STORYLIGHT_LIVE_SCENE_VERTEX_PROJECT_ID=your-gcp-project
 export STORYLIGHT_LIVE_SCENE_VERTEX_LOCATION=global
 export STORYLIGHT_LIVE_SCENE_VERTEX_MODEL=gemini-3.1-flash-lite-image
 export STORYLIGHT_LIVE_SCENE_VERTEX_SESSION_COST_CAP_USD=0.50
-export STORYLIGHT_LIVE_SCENE_VERTEX_ESTIMATED_IMAGE_USD=0.034
-export STORYLIGHT_LIVE_SCENE_ROUTING_PROBE_TIMEOUT_SECONDS=2
 export STORYLIGHT_LIVE_SCENE_ROUTING_FAILURE_COOLDOWN_SECONDS=300
 ```
 
-Enable `aiplatform.googleapis.com` and provide Application Default Credentials to the Jetson
-service account environment before expecting the managed route to pass readiness. If either is
-missing, routing advances to Modal without sending a story prompt. Successful Vertex responses are
-cost-reserved and never automatically duplicated. The returned plate receives a local depth
-bootstrap immediately; TensorRT depth replacement remains an asynchronous edge optimization.
+Fallback is allowed only after readiness fails or a provider explicitly reports that generation did not begin. A timeout or disconnect after generation starts is billably ambiguous and terminal; Storylight does not automatically create a second image through another provider.
 
-### Nemotron visual critic
+## Nemotron visual critic
 
-Storylight's optional critic client targets NVIDIA's OpenAI-compatible
-[`llama-3.1-nemotron-nano-vl-8b-v1`](https://build.nvidia.com/nvidia/llama-3.1-nemotron-nano-vl-8b-v1)
-NIM. It runs only after `master_ready`, so a critic cold start cannot delay the first projected image.
-For a private GCP-hosted NIM, configure its IAM-authenticated URL and audience:
+The optional critic uses NVIDIA Llama 3.1 Nemotron Nano VL through NIM. The GKE service is defined in [`deploy/gke_anticipatory`](../../deploy/gke_anticipatory/) and [`k8s/anticipatory.yaml`](k8s/anticipatory.yaml).
+
+Run the read-only preflight first:
+
+```bash
+./infra/gcp/gke/preflight-anticipatory.sh
+./infra/gcp/gke/deploy-anticipatory.sh
+```
+
+The deployment script requires a separate explicit authorization before creating billable resources. The service receives a bounded visual brief and generated artwork, excluding microphone audio and the original transcript. It is optional and does not sit on the default first-image path.
+
+Configure the client with server-side values:
 
 ```bash
 export STORYLIGHT_LIVE_SCENE_CRITIC_BACKEND=nemotron
-export STORYLIGHT_LIVE_SCENE_CRITIC_URL='https://NEMOTRON_HASH.us-central1.run.app'
-export STORYLIGHT_LIVE_SCENE_CRITIC_AUDIENCE="${STORYLIGHT_LIVE_SCENE_CRITIC_URL}"
-
-curl -sS -X POST \
-  "http://127.0.0.1:8080/v1/live-scenes/SCENE_JOB_ID:critique"
+export STORYLIGHT_LIVE_SCENE_CRITIC_URL='https://NEMOTRON_SERVICE_URL'
+export STORYLIGHT_LIVE_SCENE_CRITIC_AUDIENCE="$STORYLIGHT_LIVE_SCENE_CRITIC_URL"
 ```
 
-The endpoint retrieves the already-generated master from the local checksum cache. Its request
-schema contains only the synthetic image, the privacy-gated visual brief, expected subjects, and
-forbidden visual content. A deterministic/fallback scene is rejected rather than sent because such
-legacy packs may still contain source text. NIM deployment is a separate resource and requires an
-NGC API key plus appropriate GPU quota; do not put either credential in browser configuration or
-commit it to the repository.
+## Finite Gemma 4 TensorRT export
 
-## Legacy compiler experiment: GKE Gemma
-
-This creates the first cloud Story Compiler path:
-
-- a GKE Autopilot cluster;
-- one NVIDIA L4 workload serving `google/gemma-4-e2b-it` with vLLM;
-- the Storylight API pointing at vLLM's OpenAI-compatible API;
-- Artifact Registry for the API image;
-- a Cloud Storage bucket reserved for versioned Story Packs.
-
-Nothing in this directory has been applied automatically. GKE and L4 workloads are billable.
-
-## Prerequisites
-
-1. Select or create a billing-enabled Google Cloud project.
-2. Run `gcloud auth login` and `gcloud auth application-default login`.
-3. Accept the Gemma license on Hugging Face and create a read-only token.
-4. Check L4 quota and availability in the selected region.
-
-## Bootstrap with a cost guard
+The Compute Engine launcher in [`compute/run-gemma4-tensorrt-export.sh`](compute/run-gemma4-tensorrt-export.sh) creates one deadline-bounded export VM. It uses an immutable exporter image, uploads its completion manifest last, and does not change production routing.
 
 ```bash
-export GOOGLE_CLOUD_PROJECT="your-project-id"
-export STORYLIGHT_GCP_REGION="us-central1"
-
-# Prints the resources without creating them.
-./infra/gcp/bootstrap.sh
-
-# Explicitly unlocks billable creation.
-export STORYLIGHT_GCP_APPLY="I_UNDERSTAND_THIS_CREATES_BILLABLE_RESOURCES"
-./infra/gcp/bootstrap.sh
-```
-
-## Build and deploy
-
-```bash
-export HF_TOKEN="hf_read_only_token"
-./infra/gcp/deploy.sh
-
-kubectl -n storylight rollout status deployment/gemma-vllm --timeout=20m
-kubectl -n storylight port-forward service/storylight-api 8080:8080
-```
-
-Then call `http://127.0.0.1:8080/v1/story-packs:compile` using the example request in
-`examples/moon-gate.request.json`.
-
-## Cost containment
-
-The contest project also has enforced service caps, a project-scoped $150 gross-spend alert budget,
-and a $175 gross-cost emergency billing disconnect. Its reviewed source and threat boundary are documented in
-`infra/gcp/billing-kill-switch/README.md`. Budget notifications are asynchronous, so this guard is
-not a promise of a mathematically exact ceiling.
-
-Delete the GPU deployment whenever it is not being tested:
-
-```bash
-kubectl -n storylight delete deployment gemma-vllm
-```
-
-Deleting the full cluster stops cluster and workload charges:
-
-```bash
-gcloud container clusters delete storylight-dev --region us-central1
-```
-
-The GKE E2B/L4 deployment is retained only as a plumbing and evaluation baseline. The accepted
-architecture now keeps Gemma on the Jetson for privacy and uses Cloud Run only for visual rendering.
-Once the complete Story Pack schema
-is stable, benchmark a larger Gemma model for cloud compilation instead of increasing model size
-before the output can be measured.
-
-## Finite Compute Engine TensorRT export
-
-Cloud Run Jobs is not required to prepare the Jetson's Gemma 4 checkpoint. The bounded Compute
-Engine launcher in `compute/run-gemma4-tensorrt-export.sh` uses the same immutable exporter image on
-one `g4-standard-48` Flex-start VM. It can wait up to 30 minutes for scarce capacity and, once
-running, has a 45-minute automatic-delete deadline, no restart, one task, and no production routing
-changes. The exporter uploads its completion manifest last; incomplete prefixes are never accepted
-by the Jetson installer.
-
-The dedicated runtime identity needs only its existing private-bucket object role plus read access
-to the single private Artifact Registry repository. Grant that narrow repository role explicitly:
-
-```bash
-gcloud artifacts repositories add-iam-policy-binding storylight \
-  --project your-gcp-project \
-  --location us-central1 \
-  --member serviceAccount:storylight-tensorrt-export@your-gcp-project.iam.gserviceaccount.com \
-  --role roles/artifactregistry.reader
-```
-
-Then start exactly one finite attempt:
-
-```bash
+export GOOGLE_CLOUD_PROJECT=your-gcp-project
+export STORYLIGHT_GCP_REGION=us-central1
 export STORYLIGHT_GCP_EXPORT_APPLY=I_UNDERSTAND_THIS_CREATES_A_FINITE_BILLABLE_G4_VM
 ./infra/gcp/compute/run-gemma4-tensorrt-export.sh
 ```
 
-Delete the VM as soon as the immutable completion manifest or a terminal diagnostic log appears.
-The automatic deadline is a last-resort guard if the operator disconnects; it is not a reason to
-leave a completed VM running. Do not use the default Compute Engine service account or add a
-project-wide role to the exporter identity.
+Use a dedicated service account with access only to the required Artifact Registry repository and private export bucket. Delete the VM as soon as the completion manifest or terminal diagnostic appears. The automatic deadline is a final containment mechanism, not a substitute for supervised cleanup.
+
+The exported checkpoint remains an experimental planner candidate. It must pass target-device memory, grammar, grounding, privacy, refusal, and latency gates before it can replace the deterministic compiler.
+
+## Monitoring and cost containment
+
+[`monitoring/live-scene-dashboard.json`](monitoring/live-scene-dashboard.json) contains a Cloud Monitoring dashboard based on built-in Cloud Run metrics. It does not use prompts, transcripts, session IDs, audio, or camera data as dimensions.
+
+```bash
+gcloud monitoring dashboards create \
+  --project "$GOOGLE_CLOUD_PROJECT" \
+  --config-from-file infra/gcp/monitoring/live-scene-dashboard.json
+```
+
+The billing kill switch is documented in [`billing-kill-switch/README.md`](billing-kill-switch/README.md). Budget notifications are asynchronous and cannot guarantee an exact ceiling. Keep minimum instances at zero, use explicit sample and time limits, and tear down GPU resources immediately after a supervised run.
+
+## Trust boundary
+
+- Credentials belong in local environment files or a secret manager.
+- Browser code must never receive cloud credentials or private provider URLs.
+- Cloud requests contain reviewed scene contracts, never microphone recordings.
+- Generated assets must pass local checksum and schema validation.
+- Paid prewarm, deployment, export, and benchmark actions require explicit operator authorization.
+
+See [Architecture](../../docs/architecture.md), [Privacy and data flow](../../docs/privacy.md), and [Research results](../../docs/research-results.md) for the runtime boundary and measured limitations.

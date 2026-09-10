@@ -19,7 +19,7 @@ def module(name, filename):
 RUN = module("v5_runtime_under_test", "run.py")
 TRAIN = module("v5_runtime_trainer", "train.py")
 PARENT = TRAIN.load_module(
-    HERE.parent / "scene-adapter-v2-2026-09-08/train.py", TRAIN.V2_SHA256, "v5_runtime_parent"
+    HERE / "support/training-support.py", TRAIN.V2_SHA256, "v5_runtime_parent"
 )
 
 

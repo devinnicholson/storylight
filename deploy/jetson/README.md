@@ -1,214 +1,62 @@
 # Storylight on Jetson Orin Nano
 
-This directory packages the existing Storylight API and projector UI for an NVIDIA Jetson Orin
-Nano running **JetPack 7.2.1 / Jetson Linux 39.2.1**. NVIDIA lists JetPack 7.2.1 with CUDA 13.2.1
-and TensorRT 10.16.2. Use NVIDIA's current
-[JetPack downloads and release notes](https://developer.nvidia.com/embedded/jetpack/downloads) as
-the source of truth.
+This directory installs the Storylight API and projector on an NVIDIA Jetson Orin Nano. The validated target is JetPack 7.2.1 / Jetson Linux 39.2.1. Check NVIDIA's current JetPack documentation before changing the board-support package; none of these scripts flashes or upgrades the device.
 
-Nothing here flashes a board. `bootstrap.sh` is read-only with no arguments and refuses mutation
-when the host is not an aarch64 Jetson on L4T 39.2.1. Installing or upgrading the BSP is a separate,
-explicit device-administration task that must follow NVIDIA's documentation.
+## Supported topology
 
-## Included files
-
-- `check-device.sh`: read-only report for L4T, CUDA, TensorRT, Docker, Python, power mode, NVMe,
-  camera, microphone, display, projector browser, and thermal zones.
-- `bootstrap.sh`: diagnostic-first setup; mutation requires an explicit option.
-- `storylight.env.example`: conservative API environment with ASR disabled by default.
-- `storylight.standalone.env.example`: local-Gemma/Modal profile for portable operation.
-- `controller.env.example`: paired phone-gateway configuration without a committed secret.
-- `install-standalone.sh`: guarded service installer for an already-staged `/opt/storylight` tree.
-- `show-controller-pairing.sh`: prints the private pairing URL and an optional terminal QR code.
-- `check-kiosk-session.sh`: fail-closed, read-only lock/idle/DPMS preflight for the X11 projector
-  session.
-- `launch-kiosk.sh`: Chromium-first projector launcher with a Firefox fallback and no privilege
-  escalation. Chromium retains its sandbox and background-network hardening.
-- `collect-evidence.sh`: one-command JSON acceptance artifact, with optional real I/O exercises.
-- `check-privacy.sh`: fail-closed process socket audit for listeners plus active TCP/UDP traffic.
-- `warm-asr.sh`: supervised-service-safe Whisper checkpoint and TensorRT engine warmup.
-- `install-tensorrt-edge-llm.sh`: pinned, user-owned TensorRT Edge-LLM v0.10.0 build for Jetson
-  Orin and JetPack 7.2.1.
-- `build-tensorrt-edge-engine.sh`: bounded target-device INT4 engine build with automatic Gemma
-  unload/restore and thermal evidence.
-- `benchmark-tensorrt-edge-llm.py` and `run-tensorrt-edge-benchmark.sh`: local-only five-passage
-  schema, privacy, fidelity, latency, memory, and power acceptance; never auto-promotes a model.
-- `run-tensorrt-edge-server.sh`: loopback-only launcher for NVIDIA's resident OpenAI-compatible
-  TensorRT Edge-LLM server; remains an evaluation component until promotion gates pass.
-- `run-power-mode-ab.sh`: explicit, reboot-aware 25W/MAXN_SUPER comparison with persistent evidence
-  and a required restore verification.
-- `storylight-admin` and `install-storylight-admin.sh`: root-owned, fixed-command administration with
-  a narrowly scoped passwordless sudo rule; no password storage or arbitrary shell access.
-- `systemd/storylight@.service`: system API service parameterized by the Linux user.
-- `systemd/storylight-controller@.service`: authenticated, allowlisted phone gateway on port 8081.
-- `systemd/storylight-kiosk.service`: graphical-session user service for the projector browser.
-- `systemd/storylight-gemma.service`: loopback-only, user-scoped Ollama service for the local Gemma
-  scene planner.
-- `kiosk.env.example`: kiosk URL/browser overrides.
-
-## Standalone portable topology
-
-Storylight can run without a Mac. The Jetson hosts the private API, local Gemma planner, cached
-artwork, and attached-projector browser. A phone on the same **private WPA2/WPA3 network** controls
-generation through a separate paired gateway:
+The Jetson owns the private API, scene validation, asset cache, reader state, and attached projector. It can use a local Gemma planner and a remote image renderer. A phone controller is optional and should be exposed only on an operator-controlled private network.
 
 ```text
-phone :8081 -> paired allowlisted gateway -> Jetson loopback API :8080
-                                             |-> local Gemma :11434
-                                             |-> authenticated Modal renderer
-projector browser --------------------------> Jetson loopback API :8080
+phone :8081 → paired controller gateway → API 127.0.0.1:8080
+                                             ├─ local planner 127.0.0.1:11434/11435
+                                             └─ authenticated image provider
+
+projector browser ────────────────────────→ API 127.0.0.1:8080
 ```
 
-The story API, local model, audio routes, camera routes, diagnostics, and projector are never bound
-to the LAN. The gateway exposes only the workbench, scene status/assets, planner preparation, and
-scene-generation routes. A 256-bit token is exchanged for a temporary HttpOnly, SameSite session;
-the token remains in the pairing URL fragment and is neither sent in an HTTP URL nor forwarded to
-the story API or renderer.
+The API, model endpoints, microphone routes, diagnostics, and projector remain on loopback. Only the allowlisted controller gateway may bind to the private LAN. Pairing is access control, not transport encryption; do not expose it through router port forwarding or public Wi-Fi.
 
-For a portable demo, connect the Jetson and phone to a small travel router. The router can use
-Wi-Fi or phone tethering as its upstream internet connection, while keeping the demo devices on a
-stable private network. Cloud artwork requires upstream internet; the projector, cached scenes,
-procedural draft, and local Gemma remain device-local. Do not expose port 8081 on public Wi-Fi or
-configure router port forwarding. Pairing is access control, not transport encryption; this HTTP
-profile is intentionally limited to a private, operator-controlled WLAN.
+## Inspect before installing
 
-After the Jetson has successfully joined that WLAN once, apply the bounded portable-network
-profile:
-
-```bash
-sudo /opt/storylight/deploy/jetson/configure-portable-network.sh
-```
-
-The helper keeps the active saved Wi-Fi connection on autoconnect, disables client power saving,
-enables mDNS for that connection, and limits Avahi advertisements to the active Wi-Fi interface
-over IPv4. It never changes the SSID credential, address, route, or DNS configuration. This avoids
-`jetson.local` resolving to the USB gadget, Docker bridge, or stale IPv6 address when the unit is
-running cable-free. It stores the original Avahi file once at
-`/etc/avahi/avahi-daemon.conf.storylight-backup`; restore that file and restart Avahi to roll the
-discovery policy back. A travel-router DHCP reservation remains the most deterministic fallback.
-
-After staging the committed repository at `/opt/storylight`, create the venv with the Modal runtime:
-
-```bash
-cd /opt/storylight
-./deploy/jetson/bootstrap.sh --create-venv --install-modal-runtime
-sudo ./deploy/jetson/install-standalone.sh \
-  --user "$USER" \
-  --import-modal-profile \
-  --deploy-renderer
-```
-
-The installer refuses non-Jetson hosts and any checkout outside `/opt/storylight`. It does not
-change Wi-Fi, JetPack, power mode, storage, display, login, or browser settings. It preserves any
-existing API environment and pairing secret. On the first run it creates root-only environment
-files; add `MODAL_TOKEN_ID` and `MODAL_TOKEN_SECRET` to `/etc/storylight/storylight.env`, then rerun
-the installer to start the services. Never paste those credentials into the phone or browser.
-It installs and enables the existing local-Gemma and kiosk user units, but deliberately does not
-enable autologin or user lingering. Sign in on the attached projector after a reboot; that normal
-graphical login starts Gemma and the projector kiosk without requiring a Mac.
-`--deploy-renderer` is explicit because it changes the authenticated Modal app definition. The app
-has zero minimum containers, so deployment allocates no idle GPU; the existing per-call billing
-gate still runs before any prewarm or scene. Omit the flag when the exact app revision is already
-deployed.
-`--import-modal-profile` reads the one active profile from the service user's mode-0600
-`~/.modal.toml`, validates both credential fields without displaying them, and atomically writes
-them into the root-only service environment. Omit it when the service environment is already
-configured or when the Jetson should not retain cloud-renderer credentials.
-
-The immutable Modal budget plan stays under `/opt/storylight`. Its runtime ledger is written to
-`/var/lib/storylight/live-scenes/modal-ledger.json`, so the hardened application tree remains
-read-only while cost reservations and settlements remain durable across service restarts.
-
-Show the private pairing URL only when the operator is ready to connect the phone:
-
-```bash
-sudo /opt/storylight/deploy/jetson/show-controller-pairing.sh
-```
-
-Open or scan the printed URL. The phone will land on
-`/workbench?session=storylight-live`; the attached projector continues using the same canonical
-session on `127.0.0.1:8080`. `jetson.local` requires working mDNS on the private network. If the
-phone cannot resolve it, use the router's reserved Jetson address by running:
-
-```bash
-sudo STORYLIGHT_CONTROLLER_HOST=192.168.8.20 \
-  /opt/storylight/deploy/jetson/show-controller-pairing.sh
-```
-
-The override accepts a DNS name or IPv4 address. A travel-router DHCP reservation is preferred over
-hard-coding an address on the Jetson.
-
-Verify the boundary from the Jetson:
-
-```bash
-curl -fsS http://127.0.0.1:8080/readyz
-curl -fsS http://127.0.0.1:8081/healthz
-ss -ltn | grep -E '127\.0\.0\.1:8080|0\.0\.0\.0:8081|127\.0\.0\.1:11434'
-systemctl status "storylight@${USER}.service" --no-pager
-systemctl status "storylight-controller@${USER}.service" --no-pager
-```
-
-Only the controller gateway should listen on all interfaces. If the network is not private, stop
-it immediately with `sudo systemctl stop "storylight-controller@${USER}.service"`; local projector
-operation remains available.
-
-## 1. Inspect the device
-
-From the repository checkout:
-
-```bash
-./deploy/jetson/check-device.sh
-```
-
-The default always completes the report and returns success so it is convenient during bring-up.
-For an acceptance check that fails when required platform components are missing or mismatched:
+Run the read-only device report:
 
 ```bash
 ./deploy/jetson/check-device.sh --strict
 ```
 
-Warnings identify optional or permission-dependent capabilities. The script does not change power
-modes, clocks, fan behavior, storage, device permissions, packages, or services.
+The check reports L4T, CUDA, TensorRT, Docker, Python, power mode, storage, media devices, display state, browser availability, and thermal zones. It does not change the machine.
 
-## 2. Install the Python runtime
+## Install the runtime
 
-The safe first run is equivalent to the device check:
+The safe bootstrap is diagnostic-only:
 
 ```bash
 ./deploy/jetson/bootstrap.sh
 ```
 
-The following options are deliberately independent and explicit:
+Installation is explicit:
 
 ```bash
 ./deploy/jetson/bootstrap.sh --install-system-packages
 ./deploy/jetson/bootstrap.sh --create-venv --install-app
 ```
 
-The first command uses Ubuntu `apt` to install only Python venv/pip, FFmpeg, V4L2 and ALSA
-utilities, curl, CA certificates, and Git. It does **not** install or upgrade JetPack. The second
-creates a virtual environment that can see JetPack's system Python packages and installs a built
-Storylight package rather than an editable checkout. Set `STORYLIGHT_VENV_PATH` to use a different
-location. An existing environment without `include-system-site-packages = true` is rejected rather
-than silently hiding TensorRT and other JetPack bindings.
+The first command installs the small Ubuntu support set used by Storylight. It does not install or upgrade JetPack. The second creates a virtual environment with access to JetPack's system Python packages and installs a built Storylight package.
 
-Installing the application downloads Python packages. Review the command and network policy before
-running it. Re-running either action is safe: apt and Python venv/package installation are
-idempotent for the same checkout.
+## Verify the application interactively
 
-## 3. Run interactively first
-
-Start with deterministic model behavior and speech recognition disabled:
+Start with fake inference and ASR disabled:
 
 ```bash
 cp deploy/jetson/storylight.env.example .env
 set -a
 source .env
 set +a
-.venv/bin/python -m uvicorn storylight.api:app --host 127.0.0.1 --port 8080 --timeout-graceful-shutdown 3
+.venv/bin/python -m uvicorn storylight.api:app \
+  --host 127.0.0.1 --port 8080 --timeout-graceful-shutdown 3
 ```
 
-In another terminal:
+Then verify the local surfaces:
 
 ```bash
 curl -fsS http://127.0.0.1:8080/healthz
@@ -216,774 +64,86 @@ curl -fsS http://127.0.0.1:8080/readyz
 curl -fsS http://127.0.0.1:8080/v1/runtime:status
 ```
 
-Open `http://127.0.0.1:8080/projector` on the attached display. The environment intentionally uses
-the fake model backend for the first boot. Change the model settings only after its endpoint has
-been independently tested. On a new data directory, `pack=latest` falls back visibly to the bundled
-Moon Gate fixture rather than opening an empty projector. Remove the checkout `.env` before using
-the system service; Jetson preflight deliberately rejects `/opt/storylight/.env`.
+Open `http://127.0.0.1:8080/projector` on the attached display. Remove the checkout `.env` before installing the hardened system service.
 
-The API builds every speech engine behind the portable `AsrBackend` contract. It includes a lazy,
-serialized NVIDIA-AI-IOT WhisperTRT adapter; importing Storylight does not import CUDA, TensorRT,
-Torch, or WhisperTRT. Keep `STORYLIGHT_ASR_BACKEND=disabled` for first boot. The checked upstream
-WhisperTRT revision is `268eff10a1e38118a2734745b9db14f7419a08a5`.
+## Install the appliance services
 
-WhisperTRT itself does not declare its Torch, TensorRT, torch2trt, Whisper, NumPy, or psutil
-dependencies. Install the JetPack-compatible dependencies from current NVIDIA guidance. Install
-the pinned adapter only after `/opt/storylight/.venv` exists in the next section; installing it into
-the temporary checkout environment would be discarded during staging.
-
-Do not make a live reading perform the first build. The pinned upstream loader also needs the
-OpenAI Whisper checkpoint under the service home, while the hardened unit makes the normal user
-home read-only. After installing the service below, stop it, select `whisper_trt` in the environment,
-and run the provided warmup as the service user. It writes both checkpoint state and the TensorRT
-engine beneath `/var/cache/storylight`, then the acceptance run measures warm inference. Storylight
-holds GPU serialization through cancellation, so a cancelled request cannot start a second build
-against the same engine. JetPack 7.2.1 compatibility remains a physical-device acceptance gate
-because the upstream repository does not currently state a JetPack 7 support matrix.
-
-### Install the local Gemma planner without sudo
-
-The accepted Orin Nano configuration uses Ollama `0.32.15` and
-`gemma3:1b-it-q4_K_M`. The model is an actual 999.89M-parameter Gemma 3 instruction
-model, not a fake backend. Its 815 MB Q4_K_M weights leave enough unified memory for the
-projector desktop on an 8 GB board. Do not substitute Gemma 4 E2B or another model larger than
-1B without a separate memory and latency acceptance run; this device has no swap.
-
-#### TensorRT Edge-LLM evaluation
-
-The pinned NVIDIA TensorRT Edge-LLM v0.10.0 runtime and its official plugin now build natively on
-this Orin Nano. The target engine build is deliberately separate from the accepted Gemma service:
-it unloads the resident model, builds or benchmarks one candidate, and restores Gemma with infinite
-judged-demo residency on every exit path. Checkpoint export may run CPU-only on Modal, but the
-hardware-specific TensorRT engine is always built and executed locally.
-
-The first public control used `Qwen/Qwen2.5-0.5B-Instruct-AWQ` only to validate the toolchain. Its
-465,500,604-byte INT4 engine built in 88.034 seconds, peaked at 916 MiB of TensorRT GPU allocation,
-and stayed below 51.2°C GPU temperature. Inference reached 97.45 generated tokens/second on the
-exact production prompt and 101.43 tokens/second on a 76% shorter prompt—roughly 3.4–3.6 times the
-accepted Gemma decode throughput. It nevertheless returned zero valid JSON plans across both
-five-passage runs. The control is therefore rejected and is not selectable by production.
-
-The result is useful: TensorRT has enough performance to change the live experience, but the next
-candidate must preserve Gemma-level understanding. NVIDIA lists `google/gemma-4-E2B-it` as supported
-by this pinned runtime. The exact revision used here is public and ungated; no Hugging Face token or
-click-through acceptance is required. The repository now contains a finite INT4-AWQ, text-only
-exporter that externalizes FFN weights for the 8 GB Jetson, plus an on-device engine builder and
-shadow benchmark. Modal refused both A100-80GB and L40S allocation without a payment method, so the
-candidate was not quantized, downloaded, built, or promoted there. GCP approved exactly one
-Cloud Run RTX PRO 6000 Blackwell in `us-central1`; the pinned exporter image and private bucket are
-ready. Its first one-task execution remained pending for the full 30-minute wall guard and was
-cancelled before application start, model download, or GPU work. Gemma 3 remains production. Full
-control evidence is in `research/benchmarks/storylight-tensorrt-edge-llm-2026-08-26.json`; the exact warm
-baseline, blocked export attempts, cost reconciliation, and promotion gate are in
-`research/benchmarks/storylight-gemma4-tensorrt-edge-llm-2026-08-26.json`.
-
-Two later executions of the same digest-pinned GPU job waited 28–30 minutes and then failed inside
-Cloud Run with contradictory exit-code-zero `Unknown error` / `Internal error running task`
-messages. Neither emitted the exporter's first progress record or wrote a bucket object. A bounded
-CPU-only control using the identical image also remained in the regional Jobs scheduler for five
-minutes and was cancelled before the entrypoint ran. Do not keep repeating the same GPU job: send
-the execution IDs and `research/benchmarks/storylight-gemma4-cloud-run-scheduler-2026-08-30.json` to Google
-Cloud support, then retry only after capacity or service state changes.
-
-A later resident-server experiment isolated the most important latency finding. Starting the
-TensorRT process for each passage took 8.105 seconds for a one-case control, while NVIDIA's
-resident server handled the 20-case contest suite at 846.5 ms mean and 807.9 ms median per case.
-The 1.5B candidate passed the automatic semantic screen on 13/20 cases; sending only the seven
-failures to resident Gemma recovered all seven, for 20/20 automatic coverage and a projected
-2.049-second mean. That two-model configuration was not promoted because it left only 739–774 MiB
-of unified memory available for the desktop and renderer. The complete comparison, including
-rejected 0.5B, split-request, and over-instruction experiments, is recorded in
-`research/benchmarks/storylight-tensorrt-resident-cascade-2026-08-30.json`.
-
-Reproduce the already-pinned control only when validating a new JetPack image:
+Stage the repository at `/opt/storylight`, then run:
 
 ```bash
-deploy/jetson/install-tensorrt-edge-llm.sh
-deploy/jetson/build-tensorrt-edge-engine.sh
-# Start NVIDIA's server in one terminal. It is hard-bound to loopback.
-deploy/jetson/run-tensorrt-edge-server.sh \
-  "$HOME/.local/share/storylight/tensorrt-edgellm-v0.10.0/models/qwen2.5-1.5b-instruct-awq-v010/engines/llm"
-# Point the acceptance harness at the already-resident process.
-deploy/jetson/benchmark-tensorrt-edge-llm.py \
-  --suite contest \
-  --prompt-profile slots \
-  --resident-base-url http://127.0.0.1:11435 \
-  --resident-model Qwen/Qwen2.5-1.5B-Instruct-AWQ
-STORYLIGHT_EDGELLM_PROMPT_PROFILE=production \
-  deploy/jetson/run-tensorrt-edge-benchmark.sh
-```
-
-The benchmark exits nonzero when any output misses the strict wire schema. A high token rate is not
-an acceptance result.
-
-The Gemma 4 sequence is deliberately staged. The existing GCP job is digest-pinned, uses one task,
-zero retries, a 1,200-second timeout, and a bucket-only service account:
-
-```bash
-# Cloud: pinned BF16 -> INT4-AWQ -> text-only ONNX with external FFN weights.
-# Run only as a deliberate, monitored attempt when us-central1 Blackwell capacity is available.
-gcloud run jobs execute storylight-gemma4-tensorrt-export \
-  --project=your-gcp-project --region=us-central1 --wait
-# Download the completed prefix, including export.manifest.json and onnx/, to one
-# temporary bundle directory and transfer that directory to the Jetson. The
-# installer verifies every byte against the cloud completion manifest, rejects
-# an unpinned model/export/runtime or an extra file, and refuses to overwrite an
-# existing checkpoint before atomically installing it.
-deploy/jetson/install-gemma4-tensorrt-checkpoint.py /path/to/export-bundle
-deploy/jetson/build-gemma4-tensorrt-edge-engine.sh
-deploy/jetson/run-gemma4-tensorrt-edge-benchmark.sh
-```
-
-If an execution remains `Pending`, cancel it rather than leaving an unattended late GPU start:
-
-```bash
-gcloud run jobs executions cancel EXECUTION_NAME \
-  --project=your-gcp-project --region=us-central1
-```
-
-The first pass excludes Gemma 4 MTP. Only add the assistant after the target-only engine passes all
-schema, privacy, semantic, memory, and measured end-to-end gates. The shadow runner always restores
-Gemma 3 and cannot change the production backend.
-
-The exact target-only engine has now passed that gate. Through Storylight's production
-`StructuredLiveScenePlanner`, a resident 20-case run passed 20/20 automatic semantic and privacy
-checks at 1.599 seconds mean, 1.605 seconds median, and 1.927 seconds maximum planning latency. It
-used 35.35 output tokens on average and never exceeded 44 of the 64-token hard limit. A subsequent
-factory-level hardware smoke returned the correct rabbit-under-bridge and lanterns-above-bridge
-relationships in 1.816 seconds. The evidence is
-`research/benchmarks/jetson-gemma4-tensorrt-integrated-planner-2026-09-01.json`.
-
-Promotion is intentionally one guarded operation rather than a set of hand-edited settings. The
-helper fingerprints the exact engine into the cache revision, backs up the root-only environment,
-installs a loopback-only bounded user service, and rolls back both configuration and runtime if
-readiness fails:
-
-```bash
-sudo /opt/storylight/deploy/jetson/configure-tensorrt-planner.sh \
-  --user operator --dry-run
-sudo /opt/storylight/deploy/jetson/configure-tensorrt-planner.sh \
-  --user operator
-```
-
-Trained-candidate acceptance uses a separate immutable tooling bundle. Build it from a clean Git
-commit with `build-trained-planner-tooling-bundle.py`, copy it to the Jetson, and run
-`install-trained-planner-tooling.py --dry-run` before the root install. The installer copies and
-re-verifies every byte inside a root-owned staging directory, publishes a content-addressed
-version atomically, and prints an exact one-purpose token. Candidate, promotion, and rollback
-scripts then resolve only that installed tooling, never the mutable `/opt/storylight` checkout.
-
-Promotion also requires a new immediate child of
-`/var/lib/storylight-trusted/trained-planner/evidence`. This root-owned tree is deliberately
-separate from the service-writable `/var/lib/storylight` runtime data. After the candidate is active,
-the promotion script runs fresh planner, API, controller, kiosk, live-scene, output-token, and swap
-checks. It then
-atomically publishes the terminal receipt, post-action health, and rollback state before declaring
-success. If the gate rejects the candidate, use the installed `record-baseline-retention.sh`
-dry-run and its exact approval token to prove that the accepted engine remained active. These
-files are the only supported inputs to the orchestrator's `record-terminal-decision` command.
-
-If the planner journal contains an earlier OOM, produce the required post-OOM evidence with the
-installed `record-trained-planner-cold-start.py`. Its dry run is non-mutating. Execution requires
-the exact printed token, restarts only the accepted user service, exercises the loopback planner
-and projector route, checks swap/OOM/restart events and memory, proves exact accepted routing was
-restored, and writes a checksum-bound report. Pass that report and SHA-256 to
-`preflight-trained-planner-acceptance.py`; do not construct cold-start evidence by hand.
-
-The TensorRT unit and Gemma 3 Ollama unit are mutually exclusive on the 8 GB board. Any TensorRT
-stop or crash queues Ollama restoration; Storylight waits up to five seconds for that fallback only
-after a definite loopback connection failure. A timeout, HTTP error, or malformed response fails
-closed, because attempting Ollama while TensorRT may still own unified memory is unsafe.
-Promotion also drains the long-lived projector browser before CUDA-graph capture and requires at
-least 4 GiB available memory. It relaunches a fresh kiosk only after TensorRT and both Storylight
-services are ready. This closes the measured global-OOM failure where a 1.7 GiB loaded Ollama
-worker and a 1.7 GiB day-old Firefox kiosk overlapped engine initialization; the corrected handoff
-left 1.00 GiB available with the refreshed projector running and completed the relationship smoke
-in 1.466 seconds.
-
-#### Reboot-safe 25W versus MAXN_SUPER measurement
-
-On the measured JetPack 7.2.1 Orin Nano, changing from power mode 1 (`25W`) to mode 2
-(`MAXN_SUPER`) required a reboot; returning from mode 2 to mode 1 applied immediately. Do not use a
-one-process switch/benchmark/restore script: a requested reboot destroys that process and `/tmp`
-evidence. The repository runner preserves the accepted 25W baseline under
-`/var/lib/storylight-trusted/power-mode-ab`, records a durable phase before each reboot, validates the mode
-after reconnect, and refuses out-of-order commands.
-
-Run exactly one phase at a time. A mode-change phase may prompt for a reboot; enter `YES` only after
-the script prints its matching durable phase. If restoring 25W applies immediately, run `finalize`
-without rebooting:
-
-```bash
-sudo /opt/storylight/deploy/jetson/run-power-mode-ab.sh prepare-maxn
-# Reconnect after the MAXN_SUPER reboot.
-sudo /opt/storylight/deploy/jetson/run-power-mode-ab.sh benchmark-maxn
-sudo /opt/storylight/deploy/jetson/run-power-mode-ab.sh restore-25w
-# Reconnect only if NVIDIA requested a 25W restore reboot.
-sudo /opt/storylight/deploy/jetson/run-power-mode-ab.sh finalize
-```
-
-The benchmark phase never changes power mode. The final phase must observe mode 1 and both local
-services before it writes `result=complete`. Evidence remains on the Jetson until it is explicitly
-collected; rebooting cannot erase it.
-
-#### Restricted unattended Storylight administration
-
-Never store the Linux password in the repository, an environment file, a shell command, or a file
-for automation to read. Install the root-owned, allowlisted administrator once instead:
-
-```bash
-sudo /opt/storylight/deploy/jetson/install-storylight-admin.sh --user operator
-sudo -n /usr/local/sbin/storylight-admin status
-```
-
-The sudo rule permits only `/usr/local/sbin/storylight-admin`. That root-owned wrapper accepts fixed
-status, Storylight service restart, power-acceptance actions, and lifecycle control for one fixed
-temporary TensorRT build swap file; it exposes no shell, arbitrary
-systemd unit, arbitrary path, package installation, network mutation, or general root command. The
-power runner is copied to a separate root-owned path so editing the Git checkout cannot alter code
-executed through passwordless sudo. Removing `/etc/sudoers.d/storylight-admin-operator`
-revokes the delegation, but do so only through an explicitly authorized root maintenance action.
-
-The 8 GB Orin Nano can exhaust unified memory while TensorRT materializes a serialized Gemma 4
-engine, even when the final engine fits. Prepare the fixed 8 GiB NVMe-backed build swap immediately
-before this bounded build and remove it immediately after the benchmark. It is never added to
-`/etc/fstab` and is never part of steady-state inference:
-
-```bash
-sudo -n /usr/local/sbin/storylight-admin build-swap prepare
-# Build and shadow-benchmark the engine.
-sudo -n /usr/local/sbin/storylight-admin build-swap cleanup
-```
-
-Download the pinned official ARM64 archive into a versioned, user-owned directory. Verify the
-release digest before extracting it; do not pipe an unverified installer into a shell:
-
-```bash
-STORYLIGHT_OLLAMA_VERSION=0.32.15
-STORYLIGHT_OLLAMA_ROOT="$HOME/.local/opt/ollama-v${STORYLIGHT_OLLAMA_VERSION}"
-STORYLIGHT_OLLAMA_ARCHIVE="$HOME/.cache/storylight/downloads/ollama-linux-arm64-v${STORYLIGHT_OLLAMA_VERSION}.tar.zst"
-
-test ! -e "$STORYLIGHT_OLLAMA_ROOT"
-install -d -m 0700 \
-  "$HOME/.cache/storylight/downloads" \
-  "$STORYLIGHT_OLLAMA_ROOT" \
-  "$HOME/.local/share/storylight/ollama/models" \
-  "$HOME/.config/systemd/user"
-curl --fail --location --retry 3 \
-  --output "$STORYLIGHT_OLLAMA_ARCHIVE" \
-  "https://github.com/ollama/ollama/releases/download/v${STORYLIGHT_OLLAMA_VERSION}/ollama-linux-arm64.tar.zst"
-printf '%s  %s\n' \
-  c898270b1690eab0f51aa9e9197686b7b4c6a7d88b83967763818f3127e477e9 \
-  "$STORYLIGHT_OLLAMA_ARCHIVE" | sha256sum --check --strict
-zstd --test "$STORYLIGHT_OLLAMA_ARCHIVE"
-zstd -dc "$STORYLIGHT_OLLAMA_ARCHIVE" | tar -xf - -C "$STORYLIGHT_OLLAMA_ROOT"
-chmod 0755 "$STORYLIGHT_OLLAMA_ROOT/bin/ollama"
-sha256sum "$STORYLIGHT_OLLAMA_ROOT/bin/ollama"
-```
-
-The accepted binary SHA-256 is
-`db3793652a24aaf4bbfcab4460a4539e413e50193322a224bd5fb521930292e0`.
-Install and start the user service; it binds only to `127.0.0.1`, permits one loaded model and one
-request at a time, defaults to a 4096-token context, keeps history off, and disables Ollama cloud:
-
-```bash
-install -m 0644 deploy/jetson/systemd/storylight-gemma.service \
-  "$HOME/.config/systemd/user/storylight-gemma.service"
-systemd-analyze --user verify "$HOME/.config/systemd/user/storylight-gemma.service"
-systemctl --user daemon-reload
-systemctl --user enable --now storylight-gemma.service
-curl -fsS http://127.0.0.1:11434/api/version
-ss -ltnp | grep ':11434\b'
-loginctl show-user "$USER" -p Linger
-```
-
-The accepted device reports `Linger=no`, so this user service starts with the normal Jetson login
-session rather than before login. That matches the projector demo, which also requires the user's
-graphical session. Enabling linger is an optional administrator change and was deliberately not
-performed by this no-sudo install.
-
-Pull and verify only the accepted 1B model:
-
-```bash
-OLLAMA_HOST=http://127.0.0.1:11434 \
-  "$STORYLIGHT_OLLAMA_ROOT/bin/ollama" pull gemma3:1b-it-q4_K_M
-curl -fsS http://127.0.0.1:11434/api/tags | python3 -c '
-import json, sys
-model = json.load(sys.stdin)["models"][0]
-assert model["name"] == "gemma3:1b-it-q4_K_M"
-assert model["digest"] == "8648f39daa8fbf5b18c7b4e6a8fb4990c692751d49917417b8842ca5758e7ffc"
-assert model["details"]["parameter_size"] == "999.89M"
-assert model["details"]["quantization_level"] == "Q4_K_M"
-print(model["digest"])
-'
-sha256sum \
-  "$HOME/.local/share/storylight/ollama/models/blobs/sha256-7cd4618c1faf8b7233c6c906dac1694b6a47684b37b8895d470ac688520b9c01"
-```
-
-The final command must print the model-layer digest encoded in its filename. The Ollama manifest
-digest is `8648f39daa8fbf5b18c7b4e6a8fb4990c692751d49917417b8842ca5758e7ffc`; the
-815,310,432-byte model layer is
-`7cd4618c1faf8b7233c6c906dac1694b6a47684b37b8895d470ac688520b9c01`.
-
-Run one long-timeout strict-schema request to populate the CUDA kernel cache, then repeat it under
-the steady-state acceptance deadline before connecting Storylight:
-
-```bash
-curl --fail --silent --show-error --max-time 240 \
-  --header 'Content-Type: application/json' \
-  --data-binary @research/benchmarks/jetson-gemma3-optimized-schema-request.json \
-  http://127.0.0.1:11434/api/chat | python3 -m json.tool
-curl --fail --silent --show-error --max-time 20 \
-  --header 'Content-Type: application/json' \
-  --data-binary @research/benchmarks/jetson-gemma3-optimized-schema-request.json \
-  http://127.0.0.1:11434/api/chat | python3 -m json.tool
-OLLAMA_HOST=http://127.0.0.1:11434 \
-  "$STORYLIGHT_OLLAMA_ROOT/bin/ollama" ps
-```
-
-`ollama ps` must report `100% GPU`. The accepted repeatable cold reload was 10.40 seconds and the
-warm new-passage request was 4.57 seconds at roughly 27-29 generated tokens per second. The very
-first request took about 152 seconds while CUDA compiled and cached kernels; always prewarm before
-a live reading. Full evidence is in
-`research/benchmarks/jetson-gemma3-ollama-2026-08-23.json`. The optimized request fixture preserves the
-hardware-accepted style-bound prompt and the still-current `LiveSceneWirePlan` schema; its canonical
-JSON Schema SHA-256 is `d08b410c34d519a12410e2b22beb89beb2ec9d89a06887c783d3a6ce44839c14`.
-Current code no longer sends visual style to the semantic planner, so the next exact Jetson report
-must come from the counterbalanced harness below rather than mutating this historical fixture.
-The earlier `jetson-gemma3-schema-request.json` remains immutable historical evidence for the first
-accepted end-to-end run and is not the current production contract.
-
-For Storylight on the same Jetson, use these settings after the independent probe passes:
-
-```dotenv
-STORYLIGHT_MODEL_BACKEND=ollama
-STORYLIGHT_MODEL_NAME=gemma3:1b-it-q4_K_M
-STORYLIGHT_MODEL_BASE_URL=http://127.0.0.1:11434
-STORYLIGHT_MODEL_TIMEOUT_SECONDS=20
-STORYLIGHT_MODEL_KEEP_ALIVE=-1m
-STORYLIGHT_MODEL_CONTEXT_TOKENS=4096
-STORYLIGHT_MODEL_MAX_OUTPUT_TOKENS=180
-STORYLIGHT_MODEL_REQUIRE_GPU=true
-STORYLIGHT_LIVE_SCENE_PLANNER=model
-STORYLIGHT_LIVE_SCENE_PLANNER_TIMEOUT_SECONDS=12
-STORYLIGHT_LIVE_SCENE_PLANNER_MODEL_REVISION=ollama-manifest-sha256:8648f39daa8fbf5b18c7b4e6a8fb4990c692751d49917417b8842ca5758e7ffc
-STORYLIGHT_LIVE_SCENE_AUTO_PREWARM_ON_SUBMIT=true
-# Enable only after the text-free warmup passes the exact Jetson latency/memory gate.
-STORYLIGHT_LIVE_SCENE_PLANNER_AUTO_WARMUP=true
-```
-
-The experimental short-key tuple contract is deliberately unavailable in runtime configuration.
-Exact Jetson testing on the warmed 1B model reduced mean planning from 3.766 seconds to 1.398
-seconds, but four of five outputs echoed schema placeholders and all five missed their required
-transformation. The Mac-only candidate therefore failed the hardware semantic gate and was removed
-instead of exposing a dangerous speed switch. Its class remains only for the explicit offline
-benchmark harness and rejection evidence.
-
-`STORYLIGHT_MODEL_REQUIRE_GPU=true` verifies the warmed Ollama model has a nonzero VRAM allocation.
-This closes a failure seen after a boot where the kernel reported `ACR bootstrap failed`, the GPU
-device was absent, and Ollama silently fell back to `100% CPU` while the model-install probe still
-looked healthy. A clean reboot restored `/dev/nvhost-gpu` and `100% GPU`; Storylight now fails the
-warmup/first generation instead of accepting that slow path.
-
-`STORYLIGHT_MODEL_MAX_OUTPUT_TOKENS` is a hard decode ceiling, not a target. The final compact contract
-removed redundant camera, lighting, palette, and region fields; its accepted hero repeats used
-107-109 of 180 tokens without truncation. Keep the 180 ceiling until a broader benchmark proves that
-a lower ceiling never truncates valid JSON. The 12-second planner deadline passed comfortably on a
-prewarmed model; keep the independent
-20-second model-client timeout for
-diagnostics and ensure the prewarm completes before a live reading.
-
-When `STORYLIGHT_LIVE_SCENE_PLANNER_AUTO_WARMUP=true`, the API now starts a fixed
-`{"ready":true}` readiness task in the background during service startup. API readiness is not
-blocked, and an early request, the lifecycle task, and the workbench warmup coalesce onto one local
-Ollama call. The task never includes a story passage, visual style, audio, or renderer call. The
-workbench also refreshes this text-free task while visible, and the standalone `-1m` keep-alive
-retains the accepted planner until the appliance service stops.
-If Gemma still times out or fails privacy/validation, the job now stops before the paid renderer;
-it never promotes a generic fallback as if it were the requested scene.
-The exact Jetson restart acceptance observed the 877 MB GPU-resident model 4.80 seconds after API
-readiness; a warm uncached plan took 3.18 seconds and an exact private cache hit took 0.426 ms. See
-`research/benchmarks/storylight-edge-planner-residency-2026-08-30.json` for the bounded evidence and rejected
-2048-token context A/B.
-
-The live planner keeps up to 32 privacy-gated semantic plans in memory. Identical-passage rereads,
-visual-style auditions, and alternate-seed retries skip Gemma decode while still deriving a new
-styled, seeded SceneSpec;
-the workbench reports `local cache` instead of presenting that path as fresh inference. The digest
-also binds the model revision and wire contract, and nothing is persisted or sent off-device.
-Common breeds/species, plants, objects, and actions remain explicit while a local normalizer removes
-duplicate actors across background/support layers. Open landscape plans also reject unrequested
-walls, caves, portals, frames, monoliths, and giant abstract structures before rendering.
-
-The final speed acceptance kept Gemma 1B after rejecting the 270M model for invented settings and
-missing transformations. The prior 896x512, 8-step SANA 1.5 renderer produced `master_ready` in
-6.971 seconds. The current 1024x576, 2-step SANA-Sprint renderer has now passed the exact prepared
-API path in 499.6 ms after a privacy-gated Jetson plan cache hit; its same-prompt resolution A/B
-added 28.6% source pixels for 18.9 ms of inference. The renderer's 90-second scale-down window is
-intentional: the earlier
-30-second window expired during local planning/operator handoff and produced a 44.8-second cold
-request. Automatic prewarm overlaps its text-free preparation with Gemma planning; it does not send
-the passage to Modal. Full evidence is in
-`research/benchmarks/storylight-speed-optimization-2026-08-23.json`.
-
-When the Jetson is available, compare the accepted and short-key contracts with the local-only
-five-passage harness. A warmup is run and excluded, and which contract runs first alternates by
-passage so shared-prefix cache reuse cannot systematically favor one side. The report fails
-technical acceptance when any case exceeds 12 seconds or 180 output tokens, and it still requires
-human semantic review:
-
-```bash
-python -m storylight.planner_benchmark \
-  --contract both \
-  --model-revision ollama-manifest-sha256:8648f39daa8fbf5b18c7b4e6a8fb4990c692751d49917417b8842ca5758e7ffc \
-  --output research/benchmarks/jetson-gemma3-short-key-acceptance.json
-```
-
-For the Mac-to-Jetson SSH loopback forward, add `--base-url http://127.0.0.1:11435`. The harness
-rejects non-loopback model URLs and never calls Modal or GCP.
-
-Before spending cloud GPU time on prompt-quality experiments, run the broader contest suite. It
-keeps the five hardware cases and adds fifteen synthetic passages covering negation, passive voice,
-temporal transformations, containment, spatial relations, literacy, reversed motion, and visually
-important exclusions. Each plan must satisfy an automatic lexical evidence screen as well as the
-latency/token limits; that screen catches obvious omissions and contradictions but does not replace
-human visual review:
-
-```bash
-python -m storylight.planner_benchmark \
-  --contract standard \
-  --suite contest \
-  --max-output-tokens 180 \
-  --model-revision ollama-manifest-sha256:8648f39daa8fbf5b18c7b4e6a8fb4990c692751d49917417b8842ca5758e7ffc \
-  --output research/benchmarks/jetson-gemma3-contest-semantics.json
-```
-
-Only passages whose structured plans pass this local gate should advance to paid SANA image A/B
-tests. Source passages and Gemma responses remain on the Jetson during this benchmark.
-
-Keep the model endpoint on loopback. When a Mac control plane needs it during development, use an
-explicit SSH local forward rather than changing `OLLAMA_HOST` to a LAN address.
-
-#### Integrated Gemma-to-scene acceptance
-
-Job `scene_7ad76946940540f4b2f8878e` completed on August 23, 2026 with
-`planning_status=model`, no fallback, no warning, and no error. The path was:
-
-```text
-local passage -> Jetson Gemma LiveScenePlan -> normalized SceneSpec v2
-              -> finite Modal SANA master + Depth Anything map -> projector assets
-```
-
-The warm Gemma call processed 537 prompt tokens and generated 283 tokens in 9.03 seconds. The
-application's validated planning stage took 9.165 seconds, below its 12-second deadline. Ollama
-reported 32.48 generated tokens per second and confirmed that the response was not truncated. The
-complete job reached `master_ready` in 15.005 seconds: 9.165 seconds planning, 5.807 seconds in the
-finite provider call, 4 milliseconds of cache work, and 30 milliseconds of remaining orchestration.
-Inside the provider call, SANA took 3.826 seconds and Depth Anything took 115 milliseconds. The
-provider manifest estimated `$0.001289` of L4 GPU cost for the 5.807-second generation RPC alone.
-The conservative ledger entry for the complete warm session is `$0.012836`: 22.013 seconds of
-prewarm, 5.807 seconds of generation, and a 30-second scale-down allowance at `$0.000222/second`.
-These are not the same scope. A read-only Modal billing report at 14:48:52 PDT showed `$0.05987830`
-for the current `storylight-fast-scene` app/day interval since the 13:46:13 baseline; that wider
-interval may include deployment, prewarm, generation, and billing lag, so it is not a job-only
-price. At that capture the workspace total was `$13.95606460`, leaving `$16.04393540` of the
-monthly credit and `$15.04393540` before the project's `$29` hard-stop threshold.
-
-All three model revisions were captured:
-
-- Gemma scene planner: manifest
-  `8648f39daa8fbf5b18c7b4e6a8fb4990c692751d49917417b8842ca5758e7ffc`
-- SANA 1.5 1.6B: revision `caa51e5ea874be07d3a9c7c2d0fd800570b18440`
-- Depth Anything V2 Small: revision `b4769fd619394250528294b658587285526fab1c`
-
-The accepted 1024x576 RGB master is 621,636 bytes with SHA-256
-`dbcd5d176857656aa4c7a41c848e36626a8fd77bd5a8223df1f3212e3fc3e049`. The accepted 1024x576
-grayscale depth map is 73,142 bytes with SHA-256
-`bf9b4a185b272a083ad95efbd3953b43b931ec7376a85726b4e26ad45890e5c8`. Both generated-file
-hashes independently matched their content-addressed cache copies. The provider manifest is
-`artifacts/live-scenes/generated/scene_7ad76946940540f4b2f8878e/scene.manifest.json`, SHA-256
-`567eac7b1a50ab05696854bfe75f67a4beb526b831b96fcd828f005eb4babce1`.
-
-The privacy boundary is explicit: the raw passage was processed by the local Storylight/Jetson
-path, while the model-authored semantic visual prompt was sent to Modal for image generation. The
-exact source passage and local session ID are absent from the provider manifest request. The
-manifest confirms a finite authenticated call and no persistent endpoint; this is semantic-data
-minimization, not a claim that cloud image generation sees no story information. This is also a
-job-specific observation, not a code-enforced guarantee for that accepted run: at the time of the
-job, the path had no post-Gemma source-overlap or PII gate, so another model response that echoed
-private input could have reached Modal.
-
-After this job, the planner prompt gained grammar and trailing-punctuation guidance. Its JSON
-Schema did not change, and no additional inference was run merely to validate that wording-only
-edit. The current request fixture is byte-for-byte checked against the current Python contract;
-the integrated job and this distinction are recorded in
-`research/benchmarks/jetson-gemma3-ollama-2026-08-23.json`.
-
-#### Update and rollback
-
-Treat runtime updates like deploys. Download the new official release into a different versioned
-directory, verify the digest published with that release, and preserve the known-good directory and
-service file. Change only `ExecStart` in a reviewed copy of `storylight-gemma.service`, run
-`systemd-analyze --user verify`, then restart and repeat the schema, GPU, memory, latency, and
-loopback checks. Do not update the runtime and model in the same acceptance run.
-
-Before switching versions, save the known-good unit:
-
-```bash
-cp "$HOME/.config/systemd/user/storylight-gemma.service" \
-  "$HOME/.config/systemd/user/storylight-gemma.service.known-good"
-```
-
-Rollback is a unit-file restore; the old versioned runtime and model remain intact:
-
-```bash
-install -m 0644 "$HOME/.config/systemd/user/storylight-gemma.service.known-good" \
-  "$HOME/.config/systemd/user/storylight-gemma.service"
-systemctl --user daemon-reload
-systemctl --user restart storylight-gemma.service
-curl -fsS http://127.0.0.1:11434/api/version
-curl -fsS http://127.0.0.1:11434/api/tags
-```
-
-Ollama may create a private identity key under `$HOME/.ollama`. It is runtime state: never copy it
-into the repository, benchmark evidence, logs, or a demo package.
-
-## 4. Install the API service
-
-The application must be available at `/opt/storylight`, which is the explicit path in the unit
-templates. Stage only committed files into an empty target; do not copy `.env`, `.git`, a laptop
-virtual environment, caches, or evidence:
-
-```bash
-git archive --format=tar --output=/tmp/storylight-source.tar HEAD
-sudo install -d -m 0755 /opt/storylight
-sudo tar --extract --file=/tmp/storylight-source.tar --directory=/opt/storylight --no-same-owner
-sudo chown -R "$USER":"$(id -gn)" /opt/storylight
 cd /opt/storylight
-./deploy/jetson/bootstrap.sh --create-venv --install-app
+./deploy/jetson/bootstrap.sh --create-venv --install-modal-runtime
+sudo ./deploy/jetson/install-standalone.sh --user "$USER"
 ```
 
-Review and install the environment and service template:
+The installer refuses non-Jetson hosts and checkouts outside `/opt/storylight`. It creates root-only environment files and installs the API, controller, local model, and projector units. It does not change JetPack, Wi-Fi credentials, display login, or power mode.
+
+Configure `/etc/storylight/storylight.env` from `storylight.standalone.env.example`. Keep cloud credentials in that root-owned file; never place them in browser or phone configuration.
+
+For a portable private network, review and run:
 
 ```bash
-sudo install -d /etc/storylight
-sudo install -o root -g "$(id -gn)" -m 0640 \
-  deploy/jetson/storylight.env.example /etc/storylight/storylight.env
-sudo install -m 0644 deploy/jetson/systemd/storylight@.service /etc/systemd/system/storylight@.service
-sudo systemctl daemon-reload
-sudo systemctl enable --now "storylight@${USER}.service"
+sudo /opt/storylight/deploy/jetson/configure-portable-network.sh
+sudo /opt/storylight/deploy/jetson/show-controller-pairing.sh
 ```
 
-Verify it without exposing the API beyond the device:
+Verify that only the controller gateway is exposed:
 
 ```bash
-systemctl status "storylight@${USER}.service" --no-pager
-journalctl -u "storylight@${USER}.service" -n 100 --no-pager
-curl -fsS http://127.0.0.1:8080/healthz
 curl -fsS http://127.0.0.1:8080/readyz
-curl -fsS http://127.0.0.1:8080/v1/runtime:status
+curl -fsS http://127.0.0.1:8081/healthz
+ss -ltn | grep -E '127\.0\.0\.1:8080|0\.0\.0\.0:8081|127\.0\.0\.1:1143[45]'
 ```
 
-The unit binds only to loopback, reads `/etc/storylight/storylight.env`, runs without elevated
-privileges, and applies conservative systemd hardening. It creates private, service-owned
-`/var/lib/storylight`, `/var/cache/storylight`, and `/run/storylight` directories. Startup preflight
-refuses relative Jetson paths, a Mac-only ASR backend, an unavailable configured ASR backend, or a
-remote model endpoint. It does not grant camera, audio, GPIO, or Docker permissions.
+If the network is not private, stop the controller service. Local projector operation remains available.
 
-### Warm and activate WhisperTRT
+## Local speech recognition
 
-After the disabled-ASR service has started once and created its private cache directory:
+Storylight supports a lazy Whisper TensorRT backend through the portable `AsrBackend` contract. Leave `STORYLIGHT_ASR_BACKEND=disabled` during first boot. Install JetPack-compatible dependencies from NVIDIA guidance, select `whisper_trt` in the service environment, and warm the engine before a live reading:
 
 ```bash
-cd /opt/storylight
-.venv/bin/python -c 'import torch, tensorrt, torch2trt, whisper, numpy, psutil'
-.venv/bin/pip install \
-  'git+https://github.com/NVIDIA-AI-IOT/whisper_trt.git@268eff10a1e38118a2734745b9db14f7419a08a5'
 sudo systemctl stop "storylight@${USER}.service"
-sudoedit /etc/storylight/storylight.env
-# Set STORYLIGHT_ASR_BACKEND=whisper_trt, then:
-sudo -u "$USER" STORYLIGHT_SERVICE_USER="$USER" /opt/storylight/deploy/jetson/warm-asr.sh
+sudo -u "$USER" /opt/storylight/deploy/jetson/warm-asr.sh
 sudo systemctl start "storylight@${USER}.service"
 ```
 
-The warmup downloads/builds while network access is intentionally available. Before acceptance,
-disconnect networking or apply the demo network policy, restart the service, and prove warm ASR
-still works. Never run the warmup concurrently with the service.
+Model and engine state is stored beneath `/var/cache/storylight`, outside the read-only application tree.
 
-### Install a prepared offline book package
+## Local Gemma and TensorRT
 
-Copy a validated Story Pack and its referenced media directory onto the device, then install it as
-the same Linux user that runs Storylight:
+The default production-safe compiler remains deterministic. Local Gemma and TensorRT planner paths are optional and must pass the same grounding, privacy, schema, and refusal checks before activation.
 
-```bash
-.venv/bin/python -m storylight.pack_installer /path/to/story-pack.json \
-  --asset-root /path/to/media \
-  --data-dir /var/lib/storylight \
-  --cache-dir /var/cache/storylight
-curl -fsS http://127.0.0.1:8080/v1/story-packs/latest
-```
+The retained tooling supports:
 
-The installer rejects schema errors, checksum mismatches, package path traversal, unsupported media
-types, and ready assets without a local source. It atomically copies permitted image/video files
-with private permissions, rewrites their manifest locations to loopback asset URLs, and only then
-promotes the Story Pack to `latest`. The projector browser never receives a raw filesystem path.
+- a user-scoped loopback Ollama service;
+- TensorRT Edge-LLM installation;
+- a finite Gemma 4 checkpoint export and checksum-verified install;
+- a loopback-only resident TensorRT server;
+- explicit planner configuration and readiness checks.
 
-## 5. Install the projector browser kiosk
+Use `install-tensorrt-edge-llm.sh`, `install-gemma4-tensorrt-checkpoint.py`, `run-tensorrt-edge-server.sh`, and `configure-tensorrt-planner.sh` only after reviewing their pinned versions and storage requirements. Experimental planner timings do not establish live microphone-to-projector latency.
 
-The launcher prefers `chromium`, then `chromium-browser`, and accepts `firefox` or `firefox-esr` as
-a fallback. Set `STORYLIGHT_BROWSER_BIN` to choose either browser explicitly. The legacy
-`STORYLIGHT_CHROMIUM_BIN` override remains supported and is treated as Chromium. Chromium keeps the
-existing kiosk/app sandbox and background-network hardening flags; Firefox uses only its supported
-`--kiosk` and `--private-window` flags. This repository never silently installs a browser.
+## Projector kiosk
 
-On JetPack 7.2.1, the Ubuntu Firefox Snap was measured exposing WebGL as Mesa `llvmpipe`; Storylight
-then pinned a CPU core and delivered only 19 distinct projector frames in two seconds. The verified
-Mozilla ARM64 build exposed NVIDIA WebGL and held 60.48 browser fps (17.10 ms median, 17.14 ms p95),
-with 118 distinct framebuffer frames in a 120-frame final capture. Install that pinned, checksum-
-verified build without sudo, then select its stable path explicitly:
+Copy `kiosk.env.example` to the service configuration and run `check-kiosk-session.sh` before enabling the kiosk. `launch-kiosk.sh` prefers Chromium with its sandbox intact and falls back to Firefox. The installer does not enable graphical autologin or user lingering.
 
-```bash
-./deploy/jetson/install-firefox-arm64.sh
-install -d -m 700 "${XDG_CONFIG_HOME:-${HOME}/.config}/storylight"
-cp deploy/jetson/kiosk.env.example "${XDG_CONFIG_HOME:-${HOME}/.config}/storylight/kiosk.env"
-# Edit kiosk.env and set:
-# STORYLIGHT_BROWSER_BIN=/home/your-user/.local/opt/firefox-storylight/firefox
-```
+## Privacy verification
 
-The Snap remains installed as rollback. The projector runtime also rejects known software WebGL
-renderers instead of silently starting a continuously animated depth shader on the CPU.
-
-Test the launcher inside the logged-in graphical desktop session:
-
-```bash
-./deploy/jetson/check-kiosk-session.sh
-STORYLIGHT_KIOSK_URL='http://127.0.0.1:8080/projector?pack=latest&session=storylight-live&live=1' \
-  ./deploy/jetson/launch-kiosk.sh
-```
-
-The preflight requires an active, local X11 session owned by the kiosk user with
-`LockedHint=no`, `IdleHint=no`, and `Monitor is On`. It never unlocks the desktop, synthesizes
-input, or changes DPMS. If it reports a locked or idle session, unlock it on the physical display,
-interact with the desktop, confirm the projector is visibly on, and run the check again. Kiosk
-startup maps this operator-state failure to exit status 78; the user service deliberately does not
-restart-loop on that status. Restart it manually after the physical session passes:
-
-```bash
-systemctl --user restart storylight-kiosk.service
-```
-
-For a dedicated unattended demo account whose automatic lock and blanking policies have already
-been disabled, set `STORYLIGHT_KIOSK_ALLOW_IDLE=true` in the private kiosk environment. This permits
-only the idle hint: the preflight still rejects a locked, remote, inactive, non-X11, unreadable, or
-display-off session. The default remains fail-closed for ordinary accounts.
-
-When the Mac hosts the development API on port 18081 through the loopback-only reverse SSH tunnel,
-override the projector and readiness URLs together. Changing only the kiosk URL can falsely report
-readiness from the Jetson's separate port-8080 fallback service:
-
-```bash
-STORYLIGHT_KIOSK_URL='http://127.0.0.1:18081/projector?pack=latest&session=storylight-live&live=1&present=1' \
-STORYLIGHT_READY_URL=http://127.0.0.1:18081/readyz \
-  ./deploy/jetson/launch-kiosk.sh
-```
-
-Then install the user service while logged in as the desktop user:
-
-```bash
-install -D -m 0644 deploy/jetson/systemd/storylight-kiosk.service \
-  "$HOME/.config/systemd/user/storylight-kiosk.service"
-install -D -m 0644 deploy/jetson/kiosk.env.example \
-  "$HOME/.config/storylight/kiosk.env"
-systemctl --user daemon-reload
-systemctl --user enable --now storylight-kiosk.service
-```
-
-Inspect it with:
-
-```bash
-systemctl --user status storylight-kiosk.service --no-pager
-journalctl --user -u storylight-kiosk.service -n 100 --no-pager
-```
-
-The kiosk must run in the actual graphical user's session. Do not run the browser as root and do
-not add `--no-sandbox` to work around Chromium session or permission problems. The launcher waits
-for `/readyz` before opening the browser and restarts if the graphical session begins before the
-API is ready. Its default URL joins the canonical `storylight-live` session, enables progressive
-live-scene updates, and retains the latest device-stored Story Pack as a fallback.
-
-While the browser process exists, `systemd-inhibit --what=sleep` prevents system suspend. It does
-not inhibit `idle`, disable the lock screen, or change a login policy. The visible projector page
-also requests the browser Screen Wake Lock API; browsers release that lock when the page becomes
-hidden or the workstation locks, then request it again only after the authenticated session is
-visible. Stopping the kiosk process releases both protections automatically.
-
-## 6. Capture hardware acceptance evidence
-
-After the service is running and a prepared Story Pack is installed, collect exact JetPack/CUDA/
-TensorRT versions, API/model readiness, the actual Storylight NVMe mount, browser, thermals,
-camera, microphone, display, latest content, and process privacy into one timestamped JSON artifact:
-
-```bash
-./deploy/jetson/collect-evidence.sh --strict
-```
-
-The wrapper resolves the running `storylight@USER.service` PID and passes it to the collector.
-Process privacy evidence is mandatory: neither the Python collector nor this wrapper can report
-`ready: true` when the service is stopped, its PID is unavailable, or the socket audit fails. Set
-`STORYLIGHT_SERVICE_USER` only when collecting evidence for a service instance owned by a different
-user.
-
-After configuring WhisperTRT, run the real three-second microphone capture, one-frame camera
-capture, local transcription, and privacy boundary:
-
-```bash
-./deploy/jetson/collect-evidence.sh --strict --exercise-io --require-asr
-```
-
-The ASR gate defaults to 4,000 ms for the three-second capture. Override it only when documenting a
-deliberate acceptance-budget change with `--max-asr-ms`.
-
-Evidence is written under `/var/lib/storylight/evidence/` by default. Override the exact camera or
-ALSA device when enumeration shows a different target:
-
-```bash
-./deploy/jetson/collect-evidence.sh --strict --exercise-io --require-asr \
-  --camera-device /dev/video2 --audio-device plughw:2,0
-```
-
-During a complete offline reading rehearsal, run the dedicated audit from another terminal:
+Run the socket and traffic audit after configuration:
 
 ```bash
 ./deploy/jetson/check-privacy.sh
 ```
 
-It resolves the supervised API PID, maps that process's descriptors through `/proc`, and fails
-closed if socket tables are unreadable, if TCP/UDP activity reaches a non-loopback peer, or if the
-process listens beyond loopback. This proves the API process boundary, not all traffic on the
-machine. When Chromium is used, the kiosk disables its background networking. The final offline
-claim still requires a network-disabled full rehearsal or an independent whole-device packet
-capture; the Firefox fallback does not establish that boundary by itself.
+The intended boundary is documented in [Privacy and data flow](../../docs/privacy.md). The Jetson profile is a local appliance configuration, not an internet-facing multi-user service.
 
-## Device caveats
+## Troubleshooting
 
-- A reported NVMe device does not prove that Storylight is using it. Confirm the mount point and free
-  space in the diagnostic output before moving models or caches.
-- Camera and microphone enumeration proves presence, not capture quality. Test the exact USB camera,
-  microphone, resolution, frame rate, room lighting, and projector interference used for the demo.
-- `nvpmodel -q` reports the current profile. Only the explicit `run-power-mode-ab.sh` acceptance
-  selects a profile; it persists its phase across any required reboot and refuses completion until
-  mode 1 (`25W`) is restored. The measured 25W→MAXN transition required one reboot; MAXN→25W
-  applied immediately. No script runs maximum-clock commands.
-- Thermal-zone readings are a snapshot. Run a full-length rehearsal and record sustained latency and
-  temperature; do not infer thermal stability from an idle check.
-- The system service does not join the user to `docker`, `video`, or `audio` groups. Granting device
-  or daemon access is a separate security decision.
-- The Chromium user profile is persistent under the user's state directory. It contains browser
-  state, so treat it as user data when imaging or sharing the SSD.
-- The kiosk user service starts only after the graphical user session exists. If the demo must
-  recover unattended after power loss, configure the supported desktop auto-login policy and run a
-  recorded cold-boot acceptance rehearsal; this repository does not silently change login policy.
-- WhisperTRT's published Orin Nano benchmark is useful for selecting the first adapter, but it is
-  not evidence for this JetPack 7.2.1 installation. Only the generated hardware evidence file and
-  recorded rehearsal count as Storylight results.
+- Run `check-device.sh --strict` before debugging application code.
+- Confirm `/readyz` and `/v1/runtime:status` before opening the projector.
+- Keep ASR disabled until its model and engine have been warmed explicitly.
+- Confirm provider credentials are readable by the service user and absent from browser state.
+- Inspect the active systemd units before changing ports or model endpoints.
+- Keep minimum cloud instances at zero outside supervised demonstrations.
+
+Historical promotion campaigns, profiler receipts, power-mode comparisons, and rejected checkpoint candidates are intentionally omitted from this guide. The measured conclusions that remain relevant are in [Research results](../../docs/research-results.md).

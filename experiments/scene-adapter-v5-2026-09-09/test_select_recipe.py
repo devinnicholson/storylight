@@ -17,7 +17,7 @@ def test_omitted_selection_receipt_refused_after_resealing_completion(tmp_path):
     trainer = HERE / 'train.py'
     trainer_sha = selector.digest(trainer)
     args = SimpleNamespace(trainer=trainer, trainer_sha256=trainer_sha,
-                           v2_trainer=HERE.parent / 'scene-adapter-v2-2026-09-08/train.py',
+                           v2_trainer=HERE / "support/training-support.py",
                            output=tmp_path / 'chosen.json')
     for recipe, attr in [('qv', 'qv'), ('text-linear', 'text_linear')]:
         directory = tmp_path / recipe
