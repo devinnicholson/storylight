@@ -4,7 +4,7 @@ from pathlib import Path
 
 import pytest
 
-from bookforge.domain import (
+from storylight.domain import (
     AssetKind,
     AssetRecord,
     AssetRole,
@@ -13,7 +13,7 @@ from bookforge.domain import (
     StoryPack,
     VisualLayer,
 )
-from bookforge.story_store import StoryPackCorruptError, StoryPackStore
+from storylight.story_store import StoryPackCorruptError, StoryPackStore
 
 
 def make_pack(story_id: str = "Moon Gate / Demo") -> StoryPack:

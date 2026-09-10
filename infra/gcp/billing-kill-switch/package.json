@@ -1,8 +1,8 @@
 {
-  "name": "bookforge-billing-kill-switch",
+  "name": "storylight-billing-kill-switch",
   "version": "1.0.0",
   "private": true,
-  "description": "Fail-safe Google Cloud billing disconnect for the Bookforge contest project",
+  "description": "Fail-safe Google Cloud billing disconnect for the Storylight contest project",
   "main": "index.js",
   "engines": {
     "node": "24"

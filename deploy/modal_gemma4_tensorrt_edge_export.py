@@ -2,7 +2,7 @@
 
 This is a finite, target-only TensorRT Edge-LLM preparation job.  It writes a
 unified INT4-AWQ checkpoint and a text-only ONNX checkpoint to the existing
-Bookforge Modal volume.  TensorRT engines remain device-specific and are built
+Storylight Modal volume.  TensorRT engines remain device-specific and are built
 on the Jetson, never on Modal.
 
 Run exactly one guarded attempt::
@@ -26,7 +26,7 @@ from typing import Any
 
 import modal
 
-APP_NAME = "bookforge-gemma4-tensorrt-edge-export"
+APP_NAME = "storylight-gemma4-tensorrt-edge-export"
 EDGELLM_VERSION = "v0.10.0"
 EDGELLM_REVISION = "71dd1bae032e70771265917ec74d3ff4cad07a10"
 MODEL_ID = "google/gemma-4-E2B-it"
@@ -38,7 +38,7 @@ CALIBRATION_SAMPLES = 128
 WORKSPACE_HARD_STOP_USD = 28.0
 FULL_COMMAND_CEILING_USD = 1.30
 
-export_volume = modal.Volume.from_name("bookforge-tensorrt-edge-llm", create_if_missing=True)
+export_volume = modal.Volume.from_name("storylight-tensorrt-edge-llm", create_if_missing=True)
 
 export_image = (
     modal.Image.from_registry("nvcr.io/nvidia/pytorch:25.12-py3")

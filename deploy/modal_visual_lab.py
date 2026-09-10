@@ -1,4 +1,4 @@
-"""Finite Modal visual R&D jobs for Bookforge.
+"""Finite Modal visual R&D jobs for Storylight.
 
 This module intentionally exposes only ``modal run`` entrypoints. It does not
 deploy a persistent endpoint, and each GPU class has a short idle window plus a
@@ -30,7 +30,7 @@ from typing import Any
 
 import modal
 
-APP_NAME = "bookforge-visual-lab"
+APP_NAME = "storylight-visual-lab"
 CACHE_DIR = "/cache"
 MINUTES = 60
 SANA_GPU = "L4"
@@ -77,7 +77,7 @@ runtime_image = (
 )
 
 app = modal.App(APP_NAME)
-model_cache = modal.Volume.from_name("bookforge-model-cache", create_if_missing=True)
+model_cache = modal.Volume.from_name("storylight-model-cache", create_if_missing=True)
 
 with runtime_image.imports():
     import diffusers
@@ -398,7 +398,7 @@ def _budget_types():
     repository_source = Path(__file__).resolve().parents[1] / "src"
     if str(repository_source) not in sys.path:
         sys.path.insert(0, str(repository_source))
-    from bookforge.visual_lab import BudgetEnvelope, GenerationRecord, VisualLabLedger
+    from storylight.visual_lab import BudgetEnvelope, GenerationRecord, VisualLabLedger
 
     return BudgetEnvelope, GenerationRecord, VisualLabLedger
 

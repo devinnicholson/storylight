@@ -7,15 +7,15 @@ from types import SimpleNamespace
 import pytest
 from test_finite_modal_provider import _jpeg
 
-from bookforge import klein_scene_provider as klein
-from bookforge.finite_modal_provider import (
+from storylight import klein_scene_provider as klein
+from storylight.finite_modal_provider import (
     DEPTH_MODEL,
     DEPTH_MODEL_REVISION,
     FastSceneRequest,
     FiniteModalBudgetError,
     FiniteModalProviderError,
 )
-from bookforge.klein_scene_provider import (
+from storylight.klein_scene_provider import (
     MODEL,
     REVISION,
     KleinInvoker,

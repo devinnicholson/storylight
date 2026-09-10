@@ -1,7 +1,7 @@
 import pytest
 from pydantic import ValidationError
 
-from bookforge.scene_facts import (
+from storylight.scene_facts import (
     SceneEventFact,
     SceneFactsGroundingError,
     SceneFactsPrivacyError,

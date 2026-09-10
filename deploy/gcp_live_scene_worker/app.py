@@ -23,13 +23,13 @@ DEPTH_DTYPE = "float16"
 PROVIDER_NAME = "gcp-cloud-run"
 MASTER_JPEG_QUALITY = 95
 DEPTH_JPEG_QUALITY = 85
-MODEL_CACHE = os.environ.get("BOOKFORGE_MODEL_CACHE", "/models/huggingface")
-MODEL_LOAD_STRATEGY = os.environ.get("BOOKFORGE_MODEL_LOAD_STRATEGY", "cpu_then_cuda")
+MODEL_CACHE = os.environ.get("STORYLIGHT_MODEL_CACHE", "/models/huggingface")
+MODEL_LOAD_STRATEGY = os.environ.get("STORYLIGHT_MODEL_LOAD_STRATEGY", "cpu_then_cuda")
 if MODEL_LOAD_STRATEGY not in {"cpu_then_cuda", "direct_cuda"}:
-    raise ValueError("BOOKFORGE_MODEL_LOAD_STRATEGY must be cpu_then_cuda or direct_cuda")
-EXPECTED_GPU = os.environ.get("BOOKFORGE_EXPECTED_GPU", "L4")
+    raise ValueError("STORYLIGHT_MODEL_LOAD_STRATEGY must be cpu_then_cuda or direct_cuda")
+EXPECTED_GPU = os.environ.get("STORYLIGHT_EXPECTED_GPU", "L4")
 GOOGLE_CLOUD_PROJECT = os.environ.get("GOOGLE_CLOUD_PROJECT", "")
-_request_trace: ContextVar[str | None] = ContextVar("bookforge_cloud_trace", default=None)
+_request_trace: ContextVar[str | None] = ContextVar("storylight_cloud_trace", default=None)
 
 
 def _log_metric(event: str, **values: str | int | float | bool) -> None:
@@ -134,7 +134,7 @@ class SceneRuntime:
         }
         if EXPECTED_GPU not in matches or not matches[EXPECTED_GPU]:
             raise RuntimeError(
-                f"Bookforge Cloud Run worker requires {EXPECTED_GPU}, got {gpu_name}"
+                f"Storylight Cloud Run worker requires {EXPECTED_GPU}, got {gpu_name}"
             )
         if expected_arch not in supported_arches:
             raise RuntimeError(
@@ -281,7 +281,7 @@ class SceneRuntime:
         image_gpu_start = torch.cuda.Event(enable_timing=True)
         image_gpu_end = torch.cuda.Event(enable_timing=True)
         image_started = time.perf_counter()
-        with torch.inference_mode(), torch.cuda.nvtx.range("bookforge.sana_sprint"):
+        with torch.inference_mode(), torch.cuda.nvtx.range("storylight.sana_sprint"):
             image_gpu_start.record()
             master = self.image_pipe(
                 prompt=prompt,
@@ -298,7 +298,7 @@ class SceneRuntime:
         depth_gpu_start = torch.cuda.Event(enable_timing=True)
         depth_gpu_end = torch.cuda.Event(enable_timing=True)
         depth_started = time.perf_counter()
-        with torch.inference_mode(), torch.cuda.nvtx.range("bookforge.depth_anything"):
+        with torch.inference_mode(), torch.cuda.nvtx.range("storylight.depth_anything"):
             depth_gpu_start.record()
             depth = self.depth_pipe(master)["depth"].resize((width, height))
             depth_gpu_end.record()
@@ -391,7 +391,7 @@ def _encode_scene_assets(master: Any, depth: Any) -> tuple[bytes, bytes, float]:
         )
         return buffer.getvalue()
 
-    with ThreadPoolExecutor(max_workers=2, thread_name_prefix="bookforge-pack") as pool:
+    with ThreadPoolExecutor(max_workers=2, thread_name_prefix="storylight-pack") as pool:
         master_future = pool.submit(encode_master)
         depth_future = pool.submit(encode_depth)
         master_bytes = master_future.result()
@@ -400,7 +400,7 @@ def _encode_scene_assets(master: Any, depth: Any) -> tuple[bytes, bytes, float]:
 
 
 runtime = SceneRuntime()
-app = FastAPI(title="Bookforge GCP Live Scene Worker", version="1.0.0")
+app = FastAPI(title="Storylight GCP Live Scene Worker", version="1.0.0")
 
 
 @app.get("/health")

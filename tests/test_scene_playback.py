@@ -4,7 +4,7 @@ from dataclasses import replace
 import pytest
 from pydantic import ValidationError
 
-from bookforge.scene_facts import (
+from storylight.scene_facts import (
     SceneEventFact,
     SceneFactsPrivacyError,
     SceneFactsV2,
@@ -14,7 +14,7 @@ from bookforge.scene_facts import (
     SceneTemporalOrderFact,
     SceneTransformationFact,
 )
-from bookforge.scene_playback import (
+from storylight.scene_playback import (
     DisplaySourcePage,
     build_display_plan,
     build_display_story_pack,

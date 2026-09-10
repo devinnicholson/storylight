@@ -4,8 +4,8 @@ from pathlib import Path
 
 import pytest
 
-from bookforge.asr_backend import AsrBackendError
-from bookforge.asr_jetson import WhisperTrtBackend
+from storylight.asr_backend import AsrBackendError
+from storylight.asr_jetson import WhisperTrtBackend
 
 
 class FakeWhisperTrtModel:

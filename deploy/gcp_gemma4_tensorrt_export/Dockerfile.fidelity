@@ -6,11 +6,11 @@ ARG EDGELLM_REVISION=71dd1bae032e70771265917ec74d3ff4cad07a10
 ENV DEBIAN_FRONTEND=noninteractive \
     PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
-    HF_HOME=/tmp/bookforge-export/huggingface \
-    HF_HUB_CACHE=/tmp/bookforge-export/huggingface/hub \
+    HF_HOME=/tmp/storylight-export/huggingface \
+    HF_HUB_CACHE=/tmp/storylight-export/huggingface/hub \
     HF_XET_HIGH_PERFORMANCE=1 \
     TOKENIZERS_PARALLELISM=false \
-    PYTHONPATH=/opt/bookforge
+    PYTHONPATH=/opt/storylight
 
 RUN apt-get update \
     && apt-get install -y --no-install-recommends git \
@@ -23,7 +23,7 @@ RUN apt-get update \
        google-cloud-storage==3.4.1
 
 COPY deploy/gcp_gemma4_tensorrt_export/export_fidelity_candidate.py \
-    /opt/bookforge/deploy/gcp_gemma4_tensorrt_export/export_fidelity_candidate.py
-COPY scripts/validate_fidelity_release.py /opt/bookforge/scripts/validate_fidelity_release.py
+    /opt/storylight/deploy/gcp_gemma4_tensorrt_export/export_fidelity_candidate.py
+COPY scripts/validate_fidelity_release.py /opt/storylight/scripts/validate_fidelity_release.py
 
-ENTRYPOINT ["python", "/opt/bookforge/deploy/gcp_gemma4_tensorrt_export/export_fidelity_candidate.py"]
+ENTRYPOINT ["python", "/opt/storylight/deploy/gcp_gemma4_tensorrt_export/export_fidelity_candidate.py"]

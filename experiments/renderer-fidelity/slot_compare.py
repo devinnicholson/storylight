@@ -8,9 +8,9 @@ from time import perf_counter
 
 import httpx
 
-from bookforge.live_scene_planner import validate_live_scene_plan_privacy
-from bookforge.planner_benchmark import CASES
-from bookforge.tensorrt_slot_client import (
+from storylight.live_scene_planner import validate_live_scene_plan_privacy
+from storylight.planner_benchmark import CASES
+from storylight.tensorrt_slot_client import (
     TENSORRT_SLOT_SYSTEM_PROMPT,
     tensor_slot_wire_plan,
 )

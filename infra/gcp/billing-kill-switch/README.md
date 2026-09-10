@@ -1,4 +1,4 @@
-# Bookforge emergency billing disconnect
+# Storylight emergency billing disconnect
 
 This second-generation Cloud Run function listens only to the project-scoped $175 gross-cost
 emergency budget. At or above $175, it unlinks `your-gcp-project` from its billing account. It deliberately

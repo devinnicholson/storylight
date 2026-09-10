@@ -8,9 +8,9 @@ import json
 import os
 from pathlib import Path
 
-from bookforge.fidelity_benchmark import candidate_identity_from_manifest
-from bookforge.fidelity_manifest import sha256_path
-from bookforge.fidelity_review_evidence import (
+from storylight.fidelity_benchmark import candidate_identity_from_manifest
+from storylight.fidelity_manifest import sha256_path
+from storylight.fidelity_review_evidence import (
     build_contest_evidence,
     build_human_review_evidence,
 )

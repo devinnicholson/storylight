@@ -25,7 +25,7 @@ def test_closure_builder_cli_produces_checksum_bound_cost_and_inventory(
             source,
             {
                 "schema_version": "story-fidelity-provider-cost-v1",
-                "producer": f"bookforge-{provider}-cost-source",
+                "producer": f"storylight-{provider}-cost-source",
                 "status": "final",
                 "run_id": "campaign-v1",
                 "provider": provider,
@@ -55,10 +55,10 @@ def test_closure_builder_cli_produces_checksum_bound_cost_and_inventory(
     assert json.loads(cost_output.read_text())["gross_cost_usd"] == 3.5
 
     producers = {
-        "vertex-jobs": "bookforge-vertex-jobs-snapshot",
-        "cloud-run-services": "bookforge-cloud-run-services-snapshot",
-        "modal-tasks": "bookforge-modal-tasks-snapshot",
-        "modal-functions": "bookforge-modal-functions-snapshot",
+        "vertex-jobs": "storylight-vertex-jobs-snapshot",
+        "cloud-run-services": "storylight-cloud-run-services-snapshot",
+        "modal-tasks": "storylight-modal-tasks-snapshot",
+        "modal-functions": "storylight-modal-functions-snapshot",
     }
     inventory_arguments: list[str] = []
     for cli_name, producer in producers.items():

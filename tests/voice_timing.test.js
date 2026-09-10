@@ -1,7 +1,7 @@
 const assert = require("node:assert/strict");
 const fs = require("node:fs");
 const vm = require("node:vm");
-const {summarize} = require("../src/bookforge/static/voice-timing.js");
+const {summarize} = require("../src/storylight/static/voice-timing.js");
 
 const events = [
   {type: "recording_started", ms: 0},
@@ -37,8 +37,8 @@ assert.equal(summarize([{type: "provider_preconnect_completed", ms: 10, failed: 
 const panel = {hidden: true};
 const output = {textContent: "", closest: () => panel};
 const browser = {window: {}, document: {getElementById: () => output}};
-vm.runInNewContext(fs.readFileSync("src/bookforge/static/voice-timing.js", "utf8"), browser);
-browser.window.renderBookforgeVoiceTiming(events);
+vm.runInNewContext(fs.readFileSync("src/storylight/static/voice-timing.js", "utf8"), browser);
+browser.window.renderStorylightVoiceTiming(events);
 assert.equal(panel.hidden, false);
 assert.deepEqual(JSON.parse(output.textContent), {summary: summarize(events), events});
 console.log("Voice timing: exact job correlation and incomplete traces passed.");

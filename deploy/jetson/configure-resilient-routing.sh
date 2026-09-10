@@ -3,10 +3,10 @@
 
 set -euo pipefail
 
-readonly CONFIG_FILE="/etc/bookforge/bookforge.env"
-readonly PYTHON="/opt/bookforge/.venv/bin/python"
+readonly CONFIG_FILE="/etc/storylight/storylight.env"
+readonly PYTHON="/opt/storylight/.venv/bin/python"
 CLOUD_RUN_URL=""
-TARGET_USER="${BOOKFORGE_SERVICE_USER:-${SUDO_USER:-}}"
+TARGET_USER="${STORYLIGHT_SERVICE_USER:-${SUDO_USER:-}}"
 DRY_RUN=0
 
 usage() {
@@ -14,13 +14,13 @@ usage() {
 Usage: sudo ./deploy/jetson/configure-resilient-routing.sh [options]
 
 Options:
-  --user USER          Select the non-root Bookforge service user.
+  --user USER          Select the non-root Storylight service user.
   --cloud-run-url URL  Add the private Cloud Run RTX service ahead of Vertex.
   --dry-run            Validate and print the non-secret changes without writing.
   -h, --help           Show this help.
 
 With no Cloud Run URL, the route is managed Vertex followed by authenticated
-Modal. Existing Modal credentials and unrelated Bookforge settings are preserved.
+Modal. Existing Modal credentials and unrelated Storylight settings are preserved.
 EOF
 }
 
@@ -47,19 +47,19 @@ if [[ "$(id -u)" -ne 0 ]]; then
   exit 1
 fi
 if [[ ! -f "$CONFIG_FILE" ]]; then
-  printf 'Missing Bookforge environment: %s\n' "$CONFIG_FILE" >&2
+  printf 'Missing Storylight environment: %s\n' "$CONFIG_FILE" >&2
   exit 1
 fi
 if [[ -L "$CONFIG_FILE" || "$(stat -c '%U:%G:%a' "$CONFIG_FILE")" != "root:root:600" ]]; then
-  printf 'Bookforge environment has unsafe ownership, mode, or file type.\n' >&2
+  printf 'Storylight environment has unsafe ownership, mode, or file type.\n' >&2
   exit 1
 fi
 if [[ ! -x "$PYTHON" ]]; then
-  printf 'Missing Bookforge Python runtime: %s\n' "$PYTHON" >&2
+  printf 'Missing Storylight Python runtime: %s\n' "$PYTHON" >&2
   exit 1
 fi
 if [[ ! "$TARGET_USER" =~ ^[a-z_][a-z0-9_-]{0,31}$ ]] || ! id "$TARGET_USER" >/dev/null 2>&1; then
-  printf 'Select a valid Bookforge service user with --user.\n' >&2
+  printf 'Select a valid Storylight service user with --user.\n' >&2
   exit 2
 fi
 TARGET_UID="$(id -u "$TARGET_USER")"
@@ -74,7 +74,7 @@ if [[ -n "$CLOUD_RUN_URL" && ! "$CLOUD_RUN_URL" =~ ^https://[^[:space:]]+$ ]]; t
   exit 2
 fi
 
-"$PYTHON" -c 'import bookforge.provider_router, bookforge.vertex_scene_provider, google.auth'
+"$PYTHON" -c 'import storylight.provider_router, storylight.vertex_scene_provider, google.auth'
 
 "$PYTHON" - "$CONFIG_FILE" "$CLOUD_RUN_URL" "$DRY_RUN" <<'PY'
 import os
@@ -89,30 +89,30 @@ cloud_run_url = sys.argv[2]
 dry_run = sys.argv[3] == "1"
 
 replacements = {
-    "BOOKFORGE_ASSET_MODAL_COMMAND": "/opt/bookforge/.venv/bin/modal",
-    "BOOKFORGE_LIVE_SCENE_BACKEND": "gcp_resilient",
-    "BOOKFORGE_LIVE_SCENE_VERTEX_PROJECT_ID": "your-gcp-project",
-    "BOOKFORGE_LIVE_SCENE_VERTEX_LOCATION": "global",
-    "BOOKFORGE_LIVE_SCENE_VERTEX_MODEL": "gemini-3.1-flash-lite-image",
-    "BOOKFORGE_LIVE_SCENE_VERTEX_TIMEOUT_SECONDS": "90",
-    "BOOKFORGE_LIVE_SCENE_VERTEX_SESSION_COST_CAP_USD": "0.50",
-    "BOOKFORGE_LIVE_SCENE_VERTEX_ESTIMATED_IMAGE_USD": "0.034",
-    "BOOKFORGE_LIVE_SCENE_ROUTING_PROBE_TIMEOUT_SECONDS": "2",
-    "BOOKFORGE_LIVE_SCENE_ROUTING_FAILURE_COOLDOWN_SECONDS": "300",
-    "BOOKFORGE_LIVE_SCENE_ENABLE_PREVIEW": "false",
-    "BOOKFORGE_LIVE_SCENE_ENABLE_MOTION": "false",
-    "BOOKFORGE_LIVE_SCENE_AUTO_PREWARM_ON_SUBMIT": "false",
-    "BOOKFORGE_LIVE_SCENE_FIDELITY_MODE": "deferred",
+    "STORYLIGHT_ASSET_MODAL_COMMAND": "/opt/storylight/.venv/bin/modal",
+    "STORYLIGHT_LIVE_SCENE_BACKEND": "gcp_resilient",
+    "STORYLIGHT_LIVE_SCENE_VERTEX_PROJECT_ID": "your-gcp-project",
+    "STORYLIGHT_LIVE_SCENE_VERTEX_LOCATION": "global",
+    "STORYLIGHT_LIVE_SCENE_VERTEX_MODEL": "gemini-3.1-flash-lite-image",
+    "STORYLIGHT_LIVE_SCENE_VERTEX_TIMEOUT_SECONDS": "90",
+    "STORYLIGHT_LIVE_SCENE_VERTEX_SESSION_COST_CAP_USD": "0.50",
+    "STORYLIGHT_LIVE_SCENE_VERTEX_ESTIMATED_IMAGE_USD": "0.034",
+    "STORYLIGHT_LIVE_SCENE_ROUTING_PROBE_TIMEOUT_SECONDS": "2",
+    "STORYLIGHT_LIVE_SCENE_ROUTING_FAILURE_COOLDOWN_SECONDS": "300",
+    "STORYLIGHT_LIVE_SCENE_ENABLE_PREVIEW": "false",
+    "STORYLIGHT_LIVE_SCENE_ENABLE_MOTION": "false",
+    "STORYLIGHT_LIVE_SCENE_AUTO_PREWARM_ON_SUBMIT": "false",
+    "STORYLIGHT_LIVE_SCENE_FIDELITY_MODE": "deferred",
 }
 if cloud_run_url:
     replacements.update(
         {
-            "BOOKFORGE_LIVE_SCENE_GCP_URL": cloud_run_url,
-            "BOOKFORGE_LIVE_SCENE_GCP_AUDIENCE": cloud_run_url,
-            "BOOKFORGE_LIVE_SCENE_GCP_IMPERSONATE_SERVICE_ACCOUNT": (
-                "bookforge-renderer@your-gcp-project.iam.gserviceaccount.com"
+            "STORYLIGHT_LIVE_SCENE_GCP_URL": cloud_run_url,
+            "STORYLIGHT_LIVE_SCENE_GCP_AUDIENCE": cloud_run_url,
+            "STORYLIGHT_LIVE_SCENE_GCP_IMPERSONATE_SERVICE_ACCOUNT": (
+                "storylight-renderer@your-gcp-project.iam.gserviceaccount.com"
             ),
-            "BOOKFORGE_LIVE_SCENE_GCP_GPU": "RTX_PRO_6000",
+            "STORYLIGHT_LIVE_SCENE_GCP_GPU": "RTX_PRO_6000",
         }
     )
 
@@ -128,7 +128,7 @@ for line in lines:
 for name, value in remaining.items():
     updated.append(f"{name}={value}")
 
-print("Bookforge resilient routing configuration:")
+print("Storylight resilient routing configuration:")
 for name in sorted(replacements):
     print(f"  {name}={replacements[name]}")
 if dry_run:
@@ -143,7 +143,7 @@ os.chmod(backup_path, 0o600)
 
 descriptor, temporary_name = tempfile.mkstemp(
     dir=config_path.parent,
-    prefix=".bookforge.env.resilient.",
+    prefix=".storylight.env.resilient.",
 )
 try:
     with os.fdopen(descriptor, "w") as stream:
@@ -167,26 +167,26 @@ fi
 # cannot read the interactive user's ~/.config/gcloud. Copy only ADC, with
 # private permissions, so google-auth works without exposing the rest of HOME.
 source_adc="$TARGET_HOME/.config/gcloud/application_default_credentials.json"
-service_gcloud_dir="/var/cache/bookforge/home/.config/gcloud"
+service_gcloud_dir="/var/cache/storylight/home/.config/gcloud"
 if [[ -f "$source_adc" ]]; then
   install -d -o "$TARGET_UID" -g "$TARGET_GID" -m 0700 \
-    /var/cache/bookforge/home \
-    /var/cache/bookforge/home/.config \
+    /var/cache/storylight/home \
+    /var/cache/storylight/home/.config \
     "$service_gcloud_dir"
   install -o "$TARGET_UID" -g "$TARGET_GID" -m 0600 \
     "$source_adc" "$service_gcloud_dir/application_default_credentials.json"
-  printf 'Installed ADC into the private Bookforge service home.\n'
+  printf 'Installed ADC into the private Storylight service home.\n'
 else
   printf 'ADC is not configured; the router will safely use Modal fallback.\n' >&2
 fi
 
-systemctl restart "bookforge@${TARGET_USER}.service" "bookforge-controller@${TARGET_USER}.service"
+systemctl restart "storylight@${TARGET_USER}.service" "storylight-controller@${TARGET_USER}.service"
 for _ in $(seq 1 30); do
   if curl --fail --silent --max-time 1 http://127.0.0.1:8080/readyz >/dev/null; then
-    printf 'Bookforge resilient API is ready.\n'
+    printf 'Storylight resilient API is ready.\n'
     exit 0
   fi
   sleep 1
 done
-printf 'Bookforge API did not become ready after the routing switch.\n' >&2
+printf 'Storylight API did not become ready after the routing switch.\n' >&2
 exit 1

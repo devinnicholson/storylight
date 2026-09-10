@@ -1,94 +1,33 @@
 # Architecture
 
-This is an early architecture snapshot, not the current deployment inventory. The
-[September 5 system audit](system-audit-2026-09-05.md) describes the implemented flows and live
-configuration. In particular, the current audio path uses cumulative clips and monotonic text
-alignment; automatic camera page tracking is not implemented, and GCP live providers now exist.
+Storylight turns a description into artwork for a local browser or projector. It also supports reading a known passage against a prepared Story Pack. These are separate flows: voice-to-scene creates new artwork, while known-text reading advances existing visuals.
 
-Bookforge has two deliberately separate planes.
-
-## Private live plane
-
-The Jetson owns the microphone, camera, reader profile, forced alignment, latency-critical visual
-triggers, and intervention decisions. Raw audio and video do not leave the device.
+## Voice to scene
 
 ```text
-microphone -> VAD -> streaming ASR -> forced alignment -> event bus -> projection renderer
-                                                        -> Gemma intervention policy (as needed)
-camera     -> page/calibration tracking -------------------------------^
+Browser microphone → local Whisper → transcript
+                                       ↓
+                            local scene and privacy checks
+                                       ↓
+                              cloud image generation
+                                       ↓
+                         completed artwork → local projector
 ```
 
-Gemma is not in the ordinary word-to-animation path. Known words trigger cached assets
-deterministically. Gemma receives a small structured reading event only when the policy needs a
-judgment, and must answer using a constrained schema and allowlist.
+The FastAPI service serves the workbench, projector, scene jobs and reader sessions. In the demonstrated split setup, a Mac handles microphone capture and local transcription; a loopback gateway routes scene requests through SSH to the Jetson. A single-machine installation can serve the same interface without that gateway.
 
-The current laptop vertical slice uses rolling two-second cumulative ASR clips and a deterministic
-monotonic aligner. The projector subscribes to
-`/v1/reader-sessions/{session_id}/events`; each ordered envelope contains a sequence number, event
-type, timestamp, reading generation, and strict payload. Reset advances the generation, so delayed
-ASR from an earlier reading is rejected. Reconnects recover the authoritative page identity,
-generation, and aligned position before rendering. The same projector also accepts typed cumulative transcripts,
-so an ASR or microphone failure does not end a live demonstration. On Jetson, a true streaming
-backend can replace the clip transcriber without changing alignment or projector contracts.
+The voice compiler combines bounded description parsing with an optional local spaCy language service. Typed scene facts retain supported subjects, actions, relationships and negative constraints. Source-grounding and privacy checks run before a visual prompt reaches the configured renderer. Other authoring and intervention paths can use a configured language model; the voice path is not simply an unrestricted language-model prompt.
 
-On Jetson, `WhisperTrtBackend` lazy-loads one persistent engine and serializes GPU access. Compiled
-Story Packs are written atomically with private permissions under the systemd-managed state
-directory; the projector retrieves the latest validated pack from the local API, so playback does
-not depend on a particular Chromium profile or a network connection. The browser-local copy remains
-a recovery fallback.
+The frontend can prepare a scene from a partial transcript, then supersede it when the description changes. One image job runs at a time, and queued intermediate descriptions are replaced by the latest one. Job identity and validated scene digests prevent a stale result from replacing the current scene. Voice playback withholds incomplete artwork and keeps the previous scene visible.
 
-Prepared book packages cross into the live plane through `bookforge.pack_installer`. It validates
-the Story Pack, verifies every ready media checksum, restricts playable file types, prevents
-package-root escape, copies media atomically into the private cache, and rewrites asset locations
-to loopback API URLs. The renderer never receives arbitrary device filesystem paths.
+## Reading and projection
 
-## Cloud authoring plane
+Story Packs contain validated scene descriptions, trigger information and asset references. The reader aligns cumulative transcript text with a known passage and publishes local session events. The projector follows those events and displays cached artwork with browser animation or depth-based parallax when suitable assets exist. Playback does not require a fresh model call for each word.
 
-The cloud sees publisher-supplied book content, not a child's live session. The Story Compiler
-turns pages into SceneSpec v2: a validated 16:9 master prompt, spatial composition, depth ordering,
-camera motion, ambience, deterministic word triggers, literacy scaffolds, and comprehension prompts.
-The provider-neutral Scene Foundry turns that specification into a finished master plus depth
-sidecar, caches both by checksum, and only then promotes the complete Story Pack.
+Depth assets depend on the provider: a depth estimate and an authored projection gradient are not interchangeable geometric measurements. Automatic camera page tracking and demonstrated improvements in reading outcomes are not established features.
 
-```text
-book input -> Bookforge API -> Gemma -> SceneSpec v2 -> AssetGenerator -> master + depth
-                                                                  -> checksummed Story Pack
-                                                                  -> downloaded to edge SSD
-```
+## Deployment and research
 
-The API uses the same structured model client locally and in GCP:
+Image providers include managed Google Cloud and GPU-worker integrations. Cloud credentials remain server-side. The exact data boundary depends on configuration; see [privacy](privacy.md).
 
-- `ollama`: Mac development and the first Gemma smoke tests.
-- `openai`: vLLM or NVIDIA NIM-compatible serving on GKE.
-- `fake`: deterministic tests with no model process.
-
-Asset generation currently supports:
-
-- `modal`: temporary NVIDIA T4 authoring with SDXL-Turbo and Depth Anything V2 in one call.
-- `mflux`: local Apple Silicon generation and Depth Pro fallback.
-- `fake`: deterministic contract tests.
-- GCP/Cosmos: planned providers behind the same `AssetGenerator` boundary.
-
-Playback never calls any of these authoring providers. The projector loads only loopback cache URLs.
-Its `offline=1` mode rejects non-origin fetches, and its response CSP restricts images, media,
-scripts, styles, and WebSocket traffic to the local application boundary.
-
-## Trust boundary
-
-| Local only | Cloud-authoring input |
-| --- | --- |
-| Raw audio and video | Book text and publisher artwork |
-| Voice and face features | Reading-level target |
-| Mistakes, pauses, and reader profile | Visual style and curriculum constraints |
-| Live decisions | Optional anonymous aggregate measurements |
-
-Reader-session and sensitive audio/model endpoints reject non-loopback connections and forwarded
-client headers. Their
-in-memory transcripts and word state disappear with the process; the browser never sends raw audio
-to the projector or cloud compiler.
-
-The supervised edge service binds only to loopback and refuses a remote model endpoint in Jetson
-mode. Hardware acceptance maps the running process's socket descriptors through `/proc` and fails
-closed when visibility is incomplete, a listener is exposed, or active TCP/UDP traffic is not
-loopback. That is process-level evidence; the final whole-device offline claim additionally
-requires a network-disabled rehearsal or independent packet capture.
+The Gemma adapter and compiled-cache experiments are isolated research work. Their improved extraction timings are not deployed microphone-to-image performance. The learned adapter failed its refusal gate and has not replaced the working voice compiler. See [research results](research-results.md) for measurements and limits.

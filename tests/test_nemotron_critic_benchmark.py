@@ -4,8 +4,8 @@ import hashlib
 import httpx
 import pytest
 
-from bookforge import nemotron_critic_benchmark as benchmark
-from bookforge.nemotron_critic import (
+from storylight import nemotron_critic_benchmark as benchmark
+from storylight.nemotron_critic import (
     NemotronCriticEvidence,
     NemotronCriticUnavailableError,
     NemotronCriticVerdict,

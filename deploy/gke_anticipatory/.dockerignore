@@ -1,6 +1,6 @@
 .git
 .venv
-.bookforge
+.storylight
 artifacts
 benchmarks
 output

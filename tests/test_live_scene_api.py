@@ -6,20 +6,20 @@ from uuid import uuid4
 
 import pytest
 
-os.environ["BOOKFORGE_MODEL_BACKEND"] = "fake"
-os.environ["BOOKFORGE_MODEL_NAME"] = "fake"
-os.environ["BOOKFORGE_ASSET_BACKEND"] = "fake"
-os.environ["BOOKFORGE_DATA_DIR"] = "/tmp/bookforge-live-scene-api-tests/data"
-os.environ["BOOKFORGE_CACHE_DIR"] = "/tmp/bookforge-live-scene-api-tests/cache"
+os.environ["STORYLIGHT_MODEL_BACKEND"] = "fake"
+os.environ["STORYLIGHT_MODEL_NAME"] = "fake"
+os.environ["STORYLIGHT_ASSET_BACKEND"] = "fake"
+os.environ["STORYLIGHT_DATA_DIR"] = "/tmp/storylight-live-scene-api-tests/data"
+os.environ["STORYLIGHT_CACHE_DIR"] = "/tmp/storylight-live-scene-api-tests/cache"
 
 from fastapi.testclient import TestClient  # noqa: E402
 
-from bookforge.api import (  # noqa: E402
+from storylight.api import (  # noqa: E402
     _completed_pack_matches_planner_mode,
     app,
 )
-from bookforge.config import Settings  # noqa: E402
-from bookforge.live_scene import DETERMINISTIC_LIVE_SCENE_COMPILER_MODEL  # noqa: E402
+from storylight.config import Settings  # noqa: E402
+from storylight.live_scene import DETERMINISTIC_LIVE_SCENE_COMPILER_MODEL  # noqa: E402
 
 
 @pytest.fixture(autouse=True)
@@ -33,7 +33,7 @@ def _isolated_live_scene_settings(monkeypatch, tmp_path) -> None:
         data_dir=tmp_path / "data",
         cache_dir=tmp_path / "cache",
     )
-    monkeypatch.setattr("bookforge.api.get_settings", lambda: settings)
+    monkeypatch.setattr("storylight.api.get_settings", lambda: settings)
 
 
 def _payload() -> dict[str, object]:
@@ -68,7 +68,7 @@ def test_guarded_create_uses_empty_session_epoch_and_replays_without_generation(
         app.state.live_scenes.provider = provider
         empty = client.get("/v1/live-scene-sessions/typed-scene-demo")
         assert empty.status_code == 404
-        server = empty.headers["x-bookforge-server-instance-id"]
+        server = empty.headers["x-storylight-server-instance-id"]
         payload = {**_payload(), "submission_id": str(uuid4()),
                    "expected_server_instance_id": server, "expected_session_revision": 0}
         first = client.post("/v1/live-scenes", json=payload)
@@ -83,18 +83,18 @@ def test_guarded_create_uses_empty_session_epoch_and_replays_without_generation(
                         {"expected_server_instance_id": f"server_{'0' * 32}"}]:
             assert client.post("/v1/live-scenes", json={**payload, **changes}).status_code == 409
         assert provider.calls == 1
-        revision = int(first.headers["x-bookforge-session-revision"])
+        revision = int(first.headers["x-storylight-session-revision"])
         replacement = client.post("/v1/live-scenes", json={
             **payload, "submission_id": str(uuid4()), "expected_session_revision": revision,
         })
         assert replacement.status_code == 202
         old = client.post("/v1/live-scenes", json=payload)
         assert old.status_code == 202 and old.json()["job_id"] == job_id
-        assert "x-bookforge-session-revision" not in old.headers
+        assert "x-storylight-session-revision" not in old.headers
 
 
 def test_model_planner_rejects_completed_deterministic_fallback_cache() -> None:
-    from bookforge.live_scene_planner import LIVE_SCENE_RENDER_CONTRACT_REVISION
+    from storylight.live_scene_planner import LIVE_SCENE_RENDER_CONTRACT_REVISION
 
     stale_deterministic = SimpleNamespace(
         compiler_model="deterministic-live-scene-planner-v1", compiler_contract_revision=None
@@ -124,7 +124,7 @@ def test_model_planner_rejects_completed_deterministic_fallback_cache() -> None:
 
 
 def test_candidate_and_full_render_contract_caches_are_not_interchangeable() -> None:
-    from bookforge.live_scene_planner import (
+    from storylight.live_scene_planner import (
         CONCISE_RENDER_CONTRACT_REVISION,
         LIVE_SCENE_RENDER_CONTRACT_REVISION,
     )
@@ -146,8 +146,8 @@ def test_live_scene_api_progresses_to_resolvable_motion_scene() -> None:
     with TestClient(app) as client:
         created = client.post("/v1/live-scenes", json=_payload())
         assert created.status_code == 202
-        assert created.headers["x-bookforge-server-instance-id"]
-        assert int(created.headers["x-bookforge-session-revision"]) >= 1
+        assert created.headers["x-storylight-server-instance-id"]
+        assert int(created.headers["x-storylight-session-revision"]) >= 1
         job_id = created.json()["job_id"]
 
         events = client.get(f"/v1/live-scenes/{job_id}/events")

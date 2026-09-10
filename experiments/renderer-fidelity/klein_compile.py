@@ -13,7 +13,7 @@ import modal
 from modal_compare import MODELS, PROMPTS, STYLE, SUFFIX
 from modal_compare import image as base_image
 
-app = modal.App("bookforge-klein-compile-comparison")
+app = modal.App("storylight-klein-compile-comparison")
 image = base_image.add_local_file(
     Path(__file__).with_name("modal_compare.py"), "/root/modal_compare.py"
 )

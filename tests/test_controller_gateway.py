@@ -5,7 +5,7 @@ from fastapi import FastAPI, Request
 from fastapi.responses import HTMLResponse, StreamingResponse
 from fastapi.testclient import TestClient
 
-from bookforge.controller_gateway import (
+from storylight.controller_gateway import (
     ControllerGatewaySettings,
     _route_allowed,
     create_controller_gateway,
@@ -66,10 +66,10 @@ def _pair(client: TestClient) -> None:
     assert response.status_code == 200
     assert response.json() == {
         "ready": True,
-        "redirect": "/workbench?session=bookforge-live",
+        "redirect": "/workbench?session=storylight-live",
     }
     cookie = response.headers["set-cookie"]
-    assert "bookforge_controller=" in cookie
+    assert "storylight_controller=" in cookie
     assert "HttpOnly" in cookie
     assert "SameSite=strict" in cookie
 
@@ -124,13 +124,13 @@ def test_paired_gateway_proxies_only_controller_routes_and_strips_forwarding_hea
 def test_gateway_streams_session_events_and_enforces_request_limit() -> None:
     with TestClient(_gateway()) as client:
         _pair(client)
-        events = client.get("/v1/live-scene-sessions/bookforge-live/events")
+        events = client.get("/v1/live-scene-sessions/storylight-live/events")
         oversized = client.post("/v1/live-scenes", content=b"x" * (64 * 1024 + 1))
 
     assert events.status_code == 200
     assert events.headers["content-type"].startswith("text/event-stream")
     assert "event: scene.session" in events.text
-    assert "data: bookforge-live" in events.text
+    assert "data: storylight-live" in events.text
     assert oversized.status_code == 413
 
 

@@ -433,7 +433,7 @@ def test_matrix_shapes_match_actual_pinned_model_on_meta_device():
     torch = pytest.importorskip("torch")
     transformers = pytest.importorskip("transformers")
     directory = Path(
-        os.environ.get("BOOKFORGE_V3_TOKENIZER_DIR", "/private/tmp/bookforge-v3-tokenizer")
+        os.environ.get("STORYLIGHT_V3_TOKENIZER_DIR", "/private/tmp/storylight-v3-tokenizer")
     )
     if not directory.exists():
         pytest.skip("Pinned local configuration is unavailable")

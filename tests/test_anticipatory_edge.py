@@ -7,7 +7,7 @@ from datetime import UTC, datetime, timedelta
 import httpx
 import pytest
 
-from bookforge.anticipatory import (
+from storylight.anticipatory import (
     AnticipationMetrics,
     AnticipationSource,
     AnticipationStatus,
@@ -15,7 +15,7 @@ from bookforge.anticipatory import (
     CandidateRecord,
     CandidateState,
 )
-from bookforge.anticipatory_edge import (
+from storylight.anticipatory_edge import (
     AnticipatoryEdgeClient,
     AnticipatoryEdgeCoordinator,
     AnticipatoryEdgeError,
@@ -23,8 +23,8 @@ from bookforge.anticipatory_edge import (
     LocalAnticipationPrepareRequest,
     scene_spec_from_local_plan,
 )
-from bookforge.domain import ModelMetrics
-from bookforge.live_scene_planner import (
+from storylight.domain import ModelMetrics
+from storylight.live_scene_planner import (
     LiveScenePlacedLayerPlan,
     LiveScenePlan,
     LiveScenePlanningResult,
@@ -132,7 +132,7 @@ def test_edge_client_fetches_fixed_path_assets_and_verifies_both_checksums() -> 
                 transport=httpx.MockTransport(handler), **kwargs
             ),
         )
-        from bookforge.anticipatory import RenderedScene
+        from storylight.anticipatory import RenderedScene
 
         scene = RenderedScene(
             master_ref=f"asset_{master_sha}",

@@ -4,7 +4,7 @@ import httpx
 import pytest
 from fastapi.testclient import TestClient
 
-from bookforge.voice_gateway import create_voice_gateway
+from storylight.voice_gateway import create_voice_gateway
 
 
 class Stream(httpx.AsyncByteStream):
@@ -46,8 +46,8 @@ def test_local_assets_asr_scene_headers_and_sse_cleanup():
             headers={
                 "content-type": "text/event-stream",
                 "set-cookie": "private=value",
-                "x-bookforge-server-instance-id": "instance-a",
-                "x-bookforge-session-revision": "2",
+                "x-storylight-server-instance-id": "instance-a",
+                "x-storylight-session-revision": "2",
             },
             stream=stream,
         )
@@ -85,8 +85,8 @@ def test_local_assets_asr_scene_headers_and_sse_cleanup():
         assert calls[-1].url.port == 18766
         response = client.post("/v1/live-scenes", json={"text": "public synthetic scene"})
         assert response.status_code == 202 and calls[-1].url.port == 18768
-        assert response.headers["x-bookforge-server-instance-id"] == "instance-a"
-        assert response.headers["x-bookforge-session-revision"] == "2"
+        assert response.headers["x-storylight-server-instance-id"] == "instance-a"
+        assert response.headers["x-storylight-session-revision"] == "2"
         assert "set-cookie" not in response.headers
         event = client.get("/v1/live-scene-sessions/demo/events?after=2")
         assert event.status_code == 200 and event.content.startswith(b"event:")

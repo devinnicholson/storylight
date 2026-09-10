@@ -12,14 +12,14 @@ from dataclasses import asdict
 from pathlib import Path
 from typing import Any
 
-from bookforge.fidelity_benchmark import (
+from storylight.fidelity_benchmark import (
     CRITICAL_CATEGORIES,
     DEFAULT_PROMOTION_THRESHOLDS,
     FidelitySummary,
     candidate_identity_from_manifest,
     population_contract_from_manifest,
 )
-from bookforge.fidelity_schema import DatasetSplit
+from storylight.fidelity_schema import DatasetSplit
 
 _SHA256 = re.compile(r"[a-f0-9]{64}\Z")
 _ACCEPTED_ENGINE_SHA256 = "95b69991b68c57a2d2d4bfa4116feb9ec57295588551d109353a42a9c16c4fdf"
@@ -212,7 +212,7 @@ def build_development_gate(
     passed = all(checks.values())
     return {
         "schema_version": "1.0",
-        "producer": "bookforge-jetson-candidate-development-gate",
+        "producer": "storylight-jetson-candidate-development-gate",
         "status": "passed" if passed else "rejected",
         "candidate_identity": asdict(identity),
         "training_run_id": training_run_id,

@@ -2,7 +2,7 @@ from copy import deepcopy
 
 import pytest
 
-from bookforge.visual_selection import (
+from storylight.visual_selection import (
     VisualSelectionError,
     build_selection_report,
     score_candidate,

@@ -1,4 +1,4 @@
-"""Modal GPU scene generation for Bookforge.
+"""Modal GPU scene generation for Storylight.
 
 Run a real generation from the repository root with:
 
@@ -15,7 +15,7 @@ from pathlib import Path
 
 import modal
 
-APP_NAME = "bookforge-scene-foundry"
+APP_NAME = "storylight-scene-foundry"
 CACHE_DIR = "/cache"
 MINUTES = 60
 IMAGE_MODEL = "stabilityai/sdxl-turbo"
@@ -40,7 +40,7 @@ runtime_image = (
 )
 
 app = modal.App(APP_NAME)
-model_cache = modal.Volume.from_name("bookforge-model-cache", create_if_missing=True)
+model_cache = modal.Volume.from_name("storylight-model-cache", create_if_missing=True)
 
 with runtime_image.imports():
     import torch

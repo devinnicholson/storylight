@@ -1,7 +1,7 @@
 import pytest
 
-from bookforge.privacy_policy import printed_source_payload_candidates, proper_name_candidates
-from bookforge.scene_facts import (
+from storylight.privacy_policy import printed_source_payload_candidates, proper_name_candidates
+from storylight.scene_facts import (
     SceneFactsPrivacyError,
     SceneFactsV2,
     SceneSettingFact,
@@ -90,7 +90,7 @@ def test_asr_breed_capitalization_keeps_explicit_names_private():
 
 @pytest.mark.parametrize("payload", ["password hunter2", "credential abracadabra"])
 def test_adapter_and_wire_compiler_reject_sensitive_noun_payloads(payload):
-    from bookforge.live_scene_facts import adapt_live_scene_facts
+    from storylight.live_scene_facts import adapt_live_scene_facts
 
     source = f"In a forest, a fox lifts a {payload}. A rainbow appears."
     result = adapt_live_scene_facts(

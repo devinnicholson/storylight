@@ -2,7 +2,7 @@
 
 import pytest
 
-from bookforge.scene_facts import (
+from storylight.scene_facts import (
     SceneFactsGroundingError,
     SceneFactsV2,
     SceneObjectFact,

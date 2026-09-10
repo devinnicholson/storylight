@@ -16,13 +16,13 @@ import urllib.error
 import urllib.request
 from pathlib import Path
 
-PLANNER = "bookforge-tensorrt-planner.service"
-KIOSK = "bookforge-kiosk.service"
-FALLBACK = "bookforge-gemma.service"
+PLANNER = "storylight-tensorrt-planner.service"
+KIOSK = "storylight-kiosk.service"
+FALLBACK = "storylight-gemma.service"
 PORT = 11439
-ROOT = Path.home() / ".local/share/bookforge/tensorrt-edgellm-v0.10.0"
+ROOT = Path.home() / ".local/share/storylight/tensorrt-edgellm-v0.10.0"
 ENGINE = ROOT / "models/gemma4-e2b-it-int4-awq-v010/engines/llm"
-RUNNER = "/opt/bookforge/deploy/jetson/run-tensorrt-edge-server.sh"
+RUNNER = "/opt/storylight/deploy/jetson/run-tensorrt-edge-server.sh"
 NSYS = "/opt/nvidia/nsight-systems/2026.3.1/bin/nsys"
 PASSAGES = [
     "A silver fox carries a brass lantern through a moonlit forest.",
@@ -97,7 +97,7 @@ def run_window(output: Path, profile: bool, graph_detail: str = "graph") -> dict
         for key in ("HOME", "USER", "PATH", "XDG_RUNTIME_DIR")
         if key in os.environ
     }
-    env.update(BOOKFORGE_EDGELLM_SERVER_PORT=str(PORT), EDGELLM_GEMMA4_PLE_STORAGE_BACKED="1")
+    env.update(STORYLIGHT_EDGELLM_SERVER_PORT=str(PORT), EDGELLM_GEMMA4_PLE_STORAGE_BACKED="1")
     command = [RUNNER, str(ENGINE)]
     if profile:
         command = [

@@ -15,5 +15,4 @@ USER 65532:65532
 
 EXPOSE 8080
 
-CMD ["sh", "-c", "uvicorn bookforge.api:app --host 0.0.0.0 --port ${PORT}"]
-
+CMD ["sh", "-c", "uvicorn storylight.api:app --host 0.0.0.0 --port ${PORT}"]

@@ -9,7 +9,7 @@ from fastapi import FastAPI, HTTPException
 from fastapi.responses import FileResponse, HTMLResponse
 
 ROOT = Path(__file__).resolve().parents[1]
-DATA = ROOT / ".bookforge/overnight-20260904"
+DATA = ROOT / ".storylight/overnight-20260904"
 CORPUS = json.loads((ROOT / "experiments/renderer-fidelity/overnight-corpus.json").read_text())
 app = FastAPI()
 
@@ -21,7 +21,7 @@ def gallery(split: str = "validation", start: int = 0):
     if start < 0 or start >= len(CORPUS[split]):
         raise HTTPException(404)
     result = [
-        "<html><head><title>Bookforge fidelity comparison</title><style>",
+        "<html><head><title>Storylight fidelity comparison</title><style>",
         "body{background:#101720;color:#e8edf4;font:14px system-ui;margin:20px}",
         "article{margin:16px 0}.pair{display:grid;grid-template-columns:1fr 1fr;gap:12px}",
         "img{width:100%}p{margin:6px 0}h2{font-size:16px}a{color:#a8d9ff}",

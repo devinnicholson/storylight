@@ -26,7 +26,7 @@ Options:
   --dry-run     Verify inputs and print isolated build paths without changing files.
   -h, --help    Show this help.
 
-Run this wrapper as the Bookforge user, never with elevated privileges. A failed content-addressed
+Run this wrapper as the Storylight user, never with elevated privileges. A failed content-addressed
 build is retained as terminal evidence and is never overwritten or promoted.
 EOF
 }
@@ -58,7 +58,7 @@ while (($#)); do
 done
 
 if [[ ${EUID:-$(id -u)} -eq 0 ]]; then
-  printf 'Run the trained candidate builder as the Bookforge user, not root.\n' >&2
+  printf 'Run the trained candidate builder as the Storylight user, not root.\n' >&2
   exit 64
 fi
 if [[ -z "$export_bundle" || -z "$output" ]] \
@@ -90,10 +90,10 @@ dataset_manifest_sha256="$(manifest_field dataset_manifest_sha256)"
 training_run_id="$(manifest_field training_run_id)"
 readonly candidate_id source_files_sha256 source_release_sha256 config_sha256
 readonly dataset_manifest_sha256 training_run_id
-readonly install_root="${BOOKFORGE_EDGELLM_ROOT:-$HOME/.local/share/bookforge/tensorrt-edgellm-v0.10.0}"
-readonly build_root="${BOOKFORGE_TRAINED_CANDIDATE_BUILD_ROOT:-$install_root/trained-candidate-builds}"
+readonly install_root="${STORYLIGHT_EDGELLM_ROOT:-$HOME/.local/share/storylight/tensorrt-edgellm-v0.10.0}"
+readonly build_root="${STORYLIGHT_TRAINED_CANDIDATE_BUILD_ROOT:-$install_root/trained-candidate-builds}"
 readonly model_root="$build_root/$candidate_id/${export_manifest_sha256:0:20}/model"
-readonly builder="${BOOKFORGE_TRAINED_CANDIDATE_BUILDER:-$DEFAULT_BUILDER}"
+readonly builder="${STORYLIGHT_TRAINED_CANDIDATE_BUILDER:-$DEFAULT_BUILDER}"
 
 if [[ -e "$model_root" || -L "$model_root" || -e "$output" || -L "$output" ]]; then
   printf 'Refusing to overwrite candidate build state or output.\n' >&2
@@ -127,7 +127,7 @@ if ((dry_run == 1)); then
   exit 0
 fi
 
-timeout_bin="${BOOKFORGE_TIMEOUT_BIN:-}"
+timeout_bin="${STORYLIGHT_TIMEOUT_BIN:-}"
 if [[ -z "$timeout_bin" ]]; then
   timeout_bin="$(command -v timeout || true)"
 fi
@@ -166,7 +166,7 @@ python3 "$VERIFIER" \
   --verify-only >/dev/null
 
 "$timeout_bin" --signal=TERM --kill-after=30s "$BUILD_TIMEOUT_SECONDS" \
-  env BOOKFORGE_EDGELLM_MODEL_ROOT="$model_root" "$builder"
+  env STORYLIGHT_EDGELLM_MODEL_ROOT="$model_root" "$builder"
 
 readonly engine="$model_root/engines/llm/llm.engine"
 if [[ ! -s "$engine" || -L "$engine" ]]; then

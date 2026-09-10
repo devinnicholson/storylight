@@ -1,6 +1,6 @@
 {
   "schema_version": 1,
-  "environment": "/opt/bookforge/.venv-voice-language",
+  "environment": "/opt/storylight/.venv-voice-language",
   "python": "3.12.3",
   "architecture": "aarch64",
   "cpu_only": true,

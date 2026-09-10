@@ -7,7 +7,7 @@ engines are hardware-specific and must be built on the target Jetson.
 Run the bounded export, then download the resulting directory::
 
     modal run deploy/modal_tensorrt_edge_export.py::export_cli
-    modal volume get bookforge-tensorrt-edge-llm \
+    modal volume get storylight-tensorrt-edge-llm \
       qwen2.5-0.5b-instruct-awq-v010/onnx artifacts/tensorrt-edge-llm/onnx
 
 The 1.5B shadow candidate uses the same pinned exporter image and volume::
@@ -26,7 +26,7 @@ from typing import Any
 
 import modal
 
-APP_NAME = "bookforge-tensorrt-edge-export"
+APP_NAME = "storylight-tensorrt-edge-export"
 EDGELLM_VERSION = "v0.10.0"
 EDGELLM_REVISION = "71dd1bae032e70771265917ec74d3ff4cad07a10"
 MODEL_ID = "Qwen/Qwen2.5-0.5B-Instruct-AWQ"
@@ -38,7 +38,7 @@ QWEN15_EXPORT_ID = "qwen2.5-1.5b-instruct-awq-v010"
 EXPORT_ROOT = Path("/exports")
 TIMEOUT_SECONDS = 1_800
 
-export_volume = modal.Volume.from_name("bookforge-tensorrt-edge-llm", create_if_missing=True)
+export_volume = modal.Volume.from_name("storylight-tensorrt-edge-llm", create_if_missing=True)
 
 export_image = (
     modal.Image.from_registry("nvcr.io/nvidia/pytorch:25.12-py3")

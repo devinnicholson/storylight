@@ -16,8 +16,8 @@ from modal_compare import PROMPTS, STYLE
 
 
 def contract_cases():
-    from bookforge.live_scene_planner import validate_live_scene_plan_privacy
-    from bookforge.tensorrt_slot_client import _semantic_privacy_separator, tensor_slot_wire_plan
+    from storylight.live_scene_planner import validate_live_scene_plan_privacy
+    from storylight.tensorrt_slot_client import _semantic_privacy_separator, tensor_slot_wire_plan
 
     fixtures = [
         ("calm indigo pond", "one golden paper boat", "floating on the pond", "crescent moon"),

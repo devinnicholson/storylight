@@ -15,10 +15,10 @@ from typing import Annotated, Literal
 import httpx
 from pydantic import Field
 
-from bookforge.live_scene_facts import adapt_live_scene_facts
-from bookforge.scene_facts import SceneFactsV2
-from bookforge.scene_prompt_routing import ROUTING_REVISION, scene_messages, select_scene_prompt
-from bookforge.tensorrt_slot_client import parse_tensor_graph_slots
+from storylight.live_scene_facts import adapt_live_scene_facts
+from storylight.scene_facts import SceneFactsV2
+from storylight.scene_prompt_routing import ROUTING_REVISION, scene_messages, select_scene_prompt
+from storylight.tensorrt_slot_client import parse_tensor_graph_slots
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from scripts import benchmark_live_scene_facts as benchmark  # noqa: E402
@@ -220,7 +220,7 @@ def context(args, provenance, stage: str) -> dict:
         Path(__file__),
         Path(benchmark.__file__),
         Path(smoke.__file__),
-        *sorted((ROOT / "src/bookforge").glob("*.py")),
+        *sorted((ROOT / "src/storylight").glob("*.py")),
     ]
     return {
         "kind": "header",

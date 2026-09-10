@@ -3,8 +3,8 @@ from pathlib import Path
 
 import pytest
 
-from bookforge.domain import AssetRole, StoryPack
-from bookforge.literacy_pack import LiteracyPackError, assemble_literacy_pack
+from storylight.domain import AssetRole, StoryPack
+from storylight.literacy_pack import LiteracyPackError, assemble_literacy_pack
 
 ROOT = Path(__file__).parents[1]
 

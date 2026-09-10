@@ -11,15 +11,15 @@ from collections.abc import Iterable, Sequence
 from pathlib import Path
 from typing import Any, Literal
 
-from bookforge.fidelity_dataset import DATASET_ID, generate_split
-from bookforge.fidelity_evaluation import FIDELITY_EVALUATOR_REVISION, evaluate_surface
-from bookforge.fidelity_graph_targets import (
+from storylight.fidelity_dataset import DATASET_ID, generate_split
+from storylight.fidelity_evaluation import FIDELITY_EVALUATOR_REVISION, evaluate_surface
+from storylight.fidelity_graph_targets import (
     FidelityGraphTarget,
     derive_fidelity_graph_target,
     summarize_fidelity_graph_coverage,
 )
-from bookforge.fidelity_schema import DatasetSplit
-from bookforge.scene_facts import estimate_wire_tokens
+from storylight.fidelity_schema import DatasetSplit
+from storylight.scene_facts import estimate_wire_tokens
 
 PUBLIC_SPLITS = (DatasetSplit.TRAIN, DatasetSplit.DEVELOPMENT)
 TOKEN_BUDGETS = (64, 96, 128)

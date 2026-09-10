@@ -10,12 +10,12 @@ from tempfile import TemporaryDirectory
 import uvicorn
 from test_anticipatory_playback import Rig
 
-import bookforge.api as api
-from bookforge.config import Settings
+import storylight.api as api
+from storylight.config import Settings
 
 
 def main():
-    with TemporaryDirectory(prefix="bookforge-prepared-browser-") as directory:
+    with TemporaryDirectory(prefix="storylight-prepared-browser-") as directory:
         settings = Settings(
             _env_file=None,
             model_backend="fake",

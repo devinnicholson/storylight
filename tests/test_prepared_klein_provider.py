@@ -9,8 +9,8 @@ import httpx
 import pytest
 from PIL import Image
 
-from bookforge.finite_modal_provider import FastSceneRequest, FiniteModalProviderError
-from bookforge.prepared_klein_provider import (
+from storylight.finite_modal_provider import FastSceneRequest, FiniteModalProviderError
+from storylight.prepared_klein_provider import (
     IDENTITY,
     PreparedKleinProvider,
     load_prepared_klein_bundle,

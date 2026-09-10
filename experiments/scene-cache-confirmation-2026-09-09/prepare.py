@@ -7,7 +7,7 @@ from pathlib import Path
 HERE = Path(__file__).resolve().parent
 ROOT = HERE.parents[1]
 V5 = ROOT / "experiments/scene-adapter-v5-2026-09-09"
-TOKENIZER = Path("/private/tmp/bookforge-v3-tokenizer")
+TOKENIZER = Path("/private/tmp/storylight-v3-tokenizer")
 INPUT_SHA = "79150ddb559cde4056e32f435fd0b2271f2c466597cb3beed3793554ea7e8ea8"
 TRAIN_SHA = "96a566c1d53f1e6c02607b188a09caece3f40307a2e3f24e33f78d80b2baa1e9"
 MODEL_SHA = "703bbb89d61aaed083846d7cb3d4ee1a68220e25de93a035b1f4b49d24062f2d"

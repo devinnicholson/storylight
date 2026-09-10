@@ -7,18 +7,18 @@ from datetime import UTC, datetime, timedelta
 
 from fastapi.testclient import TestClient
 
-from bookforge.anticipatory import (
+from storylight.anticipatory import (
     AnticipatorySceneOrchestrator,
     AnticipatorySceneSpec,
     RenderedScene,
 )
-from bookforge.anticipatory_gcp import MemorySceneAssetStore
-from bookforge.anticipatory_service import (
+from storylight.anticipatory_gcp import MemorySceneAssetStore
+from storylight.anticipatory_service import (
     AnticipatoryRuntime,
     SingleFlightPrewarm,
     create_anticipatory_service,
 )
-from bookforge.nemotron_critic import (
+from storylight.nemotron_critic import (
     NemotronCriticDecision,
     NemotronCriticEvidence,
     NemotronCriticVerdict,

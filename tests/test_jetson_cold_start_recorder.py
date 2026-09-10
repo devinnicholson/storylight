@@ -13,7 +13,7 @@ SCRIPT = ROOT / "deploy/jetson/record-trained-planner-cold-start.py"
 
 
 def _load_module():
-    spec = importlib.util.spec_from_file_location("bookforge_cold_start", SCRIPT)
+    spec = importlib.util.spec_from_file_location("storylight_cold_start", SCRIPT)
     assert spec is not None and spec.loader is not None
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
@@ -28,7 +28,7 @@ def test_cold_start_dry_run_is_non_mutating_and_exactly_bound(tmp_path: Path) ->
             sys.executable,
             str(SCRIPT),
             "--user",
-            "operator",
+            "demo",
             "--accepted-engine",
             str(tmp_path / "engine"),
             "--expected-engine-sha256",
@@ -44,7 +44,7 @@ def test_cold_start_dry_run_is_non_mutating_and_exactly_bound(tmp_path: Path) ->
     plan = json.loads(result.stdout)
     assert plan["mode"] == "plan-only"
     assert plan["service_restart"] is True
-    assert plan["approval_token"].startswith("RECORD_BOOKFORGE_TRAINED_PLANNER_COLD_START:")
+    assert plan["approval_token"].startswith("RECORD_STORYLIGHT_TRAINED_PLANNER_COLD_START:")
     assert len(plan["approval_token"].rsplit(":", 1)[1]) == 64
     assert not output.exists()
 
@@ -53,7 +53,7 @@ def test_cold_start_dry_run_is_non_mutating_and_exactly_bound(tmp_path: Path) ->
             sys.executable,
             str(SCRIPT),
             "--user",
-            "operator",
+            "demo",
             "--accepted-engine",
             str(tmp_path / "engine"),
             "--expected-engine-sha256",
@@ -75,16 +75,16 @@ def test_cold_start_route_requires_exact_backend_revision_and_loopback() -> None
     module = _load_module()
     engine_sha = "b" * 64
     environment = {
-        "BOOKFORGE_LIVE_SCENE_PLANNER_BACKEND": "tensorrt_slots",
-        "BOOKFORGE_LIVE_SCENE_PLANNER_MODEL_REVISION": f"sha256:{engine_sha}",
-        "BOOKFORGE_LIVE_SCENE_PLANNER_BASE_URL": "http://127.0.0.1:11435",
+        "STORYLIGHT_LIVE_SCENE_PLANNER_BACKEND": "tensorrt_slots",
+        "STORYLIGHT_LIVE_SCENE_PLANNER_MODEL_REVISION": f"sha256:{engine_sha}",
+        "STORYLIGHT_LIVE_SCENE_PLANNER_BASE_URL": "http://127.0.0.1:11435",
     }
     assert module.route_is_accepted(
         environment,
         engine_sha256=engine_sha,
         planner_base_url="http://127.0.0.1:11435",
     )
-    environment["BOOKFORGE_LIVE_SCENE_PLANNER_MODEL_REVISION"] = "sha256:" + "c" * 64
+    environment["STORYLIGHT_LIVE_SCENE_PLANNER_MODEL_REVISION"] = "sha256:" + "c" * 64
     assert not module.route_is_accepted(
         environment,
         engine_sha256=engine_sha,

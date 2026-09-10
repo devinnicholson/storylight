@@ -107,7 +107,7 @@ def evidence_is_fresh(
     latest_oom_usec: int,
     minimum_available_mib: int,
     *,
-    trusted_root: Path = Path("/var/lib/bookforge-trusted/trained-planner/evidence"),
+    trusted_root: Path = Path("/var/lib/storylight-trusted/trained-planner/evidence"),
     required_owner_uid: int = 0,
     required_owner_gid: int = 0,
 ) -> tuple[bool, str, int]:
@@ -132,7 +132,7 @@ def evidence_is_fresh(
         return False, "cold-start evidence is not valid JSON", 0
     required = {
         "schema_version": "1.0",
-        "producer": "bookforge-cold-start-recorder",
+        "producer": "storylight-cold-start-recorder",
         "status": "passed",
         "accepted_engine_sha256": engine_sha,
         "oom_events": 0,
@@ -187,7 +187,7 @@ def main() -> None:
         raise SystemExit("cold-start evidence and checksum must be supplied together")
     plan = {
         "schema_version": "1.0",
-        "artifact_type": "bookforge-jetson-acceptance-preflight",
+        "artifact_type": "storylight-jetson-acceptance-preflight",
         "mode": "candidate" if args.candidate_id else "accepted-noop",
         "read_only": True,
         "probes": [
@@ -246,31 +246,31 @@ def main() -> None:
     except OSError as error:
         record("accepted_engine", False, str(error))
 
-    config_path = Path("/etc/bookforge/bookforge.env")
+    config_path = Path("/etc/storylight/storylight.env")
     try:
         environment = parse_environment(config_path)
         expected_revision = f"sha256:{args.expected_accepted_engine_sha256}"
         routing_ok = (
-            environment.get("BOOKFORGE_LIVE_SCENE_PLANNER_BACKEND") == "tensorrt_slots"
-            and environment.get("BOOKFORGE_LIVE_SCENE_PLANNER_MODEL_REVISION") == expected_revision
-            and environment.get("BOOKFORGE_LIVE_SCENE_PLANNER_BASE_URL") == "http://127.0.0.1:11435"
+            environment.get("STORYLIGHT_LIVE_SCENE_PLANNER_BACKEND") == "tensorrt_slots"
+            and environment.get("STORYLIGHT_LIVE_SCENE_PLANNER_MODEL_REVISION") == expected_revision
+            and environment.get("STORYLIGHT_LIVE_SCENE_PLANNER_BASE_URL") == "http://127.0.0.1:11435"
         )
         record(
             "exact_routing_identity",
             routing_ok,
-            {"revision": environment.get("BOOKFORGE_LIVE_SCENE_PLANNER_MODEL_REVISION")},
+            {"revision": environment.get("STORYLIGHT_LIVE_SCENE_PLANNER_MODEL_REVISION")},
         )
     except OSError as error:
         record("exact_routing_identity", False, str(error))
 
-    active_state = Path("/var/lib/bookforge-trusted/trained-planner/active.env")
+    active_state = Path("/var/lib/storylight-trusted/trained-planner/active.env")
     record(
         "rollback_state_clear",
         not active_state.exists() and not active_state.is_symlink(),
         "no promotion is active" if not active_state.exists() else str(active_state),
     )
-    current = Path("/usr/local/lib/bookforge/trained-planner-tooling/current")
-    receipt = Path("/var/lib/bookforge-trusted/trained-planner/tooling-current.json")
+    current = Path("/usr/local/lib/storylight/trained-planner-tooling/current")
+    receipt = Path("/var/lib/storylight-trusted/trained-planner/tooling-current.json")
     receipt_value: dict[str, object] = {}
     try:
         receipt_info = receipt.lstat()
@@ -330,14 +330,14 @@ def main() -> None:
             and hashlib.sha256(canonical(file_records)).hexdigest()
             == manifest_value.get("source_manifest_sha256")
             and payloads_ok
-            and receipt_value.get("artifact_type") == "bookforge-jetson-tooling-install-receipt"
+            and receipt_value.get("artifact_type") == "storylight-jetson-tooling-install-receipt"
             and re.fullmatch(r"[a-f0-9]{40}", str(receipt_value.get("source_commit", "")))
         )
         record("tooling_provenance", bool(provenance_ok), receipt_value)
     except (OSError, ValueError) as error:
         record("tooling_provenance", False, str(error))
 
-    candidate_unit = Path("/etc/systemd/user/bookforge-trained-planner-candidate@.service")
+    candidate_unit = Path("/etc/systemd/user/storylight-trained-planner-candidate@.service")
     try:
         unit_info = candidate_unit.lstat()
         unit_ok = (
@@ -356,7 +356,7 @@ def main() -> None:
     except OSError as error:
         record("candidate_unit_provenance", False, str(error))
 
-    candidate_root = Path("/var/lib/bookforge-trusted/trained-planner-candidates")
+    candidate_root = Path("/var/lib/storylight-trusted/trained-planner-candidates")
     try:
         candidate_root_info = candidate_root.lstat()
         root_ok = (
@@ -411,7 +411,7 @@ def main() -> None:
         "journalctl",
         "--user",
         "-u",
-        "bookforge-tensorrt-planner.service",
+        "storylight-tensorrt-planner.service",
         "--since",
         f"{args.oom_lookback_hours} hours ago",
         "-o",
@@ -463,10 +463,10 @@ def main() -> None:
     )
 
     accepted_service = user_command(
-        args.user, "systemctl", "--user", "is-active", "bookforge-tensorrt-planner.service"
+        args.user, "systemctl", "--user", "is-active", "storylight-tensorrt-planner.service"
     )
     kiosk_service = user_command(
-        args.user, "systemctl", "--user", "is-active", "bookforge-kiosk.service"
+        args.user, "systemctl", "--user", "is-active", "storylight-kiosk.service"
     )
     try:
         planner_ready = get_json("http://127.0.0.1:11435/v1/models")

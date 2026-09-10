@@ -1,7 +1,7 @@
 {
   "installed_at": "20260908T035206Z",
-  "target": "/opt/bookforge/.venv/lib/python3.12/site-packages/bookforge",
-  "backup": "/opt/bookforge/.voice-backups/20260908T035206Z",
+  "target": "/opt/storylight/.venv/lib/python3.12/site-packages/storylight",
+  "backup": "/opt/storylight/.voice-backups/20260908T035206Z",
   "before": {
     "reviewed_description.py": null,
     "config.py": "3a69c69850b26793181dc3183f7f19a8079074e13c797721f118405df6e781a7",

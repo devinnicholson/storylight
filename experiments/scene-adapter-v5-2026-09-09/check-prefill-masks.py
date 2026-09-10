@@ -23,7 +23,7 @@ for name, obj in (("masking", create_causal_mask), ("cache", StaticCache)):
         hashlib.sha256(Path(inspect.getfile(obj)).read_bytes()).hexdigest()
         == (runtime_sources[name]["sha256"])
     )
-c = AutoConfig.from_pretrained("/private/tmp/bookforge-v3-tokenizer", local_files_only=True)
+c = AutoConfig.from_pretrained("/private/tmp/storylight-v3-tokenizer", local_files_only=True)
 c._attn_implementation = "sdpa"
 c.get_text_config()._attn_implementation = "sdpa"
 n = 641

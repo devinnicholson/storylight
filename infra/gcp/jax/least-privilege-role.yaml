@@ -1,7 +1,0 @@
-title: Bookforge JAX Vertex worker
-description: Read checksum-bound staged inputs and write immutable release objects.
-stage: GA
-includedPermissions:
-  - storage.objects.create
-  - storage.objects.get
-  - storage.objects.list

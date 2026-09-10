@@ -19,15 +19,15 @@ from typing import Annotated, Literal
 import httpx
 from pydantic import Field, ValidationError
 
-from bookforge.fidelity_evaluation import FIDELITY_EVALUATOR_REVISION
-from bookforge.live_scene_facts import LiveSceneFactsRefusal, adapt_live_scene_facts
-from bookforge.live_scene_planner import (
+from storylight.fidelity_evaluation import FIDELITY_EVALUATOR_REVISION
+from storylight.live_scene_facts import LiveSceneFactsRefusal, adapt_live_scene_facts
+from storylight.live_scene_planner import (
     LiveScenePlannerPrivacyError,
     validate_live_scene_plan_privacy,
 )
-from bookforge.privacy_policy import COUNT_WORDS, VISIBLE_VERBS
-from bookforge.scene_facts import SceneFactsPrivacyError
-from bookforge.tensorrt_slot_client import (
+from storylight.privacy_policy import COUNT_WORDS, VISIBLE_VERBS
+from storylight.scene_facts import SceneFactsPrivacyError
+from storylight.tensorrt_slot_client import (
     parse_tensor_graph_slots,
     tensor_accepted_graph_wire_plan,
     tensor_slot_wire_plan,
@@ -223,7 +223,7 @@ def context(args: argparse.Namespace, provenance: benchmark.Provenance) -> dict:
     paths = [
         Path(__file__),
         Path(benchmark.__file__),
-        *sorted((root / "src/bookforge").glob("*.py")),
+        *sorted((root / "src/storylight").glob("*.py")),
     ]
     return {
         "kind": "header",

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Validate a checksum-bound merged-HF Bookforge fidelity release."""
+"""Validate a checksum-bound merged-HF Storylight fidelity release."""
 
 from __future__ import annotations
 

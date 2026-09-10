@@ -9,12 +9,12 @@ from time import perf_counter
 import httpx
 from slot_compare import STATIC_CASES
 
-from bookforge.live_scene_planner import (
+from storylight.live_scene_planner import (
     LiveScenePlannerPrivacyError,
     validate_live_scene_plan_privacy,
 )
-from bookforge.planner_benchmark import CONTEST_CASES, _semantic_evidence
-from bookforge.tensorrt_slot_client import (
+from storylight.planner_benchmark import CONTEST_CASES, _semantic_evidence
+from storylight.tensorrt_slot_client import (
     TENSORRT_SLOT_SYSTEM_PROMPT,
     _slot_messages,
     tensor_slot_wire_plan,

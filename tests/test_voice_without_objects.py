@@ -7,9 +7,9 @@ from pathlib import Path
 
 import pytest
 
-from bookforge.reviewed_description import PARSER_REVISION, review_description
-from bookforge.scene_facts import SceneFactsV2
-from bookforge.voice_language import graph_from_row
+from storylight.reviewed_description import PARSER_REVISION, review_description
+from storylight.scene_facts import SceneFactsV2
+from storylight.voice_language import graph_from_row
 
 ROWS = {row["id"]: row for row in json.loads(
     (Path(__file__).parent / "fixtures/voice-without-object-rows.json").read_bytes()
@@ -64,7 +64,7 @@ def test_exact_demo_source_reaches_reviewed_bridge_with_typed_negative(monkeypat
         assert set(payload) == {"text", "visual_style"}  # Full dependency path.
         return json.dumps(graph_from_row(ROWS["exact"], payload["visual_style"]))
 
-    monkeypatch.setattr("bookforge.reviewed_description._parser_request", request)
+    monkeypatch.setattr("storylight.reviewed_description._parser_request", request)
     result = asyncio.run(review_description(
         ROWS["exact"]["text"], "watercolor", 42, parser_socket=Path("/tmp/unused-language.sock"),
     ))

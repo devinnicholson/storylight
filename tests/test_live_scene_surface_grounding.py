@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from bookforge.live_scene_facts import adapt_live_scene_facts
+from storylight.live_scene_facts import adapt_live_scene_facts
 
 SOURCE = "In a meadow, a rabbit carries a red basket. A silver kite appears."
 SLOTS = {

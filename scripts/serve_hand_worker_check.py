@@ -14,7 +14,7 @@ parser.add_argument("--port", type=int, default=18086)
 args = parser.parse_args()
 root = Path(__file__).resolve().parents[1]
 app = FastAPI()
-app.mount("/workbench-assets", StaticFiles(directory=root / "src/bookforge/static"))
+app.mount("/workbench-assets", StaticFiles(directory=root / "src/storylight/static"))
 
 
 @app.get("/")

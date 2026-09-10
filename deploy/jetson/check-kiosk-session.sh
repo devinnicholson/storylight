@@ -13,9 +13,9 @@ for tool in loginctl xset; do
 done
 
 CURRENT_UID="$(id -u)"
-ALLOW_IDLE="${BOOKFORGE_KIOSK_ALLOW_IDLE:-false}"
+ALLOW_IDLE="${STORYLIGHT_KIOSK_ALLOW_IDLE:-false}"
 [[ "$ALLOW_IDLE" == true || "$ALLOW_IDLE" == false ]] \
-  || fail "BOOKFORGE_KIOSK_ALLOW_IDLE must be true or false"
+  || fail "STORYLIGHT_KIOSK_ALLOW_IDLE must be true or false"
 
 session_property() {
   loginctl show-session "$SESSION_ID" --property="$1" --value 2>/dev/null
@@ -37,8 +37,8 @@ find_graphical_session() {
       && "$session_remote" == no ]]
   }
 
-  if [[ -n "${BOOKFORGE_KIOSK_SESSION_ID:-}" ]]; then
-    printf '%s\n' "$BOOKFORGE_KIOSK_SESSION_ID"
+  if [[ -n "${STORYLIGHT_KIOSK_SESSION_ID:-}" ]]; then
+    printf '%s\n' "$STORYLIGHT_KIOSK_SESSION_ID"
     return
   fi
   if [[ -n "${XDG_SESSION_ID:-}" ]] && candidate_is_graphical "$XDG_SESSION_ID"; then

@@ -2,13 +2,13 @@ import asyncio
 import hashlib
 from pathlib import Path
 
-from bookforge.finite_modal_provider import (
+from storylight.finite_modal_provider import (
     FastSceneRequest,
     FiniteSceneBundle,
     SceneArtifact,
     WarmPrewarmReport,
 )
-from bookforge.gcp_scene_benchmark import BenchmarkConfig, collect_benchmark
+from storylight.gcp_scene_benchmark import BenchmarkConfig, collect_benchmark
 
 
 class FakeProvider:

@@ -8,9 +8,9 @@ from pathlib import Path
 
 import pytest
 
-from bookforge.reviewed_description import review_description
-from bookforge.scene_facts import SceneFactsV2
-from bookforge.voice_language import graph_from_row
+from storylight.reviewed_description import review_description
+from storylight.scene_facts import SceneFactsV2
+from storylight.voice_language import graph_from_row
 
 DIRECTORY = Path(__file__).resolve().parents[1] / "benchmarks/voice-retriever-2026-09-08"
 RAW = (DIRECTORY / "breed-adversarial-rows.json").read_bytes()
@@ -58,7 +58,7 @@ def test_actual_jetson_failure_reaches_review_with_literal_breed_and_private_pla
         assert socket == Path("/tmp/unused-breed-parser.sock")
         return json.dumps(result).encode()
 
-    monkeypatch.setattr("bookforge.reviewed_description._parser_request", parser)
+    monkeypatch.setattr("storylight.reviewed_description._parser_request", parser)
     reviewed = asyncio.run(review_description(
         ROWS["original"]["text"], "watercolor", 42,
         parser_socket=Path("/tmp/unused-breed-parser.sock"),

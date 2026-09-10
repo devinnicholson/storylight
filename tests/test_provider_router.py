@@ -5,13 +5,13 @@ from pathlib import Path
 
 import pytest
 
-from bookforge.finite_modal_provider import (
+from storylight.finite_modal_provider import (
     FastSceneRequest,
     FiniteModalUnavailableError,
     FiniteSceneBundle,
     SceneArtifact,
 )
-from bookforge.provider_router import (
+from storylight.provider_router import (
     ProviderRoute,
     ResilientFastSceneProvider,
     SafeProviderFallbackError,
@@ -243,7 +243,7 @@ def test_router_rechecks_only_new_requests_after_rejection_cooldown(
     tmp_path: Path, monkeypatch, error: SafeProviderFallbackError, cooldown: float,
 ) -> None:
     now = 1000.0
-    monkeypatch.setattr("bookforge.provider_router.time.monotonic", lambda: now)
+    monkeypatch.setattr("storylight.provider_router.time.monotonic", lambda: now)
     provider = StubProvider("vertex", generation_error=error)
     router = ResilientFastSceneProvider([ProviderRoute("vertex", provider)])
 

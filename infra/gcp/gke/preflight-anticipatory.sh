@@ -2,10 +2,10 @@
 set -euo pipefail
 
 PROJECT_ID="${GOOGLE_CLOUD_PROJECT:-your-gcp-project}"
-REGION="${BOOKFORGE_GKE_REGION:-us-central1}"
-CLUSTER="${BOOKFORGE_GKE_CLUSTER:-bookforge-anticipatory}"
-RENDERER_REGION="${BOOKFORGE_RENDERER_REGION:-us-central1}"
-RENDERER_SERVICE="${BOOKFORGE_RENDERER_SERVICE:-bookforge-scene-rtx}"
+REGION="${STORYLIGHT_GKE_REGION:-us-central1}"
+CLUSTER="${STORYLIGHT_GKE_CLUSTER:-storylight-anticipatory}"
+RENDERER_REGION="${STORYLIGHT_RENDERER_REGION:-us-central1}"
+RENDERER_SERVICE="${STORYLIGHT_RENDERER_SERVICE:-storylight-scene-rtx}"
 
 for command in gcloud jq; do
   if ! command -v "${command}" >/dev/null 2>&1; then
@@ -49,7 +49,7 @@ if [[ -n "${CONTAINER_ENABLED}" ]]; then
 fi
 
 printf '%s\n' \
-  "Bookforge anticipatory GKE preflight" \
+  "Storylight anticipatory GKE preflight" \
   "  project:             ${PROJECT_ID}" \
   "  region:              ${REGION}" \
   "  L4 quota:            ${L4_LIMIT}" \

@@ -11,7 +11,7 @@ from pathlib import Path
 
 import xgrammar as xgr
 
-from bookforge.scene_facts import SceneFactsV2
+from storylight.scene_facts import SceneFactsV2
 
 HERE = Path(__file__).resolve().parent
 ROOT = HERE.parents[1]
@@ -195,10 +195,10 @@ SEMANTIC = (
     "positive_negative_scope",
 )
 SOURCES = (
-    "src/bookforge/scene_facts.py",
-    "src/bookforge/domain.py",
-    "src/bookforge/privacy_policy.py",
-    "src/bookforge/semantic_text.py",
+    "src/storylight/scene_facts.py",
+    "src/storylight/domain.py",
+    "src/storylight/privacy_policy.py",
+    "src/storylight/semantic_text.py",
 )
 NUMBER = ("one", "two", "three", "four")
 

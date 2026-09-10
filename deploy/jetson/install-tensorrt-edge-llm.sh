@@ -5,13 +5,13 @@ set -euo pipefail
 
 readonly EDGELLM_VERSION="v0.10.0"
 readonly EDGELLM_REVISION="71dd1bae032e70771265917ec74d3ff4cad07a10"
-readonly INSTALL_ROOT="${BOOKFORGE_EDGELLM_ROOT:-$HOME/.local/share/bookforge/tensorrt-edgellm-v0.10.0}"
+readonly INSTALL_ROOT="${STORYLIGHT_EDGELLM_ROOT:-$HOME/.local/share/storylight/tensorrt-edgellm-v0.10.0}"
 readonly SOURCE_DIR="$INSTALL_ROOT/src"
 readonly BUILD_DIR="$INSTALL_ROOT/build"
 readonly VENV_DIR="$INSTALL_ROOT/venv"
 
 if [[ ${EUID:-$(id -u)} -eq 0 ]]; then
-  printf 'Run this installer as the Bookforge user, not root.\n' >&2
+  printf 'Run this installer as the Storylight user, not root.\n' >&2
   exit 64
 fi
 

@@ -38,27 +38,27 @@ def main() -> None:
     parser.add_argument("--output-dir", type=Path, required=True)
     parser.add_argument("--code-revision", required=True)
     args = parser.parse_args()
-    import bookforge.tensorrt_slot_client as deployed
+    import storylight.tensorrt_slot_client as deployed
 
     api_pid = command(
-        "systemctl", "show", "bookforge@operator.service", "-p", "MainPID", "--value"
+        "systemctl", "show", "storylight@operator.service", "-p", "MainPID", "--value"
     )
     server_pid = command(
         "systemctl",
         "--user",
         "show",
-        "bookforge-tensorrt-planner.service",
+        "storylight-tensorrt-planner.service",
         "-p",
         "MainPID",
         "--value",
     )
     environment = (Path("/proc") / api_pid / "environ").read_bytes()
     allowed = {
-        "BOOKFORGE_LIVE_SCENE_PLANNER_BACKEND",
-        "BOOKFORGE_LIVE_SCENE_PLANNER_MAX_OUTPUT_TOKENS",
-        "BOOKFORGE_LIVE_SCENE_PLANNER_MODEL_REVISION",
-        "BOOKFORGE_LIVE_SCENE_PLANNER_BASE_URL",
-        "BOOKFORGE_LIVE_SCENE_PLANNER_MODEL_NAME",
+        "STORYLIGHT_LIVE_SCENE_PLANNER_BACKEND",
+        "STORYLIGHT_LIVE_SCENE_PLANNER_MAX_OUTPUT_TOKENS",
+        "STORYLIGHT_LIVE_SCENE_PLANNER_MODEL_REVISION",
+        "STORYLIGHT_LIVE_SCENE_PLANNER_BASE_URL",
+        "STORYLIGHT_LIVE_SCENE_PLANNER_MODEL_NAME",
     }
     settings = {
         key: value
@@ -84,7 +84,7 @@ def main() -> None:
             "systemctl",
             "--user",
             "show",
-            "bookforge-tensorrt-planner.service",
+            "storylight-tensorrt-planner.service",
             "-p",
             "ActiveEnterTimestamp",
             "--value",

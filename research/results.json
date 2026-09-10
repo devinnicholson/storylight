@@ -1,0 +1,65 @@
+{
+  "schema_version": 1,
+  "project": "Storylight",
+  "kind": "curated summary of independently reviewed experiments",
+  "experiment_date": "2026-09-09",
+  "hardware": "NVIDIA L4 on Google Cloud",
+  "production_promoted": false,
+  "raw_evidence": {
+    "availability": "Original raw receipts and large artifacts are retained in a private archive.",
+    "public_reproduction_complete": false,
+    "note": "This summary is not a substitute for model weights, raw run receipts or the original verification environment."
+  },
+  "adapter_comparison": {
+    "model": "google/gemma-4-E2B-it",
+    "training_method": "NF4 QLoRA, rank 16",
+    "training_examples": 4800,
+    "development_examples": 256,
+    "selected_step": 2400,
+    "screen_cases": 128,
+    "positive_cases": 96,
+    "refusal_cases": 32,
+    "repetitions_per_adapter": 2,
+    "total_calls": 512,
+    "v4_positive_exact_both_repetitions": 64,
+    "v5_positive_exact_both_repetitions": 81,
+    "v4_literal_refusals_both_repetitions": 28,
+    "v5_literal_refusals_both_repetitions": 25,
+    "v5_schema_valid_unexpected_admission_cases": 5,
+    "v5_unexpected_admissions_passing_grounding_privacy": 0,
+    "promotion_gate": "failed",
+    "scope": "Independently authored synthetic screen; not a real-traffic accuracy estimate."
+  },
+  "compiled_cache_confirmation": {
+    "measured_cases": 128,
+    "measured_calls": 256,
+    "warmup_calls": 4,
+    "total_calls": 260,
+    "identical_measured_token_pairs": 128,
+    "dynamic_median_ms": 2851.8556645003628,
+    "compiled_bridge_median_ms": 1089.8065564997523,
+    "median_paired_fraction_reduction": 0.5948515833940738,
+    "first_compiled_preparation_ms": 110415.78714800016,
+    "prompt_token_range": [638, 654],
+    "both_merged_arms_positive_exact": 81,
+    "both_merged_arms_literal_refusals": 27,
+    "scope": "One repetition on previously exposed cases; dynamic input order then compiled reverse order. Request timer excludes tokenization and output decoding. Not image generation or Jetson latency.",
+    "quality_gate_overridden": false
+  },
+  "compiler_restart": {
+    "training_probes": 8,
+    "processes": 3,
+    "calls_per_process": 54,
+    "total_calls": 162,
+    "prior_token_matches_per_restart": 54,
+    "cycles": 1,
+    "arms": [
+      {"name": "cold-0", "hash_seed": 0, "first_compiled_preparation_ms": 109250.5512219999, "aot_hits": 0, "aot_misses": 2, "fx_hits": 0, "fx_misses": 2},
+      {"name": "reuse-0", "hash_seed": 0, "first_compiled_preparation_ms": 22492.15584700005, "aot_hits": 2, "aot_misses": 0, "fx_hits": 2, "fx_misses": 0},
+      {"name": "reuse-1", "hash_seed": 1, "first_compiled_preparation_ms": 102613.466606, "aot_hits": 0, "aot_misses": 2, "fx_hits": 0, "fx_misses": 2}
+    ],
+    "same_seed_preparation_fraction_reduction": 0.7941231820304922,
+    "scope": "Fresh Python processes with the same wrapper. Preparation follows dynamic/eager generation that warms the model and GPU; it includes generation and excludes model loading/merging. Not whole-service startup.",
+    "causal_limit": "Supports seed-sensitive graph reuse; does not isolate rotary ordering from all other hash-sensitive behavior."
+  }
+}

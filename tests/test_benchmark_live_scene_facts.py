@@ -10,9 +10,9 @@ import httpx
 import pytest
 from pydantic import ValidationError
 
-from bookforge.fidelity_dataset import generate_split
-from bookforge.fidelity_schema import DatasetSplit
-from bookforge.tensorrt_slot_client import _slot_messages
+from storylight.fidelity_dataset import generate_split
+from storylight.fidelity_schema import DatasetSplit
+from storylight.tensorrt_slot_client import _slot_messages
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from scripts import benchmark_live_scene_facts as benchmark
@@ -174,11 +174,11 @@ def test_aggregation_reproduces_without_raw_text(tmp_path, records):
 def test_requests_have_no_automatic_retry_and_do_not_leak_failures(monkeypatch, records):
     monkeypatch.setitem(
         sys.modules,
-        "bookforge.live_scene_facts",
+        "storylight.live_scene_facts",
         SimpleNamespace(adapt_live_scene_facts=lambda *a, **k: None),
     )
     monkeypatch.setattr(
-        "bookforge.tensorrt_slot_client.parse_tensor_graph_slots", lambda _: {}, raising=False
+        "storylight.tensorrt_slot_client.parse_tensor_graph_slots", lambda _: {}, raising=False
     )
     calls = []
 
@@ -226,7 +226,7 @@ def test_accepted_first_one_request_reuses_exact_fallback(monkeypatch, records, 
         return "accepted safe contract"
 
     monkeypatch.setattr(
-        "bookforge.tensorrt_slot_client.tensor_accepted_graph_wire_plan", helper, raising=False
+        "storylight.tensorrt_slot_client.tensor_accepted_graph_wire_plan", helper, raising=False
     )
     monkeypatch.setattr(benchmark, "safe_slots", lambda *args: "accepted safe contract")
     monkeypatch.setattr(benchmark, "validate_live_scene_plan_privacy", lambda *a, **k: None)
@@ -311,7 +311,7 @@ def test_accepted_first_privacy_refusal_retains_raw_without_retry(monkeypatch, r
 
     monkeypatch.setattr(benchmark, "infer", infer)
     monkeypatch.setattr(benchmark, "safe_slots", baseline)
-    monkeypatch.setattr("bookforge.tensorrt_slot_client.tensor_accepted_graph_wire_plan", helper)
+    monkeypatch.setattr("storylight.tensorrt_slot_client.tensor_accepted_graph_wire_plan", helper)
     monkeypatch.setattr(benchmark, "validate_live_scene_plan_privacy", lambda *a, **k: None)
     monkeypatch.setattr(benchmark, "renderer_contract", renderer)
     result = benchmark.run_case(
@@ -330,7 +330,7 @@ def test_accepted_first_privacy_refusal_retains_raw_without_retry(monkeypatch, r
 
 
 def test_graph_renderer_scoring_requires_exact_prompt_and_hashes_only_prompt(records):
-    from bookforge.tensorrt_slot_client import tensor_accepted_graph_wire_plan
+    from storylight.tensorrt_slot_client import tensor_accepted_graph_wire_plan
 
     source = "In a cave, a fox holds a lantern. A ribbon appears."
     wire = "SETTING: cave\nACTOR: fox\nACTION: holds lantern\nMAGIC: ribbon"

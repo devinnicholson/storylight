@@ -35,7 +35,7 @@ function harness() {
       return planner;
     },
   };
-  const source = fs.readFileSync("src/bookforge/static/workbench.js", "utf8");
+  const source = fs.readFileSync("src/storylight/static/workbench.js", "utf8");
   vm.createContext(context);
   // Run the real readiness flow without starting the page's microphone/projector wiring.
   for (const [start, end] of [
@@ -147,7 +147,7 @@ async function generateDoesNotWaitForBackgroundPlannerWarmup() {
   });
   context.window.setInterval = () => 1;
   context.window.crypto = require("crypto").webcrypto;
-  const source = fs.readFileSync("src/bookforge/static/workbench.js", "utf8");
+  const source = fs.readFileSync("src/storylight/static/workbench.js", "utf8");
   for (const [start, end] of [
     ["function voiceTimingEvent(", "function nextVoicePartialDelay("],
     ["async function warmEdgePlanner(", "function scheduleEdgePlanPreparation("],
@@ -197,7 +197,7 @@ function sessionStreamHarness() {
     },
   };
   vm.createContext(context);
-  const source = fs.readFileSync("src/bookforge/static/workbench.js", "utf8");
+  const source = fs.readFileSync("src/storylight/static/workbench.js", "utf8");
   vm.runInContext(source.slice(
     source.indexOf("function connectLiveSceneSessionEvents("), source.indexOf("function renderPack("),
   ), context);

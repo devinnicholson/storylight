@@ -10,7 +10,7 @@ import tempfile
 from contextlib import contextmanager, nullcontext
 from pathlib import Path
 
-RANGE_PREFIX = "bookforge.denoiser."
+RANGE_PREFIX = "storylight.denoiser."
 MAX_TRACE_BYTES = 64 * 1024 * 1024
 SCHEDULE = (
     ("warmup", 0, "baseline"),
@@ -317,7 +317,7 @@ def run_comparison(runtime, cases):
                 profiles.append(profile_row)
                 try:
                     stage = "trace_export"
-                    with tempfile.TemporaryDirectory(prefix="bookforge-denoiser-") as directory:
+                    with tempfile.TemporaryDirectory(prefix="storylight-denoiser-") as directory:
                         path = Path(directory) / "trace.json"
                         profiler.export_chrome_trace(str(path))
                         stage = "trace_read"

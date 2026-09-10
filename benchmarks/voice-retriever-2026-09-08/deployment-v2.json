@@ -1,7 +1,7 @@
 {
-  "previous_release": "/opt/bookforge/voice-language-releases/20260908-v3",
-  "release": "/opt/bookforge/voice-language-releases/20260908-v4",
-  "api_backup": "/opt/bookforge/voice-api-backups/20260908-v4",
+  "previous_release": "/opt/storylight/voice-language-releases/20260908-v3",
+  "release": "/opt/storylight/voice-language-releases/20260908-v4",
+  "api_backup": "/opt/storylight/voice-api-backups/20260908-v4",
   "before_api_sha256": {
     "privacy_policy.py": "e36a22e80e47774223b31600507b199eccb2955f83e32d1f30228ca7c671713d",
     "reviewed_description.py": "8d9fc223f0076f5a69f7c7d3da3d01ee3f8880f91220e56f01dd9381b5ab3172"

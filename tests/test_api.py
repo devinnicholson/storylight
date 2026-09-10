@@ -4,10 +4,10 @@ from pathlib import Path
 import pytest
 from fastapi.testclient import TestClient
 
-from bookforge.api import _jetson_writable_runtime_path, app
-from bookforge.asr_backend import DisabledAsrBackend
-from bookforge.config import get_settings
-from bookforge.domain import TranscriptionResponse
+from storylight.api import _jetson_writable_runtime_path, app
+from storylight.asr_backend import DisabledAsrBackend
+from storylight.config import get_settings
+from storylight.domain import TranscriptionResponse
 
 
 @pytest.fixture(autouse=True)
@@ -16,7 +16,7 @@ def fake_api_settings(monkeypatch, tmp_path):
         "MODEL_BACKEND": "fake", "MODEL_NAME": "fake", "ASSET_BACKEND": "fake",
         "DATA_DIR": str(tmp_path / "data"), "CACHE_DIR": str(tmp_path / "cache"),
     }.items():
-        monkeypatch.setenv(f"BOOKFORGE_{name}", value)
+        monkeypatch.setenv(f"STORYLIGHT_{name}", value)
     get_settings.cache_clear()
     yield
     get_settings.cache_clear()
@@ -36,7 +36,7 @@ class FakeTranscriber:
 
 
 def test_jetson_relative_runtime_paths_resolve_under_writable_data_dir() -> None:
-    data_dir = Path("/var/lib/bookforge")
+    data_dir = Path("/var/lib/storylight")
     relative = Path("artifacts/live-scenes/modal-ledger.json")
 
     assert _jetson_writable_runtime_path("jetson", data_dir, relative) == data_dir / relative
@@ -67,7 +67,7 @@ def test_health_and_model_probe() -> None:
     assert workbench.status_code == 200
     assert 'id="micButton"' in workbench.text
     assert projector.status_code == 200
-    assert "Bookforge projection stage" in projector.text
+    assert "Storylight projection stage" in projector.text
 
 
 def test_compile_demo_contract() -> None:
@@ -229,7 +229,7 @@ def test_anticipatory_edge_control_is_explicitly_disabled_by_default() -> None:
         )
 
     assert response.status_code == 409
-    assert response.json() == {"detail": "BOOKFORGE_ANTICIPATORY_BACKEND is disabled"}
+    assert response.json() == {"detail": "STORYLIGHT_ANTICIPATORY_BACKEND is disabled"}
 
 
 def test_cached_asset_route_serves_only_validated_cache_paths() -> None:

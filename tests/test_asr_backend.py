@@ -2,13 +2,13 @@ import asyncio
 
 import pytest
 
-from bookforge.asr import LocalTranscriber, build_asr_backend
-from bookforge.asr_backend import (
+from storylight.asr import LocalTranscriber, build_asr_backend
+from storylight.asr_backend import (
     AsrBackend,
     AsrBackendUnavailableError,
     DisabledAsrBackend,
 )
-from bookforge.config import Settings
+from storylight.config import Settings
 
 
 def test_disabled_backend_satisfies_contract_and_fails_closed() -> None:

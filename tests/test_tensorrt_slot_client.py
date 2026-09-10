@@ -7,19 +7,19 @@ import re
 import httpx
 import pytest
 
-from bookforge import tensorrt_slot_client
-from bookforge.api import _build_live_scene_planner_client
-from bookforge.config import Settings
-from bookforge.domain import ModelMetrics
-from bookforge.live_scene_planner import (
+from storylight import tensorrt_slot_client
+from storylight.api import _build_live_scene_planner_client
+from storylight.config import Settings
+from storylight.domain import ModelMetrics
+from storylight.live_scene_planner import (
     LiveSceneGraphWirePlan,
     LiveSceneWirePlan,
     live_scene_plan_prompt,
     validate_live_scene_plan_privacy,
 )
-from bookforge.model_client import FakeModelClient, ModelUnavailableError
-from bookforge.planner_benchmark import CONTEST_CASES
-from bookforge.tensorrt_slot_client import (
+from storylight.model_client import FakeModelClient, ModelUnavailableError
+from storylight.planner_benchmark import CONTEST_CASES
+from storylight.tensorrt_slot_client import (
     TensorRTSlotModelClient,
     parse_tensor_graph_slots,
     tensor_accepted_graph_wire_plan,
@@ -98,11 +98,11 @@ def test_graph_only_construction_retains_original_error_when_a_graph_gate_refuse
 
     monkeypatch.setattr(tensorrt_slot_client, "tensor_slot_wire_plan", refuse_accepted)
     if failure_stage == "adapter":
-        monkeypatch.setattr("bookforge.live_scene_facts.adapt_live_scene_facts", refuse_gate)
+        monkeypatch.setattr("storylight.live_scene_facts.adapt_live_scene_facts", refuse_gate)
     elif failure_stage == "privacy":
         monkeypatch.setattr(tensorrt_slot_client, "validate_live_scene_plan_privacy", refuse_gate)
     else:
-        monkeypatch.setattr("bookforge.live_scene_planner.LiveSceneGraphPlan.to_page", refuse_gate)
+        monkeypatch.setattr("storylight.live_scene_planner.LiveSceneGraphPlan.to_page", refuse_gate)
     with pytest.raises(ValueError) as caught:
         tensor_accepted_graph_wire_plan(_GRAPH_SLOTS, source_text=_GRAPH_SOURCE)
     assert caught.value is original

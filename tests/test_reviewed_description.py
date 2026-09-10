@@ -11,20 +11,20 @@ import pytest
 from fastapi.testclient import TestClient
 from PIL import Image
 
-from bookforge.api import app
-from bookforge.bounded_description import REVISION
-from bookforge.config import Settings
-from bookforge.finite_modal_provider import (
+from storylight.api import app
+from storylight.bounded_description import REVISION
+from storylight.config import Settings
+from storylight.finite_modal_provider import (
     FAST_MODEL,
     FAST_MODEL_REVISION,
     FiniteModalLiveSceneProvider,
     WarmModalSceneProvider,
     load_finite_scene_bundle,
 )
-from bookforge.live_scene import LiveSceneCreateRequest
-from bookforge.reviewed_description import PARSER_REVISION
-from bookforge.reviewed_description import REVISION as LEARNED_REVISION
-from bookforge.scene_facts import SceneFactsV2, SceneObjectFact, SceneSettingFact, SceneSubjectFact
+from storylight.live_scene import LiveSceneCreateRequest
+from storylight.reviewed_description import PARSER_REVISION
+from storylight.reviewed_description import REVISION as LEARNED_REVISION
+from storylight.scene_facts import SceneFactsV2, SceneObjectFact, SceneSettingFact, SceneSubjectFact
 
 TEXT = "A quick brown fox jumps over a lazy dog."
 INVALID = "A quick brown box. Do not throw a lazy dog."
@@ -78,8 +78,8 @@ def api_client(monkeypatch, tmp_path):
         )
         return state.adapter
 
-    monkeypatch.setattr("bookforge.api.get_settings", lambda: settings)
-    monkeypatch.setattr("bookforge.api.build_live_scene_provider", build)
+    monkeypatch.setattr("storylight.api.get_settings", lambda: settings)
+    monkeypatch.setattr("storylight.api.build_live_scene_provider", build)
     with TestClient(app) as client:
         state.client = client
         yield state
@@ -195,7 +195,7 @@ def test_reviewed_rejection_precedes_renderer_preview_prewarm_and_model_cache(
         request = LiveSceneCreateRequest(text=INVALID, reviewed_description=True)
         assert await state.adapter._should_generate_preview(request) is False
         state.adapter._prepare_warm_renderer = forbidden
-        from bookforge.live_scene import build_live_scene_story_pack
+        from storylight.live_scene import build_live_scene_story_pack
 
         draft = build_live_scene_story_pack(request, job_id="reviewed-invalid", seed=1,
                                             assets=[], compiler_model="fixture")
@@ -216,14 +216,14 @@ def test_unfinished_words_and_corrections_stop_before_parser_or_render(api_clien
     previous = create(state.client, text="A rhino runs.")
     pointer = state.client.get("/v1/live-scene-sessions/reviewed-test").json()
     assert previous["complete"]
-    socket = Path("/tmp/bookforge-test-scene-parser.sock")
+    socket = Path("/tmp/storylight-test-scene-parser.sock")
     app.state.settings.reviewed_scene_parser_socket = socket
     state.adapter.reviewed_scene_parser_socket = socket
 
     async def forbidden(*args, **kwargs):
         raise AssertionError("unfinished source must stop before parser or image submission")
 
-    monkeypatch.setattr("bookforge.reviewed_description._parser_request", forbidden)
+    monkeypatch.setattr("storylight.reviewed_description._parser_request", forbidden)
     monkeypatch.setattr(app.state.live_scenes, "submit", forbidden)
     for text in (
         "A cat chasing a ma-", "A fox carrying a lan‐", "A bird flying—",
@@ -267,7 +267,7 @@ def test_completed_old_mode_and_model_cache_cannot_shadow_reviewed_mode(api_clie
 
 def _learned_parser(api_client, monkeypatch):
     state = api_client
-    socket = Path("/tmp/bookforge-test-scene-parser.sock")
+    socket = Path("/tmp/storylight-test-scene-parser.sock")
     app.state.settings.reviewed_scene_parser_socket = socket
     state.adapter.reviewed_scene_parser_socket = socket
     text = "A red bird is eating a green apple in London."
@@ -313,7 +313,7 @@ def _learned_parser(api_client, monkeypatch):
         assert kwargs == {"uds": str(socket), "retries": 0}
         return httpx.MockTransport(handler)
 
-    monkeypatch.setattr("bookforge.reviewed_description.httpx.AsyncHTTPTransport", transport)
+    monkeypatch.setattr("storylight.reviewed_description.httpx.AsyncHTTPTransport", transport)
     return text
 
 
@@ -321,10 +321,10 @@ def _learned_parser(api_client, monkeypatch):
 def test_actual_parser_row_requires_confirmation_then_reaches_fake_renderer(
     api_client, monkeypatch, case,
 ):
-    from bookforge.voice_language import graph_from_row
+    from storylight.voice_language import graph_from_row
 
     state = api_client
-    socket = Path("/tmp/bookforge-breed-test.sock")
+    socket = Path("/tmp/storylight-breed-test.sock")
     app.state.settings.reviewed_scene_parser_socket = socket
     state.adapter.reviewed_scene_parser_socket = socket
     root = Path(__file__).resolve().parents[1]
@@ -355,7 +355,7 @@ def test_actual_parser_row_requires_confirmation_then_reaches_fake_renderer(
         assert kwargs == {"uds": str(socket), "retries": 0}
         return httpx.MockTransport(handler)
 
-    monkeypatch.setattr("bookforge.reviewed_description.httpx.AsyncHTTPTransport", transport)
+    monkeypatch.setattr("storylight.reviewed_description.httpx.AsyncHTTPTransport", transport)
     payload = dict(text=row["text"], visual_style="watercolor", seed=41,
                    reviewed_description=True, session_id="reviewed-test")
     prepared = state.client.post("/v1/live-scene-planner/prepare", json=payload)
@@ -397,7 +397,7 @@ def test_actual_parser_row_requires_confirmation_then_reaches_fake_renderer(
 def test_forged_static_response_cannot_omit_source_predicate_modifier_or_actor(
     api_client, monkeypatch, source_case, returned_case,
 ):
-    from bookforge.voice_language import graph_from_row
+    from storylight.voice_language import graph_from_row
 
     state = api_client
     directory = Path(__file__).resolve().parents[1] / "benchmarks/voice-static-subject-2026-09-08"
@@ -418,7 +418,7 @@ def test_forged_static_response_cannot_omit_source_predicate_modifier_or_actor(
     parsed["renderer_prompt_preview"] = facts.to_renderer_prompt(
         source_text=text, visual_style="watercolor",
     )
-    socket = Path("/tmp/bookforge-static-malformed.sock")
+    socket = Path("/tmp/storylight-static-malformed.sock")
     app.state.settings.reviewed_scene_parser_socket = socket
     state.adapter.reviewed_scene_parser_socket = socket
     calls = []
@@ -429,7 +429,7 @@ def test_forged_static_response_cannot_omit_source_predicate_modifier_or_actor(
         calls.append(payload)
         return json.dumps(parsed).encode()
 
-    monkeypatch.setattr("bookforge.reviewed_description._parser_request", response)
+    monkeypatch.setattr("storylight.reviewed_description._parser_request", response)
     payload = dict(text=text, visual_style="watercolor", seed=41,
                    reviewed_description=True, session_id="reviewed-test")
     assert state.client.post("/v1/live-scene-planner/prepare", json=payload).status_code == 422
@@ -529,7 +529,7 @@ def test_parser_response_cannot_bypass_fact_grounding_or_provider_confirmation(
     state.parser_status, state.parser_error = 200, None
 
     async def unconfirmed_provider():
-        from bookforge.live_scene import build_live_scene_story_pack
+        from storylight.live_scene import build_live_scene_story_pack
 
         request = LiveSceneCreateRequest(text=text, visual_style="watercolor",
                                          reviewed_description=True)
@@ -562,7 +562,7 @@ def test_configured_nominal_audit_blocks_adverb_labels_and_invalidates_unaudited
     state = api_client
     initial = create(state.client)
     assert initial["metrics"]["planning_status"] == "deterministic"
-    socket = Path("/tmp/bookforge-nominal-test.sock")
+    socket = Path("/tmp/storylight-nominal-test.sock")
     app.state.settings.reviewed_scene_parser_socket = socket
     state.adapter.reviewed_scene_parser_socket = socket
     audits = []
@@ -580,7 +580,7 @@ def test_configured_nominal_audit_blocks_adverb_labels_and_invalidates_unaudited
         assert kwargs == {"uds": str(socket), "retries": 0}
         return httpx.MockTransport(handler)
 
-    monkeypatch.setattr("bookforge.reviewed_description.httpx.AsyncHTTPTransport", transport)
+    monkeypatch.setattr("storylight.reviewed_description.httpx.AsyncHTTPTransport", transport)
     audited = create(state.client)
     assert audited["stage"] != "failed", audited
     assert audited["metrics"]["scene_cache_hit"] is False

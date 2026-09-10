@@ -1,14 +1,14 @@
 #!/usr/bin/env bash
 set -euo pipefail
 [[ $# -eq 1 && "$1" =~ ^[0-9a-f]{64}$ ]] || exit 2
-cd /opt/bookforge-scene-adapter-v5
+cd /opt/storylight-scene-adapter-v5
 [[ ! -e cache-confirmation-01 && ! -L cache-confirmation-01 ]] || exit 2
 printf '%s  %s\n' "$1" cache-bridge-compiled-01/completed.json | sha256sum --check --status
 sha256sum --check --status <<'PINS'
 1c3f0ecb5111fec4f4756f4f776af2ef5977d2cf222330414e3bc6c3d8132fd3  comparison/cache-confirmation/run.py
 1a2579008b49f64d2a2d45f00a2c4ed5c63c0621d1ca6accbf0637ff4f79bd69  comparison/cache-confirmation/protocol.json
 4ffc9adc3c15fbb6e684197a05b4b8bc2281f616ea02888f38989fff3acf58fb  comparison/cache-confirmation/inputs.jsonl
-e42f6ca4a24d60a756c29122ea323b151ae9d89b4631a6fbba63e64adfd31a31  /tmp/bookforge-v5-cache-bridge-reuse.py
+e42f6ca4a24d60a756c29122ea323b151ae9d89b4631a6fbba63e64adfd31a31  /tmp/storylight-v5-cache-bridge-reuse.py
 PINS
 .venv/bin/python - <<'PY'
 import json
@@ -21,8 +21,8 @@ PY
 exec /usr/bin/timeout --signal=TERM --kill-after=30s 1660s \
   .venv/bin/python comparison/cache-confirmation/run.py \
   --confirmation-dir comparison/cache-confirmation \
-  --compiler-cache-root /tmp/bookforge-cache-confirmation-compiler-01 \
-  --bridge-helper /tmp/bookforge-v5-cache-bridge-reuse.py \
+  --compiler-cache-root /tmp/storylight-cache-confirmation-compiler-01 \
+  --bridge-helper /tmp/storylight-v5-cache-bridge-reuse.py \
   --v5-trainer payload/train.py --v5-runner comparison/run.py \
   --v2-trainer payload/v2-train.py --v3-runner comparison/v3-run.py \
   --merge-helper comparison/serving-profile.py \

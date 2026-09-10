@@ -33,7 +33,7 @@ TOOL_FILES = (
     "trained-planner-candidate-evaluation.py",
     "trained-planner-shadow-evidence.py",
     "wait-tensorrt-planner-ready.sh",
-    "systemd/bookforge-trained-planner-candidate@.service",
+    "systemd/storylight-trained-planner-candidate@.service",
 )
 
 
@@ -110,7 +110,7 @@ def main() -> None:
     source_manifest_sha256 = sha256_bytes(canonical(records))
     manifest = {
         "schema_version": "1.0",
-        "artifact_type": "bookforge-jetson-trained-planner-tooling",
+        "artifact_type": "storylight-jetson-trained-planner-tooling",
         "source_commit": args.source_commit,
         "source_commit_verified": commit_verified,
         "source_manifest_sha256": source_manifest_sha256,

@@ -4,7 +4,7 @@ from pathlib import Path
 
 import pytest
 
-from bookforge.visual_evaluation import VisualEvaluationError, evaluate_media
+from storylight.visual_evaluation import VisualEvaluationError, evaluate_media
 
 
 class FakeRunner:

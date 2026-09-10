@@ -5,8 +5,8 @@ from pathlib import Path
 
 import pytest
 
-from bookforge.config import Settings
-from bookforge.domain import (
+from storylight.config import Settings
+from storylight.domain import (
     AssetKind,
     AssetRecord,
     AssetState,
@@ -14,8 +14,8 @@ from bookforge.domain import (
     StoryPack,
     VisualLayer,
 )
-from bookforge.handoff_bundle import HandoffBundleError, build_handoff_bundle
-from bookforge.pack_installer import install
+from storylight.handoff_bundle import HandoffBundleError, build_handoff_bundle
+from storylight.pack_installer import install
 
 
 def _pack(checksum: str, local_uri: str = "source/sky.png") -> StoryPack:

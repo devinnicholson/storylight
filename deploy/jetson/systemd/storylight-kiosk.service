@@ -1,0 +1,18 @@
+[Unit]
+Description=Storylight projector browser kiosk
+After=graphical-session.target
+# Autologin and projector EDID can appear after the user manager starts. Keep
+# retrying the fail-closed session check so an early boot race cannot strand the
+# appliance on the desktop until somebody opens a keyboard session.
+StartLimitIntervalSec=0
+
+[Service]
+Type=simple
+EnvironmentFile=-%h/.config/storylight/kiosk.env
+ExecStart=/opt/storylight/deploy/jetson/launch-kiosk.sh
+Restart=always
+RestartSec=10
+TimeoutStartSec=120
+
+[Install]
+WantedBy=default.target

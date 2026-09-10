@@ -7,7 +7,7 @@ import argparse
 import json
 from pathlib import Path
 
-from bookforge.fidelity_gate import build_gate_artifact, write_gate_artifact
+from storylight.fidelity_gate import build_gate_artifact, write_gate_artifact
 
 
 def _parser() -> argparse.ArgumentParser:

@@ -5,8 +5,8 @@ import json
 
 import httpx
 
-from bookforge.scene_prompt_routing import scene_messages, select_scene_prompt
-from bookforge.tensorrt_slot_client import _slot_messages
+from storylight.scene_prompt_routing import scene_messages, select_scene_prompt
+from storylight.tensorrt_slot_client import _slot_messages
 
 
 def test_passive_route_requires_one_original_asserted_complete_clause():
@@ -38,7 +38,7 @@ def test_passive_route_requires_one_original_asserted_complete_clause():
 
 
 def test_route_selection_does_not_repair_a_contradictory_model_response():
-    from bookforge.live_scene_facts import adapt_live_scene_facts
+    from storylight.live_scene_facts import adapt_live_scene_facts
 
     source = "In a meadow, one red basket is carried by two white badgers. A kite appears."
     assert select_scene_prompt(source) == "accepted_passive"
@@ -56,8 +56,8 @@ def test_route_selection_does_not_repair_a_contradictory_model_response():
 
 
 def test_scene_client_sends_one_source_selected_request_and_binds_both_prompts(monkeypatch):
-    from bookforge import tensorrt_slot_client as client_module
-    from bookforge.live_scene_planner import LiveSceneGraphWirePlan, live_scene_plan_prompt
+    from storylight import tensorrt_slot_client as client_module
+    from storylight.live_scene_planner import LiveSceneGraphWirePlan, live_scene_plan_prompt
 
     async def run():
         sources = (

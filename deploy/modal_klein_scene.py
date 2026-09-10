@@ -18,8 +18,8 @@ if modal.is_local():
 else:
     image = None
 
-app = modal.App("bookforge-klein-candidate")
-cache = modal.Volume.from_name("bookforge-klein-compile-cache-v1")
+app = modal.App("storylight-klein-candidate")
+cache = modal.Volume.from_name("storylight-klein-compile-cache-v1")
 CACHE_ID = "f305950a0fbb4ecf89acfb80a3990351"
 
 

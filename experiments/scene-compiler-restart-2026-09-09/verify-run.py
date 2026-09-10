@@ -36,7 +36,7 @@ def check(condition, message):
 
 
 def check_inventory(receipt):
-    check(receipt["root"] == "/tmp/bookforge-v5-seeded-compiler-cache-01", "compiler root")
+    check(receipt["root"] == "/tmp/storylight-v5-seeded-compiler-cache-01", "compiler root")
     files = receipt["files"]
     check(isinstance(files, dict), "compiler inventory type")
     for name, value in files.items():
@@ -280,7 +280,7 @@ def verify(args):
         )
         prior_rows = [json.loads(s) for s in (prior / "raw.jsonl").read_text().splitlines()]
         check(len(prior_rows) == 54, "prior count")
-    cache_root = "/tmp/bookforge-v5-seeded-compiler-cache-01"
+    cache_root = "/tmp/storylight-v5-seeded-compiler-cache-01"
     check(
         protocol["compiler_cache_preparation"]
         == dict(
@@ -604,7 +604,7 @@ def main():
     parser.add_argument("--prior-completed-sha256")
     parser.add_argument("--completed-sha256", required=True)
     parser.add_argument(
-        "--tokenizer", type=Path, default=Path("/private/tmp/bookforge-v3-tokenizer")
+        "--tokenizer", type=Path, default=Path("/private/tmp/storylight-v3-tokenizer")
     )
     parser.add_argument("--output", type=Path, required=True)
     args = parser.parse_args()

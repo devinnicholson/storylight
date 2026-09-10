@@ -4,7 +4,7 @@ from collections import defaultdict
 
 import pytest
 
-from bookforge.fidelity_dataset import (
+from storylight.fidelity_dataset import (
     CATEGORIES,
     HIDDEN_KEY_PREFIX,
     SPLIT_COUNTS,
@@ -14,7 +14,7 @@ from bookforge.fidelity_dataset import (
     records_jsonl,
     validate_split_isolation,
 )
-from bookforge.fidelity_schema import PairVariant
+from storylight.fidelity_schema import PairVariant
 
 
 def _hidden_key(label: str) -> str:

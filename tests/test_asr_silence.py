@@ -2,8 +2,8 @@ import sys
 from pathlib import Path
 from types import SimpleNamespace
 
-from bookforge.asr import LocalTranscriber
-from bookforge.config import Settings
+from storylight.asr import LocalTranscriber
+from storylight.config import Settings
 
 
 def test_local_asr_uses_native_no_speech_gate_without_rewriting_text(tmp_path, monkeypatch):

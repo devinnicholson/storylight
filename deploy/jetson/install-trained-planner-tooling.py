@@ -16,12 +16,12 @@ from collections.abc import Callable
 from contextlib import suppress
 from pathlib import Path, PurePosixPath
 
-BASE = Path("/usr/local/lib/bookforge/trained-planner-tooling")
-TRUSTED_STATE = Path("/var/lib/bookforge-trusted")
+BASE = Path("/usr/local/lib/storylight/trained-planner-tooling")
+TRUSTED_STATE = Path("/var/lib/storylight-trusted")
 STATE = TRUSTED_STATE / "trained-planner"
 CANDIDATE_ROOT = TRUSTED_STATE / "trained-planner-candidates"
-LEGACY_ACTIVE_STATE = Path("/var/lib/bookforge") / "trained-planner/active.env"
-UNIT = Path("/etc/systemd/user/bookforge-trained-planner-candidate@.service")
+LEGACY_ACTIVE_STATE = Path("/var/lib/storylight") / "trained-planner/active.env"
+UNIT = Path("/etc/systemd/user/storylight-trained-planner-candidate@.service")
 MAX_FILES = 64
 MAX_BYTES = 16 * 1024 * 1024
 
@@ -69,7 +69,7 @@ def verify_bundle(bundle: Path, expected_sha256: str, source_commit: str) -> dic
     manifest = json.loads(manifest_path.read_text(), object_pairs_hook=reject_duplicates)
     if (
         manifest.get("schema_version") != "1.0"
-        or manifest.get("artifact_type") != "bookforge-jetson-trained-planner-tooling"
+        or manifest.get("artifact_type") != "storylight-jetson-trained-planner-tooling"
         or manifest.get("source_commit") != source_commit
         or not isinstance(manifest.get("source_commit_verified"), bool)
         or not re.fullmatch(r"[a-f0-9]{64}", str(manifest.get("source_manifest_sha256", "")))
@@ -249,12 +249,12 @@ def main() -> None:
     source_manifest = str(manifest["source_manifest_sha256"])
     version = f"{args.source_commit[:12]}-{source_manifest[:20]}"
     token = (
-        "INSTALL_BOOKFORGE_TRAINED_PLANNER_TOOLING:"
+        "INSTALL_STORYLIGHT_TRAINED_PLANNER_TOOLING:"
         f"{args.source_commit}:{args.expected_manifest_sha256}"
     )
     plan = {
         "schema_version": "1.0",
-        "artifact_type": "bookforge-jetson-tooling-install-plan",
+        "artifact_type": "storylight-jetson-tooling-install-plan",
         "source_commit": args.source_commit,
         "source_commit_verified": manifest["source_commit_verified"],
         "source_manifest_sha256": source_manifest,
@@ -279,7 +279,7 @@ def main() -> None:
             "legacy trained-planner promotion state requires explicit reconciliation"
         )
 
-    secure_directory(Path("/usr/local/lib/bookforge"), 0o755)
+    secure_directory(Path("/usr/local/lib/storylight"), 0o755)
     secure_directory(BASE, 0o755)
     secure_directory(BASE / "versions", 0o555)
     lock_path = BASE / ".install.lock"
@@ -328,7 +328,7 @@ def main() -> None:
                 os.replace(staged, destination)
             shutil.rmtree(stage, ignore_errors=True)
 
-            # Runtime story packs live in /var/lib/bookforge, which is intentionally
+            # Runtime story packs live in /var/lib/storylight, which is intentionally
             # writable by the service account. Privileged model state must not be a
             # child of that replaceable tree.
             secure_directory(TRUSTED_STATE, 0o755)
@@ -338,11 +338,11 @@ def main() -> None:
             secure_directory(STATE, 0o755)
             for child in ("evidence", "history", "rollback", "tooling-provenance"):
                 secure_directory(STATE / child, 0o700)
-            secure_directory(Path("/etc/bookforge"), 0o755)
-            secure_directory(Path("/etc/bookforge/trained-planner"), 0o755)
+            secure_directory(Path("/etc/storylight"), 0o755)
+            secure_directory(Path("/etc/storylight/trained-planner"), 0o755)
             secure_directory(UNIT.parent, 0o755)
 
-            unit_source = destination / "systemd/bookforge-trained-planner-candidate@.service"
+            unit_source = destination / "systemd/storylight-trained-planner-candidate@.service"
             if UNIT.exists() or UNIT.is_symlink():
                 unit_info = UNIT.lstat()
                 if (
@@ -370,7 +370,7 @@ def main() -> None:
             receipt_plan = {key: value for key, value in plan.items() if key != "approval_token"}
             receipt = {
                 **receipt_plan,
-                "artifact_type": "bookforge-jetson-tooling-install-receipt",
+                "artifact_type": "storylight-jetson-tooling-install-receipt",
                 "unit_sha256": sha256(UNIT),
             }
             receipt_bytes = canonical(receipt)

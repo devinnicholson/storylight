@@ -528,7 +528,7 @@ def build_shadow_evidence(
     stage_evidence = {
         "schema_version": "1.0",
         "stage": "jetson-shadow",
-        "producer": "bookforge-jetson-shadow-recorder",
+        "producer": "storylight-jetson-shadow-recorder",
         "run_id": run_id,
         "training_run_id": training_run_id,
         "config_sha256": config_sha256,

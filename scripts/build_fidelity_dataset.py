@@ -15,7 +15,7 @@ import tempfile
 from pathlib import Path
 from typing import Any
 
-from bookforge.fidelity_dataset import (
+from storylight.fidelity_dataset import (
     DATASET_ID,
     HIDDEN_DERIVATION,
     HIDDEN_KEY_BYTES,
@@ -27,7 +27,7 @@ from bookforge.fidelity_dataset import (
     records_jsonl,
     validate_split_isolation,
 )
-from bookforge.fidelity_manifest import (
+from storylight.fidelity_manifest import (
     FidelityDatasetManifest,
     build_dataset_manifest,
     sha256_bytes,

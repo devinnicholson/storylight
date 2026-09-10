@@ -1,0 +1,155 @@
+# Reviewed publication-tree false positives. Keep all default detection rules.
+[extend]
+useDefault = true
+
+[[allowlists]]
+description = "Deterministic controller test credential"
+targetRules = ["generic-api-key"]
+condition = "AND"
+regexTarget = "match"
+regexes = ['''^PAIRING_TOKEN\s*=\s*"0123456789abcdef"$''']
+paths = [
+  '''(?:^|/)tests/test_controller_gateway\.py$''',
+]
+
+[[allowlists]]
+description = "Recorded SHA256: api.py"
+targetRules = ["generic-api-key"]
+condition = "AND"
+regexTarget = "match"
+regexes = ['''^api\.py"\s*:\s*"[a-f0-9]{64}"$''']
+paths = [
+  '''(?:^|/)benchmarks/voice\-language\-2026\-09\-07/api\-deployment\.json$''',
+]
+
+[[allowlists]]
+description = "Recorded SHA256: key"
+targetRules = ["generic-api-key"]
+condition = "AND"
+regexTarget = "match"
+regexes = ['''^key"\s*:\s*"[a-f0-9]{64}"$''']
+paths = [
+  '''(?:^|/)experiments/voice\-launch\-policy/active\-results\.json$''',
+  '''(?:^|/)experiments/voice\-launch\-policy/results\.json$''',
+]
+
+[[allowlists]]
+description = "Recorded SHA256: key2row"
+targetRules = ["generic-api-key"]
+condition = "AND"
+regexTarget = "match"
+regexes = ['''^key2row"\s*:\s*"[a-f0-9]{64}"$''']
+paths = [
+  '''(?:^|/)benchmarks/voice\-language\-2026\-09\-07/model\-files\.json$''',
+  '''(?:^|/)benchmarks/voice\-retriever\-2026\-09\-08/breed\-adversarial\-rows\.json$''',
+  '''(?:^|/)benchmarks/voice\-static\-subject\-2026\-09\-08/actual\-parser\-rows\.json$''',
+  '''(?:^|/)tests/fixtures/voice\-copular\-location\-rows\.json$''',
+]
+
+[[allowlists]]
+description = "Privacy-rejection test input"
+targetRules = ["generic-api-key"]
+condition = "AND"
+regexTarget = "match"
+regexes = ['''^password hunter2", result_count=2$''']
+paths = [
+  '''(?:^|/)tests/test_scene_facts_underlying_regressions\.py$''',
+]
+
+[[allowlists]]
+description = "Recorded SHA256: token_and_mask_sha256"
+targetRules = ["generic-api-key"]
+condition = "AND"
+regexTarget = "match"
+regexes = ['''^token_and_mask_sha256"\s*:\s*"[a-f0-9]{64}"?$''']
+paths = [
+  '''(?:^|/)experiments/scene\-adapter\-v4\-2026\-09\-09/cpu\-preflight\.json$''',
+]
+
+[[allowlists]]
+description = "Recorded SHA256: tokenizer"
+targetRules = ["generic-api-key"]
+condition = "AND"
+regexTarget = "match"
+regexes = ['''^tokenizer"\s*:\s*"[a-f0-9]{64}"$''']
+paths = [
+  '''(?:^|/)benchmarks/voice\-language\-2026\-09\-07/model\-files\.json$''',
+  '''(?:^|/)benchmarks/voice\-retriever\-2026\-09\-08/breed\-adversarial\-rows\.json$''',
+  '''(?:^|/)benchmarks/voice\-static\-subject\-2026\-09\-08/actual\-parser\-rows\.json$''',
+  '''(?:^|/)tests/fixtures/voice\-copular\-location\-rows\.json$''',
+]
+
+[[allowlists]]
+description = "Recorded SHA256: tokenizer.json"
+targetRules = ["generic-api-key"]
+condition = "AND"
+regexTarget = "match"
+regexes = ['''^tokenizer\.json"\s*:\s*"[a-f0-9]{64}"$''']
+paths = [
+  '''(?:^|/)experiments/scene\-adapter\-v4\-2026\-09\-09/cpu\-preflight\.json$''',
+  '''(?:^|/)experiments/scene\-cache\-confirmation\-2026\-09\-09/cpu\-preflight\.json$''',
+  '''(?:^|/)experiments/scene\-decoding\-feasibility\-2026\-09\-09/cpu\-preflight\.json$''',
+]
+
+[[allowlists]]
+description = "Recorded SHA256: tokenizer_config.json"
+targetRules = ["generic-api-key"]
+condition = "AND"
+regexTarget = "match"
+regexes = ['''^tokenizer_config\.json"\s*:\s*"[a-f0-9]{64}"$''']
+paths = [
+  '''(?:^|/)experiments/scene\-adapter\-v4\-2026\-09\-09/cpu\-preflight\.json$''',
+  '''(?:^|/)experiments/scene\-cache\-confirmation\-2026\-09\-09/cpu\-preflight\.json$''',
+  '''(?:^|/)experiments/scene\-decoding\-feasibility\-2026\-09\-09/cpu\-preflight\.json$''',
+]
+
+[[allowlists]]
+description = "Recorded SHA256: tokenizer_sha256"
+targetRules = ["generic-api-key"]
+condition = "AND"
+regexTarget = "match"
+regexes = ['''^tokenizer_sha256"\s*:\s*"[a-f0-9]{64}"$''']
+paths = [
+  '''(?:^|/)benchmarks/scene\-routing\-2026\-09\-04/render\-journal\.jsonl$''',
+]
+
+[[allowlists]]
+description = "Recorded SHA256: train-token-validation.json"
+targetRules = ["generic-api-key"]
+condition = "AND"
+regexTarget = "match"
+regexes = ['''^train\-token\-validation\.json"\s*:\s*"[a-f0-9]{64}"$''']
+paths = [
+  '''(?:^|/)experiments/scene\-adapter\-v5\-2026\-09\-09/source\-freeze\.json$''',
+]
+
+# Gitleaks splits this minified receipt into chunks inside two recorded digests.
+[[allowlists]]
+description = "Exact SHA256 fragments at scanner chunk boundaries"
+targetRules = ["generic-api-key"]
+condition = "AND"
+regexTarget = "match"
+paths = ['''(?:^|/)experiments/scene-adapter-v4-2026-09-09/cpu-preflight\.json$''']
+regexes = [
+  '''^token_and_mask_sha256":\ "a0eee08be08f7d0fb87c218129d64b73cb51e51e15$''',
+  '''^token_and_mask_sha256":\ "7701ed3a3ed4ede4f62592266da7b64fbdb5258507c6f3b01bb175271fb5d4b$''',
+]
+
+[[allowlists]]
+description = "Historical demo deployment digest"
+targetRules = ["generic-api-key"]
+condition = "AND"
+regexTarget = "match"
+regexes = ['''^installed_api_sha256"\s*:\s*"[a-f0-9]{64}"$''']
+paths = ['''(?:^|/)docs/checkpoints/best-demo-2026-09-08/receipt\.json$''']
+
+[[allowlists]]
+description = "Historical custody-file SHA256 verification constants"
+targetRules = ["generic-api-key"]
+condition = "AND"
+regexTarget = "match"
+regexes = ['''^hidden\.key"\s*:\s*"[a-f0-9]{64}"$''']
+paths = [
+  '''(?:^|/)scripts/backup_fidelity_custody\.py$''',
+  '''(?:^|/)tests/test_fidelity_custody_backup\.py$''',
+]

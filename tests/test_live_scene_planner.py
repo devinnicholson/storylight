@@ -3,9 +3,9 @@ from pathlib import Path
 
 import pytest
 
-from bookforge.domain import ModelMetrics
-from bookforge.live_scene_grounding import prepare_grounded_wire
-from bookforge.live_scene_planner import (
+from storylight.domain import ModelMetrics
+from storylight.live_scene_grounding import prepare_grounded_wire
+from storylight.live_scene_planner import (
     LiveSceneCompactWirePlan,
     LiveScenePlacedLayerPlan,
     LiveScenePlan,
@@ -878,8 +878,8 @@ def test_grounded_facts_survive_privacy_and_final_renderer_prompt(
 def test_deferred_tensorrt_fallback_reaches_grounding_before_any_lossy_sanitizer(monkeypatch):
     import httpx
 
-    import bookforge.live_scene_planner as planner_module
-    from bookforge.tensorrt_slot_client import TensorRTSlotModelClient
+    import storylight.live_scene_planner as planner_module
+    from storylight.tensorrt_slot_client import TensorRTSlotModelClient
 
     source = "A brown fox stands beside a stream. No dogs."
     raw = LiveSceneWirePlan(

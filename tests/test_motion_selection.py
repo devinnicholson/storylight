@@ -1,6 +1,6 @@
 import pytest
 
-from bookforge.motion_selection import MotionSelectionError, build_motion_selection_report
+from storylight.motion_selection import MotionSelectionError, build_motion_selection_report
 
 
 def candidate(page: int, variant: str, *, stability: float, ssim: float = 0.98) -> dict:

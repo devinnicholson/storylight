@@ -32,16 +32,16 @@ def main():
         ),
         "LIVE_SCENE_PLANNER_AUTO_WARMUP": "false",
         "LIVE_SCENE_ENABLE_MOTION": "false",
-        "DATA_DIR": ".bookforge/overnight-candidate/data",
-        "CACHE_DIR": ".bookforge/overnight-candidate/cache",
-        "LIVE_SCENE_OUTPUT_DIR": ".bookforge/overnight-candidate/scenes",
+        "DATA_DIR": ".storylight/overnight-candidate/data",
+        "CACHE_DIR": ".storylight/overnight-candidate/cache",
+        "LIVE_SCENE_OUTPUT_DIR": ".storylight/overnight-candidate/scenes",
         "LIVE_SCENE_MODAL_PLAN_FILE": "experiments/renderer-fidelity/overnight-modal-plan.json",
-        "LIVE_SCENE_MODAL_LEDGER_PATH": ".bookforge/overnight-candidate/modal-ledger.json",
+        "LIVE_SCENE_MODAL_LEDGER_PATH": ".storylight/overnight-candidate/modal-ledger.json",
         "LIVE_SCENE_MODAL_SESSION_GPU_CAP_USD": "3",
         "ASSET_MODAL_COMMAND": str(root / ".venv/bin/modal"),
     }
-    os.environ.update({f"BOOKFORGE_{key}": value for key, value in settings.items()})
-    uvicorn.run("bookforge.api:app", host="127.0.0.1", port=args.port, timeout_graceful_shutdown=5)
+    os.environ.update({f"STORYLIGHT_{key}": value for key, value in settings.items()})
+    uvicorn.run("storylight.api:app", host="127.0.0.1", port=args.port, timeout_graceful_shutdown=5)
 
 
 if __name__ == "__main__":

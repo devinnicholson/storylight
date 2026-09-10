@@ -7,7 +7,7 @@ from datetime import UTC, datetime, timedelta
 import pytest
 from pydantic import ValidationError
 
-from bookforge.anticipatory import (
+from storylight.anticipatory import (
     AnticipationSource,
     AnticipatoryBatchRequest,
     AnticipatorySceneOrchestrator,
@@ -17,7 +17,7 @@ from bookforge.anticipatory import (
     PrivacyAttestation,
     RenderedScene,
 )
-from bookforge.nemotron_critic import (
+from storylight.nemotron_critic import (
     NemotronCriticDecision,
     NemotronCriticEvidence,
     NemotronCriticVerdict,

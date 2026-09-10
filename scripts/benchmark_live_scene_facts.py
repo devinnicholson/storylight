@@ -23,14 +23,14 @@ from typing import Annotated, Any, Literal
 import httpx
 from pydantic import BaseModel, ConfigDict, Field, StringConstraints
 
-from bookforge.fidelity_dataset import DATASET_ID, generate_split
-from bookforge.fidelity_evaluation import FIDELITY_EVALUATOR_REVISION, evaluate_surface
-from bookforge.fidelity_schema import DatasetSplit, FidelityRecord
-from bookforge.live_scene_planner import (
+from storylight.fidelity_dataset import DATASET_ID, generate_split
+from storylight.fidelity_evaluation import FIDELITY_EVALUATOR_REVISION, evaluate_surface
+from storylight.fidelity_schema import DatasetSplit, FidelityRecord
+from storylight.live_scene_planner import (
     LiveScenePlannerPrivacyError,
     validate_live_scene_plan_privacy,
 )
-from bookforge.tensorrt_slot_client import _slot_messages, tensor_slot_wire_plan
+from storylight.tensorrt_slot_client import _slot_messages, tensor_slot_wire_plan
 
 Digest = Annotated[str, StringConstraints(pattern=r"^[0-9a-f]{64}$")]
 Revision = Annotated[str, StringConstraints(pattern=r"^[0-9a-f]{40}$")]
@@ -223,7 +223,7 @@ def context(
     mode: Mode = "hybrid",
 ) -> dict[str, Any]:
     root = Path(__file__).resolve().parents[1]
-    paths = [Path(__file__), *sorted((root / "src/bookforge").glob("*.py"))]
+    paths = [Path(__file__), *sorted((root / "src/storylight").glob("*.py"))]
     header = {
         "kind": "header",
         "schema_version": 1,
@@ -323,7 +323,7 @@ def score(
     result = evaluate_surface(record, evaluated_output, surface=surface)
     schema_valid = result.schema_valid
     if surface == "raw":
-        from bookforge.tensorrt_slot_client import parse_tensor_graph_slots
+        from storylight.tensorrt_slot_client import parse_tensor_graph_slots
 
         try:
             parse_tensor_graph_slots(output)
@@ -385,7 +385,7 @@ def safe_slots(text: str, source: str, protocol: Literal["slots", "hybrid"]) -> 
 
 
 def renderer_contract(plan: Any, source: str) -> object:
-    from bookforge.live_scene_planner import LiveSceneGraphPlan
+    from storylight.live_scene_planner import LiveSceneGraphPlan
 
     style = "luminous storybook illustration"
     prompt = plan.to_page(source_text=source, visual_style=style, seed=0).scene_spec.master_prompt
@@ -411,8 +411,8 @@ def run_case(
         return run_accepted_first_case(
             client, record, index, model=model, max_output_tokens=max_output_tokens
         )
-    from bookforge.live_scene_facts import adapt_live_scene_facts
-    from bookforge.tensorrt_slot_client import parse_tensor_graph_slots
+    from storylight.live_scene_facts import adapt_live_scene_facts
+    from storylight.tensorrt_slot_client import parse_tensor_graph_slots
 
     surfaces: dict[str, Score] = {}
     try:
@@ -486,7 +486,7 @@ def run_case(
     start = time.perf_counter()
     try:
         if facts is not None:
-            from bookforge.tensorrt_slot_client import tensor_graph_wire_plan
+            from storylight.tensorrt_slot_client import tensor_graph_wire_plan
 
             plan = tensor_graph_wire_plan(hybrid, source_text=record.passage).to_live_scene_plan(
                 context_text=record.passage
@@ -530,7 +530,7 @@ def run_case(
 def run_accepted_first_case(
     client: httpx.Client, record: FidelityRecord, index: int, *, model: str, max_output_tokens: int
 ) -> CaseEvidence:
-    from bookforge.tensorrt_slot_client import tensor_accepted_graph_wire_plan
+    from storylight.tensorrt_slot_client import tensor_accepted_graph_wire_plan
 
     try:
         raw, learned_ms, tokens, complete = infer(client, record, "slots", model, max_output_tokens)

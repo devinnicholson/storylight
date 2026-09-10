@@ -7,16 +7,16 @@ PATH=/usr/sbin:/usr/bin:/sbin:/bin
 export PATH
 unset BASH_ENV ENV CDPATH GLOBIGNORE
 
-readonly CONFIG_FILE="/etc/bookforge/bookforge.env"
-readonly STATE_DIR="/var/lib/bookforge-trusted/trained-planner"
+readonly CONFIG_FILE="/etc/storylight/storylight.env"
+readonly STATE_DIR="/var/lib/storylight-trusted/trained-planner"
 readonly ACTIVE_STATE="$STATE_DIR/active.env"
-readonly CANDIDATE_ROOT="/var/lib/bookforge-trusted/trained-planner-candidates"
+readonly CANDIDATE_ROOT="/var/lib/storylight-trusted/trained-planner-candidates"
 readonly SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd -P)"
-readonly INSTALLER="${BOOKFORGE_CANDIDATE_INSTALLER:-$SCRIPT_DIR/install-trained-planner-candidate.sh}"
+readonly INSTALLER="${STORYLIGHT_CANDIDATE_INSTALLER:-$SCRIPT_DIR/install-trained-planner-candidate.sh}"
 readonly TERMINAL_RECORDER="$SCRIPT_DIR/record-trained-planner-terminal-evidence.py"
 readonly ACCEPTED_ENGINE_SHA256="95b69991b68c57a2d2d4bfa4116feb9ec57295588551d109353a42a9c16c4fdf"
 readonly CACHE_CONTRACT_REVISION="semantic-v18-tensorrt-slot-privacy"
-target_user="${BOOKFORGE_SERVICE_USER:-${SUDO_USER:-}}"
+target_user="${STORYLIGHT_SERVICE_USER:-${SUDO_USER:-}}"
 candidate_id=""
 manifest_sha256=""
 gate_evidence=""
@@ -92,15 +92,15 @@ done
 
 if [[ ! "$target_user" =~ ^[a-z_][a-z0-9_-]{0,31}$ ]] \
   || ! id "$target_user" >/dev/null 2>&1; then
-  printf 'Select a valid Bookforge service user with --user.\n' >&2
+  printf 'Select a valid Storylight service user with --user.\n' >&2
   exit 65
 fi
 if [[ ! "$candidate_id" =~ ^[a-z0-9][a-z0-9-]{2,95}$ ]] \
   || [[ ! "$manifest_sha256" =~ ^[a-f0-9]{64}$ ]] \
   || [[ ! "$gate_evidence_sha256" =~ ^[a-f0-9]{64}$ ]] \
-  || [[ "$terminal_evidence_dir" != /var/lib/bookforge-trusted/trained-planner/evidence/* ]] \
+  || [[ "$terminal_evidence_dir" != /var/lib/storylight-trusted/trained-planner/evidence/* ]] \
   || [[ "$(realpath -m -- "$terminal_evidence_dir")" != "$terminal_evidence_dir" ]] \
-  || [[ "$(dirname -- "$terminal_evidence_dir")" != /var/lib/bookforge-trusted/trained-planner/evidence ]] \
+  || [[ "$(dirname -- "$terminal_evidence_dir")" != /var/lib/storylight-trusted/trained-planner/evidence ]] \
   || [[ -e "$terminal_evidence_dir" || -L "$terminal_evidence_dir" ]] \
   || [[ ! -x "$TERMINAL_RECORDER" ]]; then
   usage >&2
@@ -196,7 +196,7 @@ if set(document) != required_top_level:
 if (
     document.get("schema_version") != "1.0"
     or document.get("stage") != "gate"
-    or document.get("producer") != "bookforge-fidelity-gate-builder"
+    or document.get("producer") != "storylight-fidelity-gate-builder"
     or document.get("status") != "passed"
 ):
     raise SystemExit("Gate evidence must be a passed gate artifact.")
@@ -280,7 +280,7 @@ if evidence["candidate_manifest"] != candidate_manifest_sha256:
 if evidence["dataset_manifest"] != document["dataset_manifest_sha256"]:
     raise SystemExit("Gate dataset evidence is not the candidate dataset.")
 PY
-readonly EXPECTED_APPROVAL_TOKEN="PROMOTE_BOOKFORGE_TRAINED_PLANNER:${target_user}:${candidate_id}:${manifest_sha256}:${gate_evidence_sha256}:${terminal_evidence_dir}"
+readonly EXPECTED_APPROVAL_TOKEN="PROMOTE_STORYLIGHT_TRAINED_PLANNER:${target_user}:${candidate_id}:${manifest_sha256}:${gate_evidence_sha256}:${terminal_evidence_dir}"
 
 if ((dry_run == 1)); then
   printf '%s\n' "$verification"
@@ -301,7 +301,7 @@ if [[ "$approval_token" != "$EXPECTED_APPROVAL_TOKEN" ]]; then
 fi
 if [[ ! -f "$CONFIG_FILE" || -L "$CONFIG_FILE" ]] \
   || [[ "$(stat -c '%U:%G:%a' "$CONFIG_FILE")" != "root:root:600" ]]; then
-  printf 'Bookforge environment is missing or unsafe.\n' >&2
+  printf 'Storylight environment is missing or unsafe.\n' >&2
   exit 78
 fi
 if [[ -e "$ACTIVE_STATE" ]]; then
@@ -312,9 +312,9 @@ if swapon --show --noheadings | grep -q .; then
   printf 'Promotion refuses active swap. Disable build-only swap first.\n' >&2
   exit 70
 fi
-if ! grep -Fxq 'BOOKFORGE_LIVE_SCENE_PLANNER_BACKEND=tensorrt_slots' "$CONFIG_FILE" \
-  || ! grep -Fxq 'BOOKFORGE_LIVE_SCENE_PLANNER_BASE_URL=http://127.0.0.1:11435' "$CONFIG_FILE" \
-  || ! grep -Fxq "BOOKFORGE_LIVE_SCENE_PLANNER_MODEL_REVISION=sha256:${ACCEPTED_ENGINE_SHA256}" \
+if ! grep -Fxq 'STORYLIGHT_LIVE_SCENE_PLANNER_BACKEND=tensorrt_slots' "$CONFIG_FILE" \
+  || ! grep -Fxq 'STORYLIGHT_LIVE_SCENE_PLANNER_BASE_URL=http://127.0.0.1:11435' "$CONFIG_FILE" \
+  || ! grep -Fxq "STORYLIGHT_LIVE_SCENE_PLANNER_MODEL_REVISION=sha256:${ACCEPTED_ENGINE_SHA256}" \
     "$CONFIG_FILE"; then
   printf 'Production is not the exact accepted TensorRT configuration.\n' >&2
   exit 78
@@ -323,12 +323,12 @@ fi
 target_uid="$(id -u "$target_user")"
 target_home="$(getent passwd "$target_user" | cut -d: -f6)"
 if [[ -z "$target_home" || "$target_home" != /* || ! -d "$target_home" ]]; then
-  printf 'Cannot resolve the Bookforge service user home directory.\n' >&2
+  printf 'Cannot resolve the Storylight service user home directory.\n' >&2
   exit 65
 fi
 readonly TARGET_UID="$target_uid"
 readonly TARGET_HOME="$target_home"
-readonly ACCEPTED_ENGINE="$TARGET_HOME/.local/share/bookforge/tensorrt-edgellm-v0.10.0/models/gemma4-e2b-it-int4-awq-v010/engines/llm/llm.engine"
+readonly ACCEPTED_ENGINE="$TARGET_HOME/.local/share/storylight/tensorrt-edgellm-v0.10.0/models/gemma4-e2b-it-int4-awq-v010/engines/llm/llm.engine"
 if [[ ! -s "$ACCEPTED_ENGINE" || -L "$ACCEPTED_ENGINE" ]] \
   || [[ "$(sha256sum "$ACCEPTED_ENGINE" | cut -d' ' -f1)" != "$ACCEPTED_ENGINE_SHA256" ]]; then
   printf 'The exact accepted TensorRT engine is missing or changed.\n' >&2
@@ -342,14 +342,14 @@ user_systemctl() {
     systemctl --user "$@"
 }
 
-readonly UNIT="bookforge-trained-planner-candidate@${candidate_id}.service"
-readonly ACCEPTED_UNIT="bookforge-tensorrt-planner.service"
-readonly GEMMA_UNIT="bookforge-gemma.service"
-readonly KIOSK_UNIT="bookforge-kiosk.service"
+readonly UNIT="storylight-trained-planner-candidate@${candidate_id}.service"
+readonly ACCEPTED_UNIT="storylight-tensorrt-planner.service"
+readonly GEMMA_UNIT="storylight-gemma.service"
+readonly KIOSK_UNIT="storylight-kiosk.service"
 readonly TIMESTAMP="$(date -u +%Y%m%dT%H%M%SZ)"
 readonly BACKUP_DIR="$STATE_DIR/rollback/${TIMESTAMP}-${candidate_id}"
-readonly BACKUP_FILE="$BACKUP_DIR/bookforge.env"
-readonly PORT_ENV="/etc/bookforge/trained-planner/${candidate_id}.env"
+readonly BACKUP_FILE="$BACKUP_DIR/storylight.env"
+readonly PORT_ENV="/etc/storylight/trained-planner/${candidate_id}.env"
 readonly ACTIVE_MODEL_REVISION="$model_revision"
 kiosk_was_active=0
 promotion_complete=0
@@ -362,7 +362,7 @@ write_state() {
     printf 'CANDIDATE_ID=%s\n' "$candidate_id"
     printf 'MANIFEST_SHA256=%s\n' "$manifest_sha256"
     printf 'GATE_EVIDENCE_SHA256=%s\n' "$gate_evidence_sha256"
-    printf 'GATE_PRODUCER=%s\n' 'bookforge-fidelity-gate-builder'
+    printf 'GATE_PRODUCER=%s\n' 'storylight-fidelity-gate-builder'
     printf 'MODEL_REVISION=%s\n' "$model_revision"
     printf 'ENGINE_SHA256=%s\n' "$engine_sha256"
     printf 'CACHE_CONTRACT_REVISION=%s\n' "$CACHE_CONTRACT_REVISION"
@@ -385,7 +385,7 @@ restore_exact_runtime() {
       user_systemctl stop "$KIOSK_UNIT" || true
     fi
     if [[ -s "$BACKUP_FILE" ]]; then
-      restore_tmp="$(mktemp /etc/bookforge/.bookforge.env.rollback.XXXXXX)"
+      restore_tmp="$(mktemp /etc/storylight/.storylight.env.rollback.XXXXXX)"
       install -o root -g root -m 0600 "$BACKUP_FILE" "$restore_tmp"
       mv -f "$restore_tmp" "$CONFIG_FILE"
     fi
@@ -397,8 +397,8 @@ restore_exact_runtime() {
     fi
     user_systemctl stop "$GEMMA_UNIT" || true
     user_systemctl start "$ACCEPTED_UNIT" || true
-    systemctl restart "bookforge@${target_user}.service" \
-      "bookforge-controller@${target_user}.service" || true
+    systemctl restart "storylight@${target_user}.service" \
+      "storylight-controller@${target_user}.service" || true
     if ((kiosk_was_active == 1)); then
       user_systemctl start "$KIOSK_UNIT" || true
     fi
@@ -411,7 +411,7 @@ restore_exact_runtime() {
 }
 
 install -d -o root -g root -m 0700 "$STATE_DIR" "$STATE_DIR/rollback" "$BACKUP_DIR"
-install -d -o root -g root -m 0755 /etc/bookforge/trained-planner
+install -d -o root -g root -m 0755 /etc/storylight/trained-planner
 install -o root -g root -m 0600 "$CONFIG_FILE" "$BACKUP_FILE"
 if user_systemctl is-active --quiet "$KIOSK_UNIT"; then
   kiosk_was_active=1
@@ -419,7 +419,7 @@ fi
 write_state PROMOTING
 trap restore_exact_runtime EXIT INT TERM
 
-config_tmp="$(mktemp /etc/bookforge/.bookforge.env.candidate.XXXXXX)"
+config_tmp="$(mktemp /etc/storylight/.storylight.env.candidate.XXXXXX)"
 python3 - "$CONFIG_FILE" "$config_tmp" "$ACTIVE_MODEL_REVISION" \
   "$CACHE_CONTRACT_REVISION" <<'PY'
 from pathlib import Path
@@ -430,14 +430,14 @@ destination = Path(sys.argv[2])
 revision = sys.argv[3]
 contract_revision = sys.argv[4]
 replacements = {
-    "BOOKFORGE_LIVE_SCENE_PLANNER": "model",
-    "BOOKFORGE_LIVE_SCENE_PLANNER_BACKEND": "tensorrt_slots",
-    "BOOKFORGE_LIVE_SCENE_PLANNER_BASE_URL": "http://127.0.0.1:11435",
-    "BOOKFORGE_LIVE_SCENE_PLANNER_MODEL_NAME": "llm",
-    "BOOKFORGE_LIVE_SCENE_PLANNER_MAX_OUTPUT_TOKENS": "64",
-    "BOOKFORGE_LIVE_SCENE_PLANNER_MODEL_REVISION": revision,
-    "BOOKFORGE_LIVE_SCENE_PLANNER_CACHE_CONTRACT_REVISION": contract_revision,
-    "BOOKFORGE_LIVE_SCENE_PLANNER_COMPACT_WIRE": "false",
+    "STORYLIGHT_LIVE_SCENE_PLANNER": "model",
+    "STORYLIGHT_LIVE_SCENE_PLANNER_BACKEND": "tensorrt_slots",
+    "STORYLIGHT_LIVE_SCENE_PLANNER_BASE_URL": "http://127.0.0.1:11435",
+    "STORYLIGHT_LIVE_SCENE_PLANNER_MODEL_NAME": "llm",
+    "STORYLIGHT_LIVE_SCENE_PLANNER_MAX_OUTPUT_TOKENS": "64",
+    "STORYLIGHT_LIVE_SCENE_PLANNER_MODEL_REVISION": revision,
+    "STORYLIGHT_LIVE_SCENE_PLANNER_CACHE_CONTRACT_REVISION": contract_revision,
+    "STORYLIGHT_LIVE_SCENE_PLANNER_COMPACT_WIRE": "false",
 }
 remaining = dict(replacements)
 updated = []
@@ -454,8 +454,8 @@ chown root:root "$config_tmp"
 chmod 0600 "$config_tmp"
 mv -f "$config_tmp" "$CONFIG_FILE"
 
-port_tmp="$(mktemp /etc/bookforge/trained-planner/.candidate.env.XXXXXX)"
-printf 'BOOKFORGE_EDGELLM_SERVER_PORT=11435\n' >"$port_tmp"
+port_tmp="$(mktemp /etc/storylight/trained-planner/.candidate.env.XXXXXX)"
+printf 'STORYLIGHT_EDGELLM_SERVER_PORT=11435\n' >"$port_tmp"
 chown root:root "$port_tmp"
 chmod 0644 "$port_tmp"
 mv -f "$port_tmp" "$PORT_ENV"
@@ -467,7 +467,7 @@ fi
 user_systemctl stop "$ACCEPTED_UNIT"
 user_systemctl stop "$GEMMA_UNIT" || true
 for _ in $(seq 1 30); do
-  if ! pgrep -u "$TARGET_UID" -f 'experimental.server|ollama serve|firefox-bookforge' \
+  if ! pgrep -u "$TARGET_UID" -f 'experimental.server|ollama serve|firefox-storylight' \
     >/dev/null 2>&1; then
     break
   fi
@@ -488,8 +488,8 @@ for _ in $(seq 1 90); do
   sleep 1
 done
 curl --fail --silent --show-error http://127.0.0.1:11435/v1/models >/dev/null
-systemctl restart "bookforge@${target_user}.service" \
-  "bookforge-controller@${target_user}.service"
+systemctl restart "storylight@${target_user}.service" \
+  "storylight-controller@${target_user}.service"
 for _ in $(seq 1 30); do
   if curl --fail --silent --max-time 1 http://127.0.0.1:8080/readyz >/dev/null 2>&1 \
     && curl --fail --silent --max-time 1 http://127.0.0.1:8081/healthz >/dev/null 2>&1; then

@@ -3,11 +3,11 @@
   "deployment_sha256": "c646fb80845c5c1d84f539b842197e05b97dfc0b44a0fb22bd7b546130aed9d9",
   "deployments": {
     "http": {
-      "app": "bookforge-klein-region-http",
+      "app": "storylight-klein-region-http",
       "class": "RegionServer"
     },
     "sdk": {
-      "app": "bookforge-klein-region-sdk",
+      "app": "storylight-klein-region-sdk",
       "class": "RegionStudio"
     }
   },

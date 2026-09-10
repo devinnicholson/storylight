@@ -5,7 +5,7 @@ import httpx
 import pytest
 from pydantic import ValidationError
 
-from bookforge.nemotron_critic import (
+from storylight.nemotron_critic import (
     DEFAULT_NEMOTRON_VL_MODEL,
     NEMOTRON_CRITIC_MAX_OUTPUT_TOKENS,
     NEMOTRON_CRITIC_WIRE_SCHEMA,

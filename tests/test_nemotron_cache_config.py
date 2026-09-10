@@ -27,7 +27,7 @@ def test_cache_configuration_requires_stopped_runtime(tmp_path, running, changed
             "template": {
                 "spec": {
                     "nodeSelector": {"cloud.google.com/gke-accelerator": "nvidia-l4"},
-                    "volumes": [{"persistentVolumeClaim": {"claimName": "bookforge-nim-cache"}}],
+                    "volumes": [{"persistentVolumeClaim": {"claimName": "storylight-nim-cache"}}],
                     "containers": [
                         {
                             "name": "nemotron-nim",
@@ -73,7 +73,7 @@ def test_cache_configuration_requires_stopped_runtime(tmp_path, running, changed
             "PATH": f"{tmp_path}:{os.environ['PATH']}",
             "FIXTURE": str(fixture),
             "MUTATION": str(mutation),
-            "BOOKFORGE_NIM_CACHE_APPLY": "I_UNDERSTAND_THIS_CONFIGURES_THE_STOPPED_NIM",
+            "STORYLIGHT_NIM_CACHE_APPLY": "I_UNDERSTAND_THIS_CONFIGURES_THE_STOPPED_NIM",
         },
     )
     assert result.returncode == expected, result.stderr

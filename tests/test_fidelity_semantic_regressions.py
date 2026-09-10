@@ -2,14 +2,14 @@ from __future__ import annotations
 
 import pytest
 
-from bookforge.fidelity_evaluation import (
+from storylight.fidelity_evaluation import (
     FIDELITY_EVALUATOR_REVISION,
     _descriptor_phrases,
     _scene_graph_signature,
     evaluate_surface,
     extract_surface,
 )
-from bookforge.scene_facts import SceneFactsV2
+from storylight.scene_facts import SceneFactsV2
 
 
 def record(*expectations, passage=None, **updates):

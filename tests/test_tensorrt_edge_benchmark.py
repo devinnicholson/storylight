@@ -4,7 +4,7 @@ import importlib.util
 import json
 from pathlib import Path
 
-from bookforge.planner_benchmark import CASES, CONTEST_CASES
+from storylight.planner_benchmark import CASES, CONTEST_CASES
 
 SCRIPT = Path("deploy/jetson/benchmark-tensorrt-edge-llm.py")
 SPEC = importlib.util.spec_from_file_location("tensorrt_edge_benchmark", SCRIPT)

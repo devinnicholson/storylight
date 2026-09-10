@@ -1,13 +1,13 @@
 from __future__ import annotations
 
-from bookforge.fidelity_dataset import generate_split
-from bookforge.fidelity_evaluation import (
+from storylight.fidelity_dataset import generate_split
+from storylight.fidelity_evaluation import (
     evaluate_record,
     evaluate_surface,
 )
-from bookforge.fidelity_graph_targets import derive_fidelity_graph_target
-from bookforge.fidelity_schema import DatasetSplit
-from bookforge.scene_facts import SceneFactsV2, SceneNegativeFact
+from storylight.fidelity_graph_targets import derive_fidelity_graph_target
+from storylight.fidelity_schema import DatasetSplit
+from storylight.scene_facts import SceneFactsV2, SceneNegativeFact
 
 
 def _record(**updates: object) -> dict[str, object]:

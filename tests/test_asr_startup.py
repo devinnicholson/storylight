@@ -3,8 +3,8 @@ import threading
 
 import pytest
 
-from bookforge.asr import LocalTranscriber, TranscriptionError
-from bookforge.config import Settings
+from storylight.asr import LocalTranscriber, TranscriptionError
+from storylight.config import Settings
 
 
 def test_startup_runs_once_and_preserves_real_transcription(tmp_path, monkeypatch):
@@ -81,7 +81,7 @@ def test_cancelled_startup_joins_worker_before_releasing_lock(tmp_path, monkeypa
 def test_api_prepares_before_creating_clients_and_rejects_wrong_backend(tmp_path, monkeypatch):
     from fastapi import FastAPI
 
-    import bookforge.api as api
+    import storylight.api as api
 
     settings = Settings(asr_startup_audio=str(tmp_path / "primer.webm"))
     monkeypatch.setattr(api, "get_settings", lambda: settings)

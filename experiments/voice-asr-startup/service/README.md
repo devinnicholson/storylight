@@ -32,8 +32,8 @@ local ASR, with image backends disabled.
 
 ## Operation
 
-Set `BOOKFORGE_ASR_STARTUP_AUDIO` to an existing short synthetic speech file
-alongside `BOOKFORGE_ASR_BACKEND=mlx_whisper`. The API transcribes it once before
+Set `STORYLIGHT_ASR_STARTUP_AUDIO` to an existing short synthetic speech file
+alongside `STORYLIGHT_ASR_BACKEND=mlx_whisper`. The API transcribes it once before
 creating service clients or accepting requests. Its transcript is discarded.
 `/v1/runtime:status` reports `prepared in … ms` only after successful decoding.
 Missing, nonregular, empty, oversized, unsupported or speechless input fails

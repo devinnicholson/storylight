@@ -2,7 +2,7 @@ from types import SimpleNamespace
 
 import pytest
 
-from bookforge.live_scene_grounding import LiveSceneGroundingError, validate_wire_grounding
+from storylight.live_scene_grounding import LiveSceneGroundingError, validate_wire_grounding
 
 
 def wire(subject, action, supporting="none", background="neutral background"):

@@ -1,4 +1,4 @@
-from bookforge.semantic_text import normalize_semantic_phrase, semantic_lemma
+from storylight.semantic_text import normalize_semantic_phrase, semantic_lemma
 
 
 def test_shared_semantic_normalization_preserves_words_ending_in_double_s() -> None:

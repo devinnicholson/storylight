@@ -41,8 +41,8 @@ function harness() {
     setTimeout: schedule(timers), clearTimeout: id => timers.delete(id),
     requestAnimationFrame: schedule(frames), cancelAnimationFrame: id => frames.delete(id),
   };
-  vm.runInNewContext(fs.readFileSync("src/bookforge/static/hand-interaction.js", "utf8"), context);
-  const app = context.window.BookforgeHands.init({stage: node("stage"), solve: () => [1, 0, 0, 0, 1, 0, 0, 0], screenToStage: () => ({x: .5, y: .5}), blocked: () => blocked, projectionIdentity: () => projection});
+  vm.runInNewContext(fs.readFileSync("src/storylight/static/hand-interaction.js", "utf8"), context);
+  const app = context.window.StorylightHands.init({stage: node("stage"), solve: () => [1, 0, 0, 0, 1, 0, 0, 0], screenToStage: () => ({x: .5, y: .5}), blocked: () => blocked, projectionIdentity: () => projection});
   async function flush() { for (let i = 0; i < 12; i++) await Promise.resolve(); }
   async function tick(value) {
     now = value;
@@ -63,7 +63,7 @@ function harness() {
   assert.equal(h.workers.length, 0);
   assert.equal(h.timers.size + h.frames.size, 0);
   assert.equal(h.counters().cameraRequests, 0);
-  const {validCorners, project} = h.context.window.BookforgeHands;
+  const {validCorners, project} = h.context.window.StorylightHands;
   const square = [{x: .1, y: .1}, {x: .9, y: .1}, {x: .9, y: .9}, {x: .1, y: .9}];
   assert.equal(validCorners(square), true);
   assert.equal(validCorners([square[0], square[2], square[1], square[3]]), false);

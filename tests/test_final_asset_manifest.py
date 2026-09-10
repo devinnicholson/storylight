@@ -2,7 +2,7 @@ from copy import deepcopy
 
 import pytest
 
-from bookforge.final_asset_manifest import (
+from storylight.final_asset_manifest import (
     FinalAssetManifestError,
     build_final_asset_manifest,
 )

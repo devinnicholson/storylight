@@ -6,8 +6,8 @@ from time import perf_counter
 import pytest
 from pydantic import ValidationError
 
-from bookforge.asset_cache import AssetCache
-from bookforge.live_scene import (
+from storylight.asset_cache import AssetCache
+from storylight.live_scene import (
     DeterministicFakeLiveSceneProvider,
     LiveSceneCapacityError,
     LiveSceneConflictError,
@@ -20,7 +20,7 @@ from bookforge.live_scene import (
     build_live_scene_story_pack,
     live_scene_request_seed,
 )
-from bookforge.story_store import StoryPackStore
+from storylight.story_store import StoryPackStore
 
 
 def test_live_scene_request_is_strict_text_only() -> None:

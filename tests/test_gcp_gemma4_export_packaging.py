@@ -11,7 +11,7 @@ def test_gcp_export_is_bounded_and_completion_manifest_is_last() -> None:
     assert "JOB_TIMEOUT_SECONDS = 1_200" in exporter
     assert "if_generation_match=0" in exporter
     assert "completion.upload_from_string(" in exporter
-    assert '"bookforge_tensorrt_export_progress"' in exporter
+    assert '"storylight_tensorrt_export_progress"' in exporter
     assert '_progress("python_entrypoint")' in exporter
     assert '"cuda_ready"' in exporter
     assert '"artifact_upload_complete"' in exporter

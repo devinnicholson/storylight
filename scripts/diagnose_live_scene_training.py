@@ -14,17 +14,17 @@ from collections import Counter
 from itertools import islice
 from pathlib import Path
 
-import bookforge
-from bookforge import fidelity_evaluation
-from bookforge.fidelity_dataset import generate_split
-from bookforge.fidelity_evaluation import evaluate_surface
-from bookforge.fidelity_schema import DatasetSplit
-from bookforge.live_scene_facts import adapt_live_scene_facts
-from bookforge.live_scene_planner import (
+import storylight
+from storylight import fidelity_evaluation
+from storylight.fidelity_dataset import generate_split
+from storylight.fidelity_evaluation import evaluate_surface
+from storylight.fidelity_schema import DatasetSplit
+from storylight.live_scene_facts import adapt_live_scene_facts
+from storylight.live_scene_planner import (
     LiveScenePlannerPrivacyError,
     validate_live_scene_plan_privacy,
 )
-from bookforge.tensorrt_slot_client import (
+from storylight.tensorrt_slot_client import (
     parse_tensor_graph_slots,
     tensor_accepted_graph_wire_plan,
     tensor_slot_wire_plan,
@@ -91,7 +91,7 @@ def build_report() -> dict:
             case["integrated"] = "refused"
         totals["integrated_" + case["integrated"]] += 1
         cases.append(case)
-    source_dir = Path(bookforge.__file__).resolve().parent
+    source_dir = Path(storylight.__file__).resolve().parent
     return {
         "schema_version": 1,
         "diagnostic": "live-scene-first-32-training-controls",

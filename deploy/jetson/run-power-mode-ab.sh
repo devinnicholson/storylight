@@ -3,15 +3,15 @@
 
 set -euo pipefail
 
-readonly TARGET_USER="${BOOKFORGE_POWER_AB_USER:-operator}"
-readonly TRUSTED_ROOT="/var/lib/bookforge-trusted"
+readonly TARGET_USER="${STORYLIGHT_POWER_AB_USER:-operator}"
+readonly TRUSTED_ROOT="/var/lib/storylight-trusted"
 readonly STATE_DIR="$TRUSTED_ROOT/power-mode-ab"
 readonly EVIDENCE_DIR="$STATE_DIR/evidence"
 readonly PHASE_FILE="$STATE_DIR/phase"
-readonly BASELINE_SOURCE="/tmp/bookforge-inference-25w-power.json"
-readonly BASELINE_TELEMETRY_SOURCE="/tmp/bookforge-25w-tegrastats.log"
-readonly MAXN_REPORT="$EVIDENCE_DIR/bookforge-inference-maxn.json"
-readonly MAXN_TELEMETRY="$EVIDENCE_DIR/bookforge-maxn-tegrastats.log"
+readonly BASELINE_SOURCE="/tmp/storylight-inference-25w-power.json"
+readonly BASELINE_TELEMETRY_SOURCE="/tmp/storylight-25w-tegrastats.log"
+readonly MAXN_REPORT="$EVIDENCE_DIR/storylight-inference-maxn.json"
+readonly MAXN_TELEMETRY="$EVIDENCE_DIR/storylight-maxn-tegrastats.log"
 readonly MODEL_REVISION="8648f39d-maxn-resident"
 monitor_pid=""
 
@@ -38,7 +38,7 @@ if [[ ${EUID:-$(id -u)} -ne 0 ]]; then
   exit 64
 fi
 if ! id "$TARGET_USER" >/dev/null 2>&1; then
-  printf 'Bookforge user does not exist: %s\n' "$TARGET_USER" >&2
+  printf 'Storylight user does not exist: %s\n' "$TARGET_USER" >&2
   exit 65
 fi
 readonly TARGET_GROUP="$(id -gn "$TARGET_USER")"
@@ -55,7 +55,7 @@ for required in nvpmodel curl tegrastats runuser sha256sum pgrep; do
 done
 
 ensure_state_layout() {
-  # The benchmark runs as the unprivileged Bookforge user. Keep the phase file root-owned while
+  # The benchmark runs as the unprivileged Storylight user. Keep the phase file root-owned while
   # allowing that user to traverse the parent and write only inside the evidence directory.
   if [[ ! -d /var/lib || -L /var/lib ]] \
     || [[ "$(stat -c '%U:%G:%a' /var/lib)" != "root:root:755" ]]; then
@@ -65,7 +65,7 @@ ensure_state_layout() {
   if [[ -e "$TRUSTED_ROOT" || -L "$TRUSTED_ROOT" ]]; then
     if [[ ! -d "$TRUSTED_ROOT" || -L "$TRUSTED_ROOT" ]] \
       || [[ "$(stat -c '%U:%G:%a' "$TRUSTED_ROOT")" != "root:root:755" ]]; then
-      printf 'The Bookforge trusted state root is unsafe.\n' >&2
+      printf 'The Storylight trusted state root is unsafe.\n' >&2
       exit 78
     fi
   else
@@ -105,7 +105,7 @@ cleanup_stale_monitor() {
   stale_pattern="^(tegrastats|/usr/bin/tegrastats) --interval 500 --logfile ${MAXN_TELEMETRY}$"
   while IFS= read -r stale_pid; do
     [[ -n "$stale_pid" ]] || continue
-    printf 'Stopping stale Bookforge telemetry monitor PID %s.\n' "$stale_pid"
+    printf 'Stopping stale Storylight telemetry monitor PID %s.\n' "$stale_pid"
     kill "$stale_pid"
     for _ in $(seq 1 20); do
       kill -0 "$stale_pid" 2>/dev/null || break
@@ -174,7 +174,7 @@ wait_for_runtime() {
     fi
     sleep 1
   done
-  printf 'Bookforge API or local model runtime did not become ready.\n' >&2
+  printf 'Storylight API or local model runtime did not become ready.\n' >&2
   exit 71
 }
 
@@ -194,12 +194,12 @@ prepare_maxn() {
 
   ensure_state_layout
   install -o "$TARGET_USER" -g "$TARGET_GROUP" -m 0640 \
-    "$BASELINE_SOURCE" "$EVIDENCE_DIR/bookforge-inference-25w.json"
+    "$BASELINE_SOURCE" "$EVIDENCE_DIR/storylight-inference-25w.json"
   install -o "$TARGET_USER" -g "$TARGET_GROUP" -m 0640 \
-    "$BASELINE_TELEMETRY_SOURCE" "$EVIDENCE_DIR/bookforge-25w-tegrastats.log"
+    "$BASELINE_TELEMETRY_SOURCE" "$EVIDENCE_DIR/storylight-25w-tegrastats.log"
   sha256sum \
-    "$EVIDENCE_DIR/bookforge-inference-25w.json" \
-    "$EVIDENCE_DIR/bookforge-25w-tegrastats.log" \
+    "$EVIDENCE_DIR/storylight-inference-25w.json" \
+    "$EVIDENCE_DIR/storylight-25w-tegrastats.log" \
     >"$EVIDENCE_DIR/sha256sums-25w.txt"
   chown "$TARGET_USER:$TARGET_GROUP" "$EVIDENCE_DIR/sha256sums-25w.txt"
   chmod 0640 "$EVIDENCE_DIR/sha256sums-25w.txt"
@@ -227,8 +227,8 @@ benchmark_maxn() {
   monitor_pid=$!
   trap cleanup_monitor EXIT INT TERM
 
-  runuser -u "$TARGET_USER" -- env PYTHONPATH=/opt/bookforge/src \
-    /opt/bookforge/.venv/bin/python -m bookforge.planner_benchmark \
+  runuser -u "$TARGET_USER" -- env PYTHONPATH=/opt/storylight/src \
+    /opt/storylight/.venv/bin/python -m storylight.planner_benchmark \
     --contract standard \
     --max-output-tokens 320 \
     --keep-alive=-1m \
@@ -241,7 +241,7 @@ benchmark_maxn() {
   chmod 0640 "$MAXN_REPORT" "$MAXN_TELEMETRY"
 
   python3 - "$MAXN_REPORT" "$MAXN_TELEMETRY" \
-    "$EVIDENCE_DIR/bookforge-maxn-summary.json" <<'PY'
+    "$EVIDENCE_DIR/storylight-maxn-summary.json" <<'PY'
 import json
 import pathlib
 import re
@@ -270,10 +270,10 @@ summary = {
 pathlib.Path(sys.argv[3]).write_text(json.dumps(summary, indent=2) + "\n")
 print(json.dumps(summary, indent=2))
 PY
-  chown "$TARGET_USER:$TARGET_GROUP" "$EVIDENCE_DIR/bookforge-maxn-summary.json"
-  chmod 0640 "$EVIDENCE_DIR/bookforge-maxn-summary.json"
+  chown "$TARGET_USER:$TARGET_GROUP" "$EVIDENCE_DIR/storylight-maxn-summary.json"
+  chmod 0640 "$EVIDENCE_DIR/storylight-maxn-summary.json"
   sha256sum "$MAXN_REPORT" "$MAXN_TELEMETRY" \
-    "$EVIDENCE_DIR/bookforge-maxn-summary.json" \
+    "$EVIDENCE_DIR/storylight-maxn-summary.json" \
     >"$EVIDENCE_DIR/sha256sums-maxn.txt"
   chown "$TARGET_USER:$TARGET_GROUP" "$EVIDENCE_DIR/sha256sums-maxn.txt"
   chmod 0640 "$EVIDENCE_DIR/sha256sums-maxn.txt"
@@ -311,7 +311,7 @@ finalize() {
     printf '  "result": "complete",\n'
     printf '  "restored_mode": "25W",\n'
     printf '  "restored_mode_id": 1,\n'
-    printf '  "bookforge_ready": true,\n'
+    printf '  "storylight_ready": true,\n'
     printf '  "gemma_runtime_ready": true\n'
     printf '}\n'
   } >"$EVIDENCE_DIR/final-state.json"

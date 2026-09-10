@@ -8,9 +8,9 @@ from types import SimpleNamespace
 import httpx
 import pytest
 
-from bookforge.finite_modal_provider import FastSceneRequest
-from bookforge.provider_router import ProviderRoute, ResilientFastSceneProvider
-from bookforge.vertex_scene_provider import (
+from storylight.finite_modal_provider import FastSceneRequest
+from storylight.provider_router import ProviderRoute, ResilientFastSceneProvider
+from storylight.vertex_scene_provider import (
     VertexGeminiImageSceneProvider,
     VertexSceneAmbiguousError,
     _projection_depth_png,
@@ -82,7 +82,7 @@ def test_recording_and_submission_share_head_despite_cancelled_recording(tmp_pat
 
 
 def test_cache_reads_do_not_extend_expiry_and_failures_are_not_cached(monkeypatch):
-    import bookforge.provider_router as module
+    import storylight.provider_router as module
 
     now, responses, methods = [0.0], [404, 401, 404], []
     monkeypatch.setattr(module, "time", SimpleNamespace(
@@ -288,7 +288,7 @@ def test_ambiguous_generation_invalidates_readiness_without_retry(tmp_path):
 
 
 def test_api_is_empty_local_only_and_does_not_accept_generic_warmup(monkeypatch):
-    from bookforge.api import app
+    from storylight.api import app
 
     methods = []
 

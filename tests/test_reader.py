@@ -1,6 +1,6 @@
 
 
-from bookforge.reader import ReaderAligner, ReaderState, TranscriptMode, tokenize
+from storylight.reader import ReaderAligner, ReaderState, TranscriptMode, tokenize
 
 MOON_GATE_TEXT = "The small moth went through the red gate."
 

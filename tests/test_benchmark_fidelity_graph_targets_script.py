@@ -7,8 +7,8 @@ from pathlib import Path
 
 import pytest
 
-from bookforge.fidelity_evaluation import FIDELITY_EVALUATOR_REVISION
-from bookforge.fidelity_schema import DatasetSplit
+from storylight.fidelity_evaluation import FIDELITY_EVALUATOR_REVISION
+from storylight.fidelity_schema import DatasetSplit
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))

@@ -54,7 +54,7 @@ def download(url: str) -> bytes:
 
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--destination", type=Path, default=Path("src/bookforge/static/mediapipe"))
+    parser.add_argument("--destination", type=Path, default=Path("src/storylight/static/mediapipe"))
     parser.add_argument("--package", type=Path, help="Use an already downloaded pinned package")
     parser.add_argument("--model", type=Path, help="Use an already downloaded pinned model")
     args = parser.parse_args()

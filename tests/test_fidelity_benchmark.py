@@ -4,7 +4,7 @@ from dataclasses import replace
 
 import pytest
 
-from bookforge.fidelity_benchmark import (
+from storylight.fidelity_benchmark import (
     FidelitySummary,
     PopulationContract,
     RuntimeEvidence,
@@ -12,8 +12,8 @@ from bookforge.fidelity_benchmark import (
     decide_promotion,
     summarize_evaluations,
 )
-from bookforge.fidelity_dataset import CATEGORIES
-from bookforge.fidelity_evaluation import evaluate_surface
+from storylight.fidelity_dataset import CATEGORIES
+from storylight.fidelity_evaluation import evaluate_surface
 
 
 def _record(record_id: str, variant: str) -> dict[str, object]:

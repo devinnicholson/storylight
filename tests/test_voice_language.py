@@ -4,9 +4,9 @@ import json
 import unittest
 from pathlib import Path
 
-from bookforge.bounded_description import plan_bounded_description
-from bookforge.voice_dependencies import audit_nominal_spans
-from bookforge.voice_language import extract_graph, graph_from_row
+from storylight.bounded_description import plan_bounded_description
+from storylight.voice_dependencies import audit_nominal_spans
+from storylight.voice_language import extract_graph, graph_from_row
 
 ROOT = Path(__file__).resolve().parents[1] / "benchmarks/voice-language-2026-09-07"
 

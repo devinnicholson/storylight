@@ -4,21 +4,21 @@
 set -euo pipefail
 
 readonly EDGELLM_REVISION="71dd1bae032e70771265917ec74d3ff4cad07a10"
-readonly INSTALL_ROOT="${BOOKFORGE_EDGELLM_ROOT:-$HOME/.local/share/bookforge/tensorrt-edgellm-v0.10.0}"
+readonly INSTALL_ROOT="${STORYLIGHT_EDGELLM_ROOT:-$HOME/.local/share/storylight/tensorrt-edgellm-v0.10.0}"
 readonly SOURCE_DIR="$INSTALL_ROOT/src"
 readonly BUILD_DIR="$INSTALL_ROOT/build"
-readonly MODEL_ROOT="${BOOKFORGE_EDGELLM_MODEL_ROOT:-$INSTALL_ROOT/models/gemma4-e2b-it-int4-awq-v010}"
+readonly MODEL_ROOT="${STORYLIGHT_EDGELLM_MODEL_ROOT:-$INSTALL_ROOT/models/gemma4-e2b-it-int4-awq-v010}"
 readonly CHECKPOINT_DIR="$MODEL_ROOT/onnx/llm"
 readonly ENGINE_DIR="$MODEL_ROOT/engines/llm"
 readonly EVIDENCE_DIR="$MODEL_ROOT/engine-build-evidence"
-readonly GEMMA_MODEL="${BOOKFORGE_GEMMA_MODEL:-gemma3:1b-it-q4_K_M}"
-readonly OLLAMA_BIN="${BOOKFORGE_OLLAMA_BIN:-$HOME/.local/opt/ollama-v0.32.15/bin/ollama}"
+readonly GEMMA_MODEL="${STORYLIGHT_GEMMA_MODEL:-gemma3:1b-it-q4_K_M}"
+readonly OLLAMA_BIN="${STORYLIGHT_OLLAMA_BIN:-$HOME/.local/opt/ollama-v0.32.15/bin/ollama}"
 readonly LLM_BUILD="$BUILD_DIR/examples/llm/llm_build"
 readonly EDGELLM_PLUGIN="$BUILD_DIR/libNvInfer_edgellm_plugin.so"
 monitor_pid=""
 
 if [[ ${EUID:-$(id -u)} -eq 0 ]]; then
-  printf 'Run this engine builder as the Bookforge user, not root.\n' >&2
+  printf 'Run this engine builder as the Storylight user, not root.\n' >&2
   exit 64
 fi
 if [[ $(git -C "$SOURCE_DIR" rev-parse HEAD) != "$EDGELLM_REVISION" ]]; then

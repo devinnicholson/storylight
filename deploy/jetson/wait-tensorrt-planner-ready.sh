@@ -3,15 +3,15 @@
 
 set -euo pipefail
 
-readonly PORT="${BOOKFORGE_EDGELLM_SERVER_PORT:-11435}"
-readonly ATTEMPTS="${BOOKFORGE_TENSORRT_READY_ATTEMPTS:-90}"
+readonly PORT="${STORYLIGHT_EDGELLM_SERVER_PORT:-11435}"
+readonly ATTEMPTS="${STORYLIGHT_TENSORRT_READY_ATTEMPTS:-90}"
 
 if [[ ! "$PORT" =~ ^[0-9]+$ ]] || ((PORT < 1024 || PORT > 65535)); then
-  printf 'BOOKFORGE_EDGELLM_SERVER_PORT must be between 1024 and 65535.\n' >&2
+  printf 'STORYLIGHT_EDGELLM_SERVER_PORT must be between 1024 and 65535.\n' >&2
   exit 64
 fi
 if [[ ! "$ATTEMPTS" =~ ^[0-9]+$ ]] || ((ATTEMPTS < 1 || ATTEMPTS > 180)); then
-  printf 'BOOKFORGE_TENSORRT_READY_ATTEMPTS must be between 1 and 180.\n' >&2
+  printf 'STORYLIGHT_TENSORRT_READY_ATTEMPTS must be between 1 and 180.\n' >&2
   exit 64
 fi
 

@@ -4,7 +4,7 @@ from pathlib import Path
 
 import pytest
 
-from bookforge.modal_budget import (
+from storylight.modal_budget import (
     authorize_and_reserve_modal_budget,
     budget_envelope_from_plan,
     reconcile_failed_modal_budget_reservation,
@@ -13,7 +13,7 @@ from bookforge.modal_budget import (
     reserve_modal_budget,
     settle_modal_budget,
 )
-from bookforge.visual_lab import GenerationRecord, VisualLabLedger
+from storylight.visual_lab import GenerationRecord, VisualLabLedger
 
 
 def test_paid_funding_requires_matching_ledger_without_inventing_credits(tmp_path: Path) -> None:

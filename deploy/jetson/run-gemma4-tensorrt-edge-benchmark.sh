@@ -3,29 +3,29 @@
 
 set -euo pipefail
 
-readonly INSTALL_ROOT="${BOOKFORGE_EDGELLM_ROOT:-$HOME/.local/share/bookforge/tensorrt-edgellm-v0.10.0}"
+readonly INSTALL_ROOT="${STORYLIGHT_EDGELLM_ROOT:-$HOME/.local/share/storylight/tensorrt-edgellm-v0.10.0}"
 readonly BUILD_DIR="$INSTALL_ROOT/build"
 readonly MODEL_ROOT="$INSTALL_ROOT/models/gemma4-e2b-it-int4-awq-v010"
 readonly ENGINE_DIR="$MODEL_ROOT/engines/llm"
 readonly CHECKPOINT_DIR="$MODEL_ROOT/onnx/llm"
 readonly EVIDENCE_DIR="$MODEL_ROOT/inference-evidence"
-readonly BENCHMARK_SCRIPT="${BOOKFORGE_EDGELLM_BENCHMARK_SCRIPT:-/opt/bookforge/deploy/jetson/benchmark-tensorrt-edge-llm.py}"
-readonly BOOKFORGE_PYTHON="${BOOKFORGE_PYTHON:-/opt/bookforge/.venv/bin/python}"
-readonly GEMMA_MODEL="${BOOKFORGE_GEMMA_MODEL:-gemma3:1b-it-q4_K_M}"
-readonly OLLAMA_BIN="${BOOKFORGE_OLLAMA_BIN:-$HOME/.local/opt/ollama-v0.32.15/bin/ollama}"
+readonly BENCHMARK_SCRIPT="${STORYLIGHT_EDGELLM_BENCHMARK_SCRIPT:-/opt/storylight/deploy/jetson/benchmark-tensorrt-edge-llm.py}"
+readonly STORYLIGHT_PYTHON="${STORYLIGHT_PYTHON:-/opt/storylight/.venv/bin/python}"
+readonly GEMMA_MODEL="${STORYLIGHT_GEMMA_MODEL:-gemma3:1b-it-q4_K_M}"
+readonly OLLAMA_BIN="${STORYLIGHT_OLLAMA_BIN:-$HOME/.local/opt/ollama-v0.32.15/bin/ollama}"
 readonly LLM_INFERENCE="$BUILD_DIR/examples/llm/llm_inference"
 readonly EDGELLM_PLUGIN="$BUILD_DIR/libNvInfer_edgellm_plugin.so"
-readonly PROMPT_PROFILE="${BOOKFORGE_EDGELLM_PROMPT_PROFILE:-repair}"
-readonly SUITE="${BOOKFORGE_EDGELLM_SUITE:-contest}"
-readonly CASE_ID="${BOOKFORGE_EDGELLM_CASE_ID:-}"
+readonly PROMPT_PROFILE="${STORYLIGHT_EDGELLM_PROMPT_PROFILE:-repair}"
+readonly SUITE="${STORYLIGHT_EDGELLM_SUITE:-contest}"
+readonly CASE_ID="${STORYLIGHT_EDGELLM_CASE_ID:-}"
 readonly REPORT_PATH="$EVIDENCE_DIR/benchmark-$PROMPT_PROFILE-$SUITE${CASE_ID:+-$CASE_ID}.json"
 
 if [[ ${EUID:-$(id -u)} -eq 0 ]]; then
-  printf 'Run this shadow benchmark as the Bookforge user, not root.\n' >&2
+  printf 'Run this shadow benchmark as the Storylight user, not root.\n' >&2
   exit 64
 fi
 for required in "$LLM_INFERENCE" "$EDGELLM_PLUGIN" "$ENGINE_DIR/llm.engine" \
-  "$CHECKPOINT_DIR/config.json" "$BENCHMARK_SCRIPT" "$BOOKFORGE_PYTHON" "$OLLAMA_BIN"; do
+  "$CHECKPOINT_DIR/config.json" "$BENCHMARK_SCRIPT" "$STORYLIGHT_PYTHON" "$OLLAMA_BIN"; do
   if [[ ! -e "$required" ]]; then
     printf 'Required Gemma 4 shadow input is missing: %s\n' "$required" >&2
     exit 69
@@ -69,7 +69,7 @@ benchmark_args=(
 if [[ -n "$CASE_ID" ]]; then
   benchmark_args+=(--case-id "$CASE_ID")
 fi
-"$BOOKFORGE_PYTHON" "$BENCHMARK_SCRIPT" "${benchmark_args[@]}"
+"$STORYLIGHT_PYTHON" "$BENCHMARK_SCRIPT" "${benchmark_args[@]}"
 
 test -s "$REPORT_PATH"
 sha256sum "$REPORT_PATH" >"$EVIDENCE_DIR/sha256sums-production.txt"

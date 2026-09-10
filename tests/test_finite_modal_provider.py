@@ -6,10 +6,10 @@ from pathlib import Path
 
 import pytest
 
-import bookforge.finite_modal_provider as finite_modal_provider_module
-from bookforge.asset_cache import AssetCache
-from bookforge.domain import ModelMetrics
-from bookforge.finite_modal_provider import (
+import storylight.finite_modal_provider as finite_modal_provider_module
+from storylight.asset_cache import AssetCache
+from storylight.domain import ModelMetrics
+from storylight.finite_modal_provider import (
     FAST_MODEL,
     FAST_MODEL_REVISION,
     MOTION_MODEL,
@@ -26,7 +26,7 @@ from bookforge.finite_modal_provider import (
     WarmModalSceneProvider,
     load_finite_scene_bundle,
 )
-from bookforge.live_scene import (
+from storylight.live_scene import (
     LiveSceneArtifactKind,
     LiveSceneCostSource,
     LiveSceneCreateRequest,
@@ -35,15 +35,15 @@ from bookforge.live_scene import (
     LiveSceneWarmState,
     build_live_scene_story_pack,
 )
-from bookforge.live_scene_planner import (
+from storylight.live_scene_planner import (
     LiveSceneGraphPlan,
     LiveScenePlacedLayerPlan,
     LiveScenePlan,
     LiveScenePlannerError,
     LiveScenePlanningResult,
 )
-from bookforge.modal_budget import budget_envelope_from_plan
-from bookforge.scene_facts import (
+from storylight.modal_budget import budget_envelope_from_plan
+from storylight.scene_facts import (
     SceneEventFact,
     SceneFactsV2,
     SceneObjectFact,
@@ -52,7 +52,7 @@ from bookforge.scene_facts import (
     SceneTemporalOrderFact,
     SceneTransformationFact,
 )
-from bookforge.visual_lab import VisualLabLedger
+from storylight.visual_lab import VisualLabLedger
 
 
 def _argument(command: list[str], name: str) -> str:

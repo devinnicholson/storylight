@@ -24,8 +24,8 @@ The pinned local Gemma tokenizer verified all 4,800 completion-prefix boundaries
 Reproduce with the isolated pinned CPU environment:
 
 ```sh
-PYTHONPATH=src /private/tmp/bookforge-v3-cpu/bin/python experiments/scene-adapter-v5-2026-09-09/generate_training.py
-PYTHONPATH=src BOOKFORGE_V5_TOKENIZER_DIR=/private/tmp/bookforge-v3-tokenizer /private/tmp/bookforge-v3-cpu/bin/python experiments/scene-adapter-v5-2026-09-09/test_training.py
+PYTHONPATH=src /private/tmp/storylight-v3-cpu/bin/python experiments/scene-adapter-v5-2026-09-09/generate_training.py
+PYTHONPATH=src STORYLIGHT_V5_TOKENIZER_DIR=/private/tmp/storylight-v3-tokenizer /private/tmp/storylight-v3-cpu/bin/python experiments/scene-adapter-v5-2026-09-09/test_training.py
 ```
 
 The independent development set and hidden test remain separately owned. This training preparation does not authorize cloud allocation, choose a checkpoint or promote a model. New data and any larger training budget must be reported together; this corpus alone cannot isolate the effect of one failure-family intervention.

@@ -38,7 +38,7 @@ exercise different decoder paths from later speech.
 ASR times include temporary files, audio decoding and inference, plus first-call
 imports and model load. There were no competing calls to each isolated lock;
 queue contention was excluded by construction. Process times also include Python
-startup, Bookforge imports and teardown. The four-child loop took 16.752 seconds;
+startup, Storylight imports and teardown. The four-child loop took 16.752 seconds;
 input hash verification and primer conversion happened beforehand. Each child
 had a 15-second deadline within a 60-second loop, with at most two seconds for
 termination and two for kill/join on failure. All four exited normally and were
@@ -69,7 +69,7 @@ To repeat this four-process screen into a new directory from the repository root
 
 ```sh
 HF_HUB_OFFLINE=1 TRANSFORMERS_OFFLINE=1 .venv/bin/python \
-  experiments/voice-asr-startup/run.py --output /tmp/bookforge-asr-startup-new
+  experiments/voice-asr-startup/run.py --output /tmp/storylight-asr-startup-new
 ```
 
 Input pins intentionally refuse a changed production ASR implementation. A future

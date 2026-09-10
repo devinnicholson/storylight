@@ -2,7 +2,7 @@ const assert = require("assert").strict;
 const fs = require("fs");
 const vm = require("vm");
 
-const source = fs.readFileSync("src/bookforge/static/projector.js", "utf8");
+const source = fs.readFileSync("src/storylight/static/projector.js", "utf8");
 const navigation = source.slice(
   source.indexOf("function updatePageControls()"),
   source.indexOf("function liveProviderLabel("),

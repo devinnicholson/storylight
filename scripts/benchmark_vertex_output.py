@@ -17,9 +17,9 @@ from pathlib import Path
 import httpx
 from PIL import Image
 
-from bookforge import vertex_scene_provider
-from bookforge.finite_modal_provider import FastSceneRequest
-from bookforge.vertex_scene_provider import (
+from storylight import vertex_scene_provider
+from storylight.finite_modal_provider import FastSceneRequest
+from storylight.vertex_scene_provider import (
     DEFAULT_MODEL,
     _extract_image,
     _image_dimensions,

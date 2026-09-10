@@ -7,7 +7,7 @@ const {BudgetMessageError, evaluateBudgetNotification} = require("./logic");
 const expected = {
   billingAccountId: "000000-000000-000000",
   budgetAmount: "10",
-  budgetDisplayName: "Bookforge emergency billing disconnect",
+  budgetDisplayName: "Storylight emergency billing disconnect",
   budgetId: "budget-id",
   projectId: "your-gcp-project",
 };

@@ -107,8 +107,8 @@ def _run_fake_kiosk(
         )
 
     environment = os.environ.copy()
-    environment.pop("BOOKFORGE_BROWSER_BIN", None)
-    environment.pop("BOOKFORGE_CHROMIUM_BIN", None)
+    environment.pop("STORYLIGHT_BROWSER_BIN", None)
+    environment.pop("STORYLIGHT_CHROMIUM_BIN", None)
     environment.update(
         {
             "PATH": f"{fake_bin}:/usr/bin:/bin",
@@ -117,23 +117,23 @@ def _run_fake_kiosk(
             "XDG_SESSION_ID": xdg_session_id,
             "DISPLAY": ":1",
             "XAUTHORITY": str(tmp_path / "Xauthority"),
-            "BOOKFORGE_KIOSK_URL": "http://127.0.0.1:18081/projector?live=1",
-            "BOOKFORGE_READY_URL": "http://127.0.0.1:18081/readyz",
-            "BOOKFORGE_KIOSK_STARTUP_TIMEOUT": "1",
+            "STORYLIGHT_KIOSK_URL": "http://127.0.0.1:18081/projector?live=1",
+            "STORYLIGHT_READY_URL": "http://127.0.0.1:18081/readyz",
+            "STORYLIGHT_KIOSK_STARTUP_TIMEOUT": "1",
         }
     )
     (tmp_path / "Xauthority").write_text("test authority")
     browser_overrides = dict(overrides or {})
     if (
-        "BOOKFORGE_BROWSER_BIN" not in browser_overrides
-        and "BOOKFORGE_CHROMIUM_BIN" not in browser_overrides
+        "STORYLIGHT_BROWSER_BIN" not in browser_overrides
+        and "STORYLIGHT_CHROMIUM_BIN" not in browser_overrides
         and "chromium" not in browser_names
         and "chromium-browser" not in browser_names
         and "firefox" in browser_names
     ):
         # Hosted Linux runners can have a real Chromium in /usr/bin. Keep
         # Firefox-only tests hermetic instead of launching a host browser.
-        browser_overrides["BOOKFORGE_BROWSER_BIN"] = str(fake_bin / "firefox")
+        browser_overrides["STORYLIGHT_BROWSER_BIN"] = str(fake_bin / "firefox")
     environment.update(browser_overrides)
     return subprocess.run(
         [str(KIOSK_LAUNCHER)],
@@ -168,7 +168,7 @@ def test_legacy_chromium_override_retains_hardened_arguments(tmp_path: Path) -> 
     result = _run_fake_kiosk(
         tmp_path,
         "legacy-chromium-wrapper",
-        overrides={"BOOKFORGE_CHROMIUM_BIN": str(legacy)},
+        overrides={"STORYLIGHT_CHROMIUM_BIN": str(legacy)},
     )
 
     assert "browser=legacy-chromium-wrapper" in result.stdout
@@ -183,7 +183,7 @@ def test_legacy_chromium_override_retains_hardened_arguments(tmp_path: Path) -> 
 
 def test_firefox_kiosk_profile_disables_first_run_and_telemetry(tmp_path: Path) -> None:
     _run_fake_kiosk(tmp_path, "firefox")
-    profile = tmp_path / "state" / "bookforge" / "firefox"
+    profile = tmp_path / "state" / "storylight" / "firefox"
     preferences = (profile / "user.js").read_text()
 
     assert 'browser.aboutwelcome.enabled", false' in preferences

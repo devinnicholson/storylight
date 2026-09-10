@@ -1,56 +1,56 @@
 apiVersion: v1
 kind: ServiceAccount
 metadata:
-  name: bookforge-anticipator
-  namespace: bookforge
+  name: storylight-anticipator
+  namespace: storylight
   labels:
-    app.kubernetes.io/name: bookforge-anticipatory
+    app.kubernetes.io/name: storylight-anticipatory
 ---
 apiVersion: v1
 kind: ServiceAccount
 metadata:
-  name: bookforge-gpu-watchdog
-  namespace: bookforge
+  name: storylight-gpu-watchdog
+  namespace: storylight
   labels:
-    app.kubernetes.io/name: bookforge-nemotron
+    app.kubernetes.io/name: storylight-nemotron
 automountServiceAccountToken: false
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: Role
 metadata:
-  name: bookforge-gpu-watchdog
-  namespace: bookforge
+  name: storylight-gpu-watchdog
+  namespace: storylight
   labels:
-    app.kubernetes.io/name: bookforge-nemotron
+    app.kubernetes.io/name: storylight-nemotron
 rules:
   - apiGroups: ["apps"]
     resources: ["deployments/scale"]
-    resourceNames: ["bookforge-nemotron"]
+    resourceNames: ["storylight-nemotron"]
     verbs: ["get", "patch"]
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: RoleBinding
 metadata:
-  name: bookforge-gpu-watchdog
-  namespace: bookforge
+  name: storylight-gpu-watchdog
+  namespace: storylight
   labels:
-    app.kubernetes.io/name: bookforge-nemotron
+    app.kubernetes.io/name: storylight-nemotron
 roleRef:
   apiGroup: rbac.authorization.k8s.io
   kind: Role
-  name: bookforge-gpu-watchdog
+  name: storylight-gpu-watchdog
 subjects:
   - kind: ServiceAccount
-    name: bookforge-gpu-watchdog
-    namespace: bookforge
+    name: storylight-gpu-watchdog
+    namespace: storylight
 ---
 apiVersion: v1
 kind: ConfigMap
 metadata:
-  name: bookforge-gpu-watchdog
-  namespace: bookforge
+  name: storylight-gpu-watchdog
+  namespace: storylight
   labels:
-    app.kubernetes.io/name: bookforge-nemotron
+    app.kubernetes.io/name: storylight-nemotron
 data:
   watchdog.py: |
     import json
@@ -59,10 +59,10 @@ data:
     import time
     import urllib.request
 
-    time.sleep(int(os.environ["BOOKFORGE_GPU_MAX_RUNTIME_SECONDS"]))
-    namespace = os.environ["BOOKFORGE_NAMESPACE"]
-    deployment = os.environ["BOOKFORGE_GPU_DEPLOYMENT"]
-    identity_root = "/var/run/secrets/bookforge"
+    time.sleep(int(os.environ["STORYLIGHT_GPU_MAX_RUNTIME_SECONDS"]))
+    namespace = os.environ["STORYLIGHT_NAMESPACE"]
+    deployment = os.environ["STORYLIGHT_GPU_DEPLOYMENT"]
+    identity_root = "/var/run/secrets/storylight"
     with open(f"{identity_root}/token", encoding="utf-8") as token_file:
         token = token_file.read().strip()
     context = ssl.create_default_context(cafile=f"{identity_root}/ca.crt")
@@ -92,10 +92,10 @@ data:
 apiVersion: v1
 kind: PersistentVolumeClaim
 metadata:
-  name: bookforge-nim-cache
-  namespace: bookforge
+  name: storylight-nim-cache
+  namespace: storylight
   labels:
-    app.kubernetes.io/name: bookforge-nemotron
+    app.kubernetes.io/name: storylight-nemotron
     app.kubernetes.io/component: nim-cache
 spec:
   accessModes: ["ReadWriteOnce"]
@@ -107,10 +107,10 @@ spec:
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: bookforge-nemotron
-  namespace: bookforge
+  name: storylight-nemotron
+  namespace: storylight
   labels:
-    app.kubernetes.io/name: bookforge-nemotron
+    app.kubernetes.io/name: storylight-nemotron
     app.kubernetes.io/component: visual-critic
 spec:
   # The guarded deployment script is the only path that scales this billable
@@ -120,16 +120,16 @@ spec:
     type: Recreate
   selector:
     matchLabels:
-      app.kubernetes.io/name: bookforge-nemotron
+      app.kubernetes.io/name: storylight-nemotron
   template:
     metadata:
       labels:
-        app.kubernetes.io/name: bookforge-nemotron
+        app.kubernetes.io/name: storylight-nemotron
         app.kubernetes.io/component: visual-critic
         ai.gke.io/model: llama-3-1-nemotron-nano-vl-8b-v1
         ai.gke.io/inference-server: nvidia-nim
     spec:
-      serviceAccountName: bookforge-gpu-watchdog
+      serviceAccountName: storylight-gpu-watchdog
       automountServiceAccountToken: false
       terminationGracePeriodSeconds: 30
       securityContext:
@@ -207,13 +207,13 @@ spec:
         - name: gpu-watchdog
           image: python:3.12-slim-bookworm@sha256:782412e85d0f0984994c290652577d4018aff08145c85b262bb63dc0c7522254
           imagePullPolicy: IfNotPresent
-          command: ["python", "/opt/bookforge/watchdog.py"]
+          command: ["python", "/opt/storylight/watchdog.py"]
           env:
-            - name: BOOKFORGE_GPU_MAX_RUNTIME_SECONDS
+            - name: STORYLIGHT_GPU_MAX_RUNTIME_SECONDS
               value: "3600"
-            - name: BOOKFORGE_GPU_DEPLOYMENT
-              value: bookforge-nemotron
-            - name: BOOKFORGE_NAMESPACE
+            - name: STORYLIGHT_GPU_DEPLOYMENT
+              value: storylight-nemotron
+            - name: STORYLIGHT_NAMESPACE
               valueFrom:
                 fieldRef:
                   fieldPath: metadata.namespace
@@ -226,10 +226,10 @@ spec:
               memory: 64Mi
           volumeMounts:
             - name: gpu-watchdog-script
-              mountPath: /opt/bookforge
+              mountPath: /opt/storylight
               readOnly: true
             - name: gpu-watchdog-identity
-              mountPath: /var/run/secrets/bookforge
+              mountPath: /var/run/secrets/storylight
               readOnly: true
           securityContext:
             runAsNonRoot: true
@@ -247,14 +247,14 @@ spec:
       volumes:
         - name: nim-cache
           persistentVolumeClaim:
-            claimName: bookforge-nim-cache
+            claimName: storylight-nim-cache
         - name: dshm
           emptyDir:
             medium: Memory
             sizeLimit: 8Gi
         - name: gpu-watchdog-script
           configMap:
-            name: bookforge-gpu-watchdog
+            name: storylight-gpu-watchdog
             defaultMode: 0555
         - name: gpu-watchdog-identity
           projected:
@@ -272,13 +272,13 @@ spec:
 apiVersion: v1
 kind: Service
 metadata:
-  name: bookforge-nemotron
-  namespace: bookforge
+  name: storylight-nemotron
+  namespace: storylight
   labels:
-    app.kubernetes.io/name: bookforge-nemotron
+    app.kubernetes.io/name: storylight-nemotron
 spec:
   selector:
-    app.kubernetes.io/name: bookforge-nemotron
+    app.kubernetes.io/name: storylight-nemotron
   ports:
     - name: nim-http
       port: 8000
@@ -288,10 +288,10 @@ spec:
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: bookforge-anticipatory
-  namespace: bookforge
+  name: storylight-anticipatory
+  namespace: storylight
   labels:
-    app.kubernetes.io/name: bookforge-anticipatory
+    app.kubernetes.io/name: storylight-anticipatory
     app.kubernetes.io/component: anticipatory-api
 spec:
   # The CPU control plane stays independently deployable; changing it never
@@ -299,42 +299,42 @@ spec:
   replicas: 1
   selector:
     matchLabels:
-      app.kubernetes.io/name: bookforge-anticipatory
+      app.kubernetes.io/name: storylight-anticipatory
   template:
     metadata:
       labels:
-        app.kubernetes.io/name: bookforge-anticipatory
+        app.kubernetes.io/name: storylight-anticipatory
         app.kubernetes.io/component: anticipatory-api
     spec:
-      serviceAccountName: bookforge-anticipator
+      serviceAccountName: storylight-anticipator
       terminationGracePeriodSeconds: 10
       securityContext:
         seccompProfile:
           type: RuntimeDefault
       containers:
         - name: anticipatory-api
-          image: bookforge-anticipatory-placeholder
+          image: storylight-anticipatory-placeholder
           imagePullPolicy: IfNotPresent
           env:
-            - name: BOOKFORGE_RENDERER_URL
+            - name: STORYLIGHT_RENDERER_URL
               value: https://renderer.invalid
-            - name: BOOKFORGE_RENDERER_AUDIENCE
+            - name: STORYLIGHT_RENDERER_AUDIENCE
               value: https://renderer.invalid
-            - name: BOOKFORGE_RENDERER_GPU
+            - name: STORYLIGHT_RENDERER_GPU
               value: RTX_PRO_6000
-            - name: BOOKFORGE_ANTICIPATORY_RENDER_TIMEOUT_SECONDS
+            - name: STORYLIGHT_ANTICIPATORY_RENDER_TIMEOUT_SECONDS
               value: "30"
-            - name: BOOKFORGE_ANTICIPATORY_MAX_RENDERS
+            - name: STORYLIGHT_ANTICIPATORY_MAX_RENDERS
               value: "1"
-            - name: BOOKFORGE_ANTICIPATORY_MAX_CANDIDATES
+            - name: STORYLIGHT_ANTICIPATORY_MAX_CANDIDATES
               value: "64"
-            - name: BOOKFORGE_ANTICIPATORY_CACHE_ENTRIES
+            - name: STORYLIGHT_ANTICIPATORY_CACHE_ENTRIES
               value: "32"
-            - name: BOOKFORGE_ANTICIPATORY_ASSET_BYTES
+            - name: STORYLIGHT_ANTICIPATORY_ASSET_BYTES
               value: "67108864"
-            - name: BOOKFORGE_NEMOTRON_BASE_URL
-              value: http://bookforge-nemotron.bookforge.svc.cluster.local:8000
-            - name: BOOKFORGE_NEMOTRON_TIMEOUT_SECONDS
+            - name: STORYLIGHT_NEMOTRON_BASE_URL
+              value: http://storylight-nemotron.storylight.svc.cluster.local:8000
+            - name: STORYLIGHT_NEMOTRON_TIMEOUT_SECONDS
               value: "30"
           ports:
             - name: http
@@ -381,13 +381,13 @@ spec:
 apiVersion: v1
 kind: Service
 metadata:
-  name: bookforge-anticipatory
-  namespace: bookforge
+  name: storylight-anticipatory
+  namespace: storylight
   labels:
-    app.kubernetes.io/name: bookforge-anticipatory
+    app.kubernetes.io/name: storylight-anticipatory
 spec:
   selector:
-    app.kubernetes.io/name: bookforge-anticipatory
+    app.kubernetes.io/name: storylight-anticipatory
   ports:
     - name: http
       port: 8080
@@ -399,18 +399,18 @@ spec:
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
-  name: bookforge-anticipatory
-  namespace: bookforge
+  name: storylight-anticipatory
+  namespace: storylight
 spec:
   podSelector:
     matchLabels:
-      app.kubernetes.io/name: bookforge-anticipatory
+      app.kubernetes.io/name: storylight-anticipatory
   policyTypes: ["Ingress", "Egress"]
   ingress:
     - from:
         - namespaceSelector:
             matchLabels:
-              kubernetes.io/metadata.name: bookforge
+              kubernetes.io/metadata.name: storylight
       ports:
         - protocol: TCP
           port: 8080
@@ -423,7 +423,7 @@ spec:
     - to:
         - podSelector:
             matchLabels:
-              app.kubernetes.io/name: bookforge-nemotron
+              app.kubernetes.io/name: storylight-nemotron
       ports:
         - protocol: TCP
           port: 8000
@@ -449,20 +449,20 @@ spec:
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
-  name: bookforge-nemotron
-  namespace: bookforge
+  name: storylight-nemotron
+  namespace: storylight
   labels:
-    app.kubernetes.io/name: bookforge-nemotron
+    app.kubernetes.io/name: storylight-nemotron
 spec:
   podSelector:
     matchLabels:
-      app.kubernetes.io/name: bookforge-nemotron
+      app.kubernetes.io/name: storylight-nemotron
   policyTypes: ["Ingress", "Egress"]
   ingress:
     - from:
         - podSelector:
             matchLabels:
-              app.kubernetes.io/name: bookforge-anticipatory
+              app.kubernetes.io/name: storylight-anticipatory
       ports:
         - protocol: TCP
           port: 8000

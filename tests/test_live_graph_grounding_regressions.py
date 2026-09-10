@@ -1,6 +1,6 @@
 import pytest
 
-from bookforge.scene_facts import (
+from storylight.scene_facts import (
     SceneEventFact,
     SceneFactsGroundingError,
     SceneFactsV2,

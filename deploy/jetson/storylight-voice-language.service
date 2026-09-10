@@ -1,0 +1,19 @@
+[Unit]
+Description=Storylight local voice scene interpretation
+
+[Service]
+Type=simple
+WorkingDirectory=/opt/storylight
+Environment=PYTHONPATH=/opt/storylight/voice-language-current
+ExecStart=/opt/storylight/.venv-voice-language/bin/python -m storylight.voice_language --socket %t/storylight-voice-language/parser.sock
+RuntimeDirectory=storylight-voice-language
+RuntimeDirectoryMode=0700
+UMask=0077
+KillSignal=SIGINT
+TimeoutStopSec=10
+Restart=on-failure
+RestartSec=2
+NoNewPrivileges=yes
+
+[Install]
+WantedBy=default.target

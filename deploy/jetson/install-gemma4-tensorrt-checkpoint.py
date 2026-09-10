@@ -29,7 +29,7 @@ def _sha256(path: Path) -> str:
 
 def _require(payload: dict[str, Any], key: str, expected: Any) -> None:
     if payload.get(key) != expected:
-        raise ValueError(f"manifest {key!r} does not match the pinned Bookforge value")
+        raise ValueError(f"manifest {key!r} does not match the pinned Storylight value")
 
 
 def _safe_relative_path(value: object) -> Path:
@@ -150,7 +150,7 @@ def install_bundle(bundle_root: Path, destination: Path) -> dict[str, Any]:
 
 
 def _default_destination() -> Path:
-    root = Path.home() / ".local/share/bookforge/tensorrt-edgellm-v0.10.0"
+    root = Path.home() / ".local/share/storylight/tensorrt-edgellm-v0.10.0"
     return root / "models/gemma4-e2b-it-int4-awq-v010/onnx"
 
 

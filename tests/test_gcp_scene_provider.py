@@ -8,8 +8,8 @@ from pathlib import Path
 import httpx
 import pytest
 
-from bookforge.finite_modal_provider import FastSceneRequest
-from bookforge.gcp_scene_provider import (
+from storylight.finite_modal_provider import FastSceneRequest
+from storylight.gcp_scene_provider import (
     DEPTH_MODEL,
     DEPTH_MODEL_REVISION,
     FAST_MODEL,

@@ -2,18 +2,18 @@
 set -euo pipefail
 
 PROJECT_ID="${GOOGLE_CLOUD_PROJECT:-your-gcp-project}"
-REGION="${BOOKFORGE_GKE_REGION:-us-central1}"
-CLUSTER="${BOOKFORGE_GKE_CLUSTER:-bookforge-anticipatory}"
-REPOSITORY="${BOOKFORGE_GCP_REPOSITORY:-bookforge}"
-IMAGE_TAG="${BOOKFORGE_ANTICIPATORY_IMAGE_TAG:-$(date -u +%Y%m%d-%H%M%S)}"
+REGION="${STORYLIGHT_GKE_REGION:-us-central1}"
+CLUSTER="${STORYLIGHT_GKE_CLUSTER:-storylight-anticipatory}"
+REPOSITORY="${STORYLIGHT_GCP_REPOSITORY:-storylight}"
+IMAGE_TAG="${STORYLIGHT_ANTICIPATORY_IMAGE_TAG:-$(date -u +%Y%m%d-%H%M%S)}"
 IMAGE="${REGION}-docker.pkg.dev/${PROJECT_ID}/${REPOSITORY}/anticipatory:${IMAGE_TAG}"
-NAMESPACE="bookforge"
-API_DEPLOYMENT="bookforge-anticipatory"
-GPU_DEPLOYMENT="bookforge-nemotron"
-RENDERER_REGION="${BOOKFORGE_RENDERER_REGION:-us-central1}"
-RENDERER_SERVICE="${BOOKFORGE_RENDERER_SERVICE:-bookforge-scene-rtx}"
+NAMESPACE="storylight"
+API_DEPLOYMENT="storylight-anticipatory"
+GPU_DEPLOYMENT="storylight-nemotron"
+RENDERER_REGION="${STORYLIGHT_RENDERER_REGION:-us-central1}"
+RENDERER_SERVICE="${STORYLIGHT_RENDERER_SERVICE:-storylight-scene-rtx}"
 
-if [[ "${BOOKFORGE_GKE_API_APPLY:-}" != "I_UNDERSTAND_THIS_RUNS_A_BILLABLE_CLOUD_BUILD" ]]; then
+if [[ "${STORYLIGHT_GKE_API_APPLY:-}" != "I_UNDERSTAND_THIS_RUNS_A_BILLABLE_CLOUD_BUILD" ]]; then
   printf '%s\n' \
     "Dry guard active. This would build and release only the CPU API:" \
     "  project:        ${PROJECT_ID}" \
@@ -21,7 +21,7 @@ if [[ "${BOOKFORGE_GKE_API_APPLY:-}" != "I_UNDERSTAND_THIS_RUNS_A_BILLABLE_CLOUD
     "  API deployment: ${API_DEPLOYMENT}" \
     "  GPU invariant:  ${GPU_DEPLOYMENT} replica count is never changed" \
     "" \
-    "Set BOOKFORGE_GKE_API_APPLY=I_UNDERSTAND_THIS_RUNS_A_BILLABLE_CLOUD_BUILD to apply."
+    "Set STORYLIGHT_GKE_API_APPLY=I_UNDERSTAND_THIS_RUNS_A_BILLABLE_CLOUD_BUILD to apply."
   exit 2
 fi
 
@@ -85,8 +85,8 @@ RENDERER_URL="$(
 kubectl -n "${NAMESPACE}" set image "deployment/${API_DEPLOYMENT}" \
   "anticipatory-api=${IMMUTABLE_IMAGE}"
 kubectl -n "${NAMESPACE}" set env "deployment/${API_DEPLOYMENT}" \
-  "BOOKFORGE_RENDERER_URL=${RENDERER_URL}" \
-  "BOOKFORGE_RENDERER_AUDIENCE=${RENDERER_URL}"
+  "STORYLIGHT_RENDERER_URL=${RENDERER_URL}" \
+  "STORYLIGHT_RENDERER_AUDIENCE=${RENDERER_URL}"
 kubectl -n "${NAMESPACE}" rollout status "deployment/${API_DEPLOYMENT}" --timeout=5m
 
 GPU_REPLICAS_AFTER="$(
@@ -99,6 +99,6 @@ if [[ "${GPU_REPLICAS_AFTER}" != "${GPU_REPLICAS_BEFORE}" ]]; then
 fi
 
 printf '%s\n' \
-  "Bookforge CPU API release is ready." \
+  "Storylight CPU API release is ready." \
   "Image: ${IMMUTABLE_IMAGE}" \
   "Nemotron replicas remained ${GPU_REPLICAS_AFTER}."

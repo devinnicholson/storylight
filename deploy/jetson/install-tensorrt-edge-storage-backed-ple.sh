@@ -1,10 +1,10 @@
 #!/usr/bin/env bash
-# Install Bookforge's exact NVMe-backed Gemma 4 PLE runtime optimization.
+# Install Storylight's exact NVMe-backed Gemma 4 PLE runtime optimization.
 
 set -euo pipefail
 
 readonly EDGELLM_REVISION="71dd1bae032e70771265917ec74d3ff4cad07a10"
-readonly INSTALL_ROOT="${BOOKFORGE_EDGELLM_ROOT:-$HOME/.local/share/bookforge/tensorrt-edgellm-v0.10.0}"
+readonly INSTALL_ROOT="${STORYLIGHT_EDGELLM_ROOT:-$HOME/.local/share/storylight/tensorrt-edgellm-v0.10.0}"
 readonly SOURCE_DIR="$INSTALL_ROOT/src"
 readonly BUILD_DIR="$INSTALL_ROOT/build"
 readonly VENV_DIR="$INSTALL_ROOT/venv"
@@ -17,7 +17,7 @@ readonly UPSTREAM_HEADER_SHA="017f8f80e93bff0572036cf732c4a01a603d0ca53f45c17c8d
 readonly EVIDENCE_DIR="$INSTALL_ROOT/evidence/storage-backed-ple"
 
 if [[ ${EUID:-$(id -u)} -eq 0 ]]; then
-  printf 'Run this installer as the Bookforge user, not root.\n' >&2
+  printf 'Run this installer as the Storylight user, not root.\n' >&2
   exit 64
 fi
 if [[ ! -d "$SOURCE_DIR/.git" ]] || [[ $(git -C "$SOURCE_DIR" rev-parse HEAD) != "$EDGELLM_REVISION" ]]; then

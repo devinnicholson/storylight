@@ -2,8 +2,8 @@ from pathlib import Path
 
 import pytest
 
-from bookforge.domain import AssetRole, StoryPack
-from bookforge.motion_promotion import MotionPromotionError, promote_motion_asset
+from storylight.domain import AssetRole, StoryPack
+from storylight.motion_promotion import MotionPromotionError, promote_motion_asset
 
 ROOT = Path(__file__).parents[1]
 

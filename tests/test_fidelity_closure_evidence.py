@@ -4,7 +4,7 @@ import copy
 
 import pytest
 
-from bookforge.fidelity_closure_evidence import (
+from storylight.fidelity_closure_evidence import (
     build_cost_reconciliation,
     build_paid_resource_inventory,
     validate_reconciliation_evidence,
@@ -16,9 +16,9 @@ def _terminal(*, promoted: bool = True):
     engine = "8" * 64 if promoted else "9" * 64
     outcome = "promoted" if promoted else "retained"
     producer = (
-        "bookforge-trained-planner-promotion"
+        "storylight-trained-planner-promotion"
         if promoted
-        else "bookforge-baseline-retention"
+        else "storylight-baseline-retention"
     )
     common = {
         "run_id": "campaign-v1",
@@ -39,7 +39,7 @@ def _terminal(*, promoted: bool = True):
     }
     health = {
         "schema_version": "story-fidelity-post-action-health-v1",
-        "producer": "bookforge-terminal-health-recorder",
+        "producer": "storylight-terminal-health-recorder",
         "status": "passed",
         "outcome": outcome,
         **common,
@@ -62,7 +62,7 @@ def _terminal(*, promoted: bool = True):
     rollback = (
         {
             "schema_version": "story-fidelity-rollback-state-v1",
-            "producer": "bookforge-trained-planner-rollback-state",
+            "producer": "storylight-trained-planner-rollback-state",
             "status": "ready",
             **common,
             "accepted_baseline_engine_sha256": "9" * 64,
@@ -120,7 +120,7 @@ def test_promotion_requires_the_exact_gated_candidate_engine() -> None:
 def _reconciliation():
     cost = {
         "schema_version": "story-fidelity-cost-reconciliation-v1",
-        "producer": "bookforge-fidelity-cost-reconciler",
+        "producer": "storylight-fidelity-cost-reconciler",
         "status": "reconciled",
         "run_id": "campaign-v1",
         "currency": "USD",
@@ -141,7 +141,7 @@ def _reconciliation():
     resources = {"vertex_jobs", "cloud_run_services", "modal_tasks", "modal_functions"}
     inventory = {
         "schema_version": "story-fidelity-paid-resource-inventory-v1",
-        "producer": "bookforge-fidelity-resource-reconciler",
+        "producer": "storylight-fidelity-resource-reconciler",
         "status": "zero-active-paid-resources",
         "run_id": "campaign-v1",
         "source_snapshots": {name: "3" * 64 for name in resources},
@@ -180,7 +180,7 @@ def test_trusted_builders_bind_exact_source_digests() -> None:
         provider: (
             {
                 "schema_version": "story-fidelity-provider-cost-v1",
-                "producer": f"bookforge-{provider}-cost-source",
+                "producer": f"storylight-{provider}-cost-source",
                 "status": "final",
                 "run_id": "campaign-v1",
                 "provider": provider,
@@ -194,10 +194,10 @@ def test_trusted_builders_bind_exact_source_digests() -> None:
     cost = build_cost_reconciliation("campaign-v1", cost_sources)
 
     producers = {
-        "vertex_jobs": "bookforge-vertex-jobs-snapshot",
-        "cloud_run_services": "bookforge-cloud-run-services-snapshot",
-        "modal_tasks": "bookforge-modal-tasks-snapshot",
-        "modal_functions": "bookforge-modal-functions-snapshot",
+        "vertex_jobs": "storylight-vertex-jobs-snapshot",
+        "cloud_run_services": "storylight-cloud-run-services-snapshot",
+        "modal_tasks": "storylight-modal-tasks-snapshot",
+        "modal_functions": "storylight-modal-functions-snapshot",
     }
     inventory_sources = {
         resource: (

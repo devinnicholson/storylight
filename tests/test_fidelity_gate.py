@@ -6,10 +6,10 @@ from pathlib import Path
 
 import pytest
 
-from bookforge.fidelity_benchmark import CandidateIdentity, FidelitySummary, RuntimeEvidence
-from bookforge.fidelity_gate import build_gate_artifact, write_gate_artifact
-from bookforge.fidelity_manifest import FidelityDatasetManifest, sha256_path
-from bookforge.fidelity_schema import DatasetSplit
+from storylight.fidelity_benchmark import CandidateIdentity, FidelitySummary, RuntimeEvidence
+from storylight.fidelity_gate import build_gate_artifact, write_gate_artifact
+from storylight.fidelity_manifest import FidelityDatasetManifest, sha256_path
+from storylight.fidelity_schema import DatasetSplit
 
 REVIEW_POPULATION_SHA256 = (
     "26e34c0d27fb0ed32008156c2e3663a12222073d60a10123a7080f36a9c11703"
@@ -173,7 +173,7 @@ def _evidence(tmp_path: Path) -> dict[str, object]:
         "jetson_shadow": {
             "schema_version": "1.0",
             "stage": "jetson-shadow",
-            "producer": "bookforge-jetson-shadow-recorder",
+            "producer": "storylight-jetson-shadow-recorder",
             "run_id": "fidelity-gate-test",
             "training_run_id": "lora-train-gate-test",
             "config_sha256": "e" * 64,
@@ -223,7 +223,7 @@ def _evidence(tmp_path: Path) -> dict[str, object]:
 def test_trusted_gate_reconstructs_decision_from_separate_populations(tmp_path: Path) -> None:
     artifact = build_gate_artifact(**_evidence(tmp_path))  # type: ignore[arg-type]
 
-    assert artifact["producer"] == "bookforge-fidelity-gate-builder"
+    assert artifact["producer"] == "storylight-fidelity-gate-builder"
     assert artifact["training_run_id"] == "lora-train-gate-test"
     assert artifact["status"] == "passed"
     assert artifact["decision"]["passed"] is True  # type: ignore[index]

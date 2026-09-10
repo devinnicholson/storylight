@@ -42,7 +42,7 @@ CALIBRATION_PROVENANCE_SHA256 = hashlib.sha256(
     json.dumps(CALIBRATION_PROVENANCE, sort_keys=True, separators=(",", ":")).encode()
 ).hexdigest()
 JOB_TIMEOUT_SECONDS = 1_200
-WORK_ROOT = Path("/tmp/bookforge-fidelity-export")
+WORK_ROOT = Path("/tmp/storylight-fidelity-export")
 COMPLETION_OBJECT = "export.manifest.json"
 SOURCE_MANIFEST_OBJECT = "release.manifest.json"
 _RUN_ID = re.compile(r"[a-z][a-z0-9-]{7,95}\Z")
@@ -345,19 +345,19 @@ def main() -> None:
     import torch
     from google.cloud import storage
 
-    release_bucket = _required_environment("BOOKFORGE_FIDELITY_RELEASE_BUCKET")
-    release_prefix = _required_environment("BOOKFORGE_FIDELITY_RELEASE_PREFIX")
-    release_manifest_sha = _required_environment("BOOKFORGE_FIDELITY_RELEASE_MANIFEST_SHA256")
-    expected_config_sha = _required_environment("BOOKFORGE_FIDELITY_CONFIG_SHA256")
-    expected_dataset_sha = _required_environment("BOOKFORGE_FIDELITY_DATASET_SHA256")
-    expected_candidate = _required_environment("BOOKFORGE_FIDELITY_CANDIDATE_ID")
-    export_bucket = _required_environment("BOOKFORGE_FIDELITY_EXPORT_BUCKET")
-    run_id = _required_environment("BOOKFORGE_FIDELITY_EXPORT_RUN_ID")
-    export_image = _required_environment("BOOKFORGE_FIDELITY_EXPORT_IMAGE")
+    release_bucket = _required_environment("STORYLIGHT_FIDELITY_RELEASE_BUCKET")
+    release_prefix = _required_environment("STORYLIGHT_FIDELITY_RELEASE_PREFIX")
+    release_manifest_sha = _required_environment("STORYLIGHT_FIDELITY_RELEASE_MANIFEST_SHA256")
+    expected_config_sha = _required_environment("STORYLIGHT_FIDELITY_CONFIG_SHA256")
+    expected_dataset_sha = _required_environment("STORYLIGHT_FIDELITY_DATASET_SHA256")
+    expected_candidate = _required_environment("STORYLIGHT_FIDELITY_CANDIDATE_ID")
+    export_bucket = _required_environment("STORYLIGHT_FIDELITY_EXPORT_BUCKET")
+    run_id = _required_environment("STORYLIGHT_FIDELITY_EXPORT_RUN_ID")
+    export_image = _required_environment("STORYLIGHT_FIDELITY_EXPORT_IMAGE")
     if re.fullmatch(r".+@sha256:[0-9a-f]{64}", export_image) is None:
-        raise RuntimeError("BOOKFORGE_FIDELITY_EXPORT_IMAGE must be digest-pinned")
+        raise RuntimeError("STORYLIGHT_FIDELITY_EXPORT_IMAGE must be digest-pinned")
     if not _RUN_ID.fullmatch(run_id):
-        raise RuntimeError("BOOKFORGE_FIDELITY_EXPORT_RUN_ID must be a bounded slug")
+        raise RuntimeError("STORYLIGHT_FIDELITY_EXPORT_RUN_ID must be a bounded slug")
     if not torch.cuda.is_available():
         raise RuntimeError("CUDA is required for the fidelity candidate export")
     gpu_name = torch.cuda.get_device_name(0)

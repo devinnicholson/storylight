@@ -4,7 +4,7 @@ from uuid import uuid4
 import pytest
 from pydantic import ValidationError
 
-from bookforge.live_scene import (
+from storylight.live_scene import (
     LiveSceneCapacityError,
     LiveSceneConflictError,
     LiveSceneCreateRequest,

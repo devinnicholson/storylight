@@ -7,19 +7,19 @@ from pathlib import Path
 
 import pytest
 
-import bookforge.fidelity_endpoint_evaluation as endpoint_evaluation
-from bookforge.fidelity_benchmark import (
+import storylight.fidelity_endpoint_evaluation as endpoint_evaluation
+from storylight.fidelity_benchmark import (
     CandidateIdentity,
     PopulationContract,
     summarize_evaluations,
 )
-from bookforge.fidelity_endpoint_evaluation import (
+from storylight.fidelity_endpoint_evaluation import (
     _claim_hidden_evaluation,
     _load_records,
     _secure_regular,
     evaluate_endpoint_records,
 )
-from bookforge.fidelity_evaluation import concept_vocabulary, evaluate_surface
+from storylight.fidelity_evaluation import concept_vocabulary, evaluate_surface
 
 
 def test_endpoint_evaluation_retains_metrics_but_not_private_text() -> None:

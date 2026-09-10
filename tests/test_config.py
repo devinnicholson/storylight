@@ -3,14 +3,14 @@ from pathlib import Path
 import pytest
 from pydantic import ValidationError
 
-from bookforge.config import Settings
+from storylight.config import Settings
 
 ROOT = Path(__file__).parents[1]
 
 
 def test_allowed_origins_accept_comma_separated_environment(monkeypatch) -> None:
     monkeypatch.setenv(
-        "BOOKFORGE_ALLOWED_ORIGINS",
+        "STORYLIGHT_ALLOWED_ORIGINS",
         "http://localhost:8080,http://127.0.0.1:8080",
     )
 
@@ -24,19 +24,19 @@ def test_allowed_origins_accept_comma_separated_environment(monkeypatch) -> None
 
 def test_jetson_environment_example_is_parseable(monkeypatch) -> None:
     for name in (
-        "BOOKFORGE_ALLOWED_ORIGINS",
-        "BOOKFORGE_DATA_DIR",
-        "BOOKFORGE_CACHE_DIR",
-        "BOOKFORGE_ASR_BACKEND",
-        "BOOKFORGE_ASR_MODEL",
+        "STORYLIGHT_ALLOWED_ORIGINS",
+        "STORYLIGHT_DATA_DIR",
+        "STORYLIGHT_CACHE_DIR",
+        "STORYLIGHT_ASR_BACKEND",
+        "STORYLIGHT_ASR_MODEL",
     ):
         monkeypatch.delenv(name, raising=False)
 
-    settings = Settings(_env_file=ROOT / "deploy/jetson/bookforge.env.example")
+    settings = Settings(_env_file=ROOT / "deploy/jetson/storylight.env.example")
 
     assert settings.environment == "jetson"
-    assert settings.data_dir == Path("/var/lib/bookforge")
-    assert settings.cache_dir == Path("/var/cache/bookforge")
+    assert settings.data_dir == Path("/var/lib/storylight")
+    assert settings.cache_dir == Path("/var/cache/storylight")
     assert settings.asr_backend == "disabled"
     assert settings.live_scene_planner == "deterministic"
     assert settings.allowed_origins == [

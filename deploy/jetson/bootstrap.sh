@@ -1,11 +1,11 @@
 #!/usr/bin/env bash
-# Bookforge setup helper. With no mutation flag, this only runs device diagnostics.
+# Storylight setup helper. With no mutation flag, this only runs device diagnostics.
 
 set -euo pipefail
 
 SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd -- "${SCRIPT_DIR}/../.." && pwd)"
-VENV_PATH="${BOOKFORGE_VENV_PATH:-${REPO_ROOT}/.venv}"
+VENV_PATH="${STORYLIGHT_VENV_PATH:-${REPO_ROOT}/.venv}"
 INSTALL_PACKAGES=0
 CREATE_VENV=0
 INSTALL_APP=0
@@ -20,8 +20,8 @@ No options: run read-only diagnostics.
 
 Options:
   --strict-check             Make required diagnostic failures return non-zero.
-  --install-system-packages Install only Bookforge's Ubuntu utilities with apt.
-  --create-venv              Create or reuse BOOKFORGE_VENV_PATH (default: .venv).
+  --install-system-packages Install only Storylight's Ubuntu utilities with apt.
+  --create-venv              Create or reuse STORYLIGHT_VENV_PATH (default: .venv).
   --install-app              Install this checkout into the existing virtualenv.
   --install-modal-runtime    Include the authenticated Modal SDK runtime.
   -h, --help                 Show this help.

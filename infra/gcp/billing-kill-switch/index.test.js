@@ -7,7 +7,7 @@ const {createStopBillingHandler} = require("./index");
 const environment = {
   EXPECTED_BILLING_ACCOUNT_ID: "000000-000000-000000",
   EXPECTED_BUDGET_AMOUNT: "10",
-  EXPECTED_BUDGET_DISPLAY_NAME: "Bookforge emergency billing disconnect",
+  EXPECTED_BUDGET_DISPLAY_NAME: "Storylight emergency billing disconnect",
   EXPECTED_BUDGET_ID: "budget-id",
   EXPECTED_PROJECT_ID: "your-gcp-project",
 };

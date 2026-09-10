@@ -2,8 +2,8 @@ from pathlib import Path
 
 import pytest
 
-from bookforge.config import Settings
-from bookforge.edge_preflight import evaluate
+from storylight.config import Settings
+from storylight.edge_preflight import evaluate
 
 
 def test_jetson_preflight_accepts_private_local_first_boot(
@@ -52,7 +52,7 @@ def test_jetson_preflight_rejects_checkout_dotenv(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     monkeypatch.chdir(tmp_path)
-    (tmp_path / ".env").write_text("BOOKFORGE_MODEL_API_KEY=secret\n")
+    (tmp_path / ".env").write_text("STORYLIGHT_MODEL_API_KEY=secret\n")
 
     report = evaluate(
         Settings(

@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 project=your-gcp-project
-run=bookforge-compiler-restart-20260909
+run=storylight-compiler-restart-20260909
 zone=us-east1-b
 receipt_dir=${1:?Pass a new local receipt directory}
 mkdir "$receipt_dir"

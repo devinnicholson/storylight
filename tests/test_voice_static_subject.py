@@ -8,8 +8,8 @@ from types import SimpleNamespace
 
 import pytest
 
-from bookforge.scene_facts import SceneFactsV2
-from bookforge.voice_language import extract_graph, graph_from_row
+from storylight.scene_facts import SceneFactsV2
+from storylight.voice_language import extract_graph, graph_from_row
 
 DIRECTORY = Path(__file__).resolve().parents[1] / "benchmarks/voice-static-subject-2026-09-08"
 ROWS = {

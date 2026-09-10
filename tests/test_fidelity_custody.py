@@ -11,8 +11,8 @@ from pathlib import Path
 
 import pytest
 
-from bookforge.fidelity_dataset import HIDDEN_KEY_PREFIX
-from bookforge.fidelity_manifest import sha256_path
+from storylight.fidelity_dataset import HIDDEN_KEY_PREFIX
+from storylight.fidelity_manifest import sha256_path
 
 ROOT = Path(__file__).parents[1]
 BUILDER = ROOT / "scripts/build_fidelity_dataset.py"

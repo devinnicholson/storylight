@@ -4,7 +4,7 @@
 set -euo pipefail
 IFS=$'\n\t'
 
-accepted_engine="${BOOKFORGE_ACCEPTED_ENGINE:-$HOME/.local/share/bookforge/tensorrt-edgellm-v0.10.0/models/gemma4-e2b-it-int4-awq-v010/engines/llm/llm.engine}"
+accepted_engine="${STORYLIGHT_ACCEPTED_ENGINE:-$HOME/.local/share/storylight/tensorrt-edgellm-v0.10.0/models/gemma4-e2b-it-int4-awq-v010/engines/llm/llm.engine}"
 dataset_manifest_sha256=""
 output=""
 
@@ -47,7 +47,7 @@ while (($#)); do
 done
 
 if [[ ${EUID:-$(id -u)} -eq 0 ]]; then
-  printf 'Run baseline identity capture as the Bookforge service user, not root.\n' >&2
+  printf 'Run baseline identity capture as the Storylight service user, not root.\n' >&2
   exit 64
 fi
 if [[ ! "$dataset_manifest_sha256" =~ ^[a-f0-9]{64}$ ]] \

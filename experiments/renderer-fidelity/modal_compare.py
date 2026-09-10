@@ -56,7 +56,7 @@ image = (
     )
     .env({"HF_XET_HIGH_PERFORMANCE": "1"})
 )
-app = modal.App("bookforge-renderer-fidelity-comparison")
+app = modal.App("storylight-renderer-fidelity-comparison")
 
 
 @app.function(

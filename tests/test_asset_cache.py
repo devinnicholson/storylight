@@ -4,9 +4,9 @@ from pathlib import Path
 
 import pytest
 
-from bookforge.asset_cache import AssetCache, AssetCacheError
-from bookforge.config import Settings
-from bookforge.domain import (
+from storylight.asset_cache import AssetCache, AssetCacheError
+from storylight.config import Settings
+from storylight.domain import (
     AssetKind,
     AssetRecord,
     AssetState,
@@ -14,8 +14,8 @@ from bookforge.domain import (
     StoryPack,
     VisualLayer,
 )
-from bookforge.pack_installer import install
-from bookforge.story_store import StoryPackStore
+from storylight.pack_installer import install
+from storylight.story_store import StoryPackStore
 
 
 def make_pack(checksum: str) -> StoryPack:

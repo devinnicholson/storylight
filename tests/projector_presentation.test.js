@@ -1,7 +1,7 @@
 const assert = require("assert").strict;
 const fs = require("fs");
 const vm = require("vm");
-const source = fs.readFileSync("src/bookforge/static/projector.js", "utf8");
+const source = fs.readFileSync("src/storylight/static/projector.js", "utf8");
 
 async function presentationGate() {
   const previous = {title: "previous", pages: [{page_id: "old"}], assets: []};
@@ -57,7 +57,7 @@ async function presentationGate() {
     {stage: "master_ready", complete: true, presentation_ready: false},
     {stage: "failed", complete: true, presentation_ready: false},
   ]) {
-    c.queueLiveSceneSnapshot({type: "bookforge.live-scene", sessionId: "voice",
+    c.queueLiveSceneSnapshot({type: "storylight.live-scene", sessionId: "voice",
       serverInstanceId: "server", sessionRevision: 2,
       snapshot: {...snapshot, ...delta, revision: ++revision}});
     await state.liveTransition;
@@ -75,7 +75,7 @@ async function presentationGate() {
       now += 10000;
       c.updateLiveGenerationClock();
       assert.equal(c.elements.liveGenerationElapsed.textContent, "1.5 s");
-      c.queueLiveSceneSnapshot({type: "bookforge.live-scene", sessionId: "voice",
+      c.queueLiveSceneSnapshot({type: "storylight.live-scene", sessionId: "voice",
         serverInstanceId: "server", sessionRevision: 2,
         snapshot: {...snapshot, ...delta, revision}});
       await state.liveTransition;
@@ -84,7 +84,7 @@ async function presentationGate() {
       assert.equal(c.elements.liveGenerationStage.textContent, "Waiting for verified description");
     }
   }
-  c.queueLiveSceneSnapshot({type: "bookforge.live-scene", sessionId: "voice",
+  c.queueLiveSceneSnapshot({type: "storylight.live-scene", sessionId: "voice",
     serverInstanceId: "server", sessionRevision: 2,
     snapshot: {...snapshot, revision: ++revision, stage: "master_ready", complete: true,
       presentation_ready: true}});
@@ -102,7 +102,7 @@ async function presentationGate() {
   assert.doesNotMatch(c.elements.liveGenerationDetail.textContent, /held|retrying/);
   assert.equal(timers.size, 0);
   assert.deepEqual(JSON.parse(JSON.stringify(frameMessages)), [{
-    data: {type: "bookforge.preview-activated", sessionId: "voice", jobId: "job"},
+    data: {type: "storylight.preview-activated", sessionId: "voice", jobId: "job"},
     origin: "http://localhost",
   }]);
   assert.equal(c.liveSnapshotCanDisplay({...snapshot, request: {}, stage: "draft_ready"}), false);

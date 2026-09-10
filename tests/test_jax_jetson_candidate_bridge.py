@@ -154,7 +154,7 @@ def test_private_gcs_download_requires_external_sha_and_exact_prefix(tmp_path: P
     [
         "gs://private-bucket/fidelity/run",
         (
-            "modal-private://bookforge-tensorrt-edge-llm-fidelity/"
+            "modal-private://storylight-tensorrt-edge-llm-fidelity/"
             "fidelity-run-20260901/fidelity-0123456789abcdefabcd"
         ),
     ],
@@ -167,10 +167,10 @@ def test_wrapper_builds_isolated_bundle_accepted_by_candidate_installer(
     fake_builder.write_text(
         "#!/usr/bin/env bash\n"
         "set -euo pipefail\n"
-        'test -f "$BOOKFORGE_EDGELLM_MODEL_ROOT/onnx/llm/model.onnx"\n'
-        'mkdir -p "$BOOKFORGE_EDGELLM_MODEL_ROOT/engines/llm"\n'
+        'test -f "$STORYLIGHT_EDGELLM_MODEL_ROOT/onnx/llm/model.onnx"\n'
+        'mkdir -p "$STORYLIGHT_EDGELLM_MODEL_ROOT/engines/llm"\n'
         "printf synthetic-trained-engine > "
-        '"$BOOKFORGE_EDGELLM_MODEL_ROOT/engines/llm/llm.engine"\n'
+        '"$STORYLIGHT_EDGELLM_MODEL_ROOT/engines/llm/llm.engine"\n'
     )
     fake_builder.chmod(0o755)
     fake_timeout = tmp_path / "timeout"
@@ -179,9 +179,9 @@ def test_wrapper_builds_isolated_bundle_accepted_by_candidate_installer(
     output = tmp_path / "candidate"
     environment = {
         **os.environ,
-        "BOOKFORGE_EDGELLM_ROOT": str(tmp_path / "edge"),
-        "BOOKFORGE_TRAINED_CANDIDATE_BUILDER": str(fake_builder),
-        "BOOKFORGE_TIMEOUT_BIN": str(fake_timeout),
+        "STORYLIGHT_EDGELLM_ROOT": str(tmp_path / "edge"),
+        "STORYLIGHT_TRAINED_CANDIDATE_BUILDER": str(fake_builder),
+        "STORYLIGHT_TIMEOUT_BIN": str(fake_timeout),
     }
     result = subprocess.run(
         [

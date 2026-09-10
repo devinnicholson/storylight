@@ -18,7 +18,7 @@ import modal
 from modal_compare import MODELS, PROMPTS, STYLE, SUFFIX
 from modal_compare import image as base_image
 
-APP_NAME = "bookforge-klein-compiled-snapshot-probe"
+APP_NAME = "storylight-klein-compiled-snapshot-probe"
 DEPTH_MODEL = "depth-anything/Depth-Anything-V2-Small-hf"
 DEPTH_REVISION = "b4769fd619394250528294b658587285526fab1c"
 image = base_image.env({"TORCHINDUCTOR_COMPILE_THREADS": "1"}).add_local_file(

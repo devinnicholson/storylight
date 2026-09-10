@@ -10,14 +10,14 @@ unset BASH_ENV ENV CDPATH GLOBIGNORE
 readonly SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd -P)"
 readonly INSTALLER="$SCRIPT_DIR/install-trained-planner-candidate.sh"
 readonly DEVELOPMENT_GATE="$SCRIPT_DIR/trained-planner-candidate-evaluation.py"
-readonly BOOKFORGE_PYTHON="${BOOKFORGE_PYTHON:-/opt/bookforge/.venv/bin/python}"
-readonly CONFIG_FILE="/etc/bookforge/bookforge.env"
-readonly CANDIDATE_ROOT="/var/lib/bookforge-trusted/trained-planner-candidates"
-readonly EVIDENCE_ROOT="/var/lib/bookforge-trusted/trained-planner/evidence"
-readonly HIDDEN_STATE_ROOT="/var/lib/bookforge-trusted/trained-planner/hidden-evaluation-state"
+readonly STORYLIGHT_PYTHON="${STORYLIGHT_PYTHON:-/opt/storylight/.venv/bin/python}"
+readonly CONFIG_FILE="/etc/storylight/storylight.env"
+readonly CANDIDATE_ROOT="/var/lib/storylight-trusted/trained-planner-candidates"
+readonly EVIDENCE_ROOT="/var/lib/storylight-trusted/trained-planner/evidence"
+readonly HIDDEN_STATE_ROOT="/var/lib/storylight-trusted/trained-planner/hidden-evaluation-state"
 readonly ACCEPTED_ENGINE_SHA256="95b69991b68c57a2d2d4bfa4116feb9ec57295588551d109353a42a9c16c4fdf"
 
-target_user="${BOOKFORGE_SERVICE_USER:-${SUDO_USER:-}}"
+target_user="${STORYLIGHT_SERVICE_USER:-${SUDO_USER:-}}"
 candidate_id=""
 dataset_manifest=""
 dataset_manifest_sha256=""
@@ -94,7 +94,7 @@ if [[ ! "$target_user" =~ ^[a-z_][a-z0-9_-]{0,31}$ ]] \
   usage >&2
   exit 64
 fi
-for required in "$INSTALLER" "$DEVELOPMENT_GATE" "$BOOKFORGE_PYTHON"; do
+for required in "$INSTALLER" "$DEVELOPMENT_GATE" "$STORYLIGHT_PYTHON"; do
   if [[ ! -x "$required" || -L "$required" ]]; then
     printf 'Required immutable evaluation tool is missing or unsafe: %s\n' "$required" >&2
     exit 69
@@ -106,12 +106,12 @@ readonly TARGET_HOME="$(getent passwd "$target_user" | cut -d: -f6)"
 readonly CANDIDATE_DIR="$CANDIDATE_ROOT/$candidate_id"
 readonly CANDIDATE_MANIFEST="$CANDIDATE_DIR/candidate.manifest.json"
 readonly MARKER="$CANDIDATE_DIR/.manifest.sha256"
-readonly ACCEPTED_ENGINE="$TARGET_HOME/.local/share/bookforge/tensorrt-edgellm-v0.10.0/models/gemma4-e2b-it-int4-awq-v010/engines/llm/llm.engine"
-readonly UNIT="bookforge-trained-planner-candidate@${candidate_id}.service"
-readonly ACCEPTED_UNIT="bookforge-tensorrt-planner.service"
-readonly GEMMA_UNIT="bookforge-gemma.service"
-readonly KIOSK_UNIT="bookforge-kiosk.service"
-readonly PORT_ENV="/etc/bookforge/trained-planner/${candidate_id}.env"
+readonly ACCEPTED_ENGINE="$TARGET_HOME/.local/share/storylight/tensorrt-edgellm-v0.10.0/models/gemma4-e2b-it-int4-awq-v010/engines/llm/llm.engine"
+readonly UNIT="storylight-trained-planner-candidate@${candidate_id}.service"
+readonly ACCEPTED_UNIT="storylight-tensorrt-planner.service"
+readonly GEMMA_UNIT="storylight-gemma.service"
+readonly KIOSK_UNIT="storylight-kiosk.service"
+readonly PORT_ENV="/etc/storylight/trained-planner/${candidate_id}.env"
 
 if [[ ! -r "$MARKER" || -L "$MARKER" ]]; then
   printf 'Installed candidate manifest marker is missing or unsafe.\n' >&2
@@ -164,7 +164,7 @@ secure_private_input() {
   owner_uid="$(stat -c '%u' "$path")"
   if [[ "$(stat -c '%a' "$path")" != 600 ]] \
     || [[ "$owner_uid" -ne 0 && "$owner_uid" -ne "$TARGET_UID" ]]; then
-    printf '%s must be mode 0600 and owned by root or the Bookforge user.\n' "$label" >&2
+    printf '%s must be mode 0600 and owned by root or the Storylight user.\n' "$label" >&2
     exit 65
   fi
 }
@@ -214,7 +214,7 @@ action_sha256="$({
   printf '%s\0' "$custody_receipt_sha256" "$development_output" "$eligibility_output"
   printf '%s\0' "$hidden_output" "$window_output"
 } | sha256sum | cut -d' ' -f1)"
-readonly EXPECTED_APPROVAL_TOKEN="RUN_BOOKFORGE_TRAINED_PLANNER_CANDIDATE_EVALUATION:${action_sha256}"
+readonly EXPECTED_APPROVAL_TOKEN="RUN_STORYLIGHT_TRAINED_PLANNER_CANDIDATE_EVALUATION:${action_sha256}"
 
 if ((dry_run == 1)); then
   printf '%s\n' "$verification"
@@ -238,13 +238,13 @@ if [[ ! -f "$CONFIG_FILE" || -L "$CONFIG_FILE" ]] \
   || [[ "$(stat -c '%U:%G:%a' "$CONFIG_FILE")" != root:root:600 ]] \
   || [[ ! -s "$ACCEPTED_ENGINE" || -L "$ACCEPTED_ENGINE" ]] \
   || [[ "$(sha256sum "$ACCEPTED_ENGINE" | cut -d' ' -f1)" != "$ACCEPTED_ENGINE_SHA256" ]]; then
-  printf 'Accepted Bookforge configuration or engine identity is unsafe.\n' >&2
+  printf 'Accepted Storylight configuration or engine identity is unsafe.\n' >&2
   exit 78
 fi
-if ! grep -Fxq 'BOOKFORGE_LIVE_SCENE_PLANNER_BACKEND=tensorrt_slots' "$CONFIG_FILE" \
-  || ! grep -Fxq 'BOOKFORGE_LIVE_SCENE_PLANNER_BASE_URL=http://127.0.0.1:11435' "$CONFIG_FILE" \
+if ! grep -Fxq 'STORYLIGHT_LIVE_SCENE_PLANNER_BACKEND=tensorrt_slots' "$CONFIG_FILE" \
+  || ! grep -Fxq 'STORYLIGHT_LIVE_SCENE_PLANNER_BASE_URL=http://127.0.0.1:11435' "$CONFIG_FILE" \
   || ! grep -Fxq \
-    "BOOKFORGE_LIVE_SCENE_PLANNER_MODEL_REVISION=sha256:${ACCEPTED_ENGINE_SHA256}" \
+    "STORYLIGHT_LIVE_SCENE_PLANNER_MODEL_REVISION=sha256:${ACCEPTED_ENGINE_SHA256}" \
     "$CONFIG_FILE"; then
   printf 'Production is not routed to the exact accepted planner.\n' >&2
   exit 78
@@ -284,8 +284,8 @@ restore_accepted() {
   user_systemctl stop "$GEMMA_UNIT" || failed=1
   user_systemctl start "$ACCEPTED_UNIT" || failed=1
   wait_endpoint http://127.0.0.1:11435/v1/models || failed=1
-  systemctl restart "bookforge@${target_user}.service" \
-    "bookforge-controller@${target_user}.service" || failed=1
+  systemctl restart "storylight@${target_user}.service" \
+    "storylight-controller@${target_user}.service" || failed=1
   wait_endpoint http://127.0.0.1:8080/readyz || failed=1
   if ((kiosk_was_active == 1)); then
     user_systemctl start "$KIOSK_UNIT" || failed=1
@@ -327,13 +327,13 @@ user_systemctl stop "$KIOSK_UNIT"
 user_systemctl stop "$ACCEPTED_UNIT"
 user_systemctl stop "$GEMMA_UNIT" || true
 for _ in $(seq 1 30); do
-  if ! pgrep -u "$TARGET_UID" -f 'experimental.server|ollama serve|firefox-bookforge' \
+  if ! pgrep -u "$TARGET_UID" -f 'experimental.server|ollama serve|firefox-storylight' \
     >/dev/null 2>&1; then
     break
   fi
   sleep 1
 done
-if pgrep -u "$TARGET_UID" -f 'experimental.server|ollama serve|firefox-bookforge' \
+if pgrep -u "$TARGET_UID" -f 'experimental.server|ollama serve|firefox-storylight' \
   >/dev/null 2>&1; then
   printf 'The accepted planner, fallback, or kiosk did not drain before evaluation.\n' >&2
   exit 70
@@ -352,7 +352,7 @@ if ss -H -ltn | awk \
   exit 70
 fi
 
-"$BOOKFORGE_PYTHON" -m bookforge.fidelity_endpoint_evaluation \
+"$STORYLIGHT_PYTHON" -m storylight.fidelity_endpoint_evaluation \
   --records "$development_records" \
   --manifest "$dataset_manifest" \
   --manifest-sha256 "$dataset_manifest_sha256" \
@@ -367,7 +367,7 @@ fi
   --execute
 development_output_sha256="$(sha256sum "$development_output" | cut -d' ' -f1)"
 
-"$BOOKFORGE_PYTHON" "$DEVELOPMENT_GATE" \
+"$STORYLIGHT_PYTHON" "$DEVELOPMENT_GATE" \
   --candidate-manifest "$CANDIDATE_MANIFEST" \
   --candidate-manifest-sha256 "$manifest_sha256" \
   --dataset-manifest "$dataset_manifest" \
@@ -379,7 +379,7 @@ development_output_sha256="$(sha256sum "$development_output" | cut -d' ' -f1)"
   --output "$eligibility_output"
 eligibility_output_sha256="$(sha256sum "$eligibility_output" | cut -d' ' -f1)"
 
-hidden_plan="$("$BOOKFORGE_PYTHON" -m bookforge.fidelity_endpoint_evaluation \
+hidden_plan="$("$STORYLIGHT_PYTHON" -m storylight.fidelity_endpoint_evaluation \
   --records "$hidden_records" \
   --manifest "$dataset_manifest" \
   --manifest-sha256 "$dataset_manifest_sha256" \
@@ -393,14 +393,14 @@ hidden_plan="$("$BOOKFORGE_PYTHON" -m bookforge.fidelity_endpoint_evaluation \
   --timeout-seconds 12 \
   --output "$hidden_output" \
   --hidden-state-root "$HIDDEN_STATE_ROOT")"
-hidden_approval="$("$BOOKFORGE_PYTHON" -c \
+hidden_approval="$("$STORYLIGHT_PYTHON" -c \
   'import json,sys; print(json.load(sys.stdin)["approval_token"])' <<<"$hidden_plan")"
 if [[ "$hidden_approval" != EVALUATE_PRIVATE_HIDDEN_ONCE:* ]]; then
   printf 'Hidden evaluator did not produce its exact one-shot approval.\n' >&2
   exit 70
 fi
-BOOKFORGE_HIDDEN_EVAL_APPROVAL="$hidden_approval" \
-  "$BOOKFORGE_PYTHON" -m bookforge.fidelity_endpoint_evaluation \
+STORYLIGHT_HIDDEN_EVAL_APPROVAL="$hidden_approval" \
+  "$STORYLIGHT_PYTHON" -m storylight.fidelity_endpoint_evaluation \
   --records "$hidden_records" \
   --manifest "$dataset_manifest" \
   --manifest-sha256 "$dataset_manifest_sha256" \
@@ -434,7 +434,7 @@ if ! restore_accepted; then
   exit 70
 fi
 trap - EXIT INT TERM
-"$BOOKFORGE_PYTHON" - \
+"$STORYLIGHT_PYTHON" - \
   "$window_output" "$candidate_id" "$manifest_sha256" "$engine_sha256" \
   "$dataset_manifest_sha256" "$development_output_sha256" \
   "$eligibility_output_sha256" "$hidden_output_sha256" "$custody_receipt_sha256" \
@@ -447,7 +447,7 @@ from pathlib import Path
 path = Path(sys.argv[1])
 document = {
     "schema_version": "1.0",
-    "producer": "bookforge-jetson-candidate-evaluation-window",
+    "producer": "storylight-jetson-candidate-evaluation-window",
     "status": "succeeded",
     "candidate_identity": {
         "candidate_id": sys.argv[2],

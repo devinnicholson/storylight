@@ -35,7 +35,7 @@ def canonical(value: object) -> bytes:
 
 def approval_token(action: dict[str, object]) -> str:
     action_sha256 = hashlib.sha256(canonical(action)).hexdigest()
-    return f"RECORD_BOOKFORGE_TRAINED_PLANNER_COLD_START:{action_sha256}"
+    return f"RECORD_STORYLIGHT_TRAINED_PLANNER_COLD_START:{action_sha256}"
 
 
 def loopback_base_url(value: str) -> str:
@@ -68,10 +68,10 @@ def route_is_accepted(
     environment: dict[str, str], *, engine_sha256: str, planner_base_url: str
 ) -> bool:
     return (
-        environment.get("BOOKFORGE_LIVE_SCENE_PLANNER_BACKEND") == "tensorrt_slots"
-        and environment.get("BOOKFORGE_LIVE_SCENE_PLANNER_MODEL_REVISION")
+        environment.get("STORYLIGHT_LIVE_SCENE_PLANNER_BACKEND") == "tensorrt_slots"
+        and environment.get("STORYLIGHT_LIVE_SCENE_PLANNER_MODEL_REVISION")
         == f"sha256:{engine_sha256}"
-        and environment.get("BOOKFORGE_LIVE_SCENE_PLANNER_BASE_URL") == planner_base_url
+        and environment.get("STORYLIGHT_LIVE_SCENE_PLANNER_BASE_URL") == planner_base_url
     )
 
 
@@ -100,7 +100,7 @@ def journal_failures(user: str, since_realtime_usec: int) -> tuple[int, int]:
         "journalctl",
         "--user",
         "-u",
-        "bookforge-tensorrt-planner.service",
+        "storylight-tensorrt-planner.service",
         "--since",
         since,
         "-o",
@@ -175,7 +175,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--user", required=True)
     parser.add_argument("--accepted-engine", type=Path, required=True)
     parser.add_argument("--expected-engine-sha256", required=True)
-    parser.add_argument("--config", type=Path, default=Path("/etc/bookforge/bookforge.env"))
+    parser.add_argument("--config", type=Path, default=Path("/etc/storylight/storylight.env"))
     parser.add_argument("--planner-base-url", default="http://127.0.0.1:11435")
     parser.add_argument("--api-base-url", default="http://127.0.0.1:8080")
     parser.add_argument("--timeout-seconds", type=int, default=90)
@@ -210,7 +210,7 @@ def main() -> None:
         "timeout_seconds": args.timeout_seconds,
         "minimum_available_memory_mib": args.minimum_available_mib,
         "output": str(args.output.expanduser().absolute()),
-        "service": "bookforge-tensorrt-planner.service",
+        "service": "storylight-tensorrt-planner.service",
     }
     action_sha256 = hashlib.sha256(canonical(action)).hexdigest()
     token = approval_token(action)
@@ -219,7 +219,7 @@ def main() -> None:
     args.output = Path(action["output"])
     plan = {
         "schema_version": "1.0",
-        "producer": "bookforge-cold-start-recorder",
+        "producer": "storylight-cold-start-recorder",
         "mode": "plan-only",
         "accepted_engine_sha256": args.expected_engine_sha256,
         "planner_base_url": planner_base,
@@ -243,7 +243,7 @@ def main() -> None:
         raise SystemExit("--user does not identify an existing account") from error
     if args.output.exists() or args.output.is_symlink():
         raise SystemExit("cold-start evidence output is write-once")
-    evidence_root = Path("/var/lib/bookforge-trusted/trained-planner/evidence")
+    evidence_root = Path("/var/lib/storylight-trusted/trained-planner/evidence")
     evidence_root_info = evidence_root.lstat()
     if (
         not args.output.is_relative_to(evidence_root)
@@ -273,7 +273,7 @@ def main() -> None:
         or config_info.st_gid != 0
         or config_info.st_mode & 0o077
     ):
-        raise SystemExit("Bookforge root environment is missing or unsafe")
+        raise SystemExit("Storylight root environment is missing or unsafe")
     config_sha256_before = sha256(args.config)
     before_route = parse_environment(args.config)
     if not route_is_accepted(
@@ -281,7 +281,7 @@ def main() -> None:
         engine_sha256=args.expected_engine_sha256,
         planner_base_url=planner_base,
     ):
-        raise SystemExit("Bookforge is not routed to the approved accepted engine")
+        raise SystemExit("Storylight is not routed to the approved accepted engine")
 
     started_realtime_usec = time.time_ns() // 1_000
     swap_before = swap_counters()
@@ -292,7 +292,7 @@ def main() -> None:
         if not service_window_open:
             return
         active = user_command(
-            args.user, "systemctl", "--user", "is-active", "bookforge-tensorrt-planner.service"
+            args.user, "systemctl", "--user", "is-active", "storylight-tensorrt-planner.service"
         )
         if active.stdout.strip() != "active":
             user_command(
@@ -300,7 +300,7 @@ def main() -> None:
                 "systemctl",
                 "--user",
                 "start",
-                "bookforge-tensorrt-planner.service",
+                "storylight-tensorrt-planner.service",
             )
 
     def interrupted(_signal: int, _frame: object) -> None:
@@ -314,7 +314,7 @@ def main() -> None:
         "systemctl",
         "--user",
         "restart",
-        "bookforge-tensorrt-planner.service",
+        "storylight-tensorrt-planner.service",
     )
     if restarted.returncode != 0:
         raise RuntimeError(f"accepted planner restart failed: {restarted.stderr.strip()}")
@@ -338,7 +338,7 @@ def main() -> None:
             "text": "A silver moth opens a tiny book and one blue star rises above it.",
             "visual_style": "luminous paper theater",
             "seed": 20260901,
-            "session_id": "bookforge-cold-start-acceptance",
+            "session_id": "storylight-cold-start-acceptance",
         },
         timeout=15,
     )
@@ -374,7 +374,7 @@ def main() -> None:
             "systemctl",
             "--user",
             "is-active",
-            "bookforge-tensorrt-planner.service",
+            "storylight-tensorrt-planner.service",
         ).stdout.strip()
         == "active"
         and config_sha256_after == config_sha256_before
@@ -392,7 +392,7 @@ def main() -> None:
     completed_realtime_usec = time.time_ns() // 1_000
     evidence = {
         "schema_version": "1.0",
-        "producer": "bookforge-cold-start-recorder",
+        "producer": "storylight-cold-start-recorder",
         "status": "passed" if passed else "blocked",
         "accepted_engine_sha256": args.expected_engine_sha256,
         "action_sha256": action_sha256,

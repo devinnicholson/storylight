@@ -7,9 +7,9 @@ from pathlib import Path
 import httpx
 import pytest
 
-from bookforge.finite_modal_provider import FastSceneRequest
-from bookforge.provider_router import SafeProviderFallbackError, SafeProviderRateLimitError
-from bookforge.vertex_scene_provider import (
+from storylight.finite_modal_provider import FastSceneRequest
+from storylight.provider_router import SafeProviderFallbackError, SafeProviderRateLimitError
+from storylight.vertex_scene_provider import (
     DEPTH_MODEL,
     PROVIDER_NAME,
     REQUEST_CONTRACT_REVISION,
@@ -231,7 +231,7 @@ def test_vertex_explicit_http_rejection_is_safe_to_fallback(tmp_path: Path) -> N
 
 
 def test_vertex_rate_limit_preserves_recovery_delay_without_retry(tmp_path, monkeypatch):
-    monkeypatch.setattr("bookforge.vertex_scene_provider.time.time", lambda: 1788849600)
+    monkeypatch.setattr("storylight.vertex_scene_provider.time.time", lambda: 1788849600)
     assert _retry_after_seconds("Tue, 08 Sep 2026 06:40:45 GMT") == 45
     assert _retry_after_seconds("Tue, 08 Sep 2026 06:39:00 GMT") == 0
     for header in (None, "-1", "nan", "inf", "9" * 400, "bad header", "1.5"):

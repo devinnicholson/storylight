@@ -8,16 +8,16 @@ export PATH
 unset BASH_ENV ENV CDPATH GLOBIGNORE
 
 readonly SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd -P)"
-readonly INSTALLER="${BOOKFORGE_CANDIDATE_INSTALLER:-$SCRIPT_DIR/install-trained-planner-candidate.sh}"
-readonly EVIDENCE_HELPER="${BOOKFORGE_SHADOW_EVIDENCE_HELPER:-$SCRIPT_DIR/trained-planner-shadow-evidence.py}"
-readonly BOOKFORGE_PYTHON="${BOOKFORGE_PYTHON:-/opt/bookforge/.venv/bin/python}"
-readonly CONFIG_FILE="/etc/bookforge/bookforge.env"
-readonly CANDIDATE_ROOT="/var/lib/bookforge-trusted/trained-planner-candidates"
-readonly PORT_ROOT="/etc/bookforge/trained-planner"
-readonly EVIDENCE_ROOT="/var/lib/bookforge-trusted/trained-planner/evidence"
+readonly INSTALLER="${STORYLIGHT_CANDIDATE_INSTALLER:-$SCRIPT_DIR/install-trained-planner-candidate.sh}"
+readonly EVIDENCE_HELPER="${STORYLIGHT_SHADOW_EVIDENCE_HELPER:-$SCRIPT_DIR/trained-planner-shadow-evidence.py}"
+readonly STORYLIGHT_PYTHON="${STORYLIGHT_PYTHON:-/opt/storylight/.venv/bin/python}"
+readonly CONFIG_FILE="/etc/storylight/storylight.env"
+readonly CANDIDATE_ROOT="/var/lib/storylight-trusted/trained-planner-candidates"
+readonly PORT_ROOT="/etc/storylight/trained-planner"
+readonly EVIDENCE_ROOT="/var/lib/storylight-trusted/trained-planner/evidence"
 readonly ACCEPTED_ENGINE_SHA256="95b69991b68c57a2d2d4bfa4116feb9ec57295588551d109353a42a9c16c4fdf"
 readonly CACHE_CONTRACT_REVISION="semantic-v18-tensorrt-slot-privacy"
-target_user="${BOOKFORGE_SERVICE_USER:-${SUDO_USER:-}}"
+target_user="${STORYLIGHT_SERVICE_USER:-${SUDO_USER:-}}"
 candidate_id=""
 suite="contest"
 runtime_output=""
@@ -148,8 +148,8 @@ if [[ ! "$target_user" =~ ^[a-z_][a-z0-9_-]{0,31}$ ]] \
   usage >&2
   exit 64
 fi
-if [[ ! -x "$BOOKFORGE_PYTHON" || ! -x "$EVIDENCE_HELPER" ]]; then
-  printf 'Bookforge Python or the shadow evidence helper is missing.\n' >&2
+if [[ ! -x "$STORYLIGHT_PYTHON" || ! -x "$EVIDENCE_HELPER" ]]; then
+  printf 'Storylight Python or the shadow evidence helper is missing.\n' >&2
   exit 69
 fi
 
@@ -231,7 +231,7 @@ action_sha256="$(
     "$config_sha256" "$dataset_manifest_sha256" "$int4_export_sha256" \
     | sha256sum | cut -d' ' -f1
 )"
-readonly EXPECTED_APPROVAL_TOKEN="RUN_BOOKFORGE_TRAINED_PLANNER_SHADOW:${action_sha256}"
+readonly EXPECTED_APPROVAL_TOKEN="RUN_STORYLIGHT_TRAINED_PLANNER_SHADOW:${action_sha256}"
 
 if ((dry_run == 1)); then
   printf '%s\n' "$verification"
@@ -255,7 +255,7 @@ if [[ "$approval_token" != "$EXPECTED_APPROVAL_TOKEN" ]]; then
 fi
 if [[ ! -f "$CONFIG_FILE" || -L "$CONFIG_FILE" ]] \
   || [[ "$(stat -c '%U:%G:%a' "$CONFIG_FILE")" != "root:root:600" ]]; then
-  printf 'Bookforge environment is missing or unsafe.\n' >&2
+  printf 'Storylight environment is missing or unsafe.\n' >&2
   exit 78
 fi
 if swapon --show --noheadings | grep -q .; then
@@ -266,30 +266,30 @@ fi
 target_uid="$(id -u "$target_user")"
 target_home="$(getent passwd "$target_user" | cut -d: -f6)"
 if [[ -z "$target_home" || "$target_home" != /* || ! -d "$target_home" ]]; then
-  printf 'Cannot resolve the Bookforge service user home directory.\n' >&2
+  printf 'Cannot resolve the Storylight service user home directory.\n' >&2
   exit 65
 fi
 readonly TARGET_UID="$target_uid"
 readonly TARGET_HOME="$target_home"
-readonly ACCEPTED_ENGINE="$TARGET_HOME/.local/share/bookforge/tensorrt-edgellm-v0.10.0/models/gemma4-e2b-it-int4-awq-v010/engines/llm/llm.engine"
+readonly ACCEPTED_ENGINE="$TARGET_HOME/.local/share/storylight/tensorrt-edgellm-v0.10.0/models/gemma4-e2b-it-int4-awq-v010/engines/llm/llm.engine"
 if [[ ! -s "$ACCEPTED_ENGINE" || -L "$ACCEPTED_ENGINE" ]] \
   || [[ "$(sha256sum "$ACCEPTED_ENGINE" | cut -d' ' -f1)" != "$ACCEPTED_ENGINE_SHA256" ]]; then
   printf 'The exact accepted TensorRT engine is missing or changed.\n' >&2
   exit 78
 fi
 
-readonly UNIT="bookforge-trained-planner-candidate@${candidate_id}.service"
-readonly ACCEPTED_UNIT="bookforge-tensorrt-planner.service"
-readonly GEMMA_UNIT="bookforge-gemma.service"
-readonly KIOSK_UNIT="bookforge-kiosk.service"
+readonly UNIT="storylight-trained-planner-candidate@${candidate_id}.service"
+readonly ACCEPTED_UNIT="storylight-tensorrt-planner.service"
+readonly GEMMA_UNIT="storylight-gemma.service"
+readonly KIOSK_UNIT="storylight-kiosk.service"
 readonly PORT_ENV="$PORT_ROOT/${candidate_id}.env"
 readonly OUTPUT_PARENT="$(dirname -- "$runtime_output")"
 install -d -o root -g root -m 0700 "$OUTPUT_PARENT" "$PORT_ROOT"
 work_dir="$(mktemp -d "$OUTPUT_PARENT/.${candidate_id}.shadow.partial.XXXXXX")"
 chmod 0700 "$work_dir"
 readonly WORK_DIR="$work_dir"
-readonly ORIGINAL_CONFIG="$WORK_DIR/bookforge.env.accepted"
-readonly CANDIDATE_CONFIG="$WORK_DIR/bookforge.env.candidate"
+readonly ORIGINAL_CONFIG="$WORK_DIR/storylight.env.accepted"
+readonly CANDIDATE_CONFIG="$WORK_DIR/storylight.env.candidate"
 readonly RESTORATION="$WORK_DIR/restoration.json"
 install -o root -g root -m 0600 "$CONFIG_FILE" "$ORIGINAL_CONFIG"
 readonly ORIGINAL_CONFIG_SHA256="$(sha256sum "$ORIGINAL_CONFIG" | cut -d' ' -f1)"
@@ -304,14 +304,14 @@ destination = Path(sys.argv[2])
 revision = sys.argv[3]
 contract_revision = sys.argv[4]
 replacements = {
-    "BOOKFORGE_LIVE_SCENE_PLANNER": "model",
-    "BOOKFORGE_LIVE_SCENE_PLANNER_BACKEND": "tensorrt_slots",
-    "BOOKFORGE_LIVE_SCENE_PLANNER_BASE_URL": "http://127.0.0.1:11435",
-    "BOOKFORGE_LIVE_SCENE_PLANNER_MODEL_NAME": "llm",
-    "BOOKFORGE_LIVE_SCENE_PLANNER_MAX_OUTPUT_TOKENS": "64",
-    "BOOKFORGE_LIVE_SCENE_PLANNER_MODEL_REVISION": revision,
-    "BOOKFORGE_LIVE_SCENE_PLANNER_CACHE_CONTRACT_REVISION": contract_revision,
-    "BOOKFORGE_LIVE_SCENE_PLANNER_COMPACT_WIRE": "false",
+    "STORYLIGHT_LIVE_SCENE_PLANNER": "model",
+    "STORYLIGHT_LIVE_SCENE_PLANNER_BACKEND": "tensorrt_slots",
+    "STORYLIGHT_LIVE_SCENE_PLANNER_BASE_URL": "http://127.0.0.1:11435",
+    "STORYLIGHT_LIVE_SCENE_PLANNER_MODEL_NAME": "llm",
+    "STORYLIGHT_LIVE_SCENE_PLANNER_MAX_OUTPUT_TOKENS": "64",
+    "STORYLIGHT_LIVE_SCENE_PLANNER_MODEL_REVISION": revision,
+    "STORYLIGHT_LIVE_SCENE_PLANNER_CACHE_CONTRACT_REVISION": contract_revision,
+    "STORYLIGHT_LIVE_SCENE_PLANNER_COMPACT_WIRE": "false",
 }
 remaining = dict(replacements)
 updated = []
@@ -333,7 +333,7 @@ user_systemctl() {
 
 atomic_config() {
   source="$1"
-  temporary="$(mktemp /etc/bookforge/.bookforge.env.shadow.XXXXXX)"
+  temporary="$(mktemp /etc/storylight/.storylight.env.shadow.XXXXXX)"
   install -o root -g root -m 0600 "$source" "$temporary"
   mv -f "$temporary" "$CONFIG_FILE"
 }
@@ -367,8 +367,8 @@ restore_accepted() {
   if ! user_systemctl stop "$GEMMA_UNIT"; then restore_failed=1; fi
   if ! user_systemctl start "$ACCEPTED_UNIT"; then restore_failed=1; fi
   if ! wait_endpoint http://127.0.0.1:11435/v1/models; then restore_failed=1; fi
-  if ! systemctl restart "bookforge@${target_user}.service" \
-    "bookforge-controller@${target_user}.service"; then
+  if ! systemctl restart "storylight@${target_user}.service" \
+    "storylight-controller@${target_user}.service"; then
     restore_failed=1
   fi
   if ! wait_endpoint http://127.0.0.1:8080/readyz; then restore_failed=1; fi
@@ -447,7 +447,7 @@ activate_leg() {
   if [[ "$label" == "candidate" ]]; then
     atomic_config "$CANDIDATE_CONFIG"
     port_tmp="$(mktemp "$PORT_ROOT/.${candidate_id}.env.XXXXXX")"
-    printf 'BOOKFORGE_EDGELLM_SERVER_PORT=11435\n' >"$port_tmp"
+    printf 'STORYLIGHT_EDGELLM_SERVER_PORT=11435\n' >"$port_tmp"
     chown root:root "$port_tmp"
     chmod 0644 "$port_tmp"
     mv -f "$port_tmp" "$PORT_ENV"
@@ -458,7 +458,7 @@ activate_leg() {
     active_unit="$ACCEPTED_UNIT"
   fi
   for _ in $(seq 1 30); do
-    if ! pgrep -u "$TARGET_UID" -f 'experimental.server|ollama serve|firefox-bookforge' \
+    if ! pgrep -u "$TARGET_UID" -f 'experimental.server|ollama serve|firefox-storylight' \
       >/dev/null 2>&1; then
       break
     fi
@@ -477,8 +477,8 @@ activate_leg() {
   ACTIVE_READY_SECONDS="$(awk -v start="$ready_started" -v end="$ready_finished" \
     'BEGIN { printf "%.6f", (end - start) / 1000000000 }')"
   ACTIVE_UNIT="$active_unit"
-  systemctl restart "bookforge@${target_user}.service" \
-    "bookforge-controller@${target_user}.service"
+  systemctl restart "storylight@${target_user}.service" \
+    "storylight-controller@${target_user}.service"
   wait_endpoint http://127.0.0.1:8080/readyz
   user_systemctl start "$KIOSK_UNIT"
   user_systemctl is-active --quiet "$KIOSK_UNIT"
@@ -536,7 +536,7 @@ run_leg() {
   : >"$monitor_flag"
   monitor_runtime "$ACTIVE_UNIT" "$monitor_flag" >"$monitor" &
   monitor_pid=$!
-  PYTHONPATH=/opt/bookforge/src "$BOOKFORGE_PYTHON" -m bookforge.planner_benchmark \
+  PYTHONPATH=/opt/storylight/src "$STORYLIGHT_PYTHON" -m storylight.planner_benchmark \
     --backend tensorrt_slots \
     --base-url http://127.0.0.1:11435 \
     --model llm \

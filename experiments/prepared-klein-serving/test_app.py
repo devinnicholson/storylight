@@ -226,8 +226,8 @@ def test_pinned_composition_and_pack_constant(module, tmp_path):
 
 
 def test_adapter_packages_actual_worker_wire_without_network(module, monkeypatch, tmp_path):
-    from bookforge.finite_modal_provider import FastSceneRequest
-    from bookforge.prepared_klein_provider import IDENTITY, PreparedKleinProvider
+    from storylight.finite_modal_provider import FastSceneRequest
+    from storylight.prepared_klein_provider import IDENTITY, PreparedKleinProvider
 
     stream = io.BytesIO()
     Image.new("RGB", (1024, 576), "blue").save(stream, format="JPEG")

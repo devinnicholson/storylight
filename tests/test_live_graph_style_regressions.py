@@ -1,8 +1,8 @@
 import pytest
 
-from bookforge.live_scene_planner import LiveSceneGraphPlan, LiveScenePlannerPrivacyError
-from bookforge.scene_facts import SceneFactsGroundingError, SceneSubjectFact
-from bookforge.tensorrt_slot_client import tensor_accepted_graph_wire_plan, tensor_slot_wire_plan
+from storylight.live_scene_planner import LiveSceneGraphPlan, LiveScenePlannerPrivacyError
+from storylight.scene_facts import SceneFactsGroundingError, SceneSubjectFact
+from storylight.tensorrt_slot_client import tensor_accepted_graph_wire_plan, tensor_slot_wire_plan
 
 SOURCE = "In a cave, a fox holds a lantern. A ribbon appears."
 RAW = "SETTING: cave\nACTOR: fox\nACTION: holds lantern\nMAGIC: ribbon"

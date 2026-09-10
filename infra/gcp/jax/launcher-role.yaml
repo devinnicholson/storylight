@@ -1,9 +1,0 @@
-title: Bookforge JAX finite job launcher
-description: Create, inspect, and cancel only the explicitly planned Vertex CustomJob.
-stage: GA
-includedPermissions:
-  - aiplatform.customJobs.cancel
-  - aiplatform.customJobs.create
-  - aiplatform.customJobs.get
-  - aiplatform.customJobs.list
-  - iam.serviceAccounts.actAs

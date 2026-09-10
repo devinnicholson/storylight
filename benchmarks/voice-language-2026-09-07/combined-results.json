@@ -5,9 +5,9 @@
     "benchmarks/voice-language-2026-09-07/cases.json": "08ad4b056fcdd5de19a82b85fcc950934c2286e936626452e366b2f19c0d88ea",
     "benchmarks/voice-language-2026-09-07/graph-results.json": "299907523b1e607115ebee72fb3379c1aec41d6621c1e90e21b0a14ca166a87c",
     "benchmarks/voice-language-2026-09-07/syntax-results.json": "c40715bd7b92dcd250cf5c16062b33ba70b83822e91a83898268729f1d459b2a",
-    "src/bookforge/bounded_description.py": "3825473b34a0bf025abf46a73367f4e5a2f7f6dedf7115a30833db6ce2c6edcd",
-    "src/bookforge/voice_dependencies.py": "f94bf64cfc7aa2db228d5562db3f73e6c363dfce932a2c5e7164dfa9680cf9af",
-    "src/bookforge/voice_language.py": "c5926e3e439ba22f4ac597657b42e47bef1b7bb6402ce758106fbbbee5d43c68"
+    "src/storylight/bounded_description.py": "3825473b34a0bf025abf46a73367f4e5a2f7f6dedf7115a30833db6ce2c6edcd",
+    "src/storylight/voice_dependencies.py": "f94bf64cfc7aa2db228d5562db3f73e6c363dfce932a2c5e7164dfa9680cf9af",
+    "src/storylight/voice_language.py": "c5926e3e439ba22f4ac597657b42e47bef1b7bb6402ce758106fbbbee5d43c68"
   },
   "cases": 20,
   "bounded_grammar_pass": 9,

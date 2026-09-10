@@ -7,7 +7,7 @@ PATH=/usr/sbin:/usr/bin:/sbin:/bin
 export PATH
 unset BASH_ENV ENV CDPATH GLOBIGNORE
 
-readonly TRUSTED_ROOT="/var/lib/bookforge-trusted"
+readonly TRUSTED_ROOT="/var/lib/storylight-trusted"
 readonly SWAP_FILE="$TRUSTED_ROOT/tensorrt-build.swap"
 readonly SWAP_BYTES=$((8 * 1024 * 1024 * 1024))
 
@@ -35,7 +35,7 @@ ensure_trusted_root() {
   if [[ -e "$TRUSTED_ROOT" || -L "$TRUSTED_ROOT" ]]; then
     if [[ ! -d "$TRUSTED_ROOT" || -L "$TRUSTED_ROOT" ]] \
       || [[ "$(stat -c '%U:%G:%a' "$TRUSTED_ROOT")" != "root:root:755" ]]; then
-      printf 'The Bookforge trusted state root is unsafe.\n' >&2
+      printf 'The Storylight trusted state root is unsafe.\n' >&2
       exit 78
     fi
   else

@@ -2,17 +2,17 @@
 set -euo pipefail
 
 PROJECT_ID="${GOOGLE_CLOUD_PROJECT:-your-gcp-project}"
-REGION="${BOOKFORGE_GCP_REGION:-us-central1}"
-REPOSITORY="${BOOKFORGE_GCP_REPOSITORY:-bookforge}"
-SERVICE="${BOOKFORGE_GCP_SCENE_SERVICE:-bookforge-scene-rtx}"
-SERVICE_ACCOUNT="bookforge-renderer@${PROJECT_ID}.iam.gserviceaccount.com"
-IMAGE="${REGION}-docker.pkg.dev/${PROJECT_ID}/${REPOSITORY}/live-scene:${BOOKFORGE_IMAGE_TAG:-latest}"
-GPU_TYPE="${BOOKFORGE_GCP_GPU_TYPE:-nvidia-rtx-pro-6000}"
-STARTUP_PROBE_ATTEMPTS="${BOOKFORGE_GCP_STARTUP_PROBE_ATTEMPTS:-900}"
+REGION="${STORYLIGHT_GCP_REGION:-us-central1}"
+REPOSITORY="${STORYLIGHT_GCP_REPOSITORY:-storylight}"
+SERVICE="${STORYLIGHT_GCP_SCENE_SERVICE:-storylight-scene-rtx}"
+SERVICE_ACCOUNT="storylight-renderer@${PROJECT_ID}.iam.gserviceaccount.com"
+IMAGE="${REGION}-docker.pkg.dev/${PROJECT_ID}/${REPOSITORY}/live-scene:${STORYLIGHT_IMAGE_TAG:-latest}"
+GPU_TYPE="${STORYLIGHT_GCP_GPU_TYPE:-nvidia-rtx-pro-6000}"
+STARTUP_PROBE_ATTEMPTS="${STORYLIGHT_GCP_STARTUP_PROBE_ATTEMPTS:-900}"
 
 if [[ ! "${STARTUP_PROBE_ATTEMPTS}" =~ ^[0-9]+$ ]] || \
    (( STARTUP_PROBE_ATTEMPTS < 60 || STARTUP_PROBE_ATTEMPTS > 1800 )); then
-  echo "BOOKFORGE_GCP_STARTUP_PROBE_ATTEMPTS must be an integer from 60 through 1800." >&2
+  echo "STORYLIGHT_GCP_STARTUP_PROBE_ATTEMPTS must be an integer from 60 through 1800." >&2
   exit 1
 fi
 
@@ -33,12 +33,12 @@ case "${GPU_TYPE}" in
     EXPECTED_GPU=RTX_PRO_6000
     ;;
   *)
-    echo "Unsupported BOOKFORGE_GCP_GPU_TYPE: ${GPU_TYPE}" >&2
+    echo "Unsupported STORYLIGHT_GCP_GPU_TYPE: ${GPU_TYPE}" >&2
     exit 1
     ;;
 esac
 
-if [[ "${BOOKFORGE_GCP_APPLY:-}" != "I_UNDERSTAND_THIS_CREATES_BILLABLE_RESOURCES" ]]; then
+if [[ "${STORYLIGHT_GCP_APPLY:-}" != "I_UNDERSTAND_THIS_CREATES_BILLABLE_RESOURCES" ]]; then
   echo "Dry guard active. This script would create/update:"
   echo "  project:       ${PROJECT_ID}"
   echo "  region:        ${REGION}"
@@ -49,7 +49,7 @@ if [[ "${BOOKFORGE_GCP_APPLY:-}" != "I_UNDERSTAND_THIS_CREATES_BILLABLE_RESOURCE
   echo "  startup probe: one-second TCP checks, ${STARTUP_PROBE_ATTEMPTS} attempts"
   echo "  access:        IAM authenticated only"
   echo
-  echo "Set BOOKFORGE_GCP_APPLY=I_UNDERSTAND_THIS_CREATES_BILLABLE_RESOURCES to apply."
+  echo "Set STORYLIGHT_GCP_APPLY=I_UNDERSTAND_THIS_CREATES_BILLABLE_RESOURCES to apply."
   exit 2
 fi
 
@@ -94,7 +94,7 @@ gcloud artifacts repositories create "${REPOSITORY}" \
   --project "${PROJECT_ID}" \
   --location "${REGION}" \
   --repository-format docker \
-  --description "Bookforge private GPU services"
+  --description "Storylight private GPU services"
 
 gcloud artifacts repositories set-cleanup-policies "${REPOSITORY}" \
   --project "${PROJECT_ID}" \
@@ -103,9 +103,9 @@ gcloud artifacts repositories set-cleanup-policies "${REPOSITORY}" \
 
 gcloud iam service-accounts describe "${SERVICE_ACCOUNT}" \
   --project "${PROJECT_ID}" >/dev/null 2>&1 || \
-gcloud iam service-accounts create bookforge-renderer \
+gcloud iam service-accounts create storylight-renderer \
   --project "${PROJECT_ID}" \
-  --display-name "Bookforge private live-scene renderer"
+  --display-name "Storylight private live-scene renderer"
 
 CACHE_IMAGE="$(
   gcloud run services describe "${SERVICE}" \
@@ -152,8 +152,8 @@ gcloud run deploy "${SERVICE}" \
   --cpu-boost \
   --no-cpu-throttling \
   --no-allow-unauthenticated \
-  --set-env-vars "BOOKFORGE_EXPECTED_GPU=${EXPECTED_GPU},GOOGLE_CLOUD_PROJECT=${PROJECT_ID},HF_HUB_OFFLINE=1,HF_HUB_DISABLE_XET=1,TRANSFORMERS_OFFLINE=1" \
-  --labels app=bookforge,component=live-scene,model=sana-sprint \
+  --set-env-vars "STORYLIGHT_EXPECTED_GPU=${EXPECTED_GPU},GOOGLE_CLOUD_PROJECT=${PROJECT_ID},HF_HUB_OFFLINE=1,HF_HUB_DISABLE_XET=1,TRANSFORMERS_OFFLINE=1" \
+  --labels app=storylight,component=live-scene,model=sana-sprint \
   --quiet
 
 ACTIVE_ACCOUNT="$(gcloud auth list --filter=status:ACTIVE --format='value(account)' | head -n 1)"

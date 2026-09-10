@@ -85,7 +85,7 @@ def test_actual_pinned_gemma_text_linear_layout_on_meta_device():
     transformers = pytest.importorskip("transformers")
     assert transformers.__version__ == "5.13.0"
     directory = Path(
-        os.environ.get("BOOKFORGE_V3_TOKENIZER_DIR", "/private/tmp/bookforge-v3-tokenizer")
+        os.environ.get("STORYLIGHT_V3_TOKENIZER_DIR", "/private/tmp/storylight-v3-tokenizer")
     )
     if not directory.exists():
         pytest.skip("Pinned local configuration is unavailable")

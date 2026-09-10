@@ -26,7 +26,7 @@ PINS = {
     MODEL / "config.json": "40028e43687458e79ba89cc16bf14184c5414a5cbc00fd511f8f78d138647afd",
     TARGET: "54c6702bdac9ec9dd5e65aac00a8bcb8217c7dca15233635d9322fd4db31eed5",
     PRIMER_SOURCE: "f13a81e0611d2526a992096f3150e4338d14d09a324dd792a41de07018da659d",
-    ROOT / "src/bookforge/asr.py":
+    ROOT / "src/storylight/asr.py":
         "318b9f0c89b0ad0b6231df2bc32486a63e1bd7984646b04ace97ec0a54d4765d",
 }
 
@@ -49,8 +49,8 @@ async def worker(arm, directory):
 
     sys.addaudithook(deny_network)
     started = time.perf_counter()
-    from bookforge.asr import LocalTranscriber
-    from bookforge.config import Settings
+    from storylight.asr import LocalTranscriber
+    from storylight.config import Settings
 
     backend = LocalTranscriber(Settings(
         _env_file=None, asr_backend="mlx_whisper", asr_model=str(MODEL),

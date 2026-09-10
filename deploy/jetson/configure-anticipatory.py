@@ -16,19 +16,19 @@ import urllib.error
 import urllib.request
 from pathlib import Path
 
-CONFIG = Path("/etc/bookforge/bookforge.env")
+CONFIG = Path("/etc/storylight/storylight.env")
 
 
 def replacement_values(*, enabled: bool, port: int) -> dict[str, str]:
     if not 1024 <= port <= 65535:
         raise ValueError("Bridge port must be between 1024 and 65535")
     if not enabled:
-        return {"BOOKFORGE_ANTICIPATORY_BACKEND": "disabled"}
+        return {"STORYLIGHT_ANTICIPATORY_BACKEND": "disabled"}
     return {
-        "BOOKFORGE_ANTICIPATORY_BACKEND": "gke",
-        "BOOKFORGE_ANTICIPATORY_URL": f"http://127.0.0.1:{port}",
-        "BOOKFORGE_ANTICIPATORY_ALLOW_LOOPBACK_HTTP": "true",
-        "BOOKFORGE_ANTICIPATORY_AUDIENCE": "",
+        "STORYLIGHT_ANTICIPATORY_BACKEND": "gke",
+        "STORYLIGHT_ANTICIPATORY_URL": f"http://127.0.0.1:{port}",
+        "STORYLIGHT_ANTICIPATORY_ALLOW_LOOPBACK_HTTP": "true",
+        "STORYLIGHT_ANTICIPATORY_AUDIENCE": "",
     }
 
 
@@ -67,7 +67,7 @@ def read_config(path: Path, *, owner_uid: int = 0) -> str:
 
 
 def write_private_file(path: Path, content: str) -> None:
-    descriptor, temporary = tempfile.mkstemp(prefix=".bookforge-env-", dir=path.parent)
+    descriptor, temporary = tempfile.mkstemp(prefix=".storylight-env-", dir=path.parent)
     try:
         with os.fdopen(descriptor, "w", encoding="utf-8") as stream:
             stream.write(content)
@@ -102,15 +102,15 @@ def verify_bridge(port: int) -> None:
     health = read_json(f"http://127.0.0.1:{port}/health")
     if health != {
         "ready": True,
-        "service": "bookforge-anticipatory",
+        "service": "storylight-anticipatory",
         "privacy_boundary": "sanitized_scene_spec_v1",
     }:
-        raise ValueError("The loopback port is not the expected Bookforge GKE bridge")
+        raise ValueError("The loopback port is not the expected Storylight GKE bridge")
 
 
 def restart_api(user: str) -> None:
     subprocess.run(
-        ["/usr/bin/systemctl", "restart", f"bookforge@{user}.service"], check=True, timeout=40
+        ["/usr/bin/systemctl", "restart", f"storylight@{user}.service"], check=True, timeout=40
     )
 
 
@@ -130,7 +130,7 @@ def wait_ready(enabled: bool) -> None:
 
 def apply_configuration(path: Path, original: str, updated: str, *, restart, verify) -> Path:
     descriptor, backup_name = tempfile.mkstemp(
-        prefix="bookforge.env.before-anticipatory-", dir=path.parent
+        prefix="storylight.env.before-anticipatory-", dir=path.parent
     )
     backup = Path(backup_name)
     with os.fdopen(descriptor, "w", encoding="utf-8") as stream:
@@ -165,11 +165,11 @@ def main() -> None:
     if not re.fullmatch(r"[a-z_][a-z0-9_-]{0,31}", args.user):
         parser.error("Select a valid non-root service user")
     if pwd.getpwnam(args.user).pw_uid == 0:
-        parser.error("The Bookforge API must not run as root")
+        parser.error("The Storylight API must not run as root")
     values = replacement_values(enabled=not args.disable, port=args.port)
     original = read_config(CONFIG)
     if not args.disable:
-        if environment_value(original, "BOOKFORGE_LIVE_SCENE_PLANNER") != "model":
+        if environment_value(original, "STORYLIGHT_LIVE_SCENE_PLANNER") != "model":
             parser.error("Keep the accepted local model planner configured before enabling GKE")
         verify_bridge(args.port)
     updated = rewrite_environment(original, values)

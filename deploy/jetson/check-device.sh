@@ -112,7 +112,7 @@ if have docker; then
     warn "Docker is installed, but its daemon is stopped or inaccessible to this user"
   fi
 else
-  warn "Docker CLI was not detected; Bookforge does not require containers"
+  warn "Docker CLI was not detected; Storylight does not require containers"
 fi
 if have nvidia-ctk; then
   printf 'NVIDIA Container Toolkit: %s\n' "$(nvidia-ctk --version 2>/dev/null || true)"
@@ -126,9 +126,9 @@ if have python3; then
   PYTHON_VERSION="$(python3 -c 'import sys; print(".".join(map(str, sys.version_info[:3])))')"
   printf 'Python: %s\n' "$PYTHON_VERSION"
   if python3 -c 'import sys; raise SystemExit(sys.version_info < (3, 11))'; then
-    pass "Python satisfies Bookforge >=3.11"
+    pass "Python satisfies Storylight >=3.11"
   else
-    fail "Bookforge requires Python 3.11 or newer"
+    fail "Storylight requires Python 3.11 or newer"
   fi
 else
   fail "python3 was not detected"

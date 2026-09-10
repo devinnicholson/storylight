@@ -24,3 +24,47 @@ artifacts/visual-lab/*
 !artifacts/visual-lab/handoff/**
 artifacts/live-scenes/
 src/bookforge/static/mediapipe/
+
+# Local runtime state, publication audits, and personal work.
+.storylight/
+.audit/
+.publication-audit/
+output/
+post/
+post-temp*/
+tmp/
+
+# Credentials and machine-specific configuration.
+.env.*
+!.env.example
+.ssh/
+.aws/
+.config/gcloud/
+.modal.toml
+id_rsa
+id_ed25519
+credentials.json
+application_default_credentials.json
+service-account*.json
+*-service-account.json
+*.pem
+*.key
+*.p12
+*.pfx
+
+# Downloaded model weights, engines, and local export bundles.
+*.safetensors
+!LICENSE.safetensors
+*.onnx
+*.engine
+*.plan
+*.pt
+*.pth
+*.ckpt
+*.gguf
+*.bin
+*.tar
+*.tar.gz
+*.tgz
+*.zip
+src/storylight/static/mediapipe/

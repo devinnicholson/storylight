@@ -3,10 +3,10 @@
 
 set -euo pipefail
 
-readonly CONFIG_FILE="/etc/bookforge/bookforge.env"
-readonly PYTHON="/opt/bookforge/.venv/bin/python"
-readonly UNIT_SOURCE="/opt/bookforge/deploy/jetson/systemd/bookforge-tensorrt-planner.service"
-TARGET_USER="${BOOKFORGE_SERVICE_USER:-${SUDO_USER:-}}"
+readonly CONFIG_FILE="/etc/storylight/storylight.env"
+readonly PYTHON="/opt/storylight/.venv/bin/python"
+readonly UNIT_SOURCE="/opt/storylight/deploy/jetson/systemd/storylight-tensorrt-planner.service"
+TARGET_USER="${STORYLIGHT_SERVICE_USER:-${SUDO_USER:-}}"
 DRY_RUN=0
 
 usage() {
@@ -14,7 +14,7 @@ usage() {
 Usage: sudo ./deploy/jetson/configure-tensorrt-planner.sh [options]
 
 Options:
-  --user USER  Select the non-root Bookforge service user.
+  --user USER  Select the non-root Storylight service user.
   --dry-run    Validate the engine and print non-secret changes without writing.
   -h, --help   Show this help.
 
@@ -41,16 +41,16 @@ if [[ "$(id -u)" -ne 0 ]]; then
   exit 1
 fi
 if [[ ! "$TARGET_USER" =~ ^[a-z_][a-z0-9_-]{0,31}$ ]] || ! id "$TARGET_USER" >/dev/null 2>&1; then
-  printf 'Select a valid Bookforge service user with --user.\n' >&2
+  printf 'Select a valid Storylight service user with --user.\n' >&2
   exit 2
 fi
 if [[ ! -f "$CONFIG_FILE" || -L "$CONFIG_FILE" ]] \
   || [[ "$(stat -c '%U:%G:%a' "$CONFIG_FILE")" != "root:root:600" ]]; then
-  printf 'Bookforge environment is missing or has unsafe ownership, mode, or type.\n' >&2
+  printf 'Storylight environment is missing or has unsafe ownership, mode, or type.\n' >&2
   exit 1
 fi
 if [[ ! -x "$PYTHON" || ! -r "$UNIT_SOURCE" ]]; then
-  printf 'The staged Bookforge runtime or TensorRT unit is missing.\n' >&2
+  printf 'The staged Storylight runtime or TensorRT unit is missing.\n' >&2
   exit 1
 fi
 
@@ -69,7 +69,7 @@ user_systemctl() {
     systemctl --user "$@"
 }
 
-readonly ENGINE_DIR="$TARGET_HOME/.local/share/bookforge/tensorrt-edgellm-v0.10.0/models/gemma4-e2b-it-int4-awq-v010/engines/llm"
+readonly ENGINE_DIR="$TARGET_HOME/.local/share/storylight/tensorrt-edgellm-v0.10.0/models/gemma4-e2b-it-int4-awq-v010/engines/llm"
 readonly ENGINE_FILE="$ENGINE_DIR/llm.engine"
 if [[ ! -s "$ENGINE_FILE" ]]; then
   printf 'The accepted Gemma 4 TensorRT engine is missing: %s\n' "$ENGINE_FILE" >&2
@@ -81,7 +81,7 @@ if [[ ! "$ENGINE_SHA256" =~ ^[a-f0-9]{64}$ ]]; then
   exit 1
 fi
 
-"$PYTHON" -c 'import bookforge.api, bookforge.tensorrt_slot_client'
+"$PYTHON" -c 'import storylight.api, storylight.tensorrt_slot_client'
 readonly REVISION="sha256:${ENGINE_SHA256}"
 readonly TIMESTAMP="$(date -u +%Y%m%dT%H%M%SZ)"
 readonly BACKUP_FILE="${CONFIG_FILE}.before-tensorrt-${TIMESTAMP}"
@@ -98,15 +98,15 @@ revision = sys.argv[2]
 dry_run = sys.argv[3] == "1"
 backup_path = Path(sys.argv[4])
 replacements = {
-    "BOOKFORGE_LIVE_SCENE_PLANNER": "model",
-    "BOOKFORGE_LIVE_SCENE_PLANNER_BACKEND": "tensorrt_slots",
-    "BOOKFORGE_LIVE_SCENE_PLANNER_BASE_URL": "http://127.0.0.1:11435",
-    "BOOKFORGE_LIVE_SCENE_PLANNER_MODEL_NAME": "llm",
-    "BOOKFORGE_LIVE_SCENE_PLANNER_MAX_OUTPUT_TOKENS": "64",
-    "BOOKFORGE_LIVE_SCENE_PLANNER_FALLBACK_READY_SECONDS": "5",
-    "BOOKFORGE_LIVE_SCENE_PLANNER_TIMEOUT_SECONDS": "12",
-    "BOOKFORGE_LIVE_SCENE_PLANNER_MODEL_REVISION": revision,
-    "BOOKFORGE_LIVE_SCENE_PLANNER_COMPACT_WIRE": "false",
+    "STORYLIGHT_LIVE_SCENE_PLANNER": "model",
+    "STORYLIGHT_LIVE_SCENE_PLANNER_BACKEND": "tensorrt_slots",
+    "STORYLIGHT_LIVE_SCENE_PLANNER_BASE_URL": "http://127.0.0.1:11435",
+    "STORYLIGHT_LIVE_SCENE_PLANNER_MODEL_NAME": "llm",
+    "STORYLIGHT_LIVE_SCENE_PLANNER_MAX_OUTPUT_TOKENS": "64",
+    "STORYLIGHT_LIVE_SCENE_PLANNER_FALLBACK_READY_SECONDS": "5",
+    "STORYLIGHT_LIVE_SCENE_PLANNER_TIMEOUT_SECONDS": "12",
+    "STORYLIGHT_LIVE_SCENE_PLANNER_MODEL_REVISION": revision,
+    "STORYLIGHT_LIVE_SCENE_PLANNER_COMPACT_WIRE": "false",
 }
 lines = config_path.read_text().splitlines()
 remaining = dict(replacements)
@@ -120,7 +120,7 @@ for line in lines:
 for name, value in remaining.items():
     updated.append(f"{name}={value}")
 
-print("Bookforge TensorRT planner configuration:")
+print("Storylight TensorRT planner configuration:")
 for name in sorted(replacements):
     print(f"  {name}={replacements[name]}")
 if dry_run:
@@ -132,7 +132,7 @@ os.chown(backup_path, 0, 0)
 os.chmod(backup_path, 0o600)
 descriptor, temporary_name = tempfile.mkstemp(
     dir=config_path.parent,
-    prefix=".bookforge.env.tensorrt.",
+    prefix=".storylight.env.tensorrt.",
 )
 try:
     with os.fdopen(descriptor, "w") as stream:
@@ -160,20 +160,20 @@ rollback() {
   if ((exit_code != 0 && configured == 1)); then
     printf 'TensorRT promotion failed; restoring the previous configuration.\n' >&2
     install -o root -g root -m 0600 "$BACKUP_FILE" "$CONFIG_FILE"
-    tensorrt_want="$TARGET_HOME/.config/systemd/user/default.target.wants/bookforge-tensorrt-planner.service"
+    tensorrt_want="$TARGET_HOME/.config/systemd/user/default.target.wants/storylight-tensorrt-planner.service"
     if [[ -L "$tensorrt_want" ]]; then
       unlink "$tensorrt_want"
     fi
-    user_systemctl stop bookforge-tensorrt-planner.service || true
-    user_systemctl start bookforge-gemma.service || true
+    user_systemctl stop storylight-tensorrt-planner.service || true
+    user_systemctl start storylight-gemma.service || true
     if ((kiosk_was_active == 1)); then
-      user_systemctl start bookforge-kiosk.service || true
+      user_systemctl start storylight-kiosk.service || true
     fi
-    ln -sfn ../bookforge-gemma.service \
-      "$TARGET_HOME/.config/systemd/user/default.target.wants/bookforge-gemma.service"
+    ln -sfn ../storylight-gemma.service \
+      "$TARGET_HOME/.config/systemd/user/default.target.wants/storylight-gemma.service"
     chown -h "$TARGET_UID:$TARGET_GID" \
-      "$TARGET_HOME/.config/systemd/user/default.target.wants/bookforge-gemma.service"
-    systemctl restart "bookforge@${TARGET_USER}.service" || true
+      "$TARGET_HOME/.config/systemd/user/default.target.wants/storylight-gemma.service"
+    systemctl restart "storylight@${TARGET_USER}.service" || true
   fi
   exit "$exit_code"
 }
@@ -183,36 +183,36 @@ install -d -o "$TARGET_UID" -g "$TARGET_GID" -m 0700 \
   "$TARGET_HOME/.config/systemd/user" \
   "$TARGET_HOME/.config/systemd/user/default.target.wants"
 install -o "$TARGET_UID" -g "$TARGET_GID" -m 0644 "$UNIT_SOURCE" \
-  "$TARGET_HOME/.config/systemd/user/bookforge-tensorrt-planner.service"
-ln -sfn ../bookforge-tensorrt-planner.service \
-  "$TARGET_HOME/.config/systemd/user/default.target.wants/bookforge-tensorrt-planner.service"
+  "$TARGET_HOME/.config/systemd/user/storylight-tensorrt-planner.service"
+ln -sfn ../storylight-tensorrt-planner.service \
+  "$TARGET_HOME/.config/systemd/user/default.target.wants/storylight-tensorrt-planner.service"
 chown -h "$TARGET_UID:$TARGET_GID" \
-  "$TARGET_HOME/.config/systemd/user/default.target.wants/bookforge-tensorrt-planner.service"
-gemma_want="$TARGET_HOME/.config/systemd/user/default.target.wants/bookforge-gemma.service"
+  "$TARGET_HOME/.config/systemd/user/default.target.wants/storylight-tensorrt-planner.service"
+gemma_want="$TARGET_HOME/.config/systemd/user/default.target.wants/storylight-gemma.service"
 if [[ -L "$gemma_want" ]] \
-  && [[ "$(readlink "$gemma_want")" == "../bookforge-gemma.service" ]]; then
+  && [[ "$(readlink "$gemma_want")" == "../storylight-gemma.service" ]]; then
   unlink "$gemma_want"
 fi
 
 user_systemctl daemon-reload
-if user_systemctl is-active --quiet bookforge-kiosk.service; then
+if user_systemctl is-active --quiet storylight-kiosk.service; then
   kiosk_was_active=1
 fi
 
 # The long-lived kiosk and a loaded Ollama worker each held roughly 1.7 GiB on
 # the accepted device. Drain both before CUDA-graph capture, then relaunch a
 # fresh kiosk only after TensorRT and the API are ready.
-user_systemctl stop bookforge-kiosk.service
-user_systemctl stop bookforge-gemma.service
+user_systemctl stop storylight-kiosk.service
+user_systemctl stop storylight-gemma.service
 for _ in $(seq 1 30); do
   if ! pgrep -u "$TARGET_UID" -f \
-    'ollama serve|llama-server|firefox-bookforge' >/dev/null 2>&1; then
+    'ollama serve|llama-server|firefox-storylight' >/dev/null 2>&1; then
     break
   fi
   sleep 1
 done
 if pgrep -u "$TARGET_UID" -f \
-  'ollama serve|llama-server|firefox-bookforge' >/dev/null 2>&1; then
+  'ollama serve|llama-server|firefox-storylight' >/dev/null 2>&1; then
   printf 'Ollama or the projector browser did not drain before TensorRT startup.\n' >&2
   exit 1
 fi
@@ -222,8 +222,8 @@ if [[ ! "$available_kib" =~ ^[0-9]+$ ]] || ((available_kib < 4194304)); then
   exit 1
 fi
 
-user_systemctl reset-failed bookforge-tensorrt-planner.service || true
-user_systemctl start bookforge-tensorrt-planner.service
+user_systemctl reset-failed storylight-tensorrt-planner.service || true
+user_systemctl start storylight-tensorrt-planner.service
 
 for _ in $(seq 1 90); do
   if curl --fail --silent --max-time 1 http://127.0.0.1:11435/v1/models >/dev/null 2>&1; then
@@ -233,19 +233,19 @@ for _ in $(seq 1 90); do
 done
 curl --fail --silent --show-error http://127.0.0.1:11435/v1/models >/dev/null
 
-systemctl restart "bookforge@${TARGET_USER}.service" "bookforge-controller@${TARGET_USER}.service"
+systemctl restart "storylight@${TARGET_USER}.service" "storylight-controller@${TARGET_USER}.service"
 for _ in $(seq 1 30); do
   if curl --fail --silent --max-time 1 http://127.0.0.1:8080/readyz >/dev/null 2>&1 \
     && curl --fail --silent --max-time 1 http://127.0.0.1:8081/healthz >/dev/null 2>&1; then
     if ((kiosk_was_active == 1)); then
-      user_systemctl start bookforge-kiosk.service
-      user_systemctl is-active --quiet bookforge-kiosk.service
+      user_systemctl start storylight-kiosk.service
+      user_systemctl is-active --quiet storylight-kiosk.service
     fi
     configured=0
-    printf 'Bookforge TensorRT planner is resident; API and controller are ready.\n'
+    printf 'Storylight TensorRT planner is resident; API and controller are ready.\n'
     exit 0
   fi
   sleep 1
 done
-printf 'Bookforge API did not become ready after TensorRT promotion.\n' >&2
+printf 'Storylight API did not become ready after TensorRT promotion.\n' >&2
 exit 1

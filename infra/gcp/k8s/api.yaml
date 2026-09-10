@@ -1,33 +1,33 @@
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: bookforge-api
-  namespace: bookforge
+  name: storylight-api
+  namespace: storylight
   labels:
-    app.kubernetes.io/name: bookforge-api
+    app.kubernetes.io/name: storylight-api
 spec:
   replicas: 1
   selector:
     matchLabels:
-      app.kubernetes.io/name: bookforge-api
+      app.kubernetes.io/name: storylight-api
   template:
     metadata:
       labels:
-        app.kubernetes.io/name: bookforge-api
+        app.kubernetes.io/name: storylight-api
     spec:
       containers:
         - name: api
-          image: bookforge-api-placeholder
+          image: storylight-api-placeholder
           env:
-            - name: BOOKFORGE_ENVIRONMENT
+            - name: STORYLIGHT_ENVIRONMENT
               value: gcp
-            - name: BOOKFORGE_MODEL_BACKEND
+            - name: STORYLIGHT_MODEL_BACKEND
               value: openai
-            - name: BOOKFORGE_MODEL_NAME
+            - name: STORYLIGHT_MODEL_NAME
               value: google/gemma-4-e2b-it
-            - name: BOOKFORGE_MODEL_BASE_URL
+            - name: STORYLIGHT_MODEL_BASE_URL
               value: http://gemma-vllm:8000
-            - name: BOOKFORGE_MODEL_TIMEOUT_SECONDS
+            - name: STORYLIGHT_MODEL_TIMEOUT_SECONDS
               value: "300"
           ports:
             - name: http
@@ -49,14 +49,13 @@ spec:
 apiVersion: v1
 kind: Service
 metadata:
-  name: bookforge-api
-  namespace: bookforge
+  name: storylight-api
+  namespace: storylight
 spec:
   selector:
-    app.kubernetes.io/name: bookforge-api
+    app.kubernetes.io/name: storylight-api
   ports:
     - name: http
       port: 8080
       targetPort: http
   type: ClusterIP
-

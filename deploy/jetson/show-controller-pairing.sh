@@ -3,20 +3,20 @@
 
 set -euo pipefail
 
-readonly CONTROLLER_ENV="${BOOKFORGE_CONTROLLER_ENV:-/etc/bookforge/controller.env}"
+readonly CONTROLLER_ENV="${STORYLIGHT_CONTROLLER_ENV:-/etc/storylight/controller.env}"
 
 if [[ ! -r "$CONTROLLER_ENV" ]]; then
   printf 'Cannot read %s. Run with sudo on the Jetson.\n' "$CONTROLLER_ENV" >&2
   exit 1
 fi
 
-pairing_token="$(sed -n 's/^BOOKFORGE_CONTROLLER_PAIRING_TOKEN=//p' "$CONTROLLER_ENV")"
+pairing_token="$(sed -n 's/^STORYLIGHT_CONTROLLER_PAIRING_TOKEN=//p' "$CONTROLLER_ENV")"
 if [[ ! "$pairing_token" =~ ^[A-Za-z0-9_-]{32,256}$ ]]; then
   printf 'The controller pairing token is missing or malformed.\n' >&2
   exit 1
 fi
 
-device_host="${BOOKFORGE_CONTROLLER_HOST:-}"
+device_host="${STORYLIGHT_CONTROLLER_HOST:-}"
 if [[ -z "$device_host" ]]; then
   device_name="$(hostname -s)"
   if [[ ! "$device_name" =~ ^[A-Za-z0-9-]{1,63}$ ]]; then

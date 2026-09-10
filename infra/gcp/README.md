@@ -19,35 +19,35 @@ and retains only two recent images while deleting images older than 30 days.
 
 ```bash
 export GOOGLE_CLOUD_PROJECT=your-gcp-project
-export BOOKFORGE_GCP_REGION=us-central1
-export BOOKFORGE_IMAGE_TAG=YYYYMMDD-N
+export STORYLIGHT_GCP_REGION=us-central1
+export STORYLIGHT_IMAGE_TAG=YYYYMMDD-N
 
 # Inspect the exact scope; creates nothing.
 ./infra/gcp/cloud-run/deploy-live-scene.sh
 
 # Explicitly authorize the bounded billable deployment.
-export BOOKFORGE_GCP_APPLY=I_UNDERSTAND_THIS_CREATES_BILLABLE_RESOURCES
+export STORYLIGHT_GCP_APPLY=I_UNDERSTAND_THIS_CREATES_BILLABLE_RESOURCES
 ./infra/gcp/cloud-run/deploy-live-scene.sh
 ```
 
 The default service configuration is one RTX PRO 6000, 20 vCPU, 80 GiB, concurrency one, minimum
 zero, maximum one, and no unauthenticated access. RTX quota is measured in milliGPUs, so exactly one
-GPU requires a quota value of 1,000. Set `BOOKFORGE_GCP_GPU_TYPE=nvidia-l4` to use the lower-cost
+GPU requires a quota value of 1,000. Set `STORYLIGHT_GCP_GPU_TYPE=nvidia-l4` to use the lower-cost
 8-vCPU/32-GiB L4 profile instead. The renderer service account receives no project-wide role. The
 operator account receives only `roles/run.invoker` on this service. For local keyless invocation,
 grant the operator the narrower `roles/iam.serviceAccountOpenIdTokenCreator` role on this dedicated
 account and grant the account `roles/run.invoker` on the service; no service-account key is created.
 
-Run Bookforge against the deployed URL with Application Default Credentials:
+Run Storylight against the deployed URL with Application Default Credentials:
 
 ```bash
-export BOOKFORGE_LIVE_SCENE_BACKEND=gcp_cloud_run
-export BOOKFORGE_LIVE_SCENE_GCP_URL='https://SERVICE_HASH.us-central1.run.app'
-export BOOKFORGE_LIVE_SCENE_GCP_AUDIENCE="${BOOKFORGE_LIVE_SCENE_GCP_URL}"
-export BOOKFORGE_LIVE_SCENE_GCP_IMPERSONATE_SERVICE_ACCOUNT='bookforge-renderer@your-gcp-project.iam.gserviceaccount.com'
-export BOOKFORGE_LIVE_SCENE_GCP_GPU=RTX_PRO_6000
-export BOOKFORGE_LIVE_SCENE_ENABLE_MOTION=false
-export BOOKFORGE_LIVE_SCENE_ENABLE_PREVIEW=false
+export STORYLIGHT_LIVE_SCENE_BACKEND=gcp_cloud_run
+export STORYLIGHT_LIVE_SCENE_GCP_URL='https://SERVICE_HASH.us-central1.run.app'
+export STORYLIGHT_LIVE_SCENE_GCP_AUDIENCE="${STORYLIGHT_LIVE_SCENE_GCP_URL}"
+export STORYLIGHT_LIVE_SCENE_GCP_IMPERSONATE_SERVICE_ACCOUNT='storylight-renderer@your-gcp-project.iam.gserviceaccount.com'
+export STORYLIGHT_LIVE_SCENE_GCP_GPU=RTX_PRO_6000
+export STORYLIGHT_LIVE_SCENE_ENABLE_MOTION=false
+export STORYLIGHT_LIVE_SCENE_ENABLE_PREVIEW=false
 ```
 
 Cloud Run verifies the Google-signed identity token; the browser and Jetson projector never receive
@@ -66,16 +66,15 @@ gcloud monitoring dashboards create \
   --config-from-file infra/gcp/monitoring/live-scene-dashboard.json
 ```
 
-The deployed dashboard for `your-gcp-project` is
-`projects/your-gcp-project/dashboards/YOUR_DASHBOARD_ID`. Before a paid renderer
+Use the dashboard ID returned by the create command. Before a paid renderer
 benchmark, declare its sample count and cost ceiling. The harness uses five fixed synthetic visual
 briefs, records only prompt hashes, performs no automatic retry, and refuses to overwrite evidence:
 
 ```bash
-.venv/bin/python -m bookforge.gcp_scene_benchmark \
-  --base-url "${BOOKFORGE_LIVE_SCENE_GCP_URL}" \
-  --audience "${BOOKFORGE_LIVE_SCENE_GCP_AUDIENCE}" \
-  --impersonate-service-account "${BOOKFORGE_LIVE_SCENE_GCP_IMPERSONATE_SERVICE_ACCOUNT}" \
+.venv/bin/python -m storylight.gcp_scene_benchmark \
+  --base-url "${STORYLIGHT_LIVE_SCENE_GCP_URL}" \
+  --audience "${STORYLIGHT_LIVE_SCENE_GCP_AUDIENCE}" \
+  --impersonate-service-account "${STORYLIGHT_LIVE_SCENE_GCP_IMPERSONATE_SERVICE_ACCOUNT}" \
   --gpu RTX_PRO_6000 \
   --mode prepared \
   --samples 5 \
@@ -87,8 +86,8 @@ The adapter's `probe` mode checks credential readiness without contacting the re
 not prove service reachability or model identity. An explicit `/health` call can activate a billed
 GPU, so include it in supervised resource accounting if used. Paid prewarm and generation verify
 the runtime identity. Historical deployment evidence and the exact immutable revision are recorded in
-[`benchmarks/gcp-rtx-cloud-run-deployment-2026-08-25.json`](../../benchmarks/gcp-rtx-cloud-run-deployment-2026-08-25.json).
-SANA Sprint uses its native two-step SCM path; the Bookforge GCP adapter rejects any other step
+`benchmarks/gcp-rtx-cloud-run-deployment-2026-08-25.json` (archived).
+SANA Sprint uses its native two-step SCM path; the Storylight GCP adapter rejects any other step
 count locally before a paid request, and the worker validates the same constraint.
 
 ## Anticipatory GKE and NVIDIA NIM experiment
@@ -100,7 +99,7 @@ the passage, audio, camera data, learner identity, and stable session identifier
 the strict scene contract.
 
 The complete architecture, privacy contract, acceptance gates, deployment commands, and teardown
-procedure are in [`docs/anticipatory-story-engine.md`](../../docs/anticipatory-story-engine.md).
+procedure are in `docs/anticipatory-story-engine.md` (archived).
 The default Kubernetes Deployment has zero replicas, its Service is ClusterIP-only, and the guarded
 script requires a separate explicit authorization before it creates billable resources:
 
@@ -122,14 +121,14 @@ Cloud Run GPU availability is an optimization, not a runtime dependency. Configu
 the service does not pass readiness, and retain Modal as the final budget-checked fallback:
 
 ```bash
-export BOOKFORGE_LIVE_SCENE_BACKEND=gcp_resilient
-export BOOKFORGE_LIVE_SCENE_VERTEX_PROJECT_ID=your-gcp-project
-export BOOKFORGE_LIVE_SCENE_VERTEX_LOCATION=global
-export BOOKFORGE_LIVE_SCENE_VERTEX_MODEL=gemini-3.1-flash-lite-image
-export BOOKFORGE_LIVE_SCENE_VERTEX_SESSION_COST_CAP_USD=0.50
-export BOOKFORGE_LIVE_SCENE_VERTEX_ESTIMATED_IMAGE_USD=0.034
-export BOOKFORGE_LIVE_SCENE_ROUTING_PROBE_TIMEOUT_SECONDS=2
-export BOOKFORGE_LIVE_SCENE_ROUTING_FAILURE_COOLDOWN_SECONDS=300
+export STORYLIGHT_LIVE_SCENE_BACKEND=gcp_resilient
+export STORYLIGHT_LIVE_SCENE_VERTEX_PROJECT_ID=your-gcp-project
+export STORYLIGHT_LIVE_SCENE_VERTEX_LOCATION=global
+export STORYLIGHT_LIVE_SCENE_VERTEX_MODEL=gemini-3.1-flash-lite-image
+export STORYLIGHT_LIVE_SCENE_VERTEX_SESSION_COST_CAP_USD=0.50
+export STORYLIGHT_LIVE_SCENE_VERTEX_ESTIMATED_IMAGE_USD=0.034
+export STORYLIGHT_LIVE_SCENE_ROUTING_PROBE_TIMEOUT_SECONDS=2
+export STORYLIGHT_LIVE_SCENE_ROUTING_FAILURE_COOLDOWN_SECONDS=300
 ```
 
 Enable `aiplatform.googleapis.com` and provide Application Default Credentials to the Jetson
@@ -140,15 +139,15 @@ bootstrap immediately; TensorRT depth replacement remains an asynchronous edge o
 
 ### Nemotron visual critic
 
-Bookforge's optional critic client targets NVIDIA's OpenAI-compatible
+Storylight's optional critic client targets NVIDIA's OpenAI-compatible
 [`llama-3.1-nemotron-nano-vl-8b-v1`](https://build.nvidia.com/nvidia/llama-3.1-nemotron-nano-vl-8b-v1)
 NIM. It runs only after `master_ready`, so a critic cold start cannot delay the first projected image.
 For a private GCP-hosted NIM, configure its IAM-authenticated URL and audience:
 
 ```bash
-export BOOKFORGE_LIVE_SCENE_CRITIC_BACKEND=nemotron
-export BOOKFORGE_LIVE_SCENE_CRITIC_URL='https://NEMOTRON_HASH.us-central1.run.app'
-export BOOKFORGE_LIVE_SCENE_CRITIC_AUDIENCE="${BOOKFORGE_LIVE_SCENE_CRITIC_URL}"
+export STORYLIGHT_LIVE_SCENE_CRITIC_BACKEND=nemotron
+export STORYLIGHT_LIVE_SCENE_CRITIC_URL='https://NEMOTRON_HASH.us-central1.run.app'
+export STORYLIGHT_LIVE_SCENE_CRITIC_AUDIENCE="${STORYLIGHT_LIVE_SCENE_CRITIC_URL}"
 
 curl -sS -X POST \
   "http://127.0.0.1:8080/v1/live-scenes/SCENE_JOB_ID:critique"
@@ -167,7 +166,7 @@ This creates the first cloud Story Compiler path:
 
 - a GKE Autopilot cluster;
 - one NVIDIA L4 workload serving `google/gemma-4-e2b-it` with vLLM;
-- the Bookforge API pointing at vLLM's OpenAI-compatible API;
+- the Storylight API pointing at vLLM's OpenAI-compatible API;
 - Artifact Registry for the API image;
 - a Cloud Storage bucket reserved for versioned Story Packs.
 
@@ -184,13 +183,13 @@ Nothing in this directory has been applied automatically. GKE and L4 workloads a
 
 ```bash
 export GOOGLE_CLOUD_PROJECT="your-project-id"
-export BOOKFORGE_GCP_REGION="us-central1"
+export STORYLIGHT_GCP_REGION="us-central1"
 
 # Prints the resources without creating them.
 ./infra/gcp/bootstrap.sh
 
 # Explicitly unlocks billable creation.
-export BOOKFORGE_GCP_APPLY="I_UNDERSTAND_THIS_CREATES_BILLABLE_RESOURCES"
+export STORYLIGHT_GCP_APPLY="I_UNDERSTAND_THIS_CREATES_BILLABLE_RESOURCES"
 ./infra/gcp/bootstrap.sh
 ```
 
@@ -200,8 +199,8 @@ export BOOKFORGE_GCP_APPLY="I_UNDERSTAND_THIS_CREATES_BILLABLE_RESOURCES"
 export HF_TOKEN="hf_read_only_token"
 ./infra/gcp/deploy.sh
 
-kubectl -n bookforge rollout status deployment/gemma-vllm --timeout=20m
-kubectl -n bookforge port-forward service/bookforge-api 8080:8080
+kubectl -n storylight rollout status deployment/gemma-vllm --timeout=20m
+kubectl -n storylight port-forward service/storylight-api 8080:8080
 ```
 
 Then call `http://127.0.0.1:8080/v1/story-packs:compile` using the example request in
@@ -217,13 +216,13 @@ not a promise of a mathematically exact ceiling.
 Delete the GPU deployment whenever it is not being tested:
 
 ```bash
-kubectl -n bookforge delete deployment gemma-vllm
+kubectl -n storylight delete deployment gemma-vllm
 ```
 
 Deleting the full cluster stops cluster and workload charges:
 
 ```bash
-gcloud container clusters delete bookforge-dev --region us-central1
+gcloud container clusters delete storylight-dev --region us-central1
 ```
 
 The GKE E2B/L4 deployment is retained only as a plumbing and evaluation baseline. The accepted
@@ -245,17 +244,17 @@ The dedicated runtime identity needs only its existing private-bucket object rol
 to the single private Artifact Registry repository. Grant that narrow repository role explicitly:
 
 ```bash
-gcloud artifacts repositories add-iam-policy-binding bookforge \
+gcloud artifacts repositories add-iam-policy-binding storylight \
   --project your-gcp-project \
   --location us-central1 \
-  --member serviceAccount:bookforge-tensorrt-export@your-gcp-project.iam.gserviceaccount.com \
+  --member serviceAccount:storylight-tensorrt-export@your-gcp-project.iam.gserviceaccount.com \
   --role roles/artifactregistry.reader
 ```
 
 Then start exactly one finite attempt:
 
 ```bash
-export BOOKFORGE_GCP_EXPORT_APPLY=I_UNDERSTAND_THIS_CREATES_A_FINITE_BILLABLE_G4_VM
+export STORYLIGHT_GCP_EXPORT_APPLY=I_UNDERSTAND_THIS_CREATES_A_FINITE_BILLABLE_G4_VM
 ./infra/gcp/compute/run-gemma4-tensorrt-export.sh
 ```
 

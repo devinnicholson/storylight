@@ -1,12 +1,12 @@
 from __future__ import annotations
 
-from bookforge.fidelity_dataset import generate_split
-from bookforge.fidelity_evaluation import evaluate_surface
-from bookforge.fidelity_graph_targets import (
+from storylight.fidelity_dataset import generate_split
+from storylight.fidelity_evaluation import evaluate_surface
+from storylight.fidelity_graph_targets import (
     GraphTargetRefusal,
     derive_fidelity_graph_target,
 )
-from bookforge.fidelity_schema import DatasetSplit, FidelityRecord, PairVariant
+from storylight.fidelity_schema import DatasetSplit, FidelityRecord, PairVariant
 
 
 def _development_record(category: str, variant: PairVariant = PairVariant.A) -> FidelityRecord:

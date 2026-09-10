@@ -8,7 +8,7 @@ from pathlib import Path
 
 import httpx
 
-from bookforge.tensorrt_slot_client import _slot_messages, tensor_slot_wire_plan
+from storylight.tensorrt_slot_client import _slot_messages, tensor_slot_wire_plan
 
 
 def main():

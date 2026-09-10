@@ -6,8 +6,8 @@ from pathlib import Path
 
 import pytest
 
-from bookforge.fidelity_benchmark import CandidateIdentity
-from bookforge.fidelity_review_evidence import (
+from storylight.fidelity_benchmark import CandidateIdentity
+from storylight.fidelity_review_evidence import (
     HUMAN_REVIEW_ATTESTATION,
     HUMAN_REVIEW_POPULATION_SHA256,
     build_contest_evidence,
@@ -15,7 +15,7 @@ from bookforge.fidelity_review_evidence import (
     validate_contest_evidence,
     validate_human_review_evidence,
 )
-from bookforge.planner_benchmark import CONTEST_CASES
+from storylight.planner_benchmark import CONTEST_CASES
 
 ROOT = Path(__file__).resolve().parents[1]
 POPULATION = ROOT / "datasets/story-fidelity-v1/human-review-population.json"

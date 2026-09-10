@@ -37,7 +37,7 @@ namespace rt
 
 //! Runtime preprocessor for Gemma4 E-model per-layer embeddings (PLE).
 //!
-//! The upstream path loads the complete PLE table onto the GPU. Bookforge can
+//! The upstream path loads the complete PLE table onto the GPU. Storylight can
 //! instead keep the exact FP16/BF16 table memory-mapped on NVMe and stage only
 //! the rows referenced by the current token IDs. This makes Gemma4 E-models
 //! viable on unified-memory devices whose RAM is smaller than the PLE sidecar.

@@ -142,7 +142,7 @@ def verify(args):
         protocol["compile_request"] == dict(mode="reduce-overhead", fullgraph=False, dynamic=None),
         "compile configuration",
     )
-    cache_root = "/tmp/bookforge-cache-confirmation-compiler-01"
+    cache_root = "/tmp/storylight-cache-confirmation-compiler-01"
     check(
         protocol["compiler_cache_preparation"]
         == {
@@ -416,7 +416,7 @@ def main():
     parser.add_argument("--directory", type=Path, required=True)
     parser.add_argument("--completed-sha256", required=True)
     parser.add_argument(
-        "--tokenizer", type=Path, default=Path("/private/tmp/bookforge-v3-tokenizer")
+        "--tokenizer", type=Path, default=Path("/private/tmp/storylight-v3-tokenizer")
     )
     parser.add_argument("--output", type=Path, required=True)
     args = parser.parse_args()

@@ -7,14 +7,14 @@ PATH=/usr/sbin:/usr/bin:/sbin:/bin
 export PATH
 unset BASH_ENV ENV CDPATH GLOBIGNORE
 
-readonly CONFIG_FILE="/etc/bookforge/bookforge.env"
-readonly STATE_DIR="/var/lib/bookforge-trusted/trained-planner"
+readonly CONFIG_FILE="/etc/storylight/storylight.env"
+readonly STATE_DIR="/var/lib/storylight-trusted/trained-planner"
 readonly ACTIVE_STATE="$STATE_DIR/active.env"
-readonly CANDIDATE_ROOT="/var/lib/bookforge-trusted/trained-planner-candidates"
+readonly CANDIDATE_ROOT="/var/lib/storylight-trusted/trained-planner-candidates"
 readonly SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd -P)"
-readonly INSTALLER="${BOOKFORGE_CANDIDATE_INSTALLER:-$SCRIPT_DIR/install-trained-planner-candidate.sh}"
+readonly INSTALLER="${STORYLIGHT_CANDIDATE_INSTALLER:-$SCRIPT_DIR/install-trained-planner-candidate.sh}"
 readonly ACCEPTED_ENGINE_SHA256="95b69991b68c57a2d2d4bfa4116feb9ec57295588551d109353a42a9c16c4fdf"
-target_user="${BOOKFORGE_SERVICE_USER:-${SUDO_USER:-}}"
+target_user="${STORYLIGHT_SERVICE_USER:-${SUDO_USER:-}}"
 candidate_id=""
 manifest_sha256=""
 approval_token=""
@@ -99,7 +99,7 @@ kiosk_was_active="$(state_field KIOSK_WAS_ACTIVE)"
 if [[ "$state_candidate" != "$candidate_id" ]] \
   || [[ "$state_manifest" != "$manifest_sha256" ]] \
   || [[ ! "$state_gate_evidence" =~ ^[a-f0-9]{64}$ ]] \
-  || [[ "$state_gate_producer" != "bookforge-fidelity-gate-builder" ]] \
+  || [[ "$state_gate_producer" != "storylight-fidelity-gate-builder" ]] \
   || [[ ! "$state_model_revision" =~ ^sha256:[a-f0-9]{64}$ ]] \
   || [[ "$state_engine_sha256" != "${state_model_revision#sha256:}" ]] \
   || [[ "$state_accepted_engine_sha256" != "$ACCEPTED_ENGINE_SHA256" ]] \
@@ -109,7 +109,7 @@ if [[ "$state_candidate" != "$candidate_id" ]] \
   exit 78
 fi
 case "$backup_file" in
-  "$STATE_DIR"/rollback/*-"$candidate_id"/bookforge.env) ;;
+  "$STATE_DIR"/rollback/*-"$candidate_id"/storylight.env) ;;
   *) printf 'Durable rollback state contains an unsafe backup path.\n' >&2; exit 78 ;;
 esac
 if [[ ! -f "$backup_file" || -L "$backup_file" ]] \
@@ -132,7 +132,7 @@ if [[ "$verified_model_revision" != "$state_model_revision" ]] \
   printf 'Installed candidate identity differs from the durable promotion state.\n' >&2
   exit 78
 fi
-readonly EXPECTED_APPROVAL_TOKEN="ROLLBACK_BOOKFORGE_TRAINED_PLANNER:${target_user}:${candidate_id}:${manifest_sha256}:${backup_sha256}:${state_gate_evidence}"
+readonly EXPECTED_APPROVAL_TOKEN="ROLLBACK_STORYLIGHT_TRAINED_PLANNER:${target_user}:${candidate_id}:${manifest_sha256}:${backup_sha256}:${state_gate_evidence}"
 if ((dry_run == 1)); then
   printf '%s\n' "$verification"
   printf 'Required approval token: %s\n' "$EXPECTED_APPROVAL_TOKEN"
@@ -153,12 +153,12 @@ fi
 target_uid="$(id -u "$target_user")"
 target_home="$(getent passwd "$target_user" | cut -d: -f6)"
 if [[ -z "$target_home" || "$target_home" != /* || ! -d "$target_home" ]]; then
-  printf 'Cannot resolve the Bookforge service user home directory.\n' >&2
+  printf 'Cannot resolve the Storylight service user home directory.\n' >&2
   exit 65
 fi
 readonly TARGET_UID="$target_uid"
 readonly TARGET_HOME="$target_home"
-readonly ACCEPTED_ENGINE="$TARGET_HOME/.local/share/bookforge/tensorrt-edgellm-v0.10.0/models/gemma4-e2b-it-int4-awq-v010/engines/llm/llm.engine"
+readonly ACCEPTED_ENGINE="$TARGET_HOME/.local/share/storylight/tensorrt-edgellm-v0.10.0/models/gemma4-e2b-it-int4-awq-v010/engines/llm/llm.engine"
 if [[ ! -s "$ACCEPTED_ENGINE" || -L "$ACCEPTED_ENGINE" ]] \
   || [[ "$(sha256sum "$ACCEPTED_ENGINE" | cut -d' ' -f1)" != "$ACCEPTED_ENGINE_SHA256" ]]; then
   printf 'The exact accepted TensorRT engine is missing or changed.\n' >&2
@@ -172,11 +172,11 @@ user_systemctl() {
     systemctl --user "$@"
 }
 
-readonly UNIT="bookforge-trained-planner-candidate@${candidate_id}.service"
-readonly ACCEPTED_UNIT="bookforge-tensorrt-planner.service"
-readonly GEMMA_UNIT="bookforge-gemma.service"
-readonly KIOSK_UNIT="bookforge-kiosk.service"
-readonly PORT_ENV="/etc/bookforge/trained-planner/${candidate_id}.env"
+readonly UNIT="storylight-trained-planner-candidate@${candidate_id}.service"
+readonly ACCEPTED_UNIT="storylight-tensorrt-planner.service"
+readonly GEMMA_UNIT="storylight-gemma.service"
+readonly KIOSK_UNIT="storylight-kiosk.service"
+readonly PORT_ENV="/etc/storylight/trained-planner/${candidate_id}.env"
 readonly TIMESTAMP="$(date -u +%Y%m%dT%H%M%SZ)"
 rollback_complete=0
 
@@ -186,14 +186,14 @@ finish_restore() {
   if ((rollback_complete == 0)); then
     printf 'Rollback was interrupted; retrying the accepted engine restoration.\n' >&2
     user_systemctl stop "$UNIT" || true
-    emergency_tmp="$(mktemp /etc/bookforge/.bookforge.env.emergency.XXXXXX)"
+    emergency_tmp="$(mktemp /etc/storylight/.storylight.env.emergency.XXXXXX)"
     install -o root -g root -m 0600 "$backup_file" "$emergency_tmp"
     mv -f "$emergency_tmp" "$CONFIG_FILE"
     user_systemctl stop "$GEMMA_UNIT" || true
     user_systemctl enable "$ACCEPTED_UNIT" >/dev/null 2>&1 || true
     user_systemctl start "$ACCEPTED_UNIT" || true
-    systemctl restart "bookforge@${target_user}.service" \
-      "bookforge-controller@${target_user}.service" || true
+    systemctl restart "storylight@${target_user}.service" \
+      "storylight-controller@${target_user}.service" || true
     if ((kiosk_was_active == 1)); then
       user_systemctl start "$KIOSK_UNIT" || true
     fi
@@ -210,7 +210,7 @@ if [[ -e "$PORT_ENV" ]]; then
   install -d -o root -g root -m 0700 "$STATE_DIR/history"
   mv -f "$PORT_ENV" "$STATE_DIR/history/${TIMESTAMP}-${candidate_id}-port.env"
 fi
-restore_tmp="$(mktemp /etc/bookforge/.bookforge.env.rollback.XXXXXX)"
+restore_tmp="$(mktemp /etc/storylight/.storylight.env.rollback.XXXXXX)"
 install -o root -g root -m 0600 "$backup_file" "$restore_tmp"
 mv -f "$restore_tmp" "$CONFIG_FILE"
 if [[ "$(sha256sum "$CONFIG_FILE" | cut -d' ' -f1)" != "$backup_sha256" ]]; then
@@ -226,8 +226,8 @@ for _ in $(seq 1 90); do
   sleep 1
 done
 curl --fail --silent --show-error http://127.0.0.1:11435/v1/models >/dev/null
-systemctl restart "bookforge@${target_user}.service" \
-  "bookforge-controller@${target_user}.service"
+systemctl restart "storylight@${target_user}.service" \
+  "storylight-controller@${target_user}.service"
 curl --fail --silent --show-error http://127.0.0.1:8080/readyz >/dev/null
 curl --fail --silent --show-error http://127.0.0.1:8081/healthz >/dev/null
 if ((kiosk_was_active == 1)); then

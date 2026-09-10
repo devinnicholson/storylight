@@ -1,6 +1,6 @@
-# Bookforge on Jetson Orin Nano
+# Storylight on Jetson Orin Nano
 
-This directory packages the existing Bookforge API and projector UI for an NVIDIA Jetson Orin
+This directory packages the existing Storylight API and projector UI for an NVIDIA Jetson Orin
 Nano running **JetPack 7.2.1 / Jetson Linux 39.2.1**. NVIDIA lists JetPack 7.2.1 with CUDA 13.2.1
 and TensorRT 10.16.2. Use NVIDIA's current
 [JetPack downloads and release notes](https://developer.nvidia.com/embedded/jetpack/downloads) as
@@ -15,10 +15,10 @@ explicit device-administration task that must follow NVIDIA's documentation.
 - `check-device.sh`: read-only report for L4T, CUDA, TensorRT, Docker, Python, power mode, NVMe,
   camera, microphone, display, projector browser, and thermal zones.
 - `bootstrap.sh`: diagnostic-first setup; mutation requires an explicit option.
-- `bookforge.env.example`: conservative API environment with ASR disabled by default.
-- `bookforge.standalone.env.example`: local-Gemma/Modal profile for portable operation.
+- `storylight.env.example`: conservative API environment with ASR disabled by default.
+- `storylight.standalone.env.example`: local-Gemma/Modal profile for portable operation.
 - `controller.env.example`: paired phone-gateway configuration without a committed secret.
-- `install-standalone.sh`: guarded service installer for an already-staged `/opt/bookforge` tree.
+- `install-standalone.sh`: guarded service installer for an already-staged `/opt/storylight` tree.
 - `show-controller-pairing.sh`: prints the private pairing URL and an optional terminal QR code.
 - `check-kiosk-session.sh`: fail-closed, read-only lock/idle/DPMS preflight for the X11 projector
   session.
@@ -37,18 +37,18 @@ explicit device-administration task that must follow NVIDIA's documentation.
   TensorRT Edge-LLM server; remains an evaluation component until promotion gates pass.
 - `run-power-mode-ab.sh`: explicit, reboot-aware 25W/MAXN_SUPER comparison with persistent evidence
   and a required restore verification.
-- `bookforge-admin` and `install-bookforge-admin.sh`: root-owned, fixed-command administration with
+- `storylight-admin` and `install-storylight-admin.sh`: root-owned, fixed-command administration with
   a narrowly scoped passwordless sudo rule; no password storage or arbitrary shell access.
-- `systemd/bookforge@.service`: system API service parameterized by the Linux user.
-- `systemd/bookforge-controller@.service`: authenticated, allowlisted phone gateway on port 8081.
-- `systemd/bookforge-kiosk.service`: graphical-session user service for the projector browser.
-- `systemd/bookforge-gemma.service`: loopback-only, user-scoped Ollama service for the local Gemma
+- `systemd/storylight@.service`: system API service parameterized by the Linux user.
+- `systemd/storylight-controller@.service`: authenticated, allowlisted phone gateway on port 8081.
+- `systemd/storylight-kiosk.service`: graphical-session user service for the projector browser.
+- `systemd/storylight-gemma.service`: loopback-only, user-scoped Ollama service for the local Gemma
   scene planner.
 - `kiosk.env.example`: kiosk URL/browser overrides.
 
 ## Standalone portable topology
 
-Bookforge can run without a Mac. The Jetson hosts the private API, local Gemma planner, cached
+Storylight can run without a Mac. The Jetson hosts the private API, local Gemma planner, cached
 artwork, and attached-projector browser. A phone on the same **private WPA2/WPA3 network** controls
 generation through a separate paired gateway:
 
@@ -76,7 +76,7 @@ After the Jetson has successfully joined that WLAN once, apply the bounded porta
 profile:
 
 ```bash
-sudo /opt/bookforge/deploy/jetson/configure-portable-network.sh
+sudo /opt/storylight/deploy/jetson/configure-portable-network.sh
 ```
 
 The helper keeps the active saved Wi-Fi connection on autoconnect, disables client power saving,
@@ -84,13 +84,13 @@ enables mDNS for that connection, and limits Avahi advertisements to the active 
 over IPv4. It never changes the SSID credential, address, route, or DNS configuration. This avoids
 `jetson.local` resolving to the USB gadget, Docker bridge, or stale IPv6 address when the unit is
 running cable-free. It stores the original Avahi file once at
-`/etc/avahi/avahi-daemon.conf.bookforge-backup`; restore that file and restart Avahi to roll the
+`/etc/avahi/avahi-daemon.conf.storylight-backup`; restore that file and restart Avahi to roll the
 discovery policy back. A travel-router DHCP reservation remains the most deterministic fallback.
 
-After staging the committed repository at `/opt/bookforge`, create the venv with the Modal runtime:
+After staging the committed repository at `/opt/storylight`, create the venv with the Modal runtime:
 
 ```bash
-cd /opt/bookforge
+cd /opt/storylight
 ./deploy/jetson/bootstrap.sh --create-venv --install-modal-runtime
 sudo ./deploy/jetson/install-standalone.sh \
   --user "$USER" \
@@ -98,10 +98,10 @@ sudo ./deploy/jetson/install-standalone.sh \
   --deploy-renderer
 ```
 
-The installer refuses non-Jetson hosts and any checkout outside `/opt/bookforge`. It does not
+The installer refuses non-Jetson hosts and any checkout outside `/opt/storylight`. It does not
 change Wi-Fi, JetPack, power mode, storage, display, login, or browser settings. It preserves any
 existing API environment and pairing secret. On the first run it creates root-only environment
-files; add `MODAL_TOKEN_ID` and `MODAL_TOKEN_SECRET` to `/etc/bookforge/bookforge.env`, then rerun
+files; add `MODAL_TOKEN_ID` and `MODAL_TOKEN_SECRET` to `/etc/storylight/storylight.env`, then rerun
 the installer to start the services. Never paste those credentials into the phone or browser.
 It installs and enables the existing local-Gemma and kiosk user units, but deliberately does not
 enable autologin or user lingering. Sign in on the attached projector after a reboot; that normal
@@ -115,24 +115,24 @@ deployed.
 them into the root-only service environment. Omit it when the service environment is already
 configured or when the Jetson should not retain cloud-renderer credentials.
 
-The immutable Modal budget plan stays under `/opt/bookforge`. Its runtime ledger is written to
-`/var/lib/bookforge/live-scenes/modal-ledger.json`, so the hardened application tree remains
+The immutable Modal budget plan stays under `/opt/storylight`. Its runtime ledger is written to
+`/var/lib/storylight/live-scenes/modal-ledger.json`, so the hardened application tree remains
 read-only while cost reservations and settlements remain durable across service restarts.
 
 Show the private pairing URL only when the operator is ready to connect the phone:
 
 ```bash
-sudo /opt/bookforge/deploy/jetson/show-controller-pairing.sh
+sudo /opt/storylight/deploy/jetson/show-controller-pairing.sh
 ```
 
 Open or scan the printed URL. The phone will land on
-`/workbench?session=bookforge-live`; the attached projector continues using the same canonical
+`/workbench?session=storylight-live`; the attached projector continues using the same canonical
 session on `127.0.0.1:8080`. `jetson.local` requires working mDNS on the private network. If the
 phone cannot resolve it, use the router's reserved Jetson address by running:
 
 ```bash
-sudo BOOKFORGE_CONTROLLER_HOST=192.168.8.20 \
-  /opt/bookforge/deploy/jetson/show-controller-pairing.sh
+sudo STORYLIGHT_CONTROLLER_HOST=192.168.8.20 \
+  /opt/storylight/deploy/jetson/show-controller-pairing.sh
 ```
 
 The override accepts a DNS name or IPv4 address. A travel-router DHCP reservation is preferred over
@@ -144,12 +144,12 @@ Verify the boundary from the Jetson:
 curl -fsS http://127.0.0.1:8080/readyz
 curl -fsS http://127.0.0.1:8081/healthz
 ss -ltn | grep -E '127\.0\.0\.1:8080|0\.0\.0\.0:8081|127\.0\.0\.1:11434'
-systemctl status "bookforge@${USER}.service" --no-pager
-systemctl status "bookforge-controller@${USER}.service" --no-pager
+systemctl status "storylight@${USER}.service" --no-pager
+systemctl status "storylight-controller@${USER}.service" --no-pager
 ```
 
 Only the controller gateway should listen on all interfaces. If the network is not private, stop
-it immediately with `sudo systemctl stop "bookforge-controller@${USER}.service"`; local projector
+it immediately with `sudo systemctl stop "storylight-controller@${USER}.service"`; local projector
 operation remains available.
 
 ## 1. Inspect the device
@@ -188,7 +188,7 @@ The following options are deliberately independent and explicit:
 The first command uses Ubuntu `apt` to install only Python venv/pip, FFmpeg, V4L2 and ALSA
 utilities, curl, CA certificates, and Git. It does **not** install or upgrade JetPack. The second
 creates a virtual environment that can see JetPack's system Python packages and installs a built
-Bookforge package rather than an editable checkout. Set `BOOKFORGE_VENV_PATH` to use a different
+Storylight package rather than an editable checkout. Set `STORYLIGHT_VENV_PATH` to use a different
 location. An existing environment without `include-system-site-packages = true` is rejected rather
 than silently hiding TensorRT and other JetPack bindings.
 
@@ -201,11 +201,11 @@ idempotent for the same checkout.
 Start with deterministic model behavior and speech recognition disabled:
 
 ```bash
-cp deploy/jetson/bookforge.env.example .env
+cp deploy/jetson/storylight.env.example .env
 set -a
 source .env
 set +a
-.venv/bin/python -m uvicorn bookforge.api:app --host 127.0.0.1 --port 8080 --timeout-graceful-shutdown 3
+.venv/bin/python -m uvicorn storylight.api:app --host 127.0.0.1 --port 8080 --timeout-graceful-shutdown 3
 ```
 
 In another terminal:
@@ -220,23 +220,23 @@ Open `http://127.0.0.1:8080/projector` on the attached display. The environment 
 the fake model backend for the first boot. Change the model settings only after its endpoint has
 been independently tested. On a new data directory, `pack=latest` falls back visibly to the bundled
 Moon Gate fixture rather than opening an empty projector. Remove the checkout `.env` before using
-the system service; Jetson preflight deliberately rejects `/opt/bookforge/.env`.
+the system service; Jetson preflight deliberately rejects `/opt/storylight/.env`.
 
 The API builds every speech engine behind the portable `AsrBackend` contract. It includes a lazy,
-serialized NVIDIA-AI-IOT WhisperTRT adapter; importing Bookforge does not import CUDA, TensorRT,
-Torch, or WhisperTRT. Keep `BOOKFORGE_ASR_BACKEND=disabled` for first boot. The checked upstream
+serialized NVIDIA-AI-IOT WhisperTRT adapter; importing Storylight does not import CUDA, TensorRT,
+Torch, or WhisperTRT. Keep `STORYLIGHT_ASR_BACKEND=disabled` for first boot. The checked upstream
 WhisperTRT revision is `268eff10a1e38118a2734745b9db14f7419a08a5`.
 
 WhisperTRT itself does not declare its Torch, TensorRT, torch2trt, Whisper, NumPy, or psutil
 dependencies. Install the JetPack-compatible dependencies from current NVIDIA guidance. Install
-the pinned adapter only after `/opt/bookforge/.venv` exists in the next section; installing it into
+the pinned adapter only after `/opt/storylight/.venv` exists in the next section; installing it into
 the temporary checkout environment would be discarded during staging.
 
 Do not make a live reading perform the first build. The pinned upstream loader also needs the
 OpenAI Whisper checkpoint under the service home, while the hardened unit makes the normal user
 home read-only. After installing the service below, stop it, select `whisper_trt` in the environment,
 and run the provided warmup as the service user. It writes both checkpoint state and the TensorRT
-engine beneath `/var/cache/bookforge`, then the acceptance run measures warm inference. Bookforge
+engine beneath `/var/cache/storylight`, then the acceptance run measures warm inference. Storylight
 holds GPU serialization through cancellation, so a cancelled request cannot start a second build
 against the same engine. JetPack 7.2.1 compatibility remains a physical-device acceptance gate
 because the upstream repository does not currently state a JetPack 7 support matrix.
@@ -274,16 +274,16 @@ candidate was not quantized, downloaded, built, or promoted there. GCP approved 
 Cloud Run RTX PRO 6000 Blackwell in `us-central1`; the pinned exporter image and private bucket are
 ready. Its first one-task execution remained pending for the full 30-minute wall guard and was
 cancelled before application start, model download, or GPU work. Gemma 3 remains production. Full
-control evidence is in `benchmarks/bookforge-tensorrt-edge-llm-2026-08-26.json`; the exact warm
+control evidence is in `benchmarks/storylight-tensorrt-edge-llm-2026-08-26.json`; the exact warm
 baseline, blocked export attempts, cost reconciliation, and promotion gate are in
-`benchmarks/bookforge-gemma4-tensorrt-edge-llm-2026-08-26.json`.
+`benchmarks/storylight-gemma4-tensorrt-edge-llm-2026-08-26.json`.
 
 Two later executions of the same digest-pinned GPU job waited 28–30 minutes and then failed inside
 Cloud Run with contradictory exit-code-zero `Unknown error` / `Internal error running task`
 messages. Neither emitted the exporter's first progress record or wrote a bucket object. A bounded
 CPU-only control using the identical image also remained in the regional Jobs scheduler for five
 minutes and was cancelled before the entrypoint ran. Do not keep repeating the same GPU job: send
-the execution IDs and `benchmarks/bookforge-gemma4-cloud-run-scheduler-2026-08-30.json` to Google
+the execution IDs and `benchmarks/storylight-gemma4-cloud-run-scheduler-2026-08-30.json` to Google
 Cloud support, then retry only after capacity or service state changes.
 
 A later resident-server experiment isolated the most important latency finding. Starting the
@@ -294,7 +294,7 @@ failures to resident Gemma recovered all seven, for 20/20 automatic coverage and
 2.049-second mean. That two-model configuration was not promoted because it left only 739–774 MiB
 of unified memory available for the desktop and renderer. The complete comparison, including
 rejected 0.5B, split-request, and over-instruction experiments, is recorded in
-`benchmarks/bookforge-tensorrt-resident-cascade-2026-08-30.json`.
+`benchmarks/storylight-tensorrt-resident-cascade-2026-08-30.json`.
 
 Reproduce the already-pinned control only when validating a new JetPack image:
 
@@ -303,14 +303,14 @@ deploy/jetson/install-tensorrt-edge-llm.sh
 deploy/jetson/build-tensorrt-edge-engine.sh
 # Start NVIDIA's server in one terminal. It is hard-bound to loopback.
 deploy/jetson/run-tensorrt-edge-server.sh \
-  "$HOME/.local/share/bookforge/tensorrt-edgellm-v0.10.0/models/qwen2.5-1.5b-instruct-awq-v010/engines/llm"
+  "$HOME/.local/share/storylight/tensorrt-edgellm-v0.10.0/models/qwen2.5-1.5b-instruct-awq-v010/engines/llm"
 # Point the acceptance harness at the already-resident process.
 deploy/jetson/benchmark-tensorrt-edge-llm.py \
   --suite contest \
   --prompt-profile slots \
   --resident-base-url http://127.0.0.1:11435 \
   --resident-model Qwen/Qwen2.5-1.5B-Instruct-AWQ
-BOOKFORGE_EDGELLM_PROMPT_PROFILE=production \
+STORYLIGHT_EDGELLM_PROMPT_PROFILE=production \
   deploy/jetson/run-tensorrt-edge-benchmark.sh
 ```
 
@@ -323,7 +323,7 @@ zero retries, a 1,200-second timeout, and a bucket-only service account:
 ```bash
 # Cloud: pinned BF16 -> INT4-AWQ -> text-only ONNX with external FFN weights.
 # Run only as a deliberate, monitored attempt when us-central1 Blackwell capacity is available.
-gcloud run jobs execute bookforge-gemma4-tensorrt-export \
+gcloud run jobs execute storylight-gemma4-tensorrt-export \
   --project=your-gcp-project --region=us-central1 --wait
 # Download the completed prefix, including export.manifest.json and onnx/, to one
 # temporary bundle directory and transfer that directory to the Jetson. The
@@ -346,7 +346,7 @@ The first pass excludes Gemma 4 MTP. Only add the assistant after the target-onl
 schema, privacy, semantic, memory, and measured end-to-end gates. The shadow runner always restores
 Gemma 3 and cannot change the production backend.
 
-The exact target-only engine has now passed that gate. Through Bookforge's production
+The exact target-only engine has now passed that gate. Through Storylight's production
 `StructuredLiveScenePlanner`, a resident 20-case run passed 20/20 automatic semantic and privacy
 checks at 1.599 seconds mean, 1.605 seconds median, and 1.927 seconds maximum planning latency. It
 used 35.35 output tokens on average and never exceeded 44 of the 64-token hard limit. A subsequent
@@ -360,9 +360,9 @@ installs a loopback-only bounded user service, and rolls back both configuration
 readiness fails:
 
 ```bash
-sudo /opt/bookforge/deploy/jetson/configure-tensorrt-planner.sh \
+sudo /opt/storylight/deploy/jetson/configure-tensorrt-planner.sh \
   --user operator --dry-run
-sudo /opt/bookforge/deploy/jetson/configure-tensorrt-planner.sh \
+sudo /opt/storylight/deploy/jetson/configure-tensorrt-planner.sh \
   --user operator
 ```
 
@@ -371,11 +371,11 @@ commit with `build-trained-planner-tooling-bundle.py`, copy it to the Jetson, an
 `install-trained-planner-tooling.py --dry-run` before the root install. The installer copies and
 re-verifies every byte inside a root-owned staging directory, publishes a content-addressed
 version atomically, and prints an exact one-purpose token. Candidate, promotion, and rollback
-scripts then resolve only that installed tooling, never the mutable `/opt/bookforge` checkout.
+scripts then resolve only that installed tooling, never the mutable `/opt/storylight` checkout.
 
 Promotion also requires a new immediate child of
-`/var/lib/bookforge-trusted/trained-planner/evidence`. This root-owned tree is deliberately
-separate from the service-writable `/var/lib/bookforge` runtime data. After the candidate is active,
+`/var/lib/storylight-trusted/trained-planner/evidence`. This root-owned tree is deliberately
+separate from the service-writable `/var/lib/storylight` runtime data. After the candidate is active,
 the promotion script runs fresh planner, API, controller, kiosk, live-scene, output-token, and swap
 checks. It then
 atomically publishes the terminal receipt, post-action health, and rollback state before declaring
@@ -391,11 +391,11 @@ restored, and writes a checksum-bound report. Pass that report and SHA-256 to
 `preflight-trained-planner-acceptance.py`; do not construct cold-start evidence by hand.
 
 The TensorRT unit and Gemma 3 Ollama unit are mutually exclusive on the 8 GB board. Any TensorRT
-stop or crash queues Ollama restoration; Bookforge waits up to five seconds for that fallback only
+stop or crash queues Ollama restoration; Storylight waits up to five seconds for that fallback only
 after a definite loopback connection failure. A timeout, HTTP error, or malformed response fails
 closed, because attempting Ollama while TensorRT may still own unified memory is unsafe.
 Promotion also drains the long-lived projector browser before CUDA-graph capture and requires at
-least 4 GiB available memory. It relaunches a fresh kiosk only after TensorRT and both Bookforge
+least 4 GiB available memory. It relaunches a fresh kiosk only after TensorRT and both Storylight
 services are ready. This closes the measured global-OOM failure where a 1.7 GiB loaded Ollama
 worker and a 1.7 GiB day-old Firefox kiosk overlapped engine initialization; the corrected handoff
 left 1.00 GiB available with the refreshed projector running and completed the relationship smoke
@@ -407,7 +407,7 @@ On the measured JetPack 7.2.1 Orin Nano, changing from power mode 1 (`25W`) to m
 (`MAXN_SUPER`) required a reboot; returning from mode 2 to mode 1 applied immediately. Do not use a
 one-process switch/benchmark/restore script: a requested reboot destroys that process and `/tmp`
 evidence. The repository runner preserves the accepted 25W baseline under
-`/var/lib/bookforge-trusted/power-mode-ab`, records a durable phase before each reboot, validates the mode
+`/var/lib/storylight-trusted/power-mode-ab`, records a durable phase before each reboot, validates the mode
 after reconnect, and refuses out-of-order commands.
 
 Run exactly one phase at a time. A mode-change phase may prompt for a reboot; enter `YES` only after
@@ -415,34 +415,34 @@ the script prints its matching durable phase. If restoring 25W applies immediate
 without rebooting:
 
 ```bash
-sudo /opt/bookforge/deploy/jetson/run-power-mode-ab.sh prepare-maxn
+sudo /opt/storylight/deploy/jetson/run-power-mode-ab.sh prepare-maxn
 # Reconnect after the MAXN_SUPER reboot.
-sudo /opt/bookforge/deploy/jetson/run-power-mode-ab.sh benchmark-maxn
-sudo /opt/bookforge/deploy/jetson/run-power-mode-ab.sh restore-25w
+sudo /opt/storylight/deploy/jetson/run-power-mode-ab.sh benchmark-maxn
+sudo /opt/storylight/deploy/jetson/run-power-mode-ab.sh restore-25w
 # Reconnect only if NVIDIA requested a 25W restore reboot.
-sudo /opt/bookforge/deploy/jetson/run-power-mode-ab.sh finalize
+sudo /opt/storylight/deploy/jetson/run-power-mode-ab.sh finalize
 ```
 
 The benchmark phase never changes power mode. The final phase must observe mode 1 and both local
 services before it writes `result=complete`. Evidence remains on the Jetson until it is explicitly
 collected; rebooting cannot erase it.
 
-#### Restricted unattended Bookforge administration
+#### Restricted unattended Storylight administration
 
 Never store the Linux password in the repository, an environment file, a shell command, or a file
 for automation to read. Install the root-owned, allowlisted administrator once instead:
 
 ```bash
-sudo /opt/bookforge/deploy/jetson/install-bookforge-admin.sh --user operator
-sudo -n /usr/local/sbin/bookforge-admin status
+sudo /opt/storylight/deploy/jetson/install-storylight-admin.sh --user operator
+sudo -n /usr/local/sbin/storylight-admin status
 ```
 
-The sudo rule permits only `/usr/local/sbin/bookforge-admin`. That root-owned wrapper accepts fixed
-status, Bookforge service restart, power-acceptance actions, and lifecycle control for one fixed
+The sudo rule permits only `/usr/local/sbin/storylight-admin`. That root-owned wrapper accepts fixed
+status, Storylight service restart, power-acceptance actions, and lifecycle control for one fixed
 temporary TensorRT build swap file; it exposes no shell, arbitrary
 systemd unit, arbitrary path, package installation, network mutation, or general root command. The
 power runner is copied to a separate root-owned path so editing the Git checkout cannot alter code
-executed through passwordless sudo. Removing `/etc/sudoers.d/bookforge-admin-operator`
+executed through passwordless sudo. Removing `/etc/sudoers.d/storylight-admin-operator`
 revokes the delegation, but do so only through an explicitly authorized root maintenance action.
 
 The 8 GB Orin Nano can exhaust unified memory while TensorRT materializes a serialized Gemma 4
@@ -451,35 +451,35 @@ before this bounded build and remove it immediately after the benchmark. It is n
 `/etc/fstab` and is never part of steady-state inference:
 
 ```bash
-sudo -n /usr/local/sbin/bookforge-admin build-swap prepare
+sudo -n /usr/local/sbin/storylight-admin build-swap prepare
 # Build and shadow-benchmark the engine.
-sudo -n /usr/local/sbin/bookforge-admin build-swap cleanup
+sudo -n /usr/local/sbin/storylight-admin build-swap cleanup
 ```
 
 Download the pinned official ARM64 archive into a versioned, user-owned directory. Verify the
 release digest before extracting it; do not pipe an unverified installer into a shell:
 
 ```bash
-BOOKFORGE_OLLAMA_VERSION=0.32.15
-BOOKFORGE_OLLAMA_ROOT="$HOME/.local/opt/ollama-v${BOOKFORGE_OLLAMA_VERSION}"
-BOOKFORGE_OLLAMA_ARCHIVE="$HOME/.cache/bookforge/downloads/ollama-linux-arm64-v${BOOKFORGE_OLLAMA_VERSION}.tar.zst"
+STORYLIGHT_OLLAMA_VERSION=0.32.15
+STORYLIGHT_OLLAMA_ROOT="$HOME/.local/opt/ollama-v${STORYLIGHT_OLLAMA_VERSION}"
+STORYLIGHT_OLLAMA_ARCHIVE="$HOME/.cache/storylight/downloads/ollama-linux-arm64-v${STORYLIGHT_OLLAMA_VERSION}.tar.zst"
 
-test ! -e "$BOOKFORGE_OLLAMA_ROOT"
+test ! -e "$STORYLIGHT_OLLAMA_ROOT"
 install -d -m 0700 \
-  "$HOME/.cache/bookforge/downloads" \
-  "$BOOKFORGE_OLLAMA_ROOT" \
-  "$HOME/.local/share/bookforge/ollama/models" \
+  "$HOME/.cache/storylight/downloads" \
+  "$STORYLIGHT_OLLAMA_ROOT" \
+  "$HOME/.local/share/storylight/ollama/models" \
   "$HOME/.config/systemd/user"
 curl --fail --location --retry 3 \
-  --output "$BOOKFORGE_OLLAMA_ARCHIVE" \
-  "https://github.com/ollama/ollama/releases/download/v${BOOKFORGE_OLLAMA_VERSION}/ollama-linux-arm64.tar.zst"
+  --output "$STORYLIGHT_OLLAMA_ARCHIVE" \
+  "https://github.com/ollama/ollama/releases/download/v${STORYLIGHT_OLLAMA_VERSION}/ollama-linux-arm64.tar.zst"
 printf '%s  %s\n' \
   c898270b1690eab0f51aa9e9197686b7b4c6a7d88b83967763818f3127e477e9 \
-  "$BOOKFORGE_OLLAMA_ARCHIVE" | sha256sum --check --strict
-zstd --test "$BOOKFORGE_OLLAMA_ARCHIVE"
-zstd -dc "$BOOKFORGE_OLLAMA_ARCHIVE" | tar -xf - -C "$BOOKFORGE_OLLAMA_ROOT"
-chmod 0755 "$BOOKFORGE_OLLAMA_ROOT/bin/ollama"
-sha256sum "$BOOKFORGE_OLLAMA_ROOT/bin/ollama"
+  "$STORYLIGHT_OLLAMA_ARCHIVE" | sha256sum --check --strict
+zstd --test "$STORYLIGHT_OLLAMA_ARCHIVE"
+zstd -dc "$STORYLIGHT_OLLAMA_ARCHIVE" | tar -xf - -C "$STORYLIGHT_OLLAMA_ROOT"
+chmod 0755 "$STORYLIGHT_OLLAMA_ROOT/bin/ollama"
+sha256sum "$STORYLIGHT_OLLAMA_ROOT/bin/ollama"
 ```
 
 The accepted binary SHA-256 is
@@ -488,11 +488,11 @@ Install and start the user service; it binds only to `127.0.0.1`, permits one lo
 request at a time, defaults to a 4096-token context, keeps history off, and disables Ollama cloud:
 
 ```bash
-install -m 0644 deploy/jetson/systemd/bookforge-gemma.service \
-  "$HOME/.config/systemd/user/bookforge-gemma.service"
-systemd-analyze --user verify "$HOME/.config/systemd/user/bookforge-gemma.service"
+install -m 0644 deploy/jetson/systemd/storylight-gemma.service \
+  "$HOME/.config/systemd/user/storylight-gemma.service"
+systemd-analyze --user verify "$HOME/.config/systemd/user/storylight-gemma.service"
 systemctl --user daemon-reload
-systemctl --user enable --now bookforge-gemma.service
+systemctl --user enable --now storylight-gemma.service
 curl -fsS http://127.0.0.1:11434/api/version
 ss -ltnp | grep ':11434\b'
 loginctl show-user "$USER" -p Linger
@@ -507,7 +507,7 @@ Pull and verify only the accepted 1B model:
 
 ```bash
 OLLAMA_HOST=http://127.0.0.1:11434 \
-  "$BOOKFORGE_OLLAMA_ROOT/bin/ollama" pull gemma3:1b-it-q4_K_M
+  "$STORYLIGHT_OLLAMA_ROOT/bin/ollama" pull gemma3:1b-it-q4_K_M
 curl -fsS http://127.0.0.1:11434/api/tags | python3 -c '
 import json, sys
 model = json.load(sys.stdin)["models"][0]
@@ -518,7 +518,7 @@ assert model["details"]["quantization_level"] == "Q4_K_M"
 print(model["digest"])
 '
 sha256sum \
-  "$HOME/.local/share/bookforge/ollama/models/blobs/sha256-7cd4618c1faf8b7233c6c906dac1694b6a47684b37b8895d470ac688520b9c01"
+  "$HOME/.local/share/storylight/ollama/models/blobs/sha256-7cd4618c1faf8b7233c6c906dac1694b6a47684b37b8895d470ac688520b9c01"
 ```
 
 The final command must print the model-layer digest encoded in its filename. The Ollama manifest
@@ -527,7 +527,7 @@ digest is `8648f39daa8fbf5b18c7b4e6a8fb4990c692751d49917417b8842ca5758e7ffc`; th
 `7cd4618c1faf8b7233c6c906dac1694b6a47684b37b8895d470ac688520b9c01`.
 
 Run one long-timeout strict-schema request to populate the CUDA kernel cache, then repeat it under
-the steady-state acceptance deadline before connecting Bookforge:
+the steady-state acceptance deadline before connecting Storylight:
 
 ```bash
 curl --fail --silent --show-error --max-time 240 \
@@ -539,7 +539,7 @@ curl --fail --silent --show-error --max-time 20 \
   --data-binary @benchmarks/jetson-gemma3-optimized-schema-request.json \
   http://127.0.0.1:11434/api/chat | python3 -m json.tool
 OLLAMA_HOST=http://127.0.0.1:11434 \
-  "$BOOKFORGE_OLLAMA_ROOT/bin/ollama" ps
+  "$STORYLIGHT_OLLAMA_ROOT/bin/ollama" ps
 ```
 
 `ollama ps` must report `100% GPU`. The accepted repeatable cold reload was 10.40 seconds and the
@@ -554,23 +554,23 @@ must come from the counterbalanced harness below rather than mutating this histo
 The earlier `jetson-gemma3-schema-request.json` remains immutable historical evidence for the first
 accepted end-to-end run and is not the current production contract.
 
-For Bookforge on the same Jetson, use these settings after the independent probe passes:
+For Storylight on the same Jetson, use these settings after the independent probe passes:
 
 ```dotenv
-BOOKFORGE_MODEL_BACKEND=ollama
-BOOKFORGE_MODEL_NAME=gemma3:1b-it-q4_K_M
-BOOKFORGE_MODEL_BASE_URL=http://127.0.0.1:11434
-BOOKFORGE_MODEL_TIMEOUT_SECONDS=20
-BOOKFORGE_MODEL_KEEP_ALIVE=-1m
-BOOKFORGE_MODEL_CONTEXT_TOKENS=4096
-BOOKFORGE_MODEL_MAX_OUTPUT_TOKENS=180
-BOOKFORGE_MODEL_REQUIRE_GPU=true
-BOOKFORGE_LIVE_SCENE_PLANNER=model
-BOOKFORGE_LIVE_SCENE_PLANNER_TIMEOUT_SECONDS=12
-BOOKFORGE_LIVE_SCENE_PLANNER_MODEL_REVISION=ollama-manifest-sha256:8648f39daa8fbf5b18c7b4e6a8fb4990c692751d49917417b8842ca5758e7ffc
-BOOKFORGE_LIVE_SCENE_AUTO_PREWARM_ON_SUBMIT=true
+STORYLIGHT_MODEL_BACKEND=ollama
+STORYLIGHT_MODEL_NAME=gemma3:1b-it-q4_K_M
+STORYLIGHT_MODEL_BASE_URL=http://127.0.0.1:11434
+STORYLIGHT_MODEL_TIMEOUT_SECONDS=20
+STORYLIGHT_MODEL_KEEP_ALIVE=-1m
+STORYLIGHT_MODEL_CONTEXT_TOKENS=4096
+STORYLIGHT_MODEL_MAX_OUTPUT_TOKENS=180
+STORYLIGHT_MODEL_REQUIRE_GPU=true
+STORYLIGHT_LIVE_SCENE_PLANNER=model
+STORYLIGHT_LIVE_SCENE_PLANNER_TIMEOUT_SECONDS=12
+STORYLIGHT_LIVE_SCENE_PLANNER_MODEL_REVISION=ollama-manifest-sha256:8648f39daa8fbf5b18c7b4e6a8fb4990c692751d49917417b8842ca5758e7ffc
+STORYLIGHT_LIVE_SCENE_AUTO_PREWARM_ON_SUBMIT=true
 # Enable only after the text-free warmup passes the exact Jetson latency/memory gate.
-BOOKFORGE_LIVE_SCENE_PLANNER_AUTO_WARMUP=true
+STORYLIGHT_LIVE_SCENE_PLANNER_AUTO_WARMUP=true
 ```
 
 The experimental short-key tuple contract is deliberately unavailable in runtime configuration.
@@ -580,13 +580,13 @@ transformation. The Mac-only candidate therefore failed the hardware semantic ga
 instead of exposing a dangerous speed switch. Its class remains only for the explicit offline
 benchmark harness and rejection evidence.
 
-`BOOKFORGE_MODEL_REQUIRE_GPU=true` verifies the warmed Ollama model has a nonzero VRAM allocation.
+`STORYLIGHT_MODEL_REQUIRE_GPU=true` verifies the warmed Ollama model has a nonzero VRAM allocation.
 This closes a failure seen after a boot where the kernel reported `ACR bootstrap failed`, the GPU
 device was absent, and Ollama silently fell back to `100% CPU` while the model-install probe still
-looked healthy. A clean reboot restored `/dev/nvhost-gpu` and `100% GPU`; Bookforge now fails the
+looked healthy. A clean reboot restored `/dev/nvhost-gpu` and `100% GPU`; Storylight now fails the
 warmup/first generation instead of accepting that slow path.
 
-`BOOKFORGE_MODEL_MAX_OUTPUT_TOKENS` is a hard decode ceiling, not a target. The final compact contract
+`STORYLIGHT_MODEL_MAX_OUTPUT_TOKENS` is a hard decode ceiling, not a target. The final compact contract
 removed redundant camera, lighting, palette, and region fields; its accepted hero repeats used
 107-109 of 180 tokens without truncation. Keep the 180 ceiling until a broader benchmark proves that
 a lower ceiling never truncates valid JSON. The 12-second planner deadline passed comfortably on a
@@ -594,7 +594,7 @@ prewarmed model; keep the independent
 20-second model-client timeout for
 diagnostics and ensure the prewarm completes before a live reading.
 
-When `BOOKFORGE_LIVE_SCENE_PLANNER_AUTO_WARMUP=true`, the API now starts a fixed
+When `STORYLIGHT_LIVE_SCENE_PLANNER_AUTO_WARMUP=true`, the API now starts a fixed
 `{"ready":true}` readiness task in the background during service startup. API readiness is not
 blocked, and an early request, the lifecycle task, and the workbench warmup coalesce onto one local
 Ollama call. The task never includes a story passage, visual style, audio, or renderer call. The
@@ -604,7 +604,7 @@ If Gemma still times out or fails privacy/validation, the job now stops before t
 it never promotes a generic fallback as if it were the requested scene.
 The exact Jetson restart acceptance observed the 877 MB GPU-resident model 4.80 seconds after API
 readiness; a warm uncached plan took 3.18 seconds and an exact private cache hit took 0.426 ms. See
-`benchmarks/bookforge-edge-planner-residency-2026-08-30.json` for the bounded evidence and rejected
+`benchmarks/storylight-edge-planner-residency-2026-08-30.json` for the bounded evidence and rejected
 2048-token context A/B.
 
 The live planner keeps up to 32 privacy-gated semantic plans in memory. Identical-passage rereads,
@@ -625,7 +625,7 @@ intentional: the earlier
 30-second window expired during local planning/operator handoff and produced a 44.8-second cold
 request. Automatic prewarm overlaps its text-free preparation with Gemma planning; it does not send
 the passage to Modal. Full evidence is in
-`benchmarks/bookforge-speed-optimization-2026-08-23.json`.
+`benchmarks/storylight-speed-optimization-2026-08-23.json`.
 
 When the Jetson is available, compare the accepted and short-key contracts with the local-only
 five-passage harness. A warmup is run and excluded, and which contract runs first alternates by
@@ -634,7 +634,7 @@ technical acceptance when any case exceeds 12 seconds or 180 output tokens, and 
 human semantic review:
 
 ```bash
-python -m bookforge.planner_benchmark \
+python -m storylight.planner_benchmark \
   --contract both \
   --model-revision ollama-manifest-sha256:8648f39daa8fbf5b18c7b4e6a8fb4990c692751d49917417b8842ca5758e7ffc \
   --output benchmarks/jetson-gemma3-short-key-acceptance.json
@@ -651,7 +651,7 @@ latency/token limits; that screen catches obvious omissions and contradictions b
 human visual review:
 
 ```bash
-python -m bookforge.planner_benchmark \
+python -m storylight.planner_benchmark \
   --contract standard \
   --suite contest \
   --max-output-tokens 180 \
@@ -685,7 +685,7 @@ provider manifest estimated `$0.001289` of L4 GPU cost for the 5.807-second gene
 The conservative ledger entry for the complete warm session is `$0.012836`: 22.013 seconds of
 prewarm, 5.807 seconds of generation, and a 30-second scale-down allowance at `$0.000222/second`.
 These are not the same scope. A read-only Modal billing report at 14:48:52 PDT showed `$0.05987830`
-for the current `bookforge-fast-scene` app/day interval since the 13:46:13 baseline; that wider
+for the current `storylight-fast-scene` app/day interval since the 13:46:13 baseline; that wider
 interval may include deployment, prewarm, generation, and billing lag, so it is not a job-only
 price. At that capture the workspace total was `$13.95606460`, leaving `$16.04393540` of the
 monthly credit and `$15.04393540` before the project's `$29` hard-stop threshold.
@@ -705,7 +705,7 @@ hashes independently matched their content-addressed cache copies. The provider 
 `artifacts/live-scenes/generated/scene_7ad76946940540f4b2f8878e/scene.manifest.json`, SHA-256
 `567eac7b1a50ab05696854bfe75f67a4beb526b831b96fcd828f005eb4babce1`.
 
-The privacy boundary is explicit: the raw passage was processed by the local Bookforge/Jetson
+The privacy boundary is explicit: the raw passage was processed by the local Storylight/Jetson
 path, while the model-authored semantic visual prompt was sent to Modal for image generation. The
 exact source passage and local session ID are absent from the provider manifest request. The
 manifest confirms a finite authenticated call and no persistent endpoint; this is semantic-data
@@ -724,24 +724,24 @@ the integrated job and this distinction are recorded in
 
 Treat runtime updates like deploys. Download the new official release into a different versioned
 directory, verify the digest published with that release, and preserve the known-good directory and
-service file. Change only `ExecStart` in a reviewed copy of `bookforge-gemma.service`, run
+service file. Change only `ExecStart` in a reviewed copy of `storylight-gemma.service`, run
 `systemd-analyze --user verify`, then restart and repeat the schema, GPU, memory, latency, and
 loopback checks. Do not update the runtime and model in the same acceptance run.
 
 Before switching versions, save the known-good unit:
 
 ```bash
-cp "$HOME/.config/systemd/user/bookforge-gemma.service" \
-  "$HOME/.config/systemd/user/bookforge-gemma.service.known-good"
+cp "$HOME/.config/systemd/user/storylight-gemma.service" \
+  "$HOME/.config/systemd/user/storylight-gemma.service.known-good"
 ```
 
 Rollback is a unit-file restore; the old versioned runtime and model remain intact:
 
 ```bash
-install -m 0644 "$HOME/.config/systemd/user/bookforge-gemma.service.known-good" \
-  "$HOME/.config/systemd/user/bookforge-gemma.service"
+install -m 0644 "$HOME/.config/systemd/user/storylight-gemma.service.known-good" \
+  "$HOME/.config/systemd/user/storylight-gemma.service"
 systemctl --user daemon-reload
-systemctl --user restart bookforge-gemma.service
+systemctl --user restart storylight-gemma.service
 curl -fsS http://127.0.0.1:11434/api/version
 curl -fsS http://127.0.0.1:11434/api/tags
 ```
@@ -751,43 +751,43 @@ into the repository, benchmark evidence, logs, or a demo package.
 
 ## 4. Install the API service
 
-The application must be available at `/opt/bookforge`, which is the explicit path in the unit
+The application must be available at `/opt/storylight`, which is the explicit path in the unit
 templates. Stage only committed files into an empty target; do not copy `.env`, `.git`, a laptop
 virtual environment, caches, or evidence:
 
 ```bash
-git archive --format=tar --output=/tmp/bookforge-source.tar HEAD
-sudo install -d -m 0755 /opt/bookforge
-sudo tar --extract --file=/tmp/bookforge-source.tar --directory=/opt/bookforge --no-same-owner
-sudo chown -R "$USER":"$(id -gn)" /opt/bookforge
-cd /opt/bookforge
+git archive --format=tar --output=/tmp/storylight-source.tar HEAD
+sudo install -d -m 0755 /opt/storylight
+sudo tar --extract --file=/tmp/storylight-source.tar --directory=/opt/storylight --no-same-owner
+sudo chown -R "$USER":"$(id -gn)" /opt/storylight
+cd /opt/storylight
 ./deploy/jetson/bootstrap.sh --create-venv --install-app
 ```
 
 Review and install the environment and service template:
 
 ```bash
-sudo install -d /etc/bookforge
+sudo install -d /etc/storylight
 sudo install -o root -g "$(id -gn)" -m 0640 \
-  deploy/jetson/bookforge.env.example /etc/bookforge/bookforge.env
-sudo install -m 0644 deploy/jetson/systemd/bookforge@.service /etc/systemd/system/bookforge@.service
+  deploy/jetson/storylight.env.example /etc/storylight/storylight.env
+sudo install -m 0644 deploy/jetson/systemd/storylight@.service /etc/systemd/system/storylight@.service
 sudo systemctl daemon-reload
-sudo systemctl enable --now "bookforge@${USER}.service"
+sudo systemctl enable --now "storylight@${USER}.service"
 ```
 
 Verify it without exposing the API beyond the device:
 
 ```bash
-systemctl status "bookforge@${USER}.service" --no-pager
-journalctl -u "bookforge@${USER}.service" -n 100 --no-pager
+systemctl status "storylight@${USER}.service" --no-pager
+journalctl -u "storylight@${USER}.service" -n 100 --no-pager
 curl -fsS http://127.0.0.1:8080/healthz
 curl -fsS http://127.0.0.1:8080/readyz
 curl -fsS http://127.0.0.1:8080/v1/runtime:status
 ```
 
-The unit binds only to loopback, reads `/etc/bookforge/bookforge.env`, runs without elevated
+The unit binds only to loopback, reads `/etc/storylight/storylight.env`, runs without elevated
 privileges, and applies conservative systemd hardening. It creates private, service-owned
-`/var/lib/bookforge`, `/var/cache/bookforge`, and `/run/bookforge` directories. Startup preflight
+`/var/lib/storylight`, `/var/cache/storylight`, and `/run/storylight` directories. Startup preflight
 refuses relative Jetson paths, a Mac-only ASR backend, an unavailable configured ASR backend, or a
 remote model endpoint. It does not grant camera, audio, GPIO, or Docker permissions.
 
@@ -796,15 +796,15 @@ remote model endpoint. It does not grant camera, audio, GPIO, or Docker permissi
 After the disabled-ASR service has started once and created its private cache directory:
 
 ```bash
-cd /opt/bookforge
+cd /opt/storylight
 .venv/bin/python -c 'import torch, tensorrt, torch2trt, whisper, numpy, psutil'
 .venv/bin/pip install \
   'git+https://github.com/NVIDIA-AI-IOT/whisper_trt.git@268eff10a1e38118a2734745b9db14f7419a08a5'
-sudo systemctl stop "bookforge@${USER}.service"
-sudoedit /etc/bookforge/bookforge.env
-# Set BOOKFORGE_ASR_BACKEND=whisper_trt, then:
-sudo -u "$USER" BOOKFORGE_SERVICE_USER="$USER" /opt/bookforge/deploy/jetson/warm-asr.sh
-sudo systemctl start "bookforge@${USER}.service"
+sudo systemctl stop "storylight@${USER}.service"
+sudoedit /etc/storylight/storylight.env
+# Set STORYLIGHT_ASR_BACKEND=whisper_trt, then:
+sudo -u "$USER" STORYLIGHT_SERVICE_USER="$USER" /opt/storylight/deploy/jetson/warm-asr.sh
+sudo systemctl start "storylight@${USER}.service"
 ```
 
 The warmup downloads/builds while network access is intentionally available. Before acceptance,
@@ -814,13 +814,13 @@ still works. Never run the warmup concurrently with the service.
 ### Install a prepared offline book package
 
 Copy a validated Story Pack and its referenced media directory onto the device, then install it as
-the same Linux user that runs Bookforge:
+the same Linux user that runs Storylight:
 
 ```bash
-.venv/bin/python -m bookforge.pack_installer /path/to/story-pack.json \
+.venv/bin/python -m storylight.pack_installer /path/to/story-pack.json \
   --asset-root /path/to/media \
-  --data-dir /var/lib/bookforge \
-  --cache-dir /var/cache/bookforge
+  --data-dir /var/lib/storylight \
+  --cache-dir /var/cache/storylight
 curl -fsS http://127.0.0.1:8080/v1/story-packs/latest
 ```
 
@@ -832,12 +832,12 @@ promotes the Story Pack to `latest`. The projector browser never receives a raw 
 ## 5. Install the projector browser kiosk
 
 The launcher prefers `chromium`, then `chromium-browser`, and accepts `firefox` or `firefox-esr` as
-a fallback. Set `BOOKFORGE_BROWSER_BIN` to choose either browser explicitly. The legacy
-`BOOKFORGE_CHROMIUM_BIN` override remains supported and is treated as Chromium. Chromium keeps the
+a fallback. Set `STORYLIGHT_BROWSER_BIN` to choose either browser explicitly. The legacy
+`STORYLIGHT_CHROMIUM_BIN` override remains supported and is treated as Chromium. Chromium keeps the
 existing kiosk/app sandbox and background-network hardening flags; Firefox uses only its supported
 `--kiosk` and `--private-window` flags. This repository never silently installs a browser.
 
-On JetPack 7.2.1, the Ubuntu Firefox Snap was measured exposing WebGL as Mesa `llvmpipe`; Bookforge
+On JetPack 7.2.1, the Ubuntu Firefox Snap was measured exposing WebGL as Mesa `llvmpipe`; Storylight
 then pinned a CPU core and delivered only 19 distinct projector frames in two seconds. The verified
 Mozilla ARM64 build exposed NVIDIA WebGL and held 60.48 browser fps (17.10 ms median, 17.14 ms p95),
 with 118 distinct framebuffer frames in a 120-frame final capture. Install that pinned, checksum-
@@ -845,10 +845,10 @@ verified build without sudo, then select its stable path explicitly:
 
 ```bash
 ./deploy/jetson/install-firefox-arm64.sh
-install -d -m 700 "${XDG_CONFIG_HOME:-${HOME}/.config}/bookforge"
-cp deploy/jetson/kiosk.env.example "${XDG_CONFIG_HOME:-${HOME}/.config}/bookforge/kiosk.env"
+install -d -m 700 "${XDG_CONFIG_HOME:-${HOME}/.config}/storylight"
+cp deploy/jetson/kiosk.env.example "${XDG_CONFIG_HOME:-${HOME}/.config}/storylight/kiosk.env"
 # Edit kiosk.env and set:
-# BOOKFORGE_BROWSER_BIN=/home/your-user/.local/opt/firefox-bookforge/firefox
+# STORYLIGHT_BROWSER_BIN=/home/your-user/.local/opt/firefox-storylight/firefox
 ```
 
 The Snap remains installed as rollback. The projector runtime also rejects known software WebGL
@@ -858,7 +858,7 @@ Test the launcher inside the logged-in graphical desktop session:
 
 ```bash
 ./deploy/jetson/check-kiosk-session.sh
-BOOKFORGE_KIOSK_URL='http://127.0.0.1:8080/projector?pack=latest&session=bookforge-live&live=1' \
+STORYLIGHT_KIOSK_URL='http://127.0.0.1:8080/projector?pack=latest&session=storylight-live&live=1' \
   ./deploy/jetson/launch-kiosk.sh
 ```
 
@@ -870,11 +870,11 @@ startup maps this operator-state failure to exit status 78; the user service del
 restart-loop on that status. Restart it manually after the physical session passes:
 
 ```bash
-systemctl --user restart bookforge-kiosk.service
+systemctl --user restart storylight-kiosk.service
 ```
 
 For a dedicated unattended demo account whose automatic lock and blanking policies have already
-been disabled, set `BOOKFORGE_KIOSK_ALLOW_IDLE=true` in the private kiosk environment. This permits
+been disabled, set `STORYLIGHT_KIOSK_ALLOW_IDLE=true` in the private kiosk environment. This permits
 only the idle hint: the preflight still rejects a locked, remote, inactive, non-X11, unreadable, or
 display-off session. The default remains fail-closed for ordinary accounts.
 
@@ -883,33 +883,33 @@ override the projector and readiness URLs together. Changing only the kiosk URL 
 readiness from the Jetson's separate port-8080 fallback service:
 
 ```bash
-BOOKFORGE_KIOSK_URL='http://127.0.0.1:18081/projector?pack=latest&session=bookforge-live&live=1&present=1' \
-BOOKFORGE_READY_URL=http://127.0.0.1:18081/readyz \
+STORYLIGHT_KIOSK_URL='http://127.0.0.1:18081/projector?pack=latest&session=storylight-live&live=1&present=1' \
+STORYLIGHT_READY_URL=http://127.0.0.1:18081/readyz \
   ./deploy/jetson/launch-kiosk.sh
 ```
 
 Then install the user service while logged in as the desktop user:
 
 ```bash
-install -D -m 0644 deploy/jetson/systemd/bookforge-kiosk.service \
-  "$HOME/.config/systemd/user/bookforge-kiosk.service"
+install -D -m 0644 deploy/jetson/systemd/storylight-kiosk.service \
+  "$HOME/.config/systemd/user/storylight-kiosk.service"
 install -D -m 0644 deploy/jetson/kiosk.env.example \
-  "$HOME/.config/bookforge/kiosk.env"
+  "$HOME/.config/storylight/kiosk.env"
 systemctl --user daemon-reload
-systemctl --user enable --now bookforge-kiosk.service
+systemctl --user enable --now storylight-kiosk.service
 ```
 
 Inspect it with:
 
 ```bash
-systemctl --user status bookforge-kiosk.service --no-pager
-journalctl --user -u bookforge-kiosk.service -n 100 --no-pager
+systemctl --user status storylight-kiosk.service --no-pager
+journalctl --user -u storylight-kiosk.service -n 100 --no-pager
 ```
 
 The kiosk must run in the actual graphical user's session. Do not run the browser as root and do
 not add `--no-sandbox` to work around Chromium session or permission problems. The launcher waits
 for `/readyz` before opening the browser and restarts if the graphical session begins before the
-API is ready. Its default URL joins the canonical `bookforge-live` session, enables progressive
+API is ready. Its default URL joins the canonical `storylight-live` session, enables progressive
 live-scene updates, and retains the latest device-stored Story Pack as a fallback.
 
 While the browser process exists, `systemd-inhibit --what=sleep` prevents system suspend. It does
@@ -921,17 +921,17 @@ visible. Stopping the kiosk process releases both protections automatically.
 ## 6. Capture hardware acceptance evidence
 
 After the service is running and a prepared Story Pack is installed, collect exact JetPack/CUDA/
-TensorRT versions, API/model readiness, the actual Bookforge NVMe mount, browser, thermals,
+TensorRT versions, API/model readiness, the actual Storylight NVMe mount, browser, thermals,
 camera, microphone, display, latest content, and process privacy into one timestamped JSON artifact:
 
 ```bash
 ./deploy/jetson/collect-evidence.sh --strict
 ```
 
-The wrapper resolves the running `bookforge@USER.service` PID and passes it to the collector.
+The wrapper resolves the running `storylight@USER.service` PID and passes it to the collector.
 Process privacy evidence is mandatory: neither the Python collector nor this wrapper can report
 `ready: true` when the service is stopped, its PID is unavailable, or the socket audit fails. Set
-`BOOKFORGE_SERVICE_USER` only when collecting evidence for a service instance owned by a different
+`STORYLIGHT_SERVICE_USER` only when collecting evidence for a service instance owned by a different
 user.
 
 After configuring WhisperTRT, run the real three-second microphone capture, one-frame camera
@@ -944,7 +944,7 @@ capture, local transcription, and privacy boundary:
 The ASR gate defaults to 4,000 ms for the three-second capture. Override it only when documenting a
 deliberate acceptance-budget change with `--max-asr-ms`.
 
-Evidence is written under `/var/lib/bookforge/evidence/` by default. Override the exact camera or
+Evidence is written under `/var/lib/storylight/evidence/` by default. Override the exact camera or
 ALSA device when enumeration shows a different target:
 
 ```bash
@@ -967,7 +967,7 @@ capture; the Firefox fallback does not establish that boundary by itself.
 
 ## Device caveats
 
-- A reported NVMe device does not prove that Bookforge is using it. Confirm the mount point and free
+- A reported NVMe device does not prove that Storylight is using it. Confirm the mount point and free
   space in the diagnostic output before moving models or caches.
 - Camera and microphone enumeration proves presence, not capture quality. Test the exact USB camera,
   microphone, resolution, frame rate, room lighting, and projector interference used for the demo.
@@ -986,4 +986,4 @@ capture; the Firefox fallback does not establish that boundary by itself.
   recorded cold-boot acceptance rehearsal; this repository does not silently change login policy.
 - WhisperTRT's published Orin Nano benchmark is useful for selecting the first adapter, but it is
   not evidence for this JetPack 7.2.1 installation. Only the generated hardware evidence file and
-  recorded rehearsal count as Bookforge results.
+  recorded rehearsal count as Storylight results.

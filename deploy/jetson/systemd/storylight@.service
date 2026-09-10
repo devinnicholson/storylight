@@ -1,0 +1,38 @@
+[Unit]
+Description=Storylight edge API for user %i
+After=local-fs.target
+
+[Service]
+Type=simple
+User=%i
+WorkingDirectory=/opt/storylight
+EnvironmentFile=/etc/storylight/storylight.env
+Environment=HOME=/var/cache/storylight/home
+Environment=PATH=/opt/storylight/.venv/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin
+ExecStartPre=/opt/storylight/.venv/bin/python -m storylight.edge_preflight
+ExecStart=/opt/storylight/.venv/bin/python -m uvicorn storylight.api:app --host 127.0.0.1 --port 8080 --timeout-graceful-shutdown 3
+# This is an appliance service: a graceful process exit is still unexpected.
+# `systemctl stop` remains authoritative and does not trigger Restart=always.
+Restart=always
+RestartSec=3
+TimeoutStopSec=20
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=read-only
+StateDirectory=storylight
+StateDirectoryMode=0700
+CacheDirectory=storylight
+CacheDirectoryMode=0700
+RuntimeDirectory=storylight
+RuntimeDirectoryMode=0700
+UMask=0077
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+ProtectClock=true
+RestrictSUIDSGID=true
+LockPersonality=true
+
+[Install]
+WantedBy=multi-user.target

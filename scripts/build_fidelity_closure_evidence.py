@@ -13,7 +13,7 @@ from pathlib import Path
 REPOSITORY_ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(REPOSITORY_ROOT / "src"))
 
-from bookforge.fidelity_closure_evidence import (  # noqa: E402
+from storylight.fidelity_closure_evidence import (  # noqa: E402
     build_cost_reconciliation,
     build_paid_resource_inventory,
 )

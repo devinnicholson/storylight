@@ -1,7 +1,7 @@
 import asyncio
 
-from bookforge.config import Settings
-from bookforge.domain import (
+from storylight.config import Settings
+from storylight.domain import (
     BookPageInput,
     GeneratedPagePlan,
     GeneratedStoryPlan,
@@ -13,13 +13,13 @@ from bookforge.domain import (
     SupportAction,
     VisualLayer,
 )
-from bookforge.model_client import FakeModelClient
-from bookforge.service import BookforgeService
+from storylight.model_client import FakeModelClient
+from storylight.service import StorylightService
 
 
-def make_service() -> BookforgeService:
+def make_service() -> StorylightService:
     settings = Settings(model_backend="fake", model_name="fake")
-    return BookforgeService(settings, FakeModelClient())
+    return StorylightService(settings, FakeModelClient())
 
 
 def test_first_long_pause_uses_instant_grapheme_fast_path() -> None:
@@ -157,7 +157,7 @@ def test_story_compiler_anchors_a_valid_trigger_phrase_to_its_final_word() -> No
         ]
     )
 
-    normalized = BookforgeService._validate_story_plan(request, plan)
+    normalized = StorylightService._validate_story_plan(request, plan)
 
     trigger = normalized.pages[0].triggers[0]
     assert trigger.word == "gate"

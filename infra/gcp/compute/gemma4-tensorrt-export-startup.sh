@@ -3,7 +3,7 @@ set -Eeuo pipefail
 
 readonly METADATA_ROOT="http://metadata.google.internal/computeMetadata/v1/instance/attributes"
 readonly METADATA_HEADER="Metadata-Flavor: Google"
-readonly LOCAL_LOG="/var/log/bookforge-gemma4-tensorrt-export.log"
+readonly LOCAL_LOG="/var/log/storylight-gemma4-tensorrt-export.log"
 
 metadata() {
   curl --fail --silent --show-error \
@@ -11,10 +11,10 @@ metadata() {
     "$METADATA_ROOT/$1"
 }
 
-readonly EXPORT_IMAGE="$(metadata bookforge-export-image)"
-readonly EXPORT_BUCKET="$(metadata bookforge-export-bucket)"
-readonly EXPORT_RUN_ID="$(metadata bookforge-export-run-id)"
-readonly LOG_OBJECT="$(metadata bookforge-export-log-object)"
+readonly EXPORT_IMAGE="$(metadata storylight-export-image)"
+readonly EXPORT_BUCKET="$(metadata storylight-export-bucket)"
+readonly EXPORT_RUN_ID="$(metadata storylight-export-run-id)"
+readonly LOG_OBJECT="$(metadata storylight-export-log-object)"
 
 exec > >(tee -a "$LOCAL_LOG") 2>&1
 
@@ -23,7 +23,7 @@ upload_log() {
 }
 trap upload_log EXIT
 
-echo '{"event":"bookforge_compute_export_boot","stage":"startup_script"}'
+echo '{"event":"storylight_compute_export_boot","stage":"startup_script"}'
 nvidia-smi
 
 if ! command -v docker >/dev/null 2>&1; then
@@ -45,9 +45,9 @@ docker run \
   --rm \
   --gpus all \
   --shm-size 16g \
-  --name bookforge-gemma4-tensorrt-export \
-  --env "BOOKFORGE_EXPORT_BUCKET=$EXPORT_BUCKET" \
-  --env "BOOKFORGE_EXPORT_RUN_ID=$EXPORT_RUN_ID" \
+  --name storylight-gemma4-tensorrt-export \
+  --env "STORYLIGHT_EXPORT_BUCKET=$EXPORT_BUCKET" \
+  --env "STORYLIGHT_EXPORT_RUN_ID=$EXPORT_RUN_ID" \
   "$EXPORT_IMAGE"
 
-echo '{"event":"bookforge_compute_export_boot","stage":"container_complete"}'
+echo '{"event":"storylight_compute_export_boot","stage":"container_complete"}'

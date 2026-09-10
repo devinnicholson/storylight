@@ -9,14 +9,14 @@ readonly FIREFOX_URL="https://ftp.mozilla.org/pub/firefox/releases/${FIREFOX_VER
 readonly SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 
 if [[ "$(uname -m)" != "aarch64" ]]; then
-  printf 'The Bookforge Firefox installer is pinned for Jetson aarch64, not %s.\n' "$(uname -m)" >&2
+  printf 'The Storylight Firefox installer is pinned for Jetson aarch64, not %s.\n' "$(uname -m)" >&2
   exit 2
 fi
 
-install_root="${BOOKFORGE_FIREFOX_ROOT:-${HOME}/.local/opt}"
-cache_root="${XDG_CACHE_HOME:-${HOME}/.cache}/bookforge-downloads"
+install_root="${STORYLIGHT_FIREFOX_ROOT:-${HOME}/.local/opt}"
+cache_root="${XDG_CACHE_HOME:-${HOME}/.cache}/storylight-downloads"
 target_dir="${install_root}/firefox-${FIREFOX_VERSION}"
-current_link="${install_root}/firefox-bookforge"
+current_link="${install_root}/firefox-storylight"
 archive_path="${cache_root}/${FIREFOX_ARCHIVE}"
 
 mkdir -p "$install_root" "$cache_root"
@@ -55,5 +55,5 @@ fi
 ln -sfn "firefox-${FIREFOX_VERSION}" "$current_link"
 
 "${current_link}/firefox" --version
-printf 'Verified Bookforge browser: %s\n' "${current_link}/firefox"
-printf 'Set BOOKFORGE_BROWSER_BIN=%s in kiosk.env.\n' "${current_link}/firefox"
+printf 'Verified Storylight browser: %s\n' "${current_link}/firefox"
+printf 'Set STORYLIGHT_BROWSER_BIN=%s in kiosk.env.\n' "${current_link}/firefox"

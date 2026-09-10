@@ -1,13 +1,13 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-CONTEXT="gke_${GOOGLE_CLOUD_PROJECT:-your-gcp-project}_${BOOKFORGE_GKE_REGION:-us-central1}_${BOOKFORGE_GKE_CLUSTER:-bookforge-anticipatory}"
-DEPLOYMENT=bookforge-nemotron
-NAMESPACE=bookforge
+CONTEXT="gke_${GOOGLE_CLOUD_PROJECT:-your-gcp-project}_${STORYLIGHT_GKE_REGION:-us-central1}_${STORYLIGHT_GKE_CLUSTER:-storylight-anticipatory}"
+DEPLOYMENT=storylight-nemotron
+NAMESPACE=storylight
 
-if [[ "${BOOKFORGE_NIM_CACHE_APPLY:-}" != "I_UNDERSTAND_THIS_CONFIGURES_THE_STOPPED_NIM" ]]; then
+if [[ "${STORYLIGHT_NIM_CACHE_APPLY:-}" != "I_UNDERSTAND_THIS_CONFIGURES_THE_STOPPED_NIM" ]]; then
   echo "Dry guard: configure persistent TensorRT engines only while NIM is scaled to zero."
-  echo "Set BOOKFORGE_NIM_CACHE_APPLY=I_UNDERSTAND_THIS_CONFIGURES_THE_STOPPED_NIM to apply."
+  echo "Set STORYLIGHT_NIM_CACHE_APPLY=I_UNDERSTAND_THIS_CONFIGURES_THE_STOPPED_NIM to apply."
   exit 2
 fi
 
@@ -30,7 +30,7 @@ checks = [
     env.get("NIM_CACHE_PATH") == "/opt/nim/.cache",
     nim["resources"]["limits"].get("nvidia.com/gpu") == "1",
     pod["nodeSelector"].get("cloud.google.com/gke-accelerator") == "nvidia-l4",
-    any(v.get("persistentVolumeClaim", {}).get("claimName") == "bookforge-nim-cache" for v in pod["volumes"]),
+    any(v.get("persistentVolumeClaim", {}).get("claimName") == "storylight-nim-cache" for v in pod["volumes"]),
     any(c["name"] == "gpu-watchdog" for c in pod["containers"]),
 ]
 if not all(checks):
@@ -40,7 +40,7 @@ if not all(checks):
 kubectl --context="$CONTEXT" -n "$NAMESPACE" set env "deployment/$DEPLOYMENT" \
   --containers=nemotron-nim \
   NIM_MODEL_PROFILE=308eb4483d24f2e7f53a75d669cacd83539f3415167733accfea1a5efe6986aa \
-  NIM_CUSTOM_MODEL_NAME=bookforge-nvl8b-f4f0ef21-l4-bf16-ctx2048-b1-v1 \
+  NIM_CUSTOM_MODEL_NAME=storylight-nvl8b-f4f0ef21-l4-bf16-ctx2048-b1-v1 \
   NIM_SERVED_MODEL_NAME=nvidia/llama-3.1-nemotron-nano-vl-8b-v1 \
   NIM_ENABLE_KV_CACHE_REUSE-
 

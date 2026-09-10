@@ -10,7 +10,7 @@ from pathlib import Path
 
 PROFILE_SHA = "b308c7e236ef81b30915fe416639a6b8032e7a5faa2b94a422754082d62a4939"
 CPU_PROOF_SHA = "f871a13638172227673d571b380bb1918010d23b72c377a7286ad1931fb2a92c"
-EXPECTED_ROOT = Path("/tmp/bookforge-v5-seeded-compiler-cache-01")
+EXPECTED_ROOT = Path("/tmp/storylight-v5-seeded-compiler-cache-01")
 
 
 def require(condition, message):

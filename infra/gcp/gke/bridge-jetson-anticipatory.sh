@@ -1,19 +1,19 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-NAMESPACE="${BOOKFORGE_GKE_NAMESPACE:-bookforge}"
-CONTEXT="${BOOKFORGE_GKE_CONTEXT:-gke_your-gcp-project_us-central1_bookforge-anticipatory}"
-SERVICE="${BOOKFORGE_GKE_SERVICE:-bookforge-anticipatory}"
-LOCAL_PORT="${BOOKFORGE_GKE_LOCAL_PORT:-18082}"
-JETSON_PORT="${BOOKFORGE_JETSON_ANTICIPATORY_PORT:-18082}"
-JETSON_HOST="${BOOKFORGE_JETSON_HOST:-}"
-JETSON_USER="${BOOKFORGE_JETSON_USER:-operator}"
-JETSON_KEY="${BOOKFORGE_JETSON_KEY:-}"
-HOST_KEY_ALIAS="${BOOKFORGE_JETSON_HOST_KEY_ALIAS:-}"
+NAMESPACE="${STORYLIGHT_GKE_NAMESPACE:-storylight}"
+CONTEXT="${STORYLIGHT_GKE_CONTEXT:-gke_your-gcp-project_us-central1_storylight-anticipatory}"
+SERVICE="${STORYLIGHT_GKE_SERVICE:-storylight-anticipatory}"
+LOCAL_PORT="${STORYLIGHT_GKE_LOCAL_PORT:-18082}"
+JETSON_PORT="${STORYLIGHT_JETSON_ANTICIPATORY_PORT:-18082}"
+JETSON_HOST="${STORYLIGHT_JETSON_HOST:-}"
+JETSON_USER="${STORYLIGHT_JETSON_USER:-operator}"
+JETSON_KEY="${STORYLIGHT_JETSON_KEY:-}"
+HOST_KEY_ALIAS="${STORYLIGHT_JETSON_HOST_KEY_ALIAS:-}"
 
 if [[ -z "${JETSON_HOST}" || -z "${JETSON_KEY}" ]]; then
   printf '%s\n' \
-    "Set BOOKFORGE_JETSON_HOST and BOOKFORGE_JETSON_KEY." \
+    "Set STORYLIGHT_JETSON_HOST and STORYLIGHT_JETSON_KEY." \
     "Example host: the Jetson's stable Tailscale IP or MagicDNS name." \
     "The key remains on this workstation and is never copied to GKE."
   exit 2
@@ -34,7 +34,7 @@ for command in curl kubectl ssh; do
   fi
 done
 
-PORT_FORWARD_LOG="$(mktemp /tmp/bookforge-gke-port-forward.XXXXXX)"
+PORT_FORWARD_LOG="$(mktemp /tmp/storylight-gke-port-forward.XXXXXX)"
 PORT_FORWARD_PID=""
 cleanup() {
   exit_code=$?

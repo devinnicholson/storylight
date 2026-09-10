@@ -1,0 +1,286 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="theme-color" content="#07110f" />
+    <title>Storylight Live Scene Foundry</title>
+    <link rel="stylesheet" href="/workbench-assets/workbench.css?v=0.2.0-voice6" />
+  </head>
+  <body>
+    <main class="shell">
+      <header class="hero">
+        <div>
+          <p class="eyebrow">Storylight · Live Scene Foundry</p>
+          <h1 class="generation-heading">Turn one line of story into a living world.</h1>
+          <h1 class="demo-only">The book that listens back.</h1>
+          <h1 class="voice-only">Describe a scene. Watch it appear.</h1>
+          <p class="voice-only lede">Describe your scene. Generation starts as you speak, and the finished artwork replaces the current scene when it is ready.</p>
+          <p class="demo-only lede">The artwork is prepared. Press Start reading and watch the page respond to your voice.</p>
+          <p class="lede generation-heading">
+            Type a passage and watch the actual projector improve in place: an immediate animated
+            draft, provider artwork, and depth motion. Then read aloud and let the scene follow your words.
+          </p>
+        </div>
+        <div class="privacy-chip"><span></span> Voice stays on this device</div>
+      </header>
+      <nav class="mode-links" aria-label="Interaction mode">
+        <a href="/workbench?voice=1">Describe a new scene</a>
+        <a href="/workbench?demo=1">Read aloud with the saved scene</a>
+      </nav>
+
+      <ol class="journey generation-heading" aria-label="How the demo works">
+        <li><b>1</b><span><strong>Add a page</strong><small>Type the scene you want to see</small></span></li>
+        <li><b>2</b><span><strong>Create its scene</strong><small>Draft appears while the generation provider works</small></span></li>
+        <li><b>3</b><span><strong>Read it aloud</strong><small>Your words drive the scene</small></span></li>
+      </ol>
+
+      <section class="grid">
+        <article class="card input-card">
+          <div class="card-heading">
+            <div>
+              <p class="section-label">Step 1</p>
+              <h2 class="read-only">Your story page</h2>
+              <h2 class="voice-only">Your scene description</h2>
+            </div>
+          </div>
+
+          <p class="instruction">
+            Use a sentence or short paragraph. Storylight keeps the source passage out of the
+            rendering request; the renderer receives visual direction instead of the original text,
+            and it does not create the page text or rewrite it.
+          </p>
+
+          <label class="field-block page-field">
+            <span class="read-only">Story text</span><span class="voice-only">Transcript · edit to refine or retry</span>
+            <textarea id="storyInput" rows="7">At dusk, a silver fox carried a golden lantern beneath the enormous cedar trees.</textarea>
+          </label>
+
+          <p class="instruction voice-only" id="voiceReview" role="status" aria-live="polite"></p>
+
+          <section class="try-live deferred-reader" id="tryLive" aria-labelledby="readerHeading">
+            <section class="deferred-reader-body">
+            <div>
+              <p class="section-label read-only">Read aloud</p>
+              <p class="section-label voice-only">Voice to scene</p>
+              <h3 id="readerHeading"><span class="read-only">Make the page listen.</span><span class="voice-only">Tell us what to create.</span></h3>
+              <p class="read-only">
+                Press “Start reading” and read the page above. The scene follows your words.
+                Use the projection view for a second screen.
+              </p>
+              <p class="voice-only">Press Describe scene and speak. Storylight starts generating automatically while you describe it. Press Finish recording when you’re done; your previous scene stays visible until the new artwork is complete.</p>
+            </div>
+            <div class="live-actions">
+              <a
+                class="button projector-link disabled"
+                id="projectorLink"
+                href="/projector?pack=latest&amp;session=storylight-live&amp;present=1&amp;live=1"
+                target="_blank"
+                aria-disabled="true"
+              >Open projection view ↗</a>
+              <button class="button read-button" id="micButton" disabled>
+                <span class="mic-dot"></span><span id="micButtonText">Start reading</span>
+              </button>
+            </div>
+            <div class="listening-row">
+              <div class="level" aria-hidden="true"><i id="micLevel"></i></div>
+              <p class="interim" id="interimText" role="status" aria-live="polite">Create a scene before starting the reader.</p>
+            </div>
+            <p class="browser-note" id="browserNote">
+              Your microphone recording is processed by local Whisper and discarded. Raw audio is
+              not sent to Storylight's generation providers or Google Cloud.
+            </p>
+            </section>
+          </section>
+
+          <details class="options">
+            <summary>Optional scene settings</summary>
+            <div class="fields">
+              <label>
+                <span>Art style</span>
+                <input
+                  id="styleInput"
+                  value="luminous cut-paper story theater in indigo, teal, cream, and coral"
+                />
+              </label>
+            </div>
+          </details>
+
+          <div class="renderer-preflight" id="rendererPreflight" data-state="checking">
+            <span class="renderer-preflight-dot"></span>
+            <div>
+              <strong id="rendererReadiness">Checking renderer readiness…</strong>
+              <small id="rendererReadinessDetail">No story text is used for this check.</small>
+            </div>
+            <button class="button renderer-warm-button" id="prewarmButton" type="button">
+              Prepare full path
+            </button>
+          </div>
+
+          <button class="button primary generate-button" id="compileButton">
+            Generate moving scene
+          </button>
+          <p class="generate-note read-only">
+            The first animated draft should appear almost immediately. Richer stages replace it without
+            refreshing the projector, so you can see where every second goes.
+          </p>
+          <p class="generate-note voice-only">Voice starts generation automatically. You can also edit the description and use the button to try again. Unfinished artwork stays off the projector.</p>
+          <section class="next-page" aria-labelledby="nextPageHeading">
+            <p class="section-label">Next-page rehearsal · GKE + Nemotron</p>
+            <h3 id="nextPageHeading">Have the next world waiting.</h3>
+            <p>Prepare a known next passage while the current scene stays on screen. Nemotron checks
+              the artwork; this device downloads and verifies it before you switch.</p>
+            <label class="field-block">
+              <span>Next passage</span>
+              <textarea id="nextPageText" rows="4" maxlength="2400"
+                placeholder="What happens on the next page?"></textarea>
+            </label>
+            <div class="live-actions">
+              <button class="button" id="nextPagePrepare" disabled>Prepare next scene</button>
+              <button class="button primary" id="nextPageShow" disabled>Show prepared scene</button>
+              <button class="button" id="nextPageDiscard" disabled>Discard</button>
+            </div>
+            <p id="nextPageStatus" role="status" aria-live="polite">Checking next-page setup…</p>
+            <p class="generation-metrics" id="nextPageMetrics"></p>
+            <details class="options">
+              <summary>Cloud warmup and limits</summary>
+              <p>Preparation and warmup can use cloud credits. Opening this panel does not start a GPU.
+                Start the bounded GKE runtime first. Prepared pages are kept for 15 minutes or until
+                the local API restarts. A prepared scene uses artwork with depth motion, not generated video.</p>
+              <button class="button" id="nextPageWarm" disabled>Warm GKE path (uses credits)</button>
+            </details>
+          </section>
+        </article>
+
+        <article class="card output-card">
+          <div class="card-heading">
+            <div>
+              <p class="section-label">Live output</p>
+              <h2>Watch the page respond.</h2>
+            </div>
+            <div class="status" id="status" data-state="idle"><span></span> Waiting for a page</div>
+          </div>
+
+          <section class="generation-progress hidden" id="generationProgress" aria-live="polite">
+            <div class="generation-heading">
+              <div>
+                <p class="section-label">Generation pipeline</p>
+                <h3 id="generationStage">Starting…</h3>
+              </div>
+              <strong id="generationElapsed">0.0 s</strong>
+            </div>
+            <div class="progress-track"><i id="generationBar"></i></div>
+            <ol class="stage-rail" id="stageRail">
+              <li data-stage="planning"><i></i><span>Plan</span></li>
+              <li data-stage="draft_ready"><i></i><span>Live draft</span></li>
+              <li data-stage="master_ready"><i></i><span>Artwork + depth</span></li>
+              <li data-stage="motion_ready"><i></i><span>Motion loop</span></li>
+            </ol>
+            <div class="artifact-strip" id="artifactStrip">
+              <span data-artifact="draft">Draft</span>
+              <span data-artifact="master">Master</span>
+              <span data-artifact="depth">Depth</span>
+              <span data-artifact="motion">Motion</span>
+            </div>
+            <div class="provenance-line">
+              <span id="generationProvider">Provider pending</span>
+              <code id="generationJob">job —</code>
+              <span id="generationRevision">revision 0</span>
+            </div>
+            <p class="generation-metrics" id="generationMetrics">Backend metrics pending</p>
+            <p class="planning-privacy" id="planningPrivacy">
+              Private visual handoff pending.
+            </p>
+            <p class="generation-warning hidden" id="generationWarning"></p>
+          </section>
+
+          <section class="projection-preview hidden" id="projectionPreview">
+            <div class="preview-label">
+              <span><i></i> Exact projector output</span>
+              <small>The same live page that will be sent to the physical projector</small>
+            </div>
+            <div class="preview-screen">
+              <iframe
+                id="projectorFrame"
+                title="Live preview of the Storylight projector output"
+                loading="eager"
+                allow="fullscreen"
+              ></iframe>
+            </div>
+          </section>
+
+          <div class="empty-state" id="emptyState">
+            <div class="orb"><span></span></div>
+            <strong>Your scene will appear here</strong>
+            <p>Click “Generate moving scene”. The first draft will animate while richer assets arrive.</p>
+          </div>
+
+          <div class="results hidden" id="results">
+            <details class="scene-details">
+              <summary>See how Storylight designed this projection</summary>
+              <div class="scene-details-body">
+            <section class="scene-summary">
+              <p class="section-label">The scene</p>
+              <h3 id="sceneSummary"></h3>
+            </section>
+
+            <div class="metric-row">
+              <div><span>Designed by</span><strong id="modelMetric">—</strong></div>
+              <div><span>Generation time</span><strong id="timeMetric">—</strong></div>
+              <div><span>Plan size</span><strong id="tokenMetric">—</strong></div>
+            </div>
+
+            <section>
+              <div class="result-heading">
+                <h3>What appears in the projection</h3><span id="layerCount"></span>
+              </div>
+              <div class="layer-list" id="layerList"></div>
+            </section>
+
+            <section>
+              <div class="result-heading">
+                <h3>Words that make the scene react</h3><span id="triggerCount"></span>
+              </div>
+              <div class="timeline" id="triggerList"></div>
+            </section>
+
+            <section class="split-results">
+              <div>
+                <h3>Help when a reader gets stuck</h3>
+                <div id="supportList"></div>
+              </div>
+              <div>
+                <h3>Questions after the page</h3>
+                <div id="questionList"></div>
+              </div>
+            </section>
+
+            <details class="technical-details">
+              <summary>Developer details</summary>
+              <pre id="rawOutput"></pre>
+            </details>
+              </div>
+            </details>
+          </div>
+
+          <div class="error hidden" id="errorBox"></div>
+
+          <details class="technical-details" hidden>
+            <summary>Recording timing</summary>
+            <p>Local timings in milliseconds. Audio activity is an estimate; Finish recording is a button press, not the end of speech. Preview timing measures this browser, not the physical projector. Null means the event has not been measured. No audio or transcript is retained here.</p>
+            <pre id="voiceTimingSummary"></pre>
+          </details>
+
+
+        </article>
+      </section>
+
+      <footer>
+        Artwork can be prepared ahead of time. Microphone audio is transcribed locally and discarded.
+      </footer>
+    </main>
+    <script src="/workbench-assets/anticipatory-workbench.js?v=1"></script>
+    <script src="/workbench-assets/voice-timing.js?v=1"></script>
+    <script src="/workbench-assets/workbench.js?v=0.2.0-voice9"></script>
+  </body>
+</html>

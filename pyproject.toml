@@ -3,7 +3,7 @@ requires = ["hatchling>=1.27"]
 build-backend = "hatchling.build"
 
 [project]
-name = "bookforge"
+name = "storylight"
 version = "0.1.0"
 description = "Privacy-first cloud/edge runtime for The Book That Listens Back"
 readme = "README.md"
@@ -33,12 +33,13 @@ jax-analysis = [
 
 [dependency-groups]
 dev = [
+  "numpy>=2,<3",
   "pytest>=8.3,<9",
   "ruff>=0.9,<1",
 ]
 
 [tool.hatch.build.targets.wheel]
-packages = ["src/bookforge"]
+packages = ["src/storylight"]
 
 [tool.pytest.ini_options]
 pythonpath = ["src"]

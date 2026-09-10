@@ -2,17 +2,17 @@
 set -euo pipefail
 
 PROJECT_ID="${GOOGLE_CLOUD_PROJECT:-your-gcp-project}"
-REGION="${BOOKFORGE_GKE_REGION:-us-central1}"
-CLUSTER="${BOOKFORGE_GKE_CLUSTER:-bookforge-anticipatory}"
+REGION="${STORYLIGHT_GKE_REGION:-us-central1}"
+CLUSTER="${STORYLIGHT_GKE_CLUSTER:-storylight-anticipatory}"
 
-if [[ "${BOOKFORGE_GKE_DELETE:-}" != "I_UNDERSTAND_THIS_DELETES_THE_ANTICIPATORY_CLUSTER" ]]; then
+if [[ "${STORYLIGHT_GKE_DELETE:-}" != "I_UNDERSTAND_THIS_DELETES_THE_ANTICIPATORY_CLUSTER" ]]; then
   printf '%s\n' \
     "Dry guard active. This would permanently delete only:" \
     "  project: ${PROJECT_ID}" \
     "  cluster: ${CLUSTER} (${REGION})" \
     "" \
     "The Cloud Run renderer, Artifact Registry images, and local evidence remain." \
-    "Set BOOKFORGE_GKE_DELETE=I_UNDERSTAND_THIS_DELETES_THE_ANTICIPATORY_CLUSTER to apply."
+    "Set STORYLIGHT_GKE_DELETE=I_UNDERSTAND_THIS_DELETES_THE_ANTICIPATORY_CLUSTER to apply."
   exit 2
 fi
 

@@ -11,9 +11,9 @@ import stat
 import sys
 from pathlib import Path
 
-from bookforge.live_scene_planner import validate_live_scene_plan_privacy
-from bookforge.scene_playback import DisplaySourcePage, build_display_story_pack
-from bookforge.tensorrt_slot_client import tensor_accepted_graph_wire_plan, tensor_slot_wire_plan
+from storylight.live_scene_planner import validate_live_scene_plan_privacy
+from storylight.scene_playback import DisplaySourcePage, build_display_story_pack
+from storylight.tensorrt_slot_client import tensor_accepted_graph_wire_plan, tensor_slot_wire_plan
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from scripts import benchmark_scene_prompt_probe as probe  # noqa: E402

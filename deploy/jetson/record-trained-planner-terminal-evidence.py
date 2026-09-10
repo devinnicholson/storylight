@@ -21,7 +21,7 @@ SHA = re.compile(r"[a-f0-9]{64}\Z")
 RUN_ID = re.compile(r"[a-z0-9][a-z0-9-]{2,63}\Z")
 CANDIDATE_ID = re.compile(r"[a-z0-9][a-z0-9-]{2,95}\Z")
 USER = re.compile(r"[a-z_][a-z0-9_-]{0,31}\Z")
-EVIDENCE_ROOT = Path("/var/lib/bookforge-trusted/trained-planner/evidence")
+EVIDENCE_ROOT = Path("/var/lib/storylight-trusted/trained-planner/evidence")
 
 
 def canonical(value: object) -> bytes:
@@ -147,7 +147,7 @@ def lineage(
     if (
         gate.get("schema_version") != "1.0"
         or gate.get("stage") != "gate"
-        or gate.get("producer") != "bookforge-fidelity-gate-builder"
+        or gate.get("producer") != "storylight-fidelity-gate-builder"
         or gate.get("status") != required_status
         or not isinstance(config_sha256, str)
         or SHA.fullmatch(config_sha256) is None
@@ -211,7 +211,7 @@ def expected_approval_token(
     output = validated_output_path(output_directory)
     if outcome == "promoted":
         return (
-            "PROMOTE_BOOKFORGE_TRAINED_PLANNER:"
+            "PROMOTE_STORYLIGHT_TRAINED_PLANNER:"
             f"{user}:{candidate_id}:{candidate_manifest_sha256}:"
             f"{gate_artifact_sha256}:{output}"
         )
@@ -227,7 +227,7 @@ def expected_approval_token(
     ):
         action.update(value.encode())
         action.update(b"\0")
-    return f"RETAIN_BOOKFORGE_ACCEPTED_BASELINE:{action.hexdigest()}"
+    return f"RETAIN_STORYLIGHT_ACCEPTED_BASELINE:{action.hexdigest()}"
 
 
 def documents(
@@ -249,9 +249,9 @@ def documents(
     receipt = {
         "schema_version": "story-fidelity-terminal-receipt-v1",
         "producer": (
-            "bookforge-trained-planner-promotion"
+            "storylight-trained-planner-promotion"
             if outcome == "promoted"
-            else "bookforge-baseline-retention"
+            else "storylight-baseline-retention"
         ),
         "status": "succeeded",
         "outcome": outcome,
@@ -262,7 +262,7 @@ def documents(
     }
     health = {
         "schema_version": "story-fidelity-post-action-health-v1",
-        "producer": "bookforge-terminal-health-recorder",
+        "producer": "storylight-terminal-health-recorder",
         "status": "passed",
         "outcome": outcome,
         **common,
@@ -285,7 +285,7 @@ def documents(
             raise ValueError("promotion has no checksum-bound rollback config")
         result["rollback-state.json"] = {
             "schema_version": "story-fidelity-rollback-state-v1",
-            "producer": "bookforge-trained-planner-rollback-state",
+            "producer": "storylight-trained-planner-rollback-state",
             "status": "ready",
             **common,
             "accepted_baseline_engine_sha256": lineage_values["baseline_engine_sha256"],
@@ -351,7 +351,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--active-state",
         type=Path,
-        default=Path("/var/lib/bookforge-trusted/trained-planner/active.env"),
+        default=Path("/var/lib/storylight-trusted/trained-planner/active.env"),
     )
     parser.add_argument("--one-purpose-approval-token", required=True)
     parser.add_argument("--output-directory", type=Path, required=True)
@@ -415,7 +415,7 @@ def main() -> None:
             "text": "A copper fox raises a blue lantern above a quiet paper observatory.",
             "visual_style": "layered paper theater",
             "seed": 20260901,
-            "session_id": "bookforge-terminal-evidence",
+            "session_id": "storylight-terminal-evidence",
         },
     )
     tokens = scene.get("output_tokens")
@@ -427,7 +427,7 @@ def main() -> None:
         and isinstance(tokens, int)
         and not isinstance(tokens, bool)
         and 1 <= tokens <= 64
-        and user_systemctl(args.user, "is-active", "bookforge-kiosk.service").stdout.strip()
+        and user_systemctl(args.user, "is-active", "storylight-kiosk.service").stdout.strip()
         == "active"
         and len(Path("/proc/swaps").read_text().splitlines()) == 1
     )
@@ -455,10 +455,10 @@ def main() -> None:
         backup_environment = parse_environment(args.backup_config)
         active_state = parse_environment(args.active_state)
         if (
-            backup_environment.get("BOOKFORGE_LIVE_SCENE_PLANNER_BACKEND") != "tensorrt_slots"
-            or backup_environment.get("BOOKFORGE_LIVE_SCENE_PLANNER_BASE_URL")
+            backup_environment.get("STORYLIGHT_LIVE_SCENE_PLANNER_BACKEND") != "tensorrt_slots"
+            or backup_environment.get("STORYLIGHT_LIVE_SCENE_PLANNER_BASE_URL")
             != "http://127.0.0.1:11435"
-            or backup_environment.get("BOOKFORGE_LIVE_SCENE_PLANNER_MODEL_REVISION")
+            or backup_environment.get("STORYLIGHT_LIVE_SCENE_PLANNER_MODEL_REVISION")
             != f"sha256:{args.baseline_engine_sha256}"
             or active_state.get("PHASE") != "ACTIVE"
             or active_state.get("CANDIDATE_ID") != lineage_values["candidate_id"]
@@ -482,7 +482,7 @@ def main() -> None:
         json.dumps(
             {
                 "schema_version": "1.0",
-                "producer": "bookforge-terminal-evidence-recorder",
+                "producer": "storylight-terminal-evidence-recorder",
                 "status": "published",
                 "output_directory": str(output),
                 "artifacts": {

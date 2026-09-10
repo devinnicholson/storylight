@@ -9,19 +9,19 @@ from datetime import UTC, datetime, timedelta
 import httpx
 import pytest
 
-from bookforge.anticipatory import (
+from storylight.anticipatory import (
     AnticipationSource,
     AnticipatorySceneSpec,
     PrivacyAttestation,
     RenderedScene,
 )
-from bookforge.anticipatory_gcp import (
+from storylight.anticipatory_gcp import (
     AnticipatoryGcpError,
     AssetNotFoundError,
     CloudRunAnticipatoryRenderer,
     MemorySceneAssetStore,
 )
-from bookforge.gcp_scene_provider import DEPTH_MODEL_REVISION, FAST_MODEL, FAST_MODEL_REVISION
+from storylight.gcp_scene_provider import DEPTH_MODEL_REVISION, FAST_MODEL, FAST_MODEL_REVISION
 
 NOW = datetime(2026, 9, 2, 12, tzinfo=UTC)
 JPEG = b"\xff\xd8\xffsynthetic-jpeg"

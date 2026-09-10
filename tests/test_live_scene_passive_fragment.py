@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from bookforge.live_scene_facts import adapt_live_scene_facts
+from storylight.live_scene_facts import adapt_live_scene_facts
 
 SOURCE = "In a garden, one red basket is carried by two white badgers. A silver kite appears."
 SLOTS = {

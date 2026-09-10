@@ -574,11 +574,11 @@
   ],
   "schema_version": 1,
   "sources": {
-    "src/bookforge/privacy_policy.py": "9752ef9e67607078fdd391e00af8a36aa42a61aa1f33b18d2fccbc27a8b3b096",
-    "src/bookforge/reviewed_description.py": "c42ee8c0f893780e2fe871fbd1c55ac3af1949c279ec814c7626702f68e61da6",
-    "src/bookforge/scene_facts.py": "13f051c0a051e7c43817d44f171d7b723d85187f4ea580435242616eca98b4ff",
-    "src/bookforge/voice_dependencies.py": "985511683fc0f33781c481695ffece37157ed3b1d6a7989cb5c7cb631f5a6102",
-    "src/bookforge/voice_language.py": "3de4036a5f20a5459c7cc0d953705a83ae3a691c79356251dfa1160fc007747a",
+    "src/storylight/privacy_policy.py": "9752ef9e67607078fdd391e00af8a36aa42a61aa1f33b18d2fccbc27a8b3b096",
+    "src/storylight/reviewed_description.py": "c42ee8c0f893780e2fe871fbd1c55ac3af1949c279ec814c7626702f68e61da6",
+    "src/storylight/scene_facts.py": "13f051c0a051e7c43817d44f171d7b723d85187f4ea580435242616eca98b4ff",
+    "src/storylight/voice_dependencies.py": "985511683fc0f33781c481695ffece37157ed3b1d6a7989cb5c7cb631f5a6102",
+    "src/storylight/voice_language.py": "3de4036a5f20a5459c7cc0d953705a83ae3a691c79356251dfa1160fc007747a",
     "tests/test_reviewed_description.py": "ee42029cf752ac72433e41658207a947dcf650305b6e8be4a48cfbaee32db585",
     "tests/test_voice_breed_repair.py": "7e0fe8b3dcfafaa8144c6f2ae1ed7b58f11ed7c57f4171e246f12caaeca76fc9"
   },

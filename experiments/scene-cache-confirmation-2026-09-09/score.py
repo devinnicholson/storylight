@@ -7,7 +7,7 @@ import inspect
 import json
 from pathlib import Path
 
-from bookforge.scene_facts import SceneFactsV2
+from storylight.scene_facts import SceneFactsV2
 
 HERE = Path(__file__).resolve().parent
 ROOT = HERE.parents[1]
@@ -96,7 +96,7 @@ def analyze(args):
         require(digest(ROOT / path) == pin, "validator source changed")
     require(
         digest(Path(inspect.getsourcefile(SceneFactsV2)))
-        == manifest["sources"]["src/bookforge/scene_facts.py"],
+        == manifest["sources"]["src/storylight/scene_facts.py"],
         "imported validator",
     )
     scorer_path = ROOT / "experiments/scene-adapter-2026-09-08/evaluate.py"

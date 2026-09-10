@@ -5,8 +5,8 @@ import httpx
 import pytest
 from pydantic import BaseModel
 
-from bookforge.config import Settings
-from bookforge.model_client import ModelUnavailableError, OllamaClient, OpenAICompatibleClient
+from storylight.config import Settings
+from storylight.model_client import ModelUnavailableError, OllamaClient, OpenAICompatibleClient
 
 
 class _Output(BaseModel):

@@ -1,8 +1,8 @@
 import pytest
 
-from bookforge.bounded_description import REVISION, plan_bounded_description
-from bookforge.live_scene_planner import LiveScenePlannerError
-from bookforge.scene_facts import SceneFactsV2, SceneSettingFact, SceneSubjectFact
+from storylight.bounded_description import REVISION, plan_bounded_description
+from storylight.live_scene_planner import LiveScenePlannerError
+from storylight.scene_facts import SceneFactsV2, SceneSettingFact, SceneSubjectFact
 
 
 def test_classic_and_pink_descriptions_preserve_facts_through_final_graph_renderer():

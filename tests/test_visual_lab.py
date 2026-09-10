@@ -2,7 +2,7 @@ from pathlib import Path
 
 import pytest
 
-from bookforge.visual_lab import (
+from storylight.visual_lab import (
     BudgetEnvelope,
     GenerationRecord,
     VisualLabBudgetError,

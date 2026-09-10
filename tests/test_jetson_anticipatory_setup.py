@@ -17,24 +17,24 @@ SPEC.loader.exec_module(setup)
 def test_only_bridge_settings_change_and_duplicate_keys_are_removed():
     source = (
         "# private configuration\nMODAL_TOKEN_SECRET=keep-this-exactly\n"
-        "BOOKFORGE_LIVE_SCENE_PLANNER=model\n"
-        "BOOKFORGE_ANTICIPATORY_BACKEND=disabled\n"
-        " BOOKFORGE_ANTICIPATORY_BACKEND =disabled\n"
-        "BOOKFORGE_ANTICIPATORY_AUDIENCE=old-audience\n"
+        "STORYLIGHT_LIVE_SCENE_PLANNER=model\n"
+        "STORYLIGHT_ANTICIPATORY_BACKEND=disabled\n"
+        " STORYLIGHT_ANTICIPATORY_BACKEND =disabled\n"
+        "STORYLIGHT_ANTICIPATORY_AUDIENCE=old-audience\n"
     )
     values = setup.replacement_values(enabled=True, port=18082)
     changed = setup.rewrite_environment(source, values)
     assert "MODAL_TOKEN_SECRET=keep-this-exactly\n" in changed
-    assert "BOOKFORGE_LIVE_SCENE_PLANNER=model\n" in changed
-    assert changed.count("BOOKFORGE_ANTICIPATORY_BACKEND=") == 1
+    assert "STORYLIGHT_LIVE_SCENE_PLANNER=model\n" in changed
+    assert changed.count("STORYLIGHT_ANTICIPATORY_BACKEND=") == 1
     assert "old-audience" not in changed
-    assert "BOOKFORGE_ANTICIPATORY_URL=http://127.0.0.1:18082\n" in changed
-    assert setup.environment_value(changed, "BOOKFORGE_ANTICIPATORY_BACKEND") == "gke"
+    assert "STORYLIGHT_ANTICIPATORY_URL=http://127.0.0.1:18082\n" in changed
+    assert setup.environment_value(changed, "STORYLIGHT_ANTICIPATORY_BACKEND") == "gke"
     assert setup.rewrite_environment(changed, values) == changed
     disabled = setup.rewrite_environment(
         changed, setup.replacement_values(enabled=False, port=18082)
     )
-    assert setup.environment_value(disabled, "BOOKFORGE_ANTICIPATORY_BACKEND") == "disabled"
+    assert setup.environment_value(disabled, "STORYLIGHT_ANTICIPATORY_BACKEND") == "disabled"
     assert "http://127.0.0.1:18082" in disabled
 
 
@@ -45,7 +45,7 @@ def test_bridge_rejects_unsafe_ports(port):
 
 
 def test_secure_config_rejects_symlinks_hardlinks_and_group_writes(tmp_path):
-    path = tmp_path / "bookforge.env"
+    path = tmp_path / "storylight.env"
     path.write_text("SECRET=private\n")
     path.chmod(0o600)
     assert setup.read_config(path, owner_uid=os.getuid()) == "SECRET=private\n"
@@ -68,7 +68,7 @@ def test_secure_config_rejects_symlinks_hardlinks_and_group_writes(tmp_path):
 
 
 def test_success_preserves_private_backup_and_only_restarts_api(tmp_path):
-    path = tmp_path / "bookforge.env"
+    path = tmp_path / "storylight.env"
     path.write_text("SECRET=private\n")
     path.chmod(0o600)
     events = []
@@ -88,7 +88,7 @@ def test_success_preserves_private_backup_and_only_restarts_api(tmp_path):
 
 @pytest.mark.parametrize("failure", ["restart", "verify"])
 def test_failure_restores_original_and_restarts_old_configuration(tmp_path, failure, capsys):
-    path = tmp_path / "bookforge.env"
+    path = tmp_path / "storylight.env"
     original = "TOKEN=must-not-be-printed\n"
     path.write_text(original)
     events = []
@@ -111,7 +111,7 @@ def test_failure_restores_original_and_restarts_old_configuration(tmp_path, fail
 
 
 def test_rollback_does_not_overwrite_a_concurrent_admin_change(tmp_path):
-    path = tmp_path / "bookforge.env"
+    path = tmp_path / "storylight.env"
     path.write_text("OLD=yes\n")
 
     def verify():
@@ -132,7 +132,7 @@ def test_bridge_identity_check_never_calls_ready_or_prewarm(monkeypatch):
         seen.append(url)
         return {
             "ready": True,
-            "service": "bookforge-anticipatory",
+            "service": "storylight-anticipatory",
             "privacy_boundary": "sanitized_scene_spec_v1",
         }
 
@@ -140,5 +140,5 @@ def test_bridge_identity_check_never_calls_ready_or_prewarm(monkeypatch):
     setup.verify_bridge(18082)
     assert seen == ["http://127.0.0.1:18082/health"]
     monkeypatch.setattr(setup, "read_json", lambda url: {"ready": True})
-    with pytest.raises(ValueError, match="expected Bookforge"):
+    with pytest.raises(ValueError, match="expected Storylight"):
         setup.verify_bridge(18082)

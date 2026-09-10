@@ -3,14 +3,14 @@
 set -euo pipefail
 
 SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
-KIOSK_URL="${BOOKFORGE_KIOSK_URL:-http://127.0.0.1:8080/projector?pack=latest&session=bookforge-live&live=1}"
-PROFILE_DIR="${BOOKFORGE_CHROMIUM_PROFILE:-${XDG_STATE_HOME:-${HOME}/.local/state}/bookforge/chromium}"
-FIREFOX_PROFILE_DIR="${BOOKFORGE_FIREFOX_PROFILE:-${XDG_STATE_HOME:-${HOME}/.local/state}/bookforge/firefox}"
-BOOKFORGE_FIREFOX_BIN="${HOME}/.local/opt/firefox-bookforge/firefox"
-STARTUP_TIMEOUT="${BOOKFORGE_KIOSK_STARTUP_TIMEOUT:-90}"
+KIOSK_URL="${STORYLIGHT_KIOSK_URL:-http://127.0.0.1:8080/projector?pack=latest&session=storylight-live&live=1}"
+PROFILE_DIR="${STORYLIGHT_CHROMIUM_PROFILE:-${XDG_STATE_HOME:-${HOME}/.local/state}/storylight/chromium}"
+FIREFOX_PROFILE_DIR="${STORYLIGHT_FIREFOX_PROFILE:-${XDG_STATE_HOME:-${HOME}/.local/state}/storylight/firefox}"
+STORYLIGHT_FIREFOX_BIN="${HOME}/.local/opt/firefox-storylight/firefox"
+STARTUP_TIMEOUT="${STORYLIGHT_KIOSK_STARTUP_TIMEOUT:-90}"
 
 if [[ ! "$STARTUP_TIMEOUT" =~ ^[0-9]+$ ]]; then
-  printf 'BOOKFORGE_KIOSK_STARTUP_TIMEOUT must be an integer number of seconds.\n' >&2
+  printf 'STORYLIGHT_KIOSK_STARTUP_TIMEOUT must be an integer number of seconds.\n' >&2
   exit 2
 fi
 
@@ -24,32 +24,32 @@ fi
 launch_browser() {
   exec systemd-inhibit \
     --what=sleep \
-    --who="Bookforge projector kiosk" \
-    --why="Keep the active projector session awake while Bookforge is presenting" \
+    --who="Storylight projector kiosk" \
+    --why="Keep the active projector session awake while Storylight is presenting" \
     --mode=block \
     "$@"
 }
 
-if [[ -n "${BOOKFORGE_BROWSER_BIN:-}" ]]; then
-  BROWSER_BIN="$BOOKFORGE_BROWSER_BIN"
-elif [[ -n "${BOOKFORGE_CHROMIUM_BIN:-}" ]]; then
-  BROWSER_BIN="$BOOKFORGE_CHROMIUM_BIN"
+if [[ -n "${STORYLIGHT_BROWSER_BIN:-}" ]]; then
+  BROWSER_BIN="$STORYLIGHT_BROWSER_BIN"
+elif [[ -n "${STORYLIGHT_CHROMIUM_BIN:-}" ]]; then
+  BROWSER_BIN="$STORYLIGHT_CHROMIUM_BIN"
   BROWSER_KIND=chromium
 elif command -v chromium >/dev/null 2>&1; then
   BROWSER_BIN="$(command -v chromium)"
 elif command -v chromium-browser >/dev/null 2>&1; then
   BROWSER_BIN="$(command -v chromium-browser)"
-elif [[ -x "$BOOKFORGE_FIREFOX_BIN" ]]; then
+elif [[ -x "$STORYLIGHT_FIREFOX_BIN" ]]; then
   # Prefer the verified native archive over Ubuntu's Snap wrapper. The Snap
   # launcher moves Firefox into a separate scope and exits, which makes a
   # supervising systemd service restart forever while the browser is alive.
-  BROWSER_BIN="$BOOKFORGE_FIREFOX_BIN"
+  BROWSER_BIN="$STORYLIGHT_FIREFOX_BIN"
 elif command -v firefox >/dev/null 2>&1; then
   BROWSER_BIN="$(command -v firefox)"
 elif command -v firefox-esr >/dev/null 2>&1; then
   BROWSER_BIN="$(command -v firefox-esr)"
 else
-  printf 'A supported browser was not found. Set BOOKFORGE_BROWSER_BIN to an absolute Chromium or Firefox path.\n' >&2
+  printf 'A supported browser was not found. Set STORYLIGHT_BROWSER_BIN to an absolute Chromium or Firefox path.\n' >&2
   exit 1
 fi
 
@@ -73,11 +73,11 @@ if [[ -z "${BROWSER_KIND:-}" ]]; then
   esac
 fi
 
-READY_URL="${BOOKFORGE_READY_URL:-${KIOSK_URL%%/projector*}/readyz}"
+READY_URL="${STORYLIGHT_READY_URL:-${KIOSK_URL%%/projector*}/readyz}"
 deadline=$((SECONDS + STARTUP_TIMEOUT))
 until curl --fail --silent --max-time 2 "$READY_URL" >/dev/null 2>&1; do
   if ((SECONDS >= deadline)); then
-    printf 'Bookforge did not become ready at %s within %s seconds.\n' "$READY_URL" "$STARTUP_TIMEOUT" >&2
+    printf 'Storylight did not become ready at %s within %s seconds.\n' "$READY_URL" "$STARTUP_TIMEOUT" >&2
     exit 1
   fi
   sleep 1

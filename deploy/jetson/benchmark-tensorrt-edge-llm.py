@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Run Bookforge's fixed semantic cases through TensorRT Edge-LLM."""
+"""Run Storylight's fixed semantic cases through TensorRT Edge-LLM."""
 
 from __future__ import annotations
 
@@ -16,7 +16,7 @@ from urllib.request import Request, urlopen
 
 from pydantic import ValidationError
 
-from bookforge.live_scene_planner import (
+from storylight.live_scene_planner import (
     _PHRASE_STOPWORDS,
     _SEMANTIC_WORD,
     LIVE_SCENE_SYSTEM_PROMPT,
@@ -32,7 +32,7 @@ from bookforge.live_scene_planner import (
     live_scene_plan_prompt,
     validate_live_scene_plan_privacy,
 )
-from bookforge.planner_benchmark import (
+from storylight.planner_benchmark import (
     CASES,
     CONTEST_CASES,
     BenchmarkCase,

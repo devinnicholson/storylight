@@ -2,13 +2,13 @@ from dataclasses import FrozenInstanceError
 
 import pytest
 
-from bookforge.live_scene_facts import (
+from storylight.live_scene_facts import (
     LiveSceneFactsRefusal,
     LiveSceneFactsResult,
     adapt_live_scene_facts,
 )
-from bookforge.scene_facts import compile_scene_facts_prompt
-from bookforge.tensorrt_slot_client import tensor_accepted_graph_wire_plan, tensor_slot_wire_plan
+from storylight.scene_facts import compile_scene_facts_prompt
+from storylight.tensorrt_slot_client import tensor_accepted_graph_wire_plan, tensor_slot_wire_plan
 
 
 def _slots(**changes: str) -> dict[str, str]:

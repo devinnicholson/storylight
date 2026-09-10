@@ -71,8 +71,8 @@ def prepare(directory):
 
 
 async def run(corpus_path, model, output):
-    from bookforge.asr import LocalTranscriber
-    from bookforge.config import Settings
+    from storylight.asr import LocalTranscriber
+    from storylight.config import Settings
 
     corpus = json.loads(corpus_path.read_text())
     backend = LocalTranscriber(Settings(asr_backend="mlx_whisper", asr_model=str(model.resolve())))
@@ -98,7 +98,7 @@ async def run(corpus_path, model, output):
     summary = dict(
         schema_version=1, synthetic=True, user_audio_quality_proven=False,
         model=str(model), model_files={p.name: sha(p) for p in model.iterdir() if p.is_file()},
-        corpus_sha256=sha(corpus_path), asr_source_sha256=sha(ROOT / "src/bookforge/asr.py"),
+        corpus_sha256=sha(corpus_path), asr_source_sha256=sha(ROOT / "src/storylight/asr.py"),
         script_sha256=sha(Path(__file__)), platform=platform.platform(),
         packages={p: importlib.metadata.version(p) for p in ("mlx", "mlx-whisper")},
         metal_available=mx.metal.is_available(), device_info=mx.metal.device_info(),

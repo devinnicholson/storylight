@@ -7,7 +7,7 @@ import pytest
 
 ROOT = Path(__file__).parents[1]
 SCRIPT = ROOT / "deploy/jetson/download-gcs-tensorrt-checkpoint.py"
-SPEC = importlib.util.spec_from_file_location("bookforge_gcs_checkpoint_download", SCRIPT)
+SPEC = importlib.util.spec_from_file_location("storylight_gcs_checkpoint_download", SCRIPT)
 assert SPEC and SPEC.loader
 MODULE = importlib.util.module_from_spec(SPEC)
 SPEC.loader.exec_module(MODULE)

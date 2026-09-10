@@ -2,8 +2,8 @@ import asyncio
 
 import pytest
 
-from bookforge.reader import ReaderState
-from bookforge.reader_runtime import (
+from storylight.reader import ReaderState
+from storylight.reader_runtime import (
     ReaderSessionConfigureRequest,
     ReaderSessionNotConfiguredError,
     ReaderSessionPageMismatchError,

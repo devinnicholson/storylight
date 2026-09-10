@@ -7,13 +7,13 @@ PATH=/usr/sbin:/usr/bin:/sbin:/bin
 export PATH
 
 readonly SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd -P)"
-readonly CANDIDATE_ROOT="/var/lib/bookforge-trusted/trained-planner-candidates"
-readonly UNIT_SOURCE="${BOOKFORGE_CANDIDATE_UNIT_SOURCE:-$SCRIPT_DIR/systemd/bookforge-trained-planner-candidate@.service}"
-readonly UNIT_TARGET="/etc/systemd/user/bookforge-trained-planner-candidate@.service"
+readonly CANDIDATE_ROOT="/var/lib/storylight-trusted/trained-planner-candidates"
+readonly UNIT_SOURCE="${STORYLIGHT_CANDIDATE_UNIT_SOURCE:-$SCRIPT_DIR/systemd/storylight-trained-planner-candidate@.service}"
+readonly UNIT_TARGET="/etc/systemd/user/storylight-trained-planner-candidate@.service"
 readonly PYTHON="python3"
 bundle=""
 expected_manifest_sha256=""
-target_user="${BOOKFORGE_SERVICE_USER:-${SUDO_USER:-}}"
+target_user="${STORYLIGHT_SERVICE_USER:-${SUDO_USER:-}}"
 approval_token=""
 dry_run=0
 verify_only=0
@@ -28,7 +28,7 @@ Required:
   --expected-manifest-sha256 SHA256   Out-of-band candidate.manifest.json digest.
 
 Options:
-  --user USER          Bookforge service user (required for installation).
+  --user USER          Storylight service user (required for installation).
   --approval-token TOKEN  Exact token printed by --dry-run.
   --verify-only        Verify the bundle without writing.
   --installed-layout   Permit the installer-created .manifest.sha256 marker.
@@ -81,7 +81,7 @@ if ! command -v "$PYTHON" >/dev/null 2>&1; then
   printf 'Python is required to validate the candidate manifest.\n' >&2
   exit 69
 fi
-readonly EXPECTED_APPROVAL_TOKEN="INSTALL_BOOKFORGE_TRAINED_PLANNER_CANDIDATE:${target_user}:${expected_manifest_sha256}"
+readonly EXPECTED_APPROVAL_TOKEN="INSTALL_STORYLIGHT_TRAINED_PLANNER_CANDIDATE:${target_user}:${expected_manifest_sha256}"
 if ((verify_only == 0 && dry_run == 0)) && [[ "$approval_token" != "$EXPECTED_APPROVAL_TOKEN" ]]; then
   printf 'Candidate installation requires the exact one-purpose token printed by --dry-run.\n' >&2
   exit 77
@@ -93,7 +93,7 @@ if ((verify_only == 0 && dry_run == 0)); then
   fi
   if [[ ! "$target_user" =~ ^[a-z_][a-z0-9_-]{0,31}$ ]] \
     || ! id "$target_user" >/dev/null 2>&1; then
-    printf 'Select a valid Bookforge service user with --user.\n' >&2
+    printf 'Select a valid Storylight service user with --user.\n' >&2
     exit 65
   fi
   if [[ ! -r "$UNIT_SOURCE" || -L "$UNIT_SOURCE" ]] \

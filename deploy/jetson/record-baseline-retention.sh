@@ -8,7 +8,7 @@ export PATH
 
 readonly SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd -P)"
 readonly RECORDER="$SCRIPT_DIR/record-trained-planner-terminal-evidence.py"
-target_user="${BOOKFORGE_SERVICE_USER:-${SUDO_USER:-}}"
+target_user="${STORYLIGHT_SERVICE_USER:-${SUDO_USER:-}}"
 gate_artifact=""
 gate_sha256=""
 candidate_manifest=""
@@ -61,9 +61,9 @@ if [[ ! "$target_user" =~ ^[a-z_][a-z0-9_-]{0,31}$ ]] \
   || [[ ! "$gate_sha256" =~ ^[a-f0-9]{64}$ ]] \
   || [[ ! "$manifest_sha256" =~ ^[a-f0-9]{64}$ ]] \
   || [[ ! "$baseline_sha256" =~ ^[a-f0-9]{64}$ ]] \
-  || [[ "$output_directory" != /var/lib/bookforge-trusted/trained-planner/evidence/* ]] \
+  || [[ "$output_directory" != /var/lib/storylight-trusted/trained-planner/evidence/* ]] \
   || [[ "$(realpath -m -- "$output_directory")" != "$output_directory" ]] \
-  || [[ "$(dirname -- "$output_directory")" != /var/lib/bookforge-trusted/trained-planner/evidence ]] \
+  || [[ "$(dirname -- "$output_directory")" != /var/lib/storylight-trusted/trained-planner/evidence ]] \
   || [[ ! -x "$RECORDER" ]]; then
   usage >&2
   exit 64
@@ -83,7 +83,7 @@ action_sha256="$(
   printf '%s\0' "$target_user" "$gate_sha256" "$manifest_sha256" \
     "$baseline_sha256" "$output_directory" | sha256sum | cut -d' ' -f1
 )"
-readonly EXPECTED_APPROVAL_TOKEN="RETAIN_BOOKFORGE_ACCEPTED_BASELINE:${action_sha256}"
+readonly EXPECTED_APPROVAL_TOKEN="RETAIN_STORYLIGHT_ACCEPTED_BASELINE:${action_sha256}"
 if ((dry_run == 1)); then
   printf 'Required approval token: %s\n' "$EXPECTED_APPROVAL_TOKEN"
   printf 'Would retain engine %s and atomically publish terminal evidence at %s.\n' \

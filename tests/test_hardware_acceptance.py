@@ -1,7 +1,7 @@
 import pytest
 
-import bookforge.hardware_acceptance as hardware_acceptance
-from bookforge.hardware_acceptance import _require_loopback_url, required_failures
+import storylight.hardware_acceptance as hardware_acceptance
+from storylight.hardware_acceptance import _require_loopback_url, required_failures
 
 
 def test_collect_marks_missing_service_pid_as_failed_privacy_evidence(monkeypatch) -> None:
@@ -32,7 +32,7 @@ def test_collect_marks_missing_service_pid_as_failed_privacy_evidence(monkeypatc
     )
 
     def fake_http_json(url: str) -> dict[str, object]:
-        detail: object = {"ready": True, "data_dir": "/var/lib/bookforge"}
+        detail: object = {"ready": True, "data_dir": "/var/lib/storylight"}
         return {"ok": True, "detail": detail}
 
     monkeypatch.setattr(hardware_acceptance, "_http_json", fake_http_json)
@@ -68,7 +68,7 @@ def test_required_failures_include_privacy_boundary() -> None:
             "readiness",
             "runtime",
             "latest_story_pack",
-            "bookforge_storage",
+            "storylight_storage",
         )
     }
     checks["privacy"] = {"ok": False, "detail": "external connection"}
@@ -105,7 +105,7 @@ def test_hardware_evidence_enforces_asr_latency_budget() -> None:
             "readiness",
             "runtime",
             "latest_story_pack",
-            "bookforge_storage",
+            "storylight_storage",
             "camera_capture",
             "microphone_capture",
         )

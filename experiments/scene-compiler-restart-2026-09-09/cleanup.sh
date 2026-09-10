@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 project=your-gcp-project
-run=bookforge-compiler-restart-20260909
+run=storylight-compiler-restart-20260909
 zone=us-east1-b
 instance=$(gcloud compute instances list --project="$project" --filter="name=$run" --format='value(name)')
 if [[ -n "$instance" ]]; then

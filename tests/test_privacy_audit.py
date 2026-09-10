@@ -3,7 +3,7 @@ from pathlib import Path
 
 import pytest
 
-from bookforge.privacy_audit import audit_process
+from storylight.privacy_audit import audit_process
 
 
 def make_process(proc_root: Path, remote: str) -> None:
@@ -53,7 +53,7 @@ def test_privacy_audit_fails_closed_when_fd_targets_are_unreadable(
     def deny_readlink(_: os.PathLike[str]) -> str:
         raise PermissionError("fd targets are protected")
 
-    monkeypatch.setattr("bookforge.privacy_audit.os.readlink", deny_readlink)
+    monkeypatch.setattr("storylight.privacy_audit.os.readlink", deny_readlink)
 
     report = audit_process(321, tmp_path)
 

@@ -1,4 +1,4 @@
-"""Bounded staged Modal generation for live Bookforge scenes.
+"""Bounded staged Modal generation for live Storylight scenes.
 
 The same pinned classes support finite ``modal run`` jobs and authenticated SDK
 lookup after ``modal deploy``. There is deliberately no public web endpoint. Both
@@ -30,7 +30,7 @@ from typing import Any
 
 import modal
 
-APP_NAME = "bookforge-fast-scene"
+APP_NAME = "storylight-fast-scene"
 CACHE_DIR = "/cache"
 FAST_GPU = "L4"
 FAST_GPU_USD_PER_SECOND = 0.000222
@@ -92,7 +92,7 @@ runtime_image = (
 )
 
 app = modal.App(APP_NAME)
-model_cache = modal.Volume.from_name("bookforge-model-cache", create_if_missing=True)
+model_cache = modal.Volume.from_name("storylight-model-cache", create_if_missing=True)
 
 with runtime_image.imports():
     import diffusers
@@ -196,7 +196,7 @@ def _encode_scene_assets(master: Any, depth: Any) -> tuple[bytes, bytes, float]:
         )
         return depth_buffer.getvalue()
 
-    with ThreadPoolExecutor(max_workers=2, thread_name_prefix="bookforge-pack") as pool:
+    with ThreadPoolExecutor(max_workers=2, thread_name_prefix="storylight-pack") as pool:
         master_future = pool.submit(encode_master)
         depth_future = pool.submit(encode_depth)
         master_bytes = master_future.result()
@@ -683,7 +683,7 @@ class MotionUpgradeStudio:
                 generator=torch.Generator(device="cuda").manual_seed(seed),
             ).frames[0]
         loop_frames = result + list(reversed(result[:-1]))
-        output_path = Path("/tmp/bookforge-live-motion.mp4")
+        output_path = Path("/tmp/storylight-live-motion.mp4")
         diffusers.utils.export_to_video(loop_frames, output_path, fps=fps)
         content = output_path.read_bytes()
         output_path.unlink(missing_ok=True)
@@ -705,12 +705,12 @@ def _budget_types():
     repository_source = Path(__file__).resolve().parents[1] / "src"
     if str(repository_source) not in sys.path:
         sys.path.insert(0, str(repository_source))
-    from bookforge.modal_budget import (
+    from storylight.modal_budget import (
         require_modal_budget_reservation,
         reserve_modal_budget,
         settle_modal_budget,
     )
-    from bookforge.visual_lab import GenerationRecord
+    from storylight.visual_lab import GenerationRecord
 
     return (
         GenerationRecord,

@@ -11,7 +11,7 @@ import httpx
 import pytest
 from PIL import Image
 
-from bookforge.anticipatory import (
+from storylight.anticipatory import (
     AnticipationMetrics,
     AnticipationStatus,
     AnticipatoryBatchRequest,
@@ -19,27 +19,27 @@ from bookforge.anticipatory import (
     CandidateState,
     RenderedScene,
 )
-from bookforge.anticipatory_edge import AnticipatoryEdgeClient, AnticipatoryEdgeCoordinator
-from bookforge.anticipatory_playback import (
+from storylight.anticipatory_edge import AnticipatoryEdgeClient, AnticipatoryEdgeCoordinator
+from storylight.anticipatory_playback import (
     ActivateProjectionRequest,
     AnticipatoryPlayback,
     PrepareProjectionRequest,
 )
-from bookforge.asset_cache import AssetCache
-from bookforge.domain import ModelMetrics
-from bookforge.live_scene import (
+from storylight.asset_cache import AssetCache
+from storylight.domain import ModelMetrics
+from storylight.live_scene import (
     DeterministicFakeLiveSceneProvider,
     LiveSceneConflictError,
     LiveSceneJobRegistry,
     LiveSceneNotFoundError,
 )
-from bookforge.live_scene_planner import (
+from storylight.live_scene_planner import (
     LiveScenePlacedLayerPlan,
     LiveScenePlan,
     LiveScenePlanningResult,
 )
-from bookforge.nemotron_critic import NemotronCriticEvidence, NemotronCriticVerdict
-from bookforge.story_store import StoryPackStore
+from storylight.nemotron_critic import NemotronCriticEvidence, NemotronCriticVerdict
+from storylight.story_store import StoryPackStore
 
 REQUEST = PrepareProjectionRequest(
     text="Mira whispered that the fox had finally found the hidden garden.",
@@ -326,7 +326,7 @@ def test_capacity_expiry_and_discard_are_bounded_before_cloud_work(tmp_path):
 def test_prepared_projection_http_flow_and_privacy_boundary(tmp_path):
     from fastapi.testclient import TestClient
 
-    from bookforge.api import app
+    from storylight.api import app
 
     with TestClient(app) as client:
         assert client.get("/v1/prepared-projections/runtime").json()["enabled"] is False

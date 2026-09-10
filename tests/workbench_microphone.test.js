@@ -3,9 +3,9 @@ const fs = require("fs");
 const vm = require("vm");
 const SERVER_ID = `server_${"a".repeat(32)}`;
 
-const source = fs.readFileSync(process.env.WORKBENCH_SOURCE || "src/bookforge/static/workbench.js", "utf8");
+const source = fs.readFileSync(process.env.WORKBENCH_SOURCE || "src/storylight/static/workbench.js", "utf8");
 for (const [query, expected] of [
-  ["?voice=1", "voice-demo"], ["?demo=1", "bookforge-live"],
+  ["?voice=1", "voice-demo"], ["?demo=1", "storylight-live"],
   ["?voice=1&session=my-projection", "my-projection"],
 ]) {
   const context = {URLSearchParams, window: {location: {search: query}}, document: {body: {dataset: {}}}};
@@ -233,7 +233,7 @@ function generationHarness() {
     };
   };
   const response = (status, payload) => ({ok: status < 400, status, json: async () => payload,
-    headers: {get: (name) => name === "X-Bookforge-Server-Instance-Id" ? SERVER_ID : String(pointer?.session_revision || 0)},
+    headers: {get: (name) => name === "X-Storylight-Server-Instance-Id" ? SERVER_ID : String(pointer?.session_revision || 0)},
   });
   h.state = {rejectCheck: false, ready};
   c.respond = async (url, options = {}) => {
@@ -856,9 +856,9 @@ async function timingIsolation() {
   c.window.location = {origin: "http://localhost"};
   c.window.addEventListener = (type, callback) => { assert.equal(type, "message"); onMessage = callback; };
   c.elements.projectorFrame.contentWindow = {};
-  vm.runInContext(source.slice(source.indexOf("window.bookforgeVoiceTiming =")), c);
+  vm.runInContext(source.slice(source.indexOf("window.storylightVoiceTiming =")), c);
   const message = {origin: "http://localhost", source: c.elements.projectorFrame.contentWindow,
-    data: {type: "bookforge.preview-activated", sessionId: c.readerSessionId, jobId: "job-1"}};
+    data: {type: "storylight.preview-activated", sessionId: c.readerSessionId, jobId: "job-1"}};
   c.voiceGeneration.completed = {snapshot: {job_id: "job-1"}};
   c.voiceTimingEvent("generation_response", {status: 202, jobId: "job-1"});
   const before = c.voiceTiming.events.length;
@@ -872,7 +872,7 @@ async function timingIsolation() {
   onMessage(message);
   assert.equal(c.voiceTiming.events.length, before + 1);
   assert.equal(c.voiceTiming.events.at(-1).type, "preview_activated");
-  const snapshot = c.window.bookforgeVoiceTiming();
+  const snapshot = c.window.storylightVoiceTiming();
   snapshot.events[0].type = "mutated";
   assert.equal(c.voiceTiming.events[0].type, "recording_started");
 
@@ -1262,7 +1262,7 @@ async function localCheckOverlap() {
 
 async function optionalTimingFailure() {
   const h = generationHarness();
-  h.context.window.renderBookforgeVoiceTiming = () => { throw new Error("broken diagnostics"); };
+  h.context.window.renderStorylightVoiceTiming = () => { throw new Error("broken diagnostics"); };
   const respond = h.context.respond;
   h.context.respond = (url, options) => url === "/v1/audio:transcribe"
     ? h.response(200, {text: "A cat chasing a mouse.", total_ms: 10}) : respond(url, options);

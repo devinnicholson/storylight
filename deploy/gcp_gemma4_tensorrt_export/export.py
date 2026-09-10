@@ -23,7 +23,7 @@ EDGELLM_VERSION = "v0.10.0"
 EDGELLM_REVISION = "71dd1bae032e70771265917ec74d3ff4cad07a10"
 EXPORT_ID = "gemma4-e2b-it-int4-awq-v010"
 CALIBRATION_SAMPLES = 128
-WORK_ROOT = Path("/tmp/bookforge-export")
+WORK_ROOT = Path("/tmp/storylight-export")
 JOB_TIMEOUT_SECONDS = 1_200
 COMPLETION_OBJECT = "export.manifest.json"
 
@@ -34,7 +34,7 @@ def _progress(stage: str, **details: Any) -> None:
     print(
         json.dumps(
             {
-                "event": "bookforge_tensorrt_export_progress",
+                "event": "storylight_tensorrt_export_progress",
                 "stage": stage,
                 **details,
             },
@@ -124,10 +124,10 @@ def main() -> None:
     import torch
     from huggingface_hub import snapshot_download
 
-    bucket_name = _required_environment("BOOKFORGE_EXPORT_BUCKET")
-    run_id = _required_environment("BOOKFORGE_EXPORT_RUN_ID")
+    bucket_name = _required_environment("STORYLIGHT_EXPORT_BUCKET")
+    run_id = _required_environment("STORYLIGHT_EXPORT_RUN_ID")
     if not run_id.replace("-", "").isalnum() or len(run_id) > 96:
-        raise RuntimeError("BOOKFORGE_EXPORT_RUN_ID must be a bounded slug")
+        raise RuntimeError("STORYLIGHT_EXPORT_RUN_ID must be a bounded slug")
     object_prefix = f"tensorrt-edge-llm/{EXPORT_ID}/{run_id}"
 
     started = time.perf_counter()

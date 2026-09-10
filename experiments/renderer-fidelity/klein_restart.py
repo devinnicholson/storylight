@@ -22,8 +22,8 @@ sys.path.insert(0, str(RUNTIME_DIR))
 from klein_scene_runtime import DEPTH_MODEL, DEPTH_REVISION, MODEL, MODEL_REVISION  # noqa: E402
 
 WEIGHTS = {"klein": [MODEL, MODEL_REVISION], "depth": [DEPTH_MODEL, DEPTH_REVISION]}
-app = modal.App("bookforge-klein-restart-comparison")
-cache = modal.Volume.from_name("bookforge-klein-compile-cache-v1", create_if_missing=True)
+app = modal.App("storylight-klein-restart-comparison")
+cache = modal.Volume.from_name("storylight-klein-compile-cache-v1", create_if_missing=True)
 
 
 image = (
@@ -99,7 +99,7 @@ def run_cycle(run_id: str, phase: str, cases: list[dict]):
 
 
 def benchmark_cases() -> list[dict]:
-    from bookforge.live_scene_planner import (
+    from storylight.live_scene_planner import (
         LiveSceneWireFocus,
         LiveSceneWireMagic,
         LiveSceneWirePlan,

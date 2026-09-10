@@ -5,8 +5,8 @@ from pathlib import Path
 
 import pytest
 
-from bookforge.fidelity_dataset import generate_split
-from bookforge.fidelity_schema import DatasetSplit
+from storylight.fidelity_dataset import generate_split
+from storylight.fidelity_schema import DatasetSplit
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from scripts import diagnose_live_scene_facts_scoring, diagnose_live_scene_training

@@ -6,9 +6,9 @@ from pathlib import Path
 
 import pytest
 
-from bookforge.scene_facts import SceneFactsV2
-from bookforge.voice_dependencies import copular_location_continuation
-from bookforge.voice_language import graph_from_row
+from storylight.scene_facts import SceneFactsV2
+from storylight.voice_dependencies import copular_location_continuation
+from storylight.voice_language import graph_from_row
 
 ROWS = {r["id"]: r for r in json.loads((Path(__file__).parent / "fixtures"
                                       / "voice-copular-location-rows.json").read_bytes())["rows"]}

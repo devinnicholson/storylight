@@ -3,25 +3,25 @@ import hashlib
 
 import pytest
 
-from bookforge.asset_cache import AssetCache
-from bookforge.asset_generator import (
+from storylight.asset_cache import AssetCache
+from storylight.asset_generator import (
     FakeAssetGenerator,
     FakeDepthEstimator,
     GeneratedImage,
     ImageGenerationRequest,
     ModalDepthEstimator,
 )
-from bookforge.config import Settings
-from bookforge.domain import AssetRole, BookPageInput, StoryCompileRequest
-from bookforge.model_client import FakeModelClient
-from bookforge.scene_foundry import SceneFoundry, SceneFoundryError
-from bookforge.service import BookforgeService
+from storylight.config import Settings
+from storylight.domain import AssetRole, BookPageInput, StoryCompileRequest
+from storylight.model_client import FakeModelClient
+from storylight.scene_foundry import SceneFoundry, SceneFoundryError
+from storylight.service import StorylightService
 
 
 def test_foundry_generates_checksums_and_caches_master_and_depth(tmp_path) -> None:
     async def run():
         settings = Settings(model_backend="fake", model_name="fake")
-        compiled = await BookforgeService(settings, FakeModelClient()).compile_story(
+        compiled = await StorylightService(settings, FakeModelClient()).compile_story(
             StoryCompileRequest(
                 story_id="silver-fox",
                 title="The Silver Fox",
@@ -59,7 +59,7 @@ def test_foundry_generates_checksums_and_caches_master_and_depth(tmp_path) -> No
 
 
 def test_foundry_rejects_legacy_pack_without_scene_spec(tmp_path) -> None:
-    from bookforge.domain import GeneratedPagePlan, StoryPack, VisualLayer
+    from storylight.domain import GeneratedPagePlan, StoryPack, VisualLayer
 
     pack = StoryPack(
         story_id="legacy",

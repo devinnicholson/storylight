@@ -8,8 +8,8 @@ from types import SimpleNamespace
 
 import pytest
 
-from bookforge.fidelity_benchmark import population_contract_from_manifest
-from bookforge.fidelity_schema import DatasetSplit
+from storylight.fidelity_benchmark import population_contract_from_manifest
+from storylight.fidelity_schema import DatasetSplit
 
 ROOT = Path(__file__).parents[1]
 INSTALLER = ROOT / "deploy/jetson/install-trained-planner-candidate.sh"
@@ -20,7 +20,7 @@ CANDIDATE_DEVELOPMENT_GATE = (
 )
 PROMOTE = ROOT / "deploy/jetson/promote-trained-planner.sh"
 ROLLBACK = ROOT / "deploy/jetson/rollback-trained-planner.sh"
-SERVICE = ROOT / "deploy/jetson/systemd/bookforge-trained-planner-candidate@.service"
+SERVICE = ROOT / "deploy/jetson/systemd/storylight-trained-planner-candidate@.service"
 SHADOW_EVIDENCE = ROOT / "deploy/jetson/trained-planner-shadow-evidence.py"
 BASELINE_IDENTITY = ROOT / "deploy/jetson/emit-accepted-planner-identity.sh"
 TOOLING_BUILDER = ROOT / "deploy/jetson/build-trained-planner-tooling-bundle.py"
@@ -304,7 +304,7 @@ def test_acceptance_preflight_requires_checksum_bound_post_oom_evidence(
         json.dumps(
             {
                 "schema_version": "1.0",
-                "producer": "bookforge-cold-start-recorder",
+                "producer": "storylight-cold-start-recorder",
                 "status": "passed",
                 "accepted_engine_sha256": engine_sha,
                 "oom_events": 0,
@@ -462,7 +462,7 @@ def test_promotion_is_atomic_one_purpose_and_failure_reversible() -> None:
     promotion = PROMOTE.read_text()
 
     assert (
-        "PROMOTE_BOOKFORGE_TRAINED_PLANNER:${target_user}:${candidate_id}:${manifest_sha256}:"
+        "PROMOTE_STORYLIGHT_TRAINED_PLANNER:${target_user}:${candidate_id}:${manifest_sha256}:"
         "${gate_evidence_sha256}" in promotion
     )
     assert "--gate-evidence PATH" in promotion
@@ -470,7 +470,7 @@ def test_promotion_is_atomic_one_purpose_and_failure_reversible() -> None:
     assert '[[ ! -f "$gate_evidence" || -L "$gate_evidence" ]]' in promotion
     assert 'sha256sum "$gate_evidence"' in promotion
     assert 'document.get("stage") != "gate"' in promotion
-    assert 'document.get("producer") != "bookforge-fidelity-gate-builder"' in promotion
+    assert 'document.get("producer") != "storylight-fidelity-gate-builder"' in promotion
     assert (
         'document.get("training_run_id") != candidate_manifest.get("training_run_id")' in promotion
     )
@@ -489,10 +489,10 @@ def test_promotion_is_atomic_one_purpose_and_failure_reversible() -> None:
     assert "GATE_PRODUCER" in promotion
     assert "95b69991b68c57a2d2d4bfa4116feb9ec57295588551d109353a42a9c16c4fdf" in promotion
     assert "semantic-v18-tensorrt-slot-privacy" in promotion
-    assert "BOOKFORGE_EDGELLM_SERVER_PORT=11435" in promotion
+    assert "STORYLIGHT_EDGELLM_SERVER_PORT=11435" in promotion
     assert 'mv -f "$config_tmp" "$CONFIG_FILE"' in promotion
-    assert "BOOKFORGE_LIVE_SCENE_PLANNER_MODEL_REVISION" in promotion
-    assert "BOOKFORGE_LIVE_SCENE_PLANNER_CACHE_CONTRACT_REVISION" in promotion
+    assert "STORYLIGHT_LIVE_SCENE_PLANNER_MODEL_REVISION" in promotion
+    assert "STORYLIGHT_LIVE_SCENE_PLANNER_CACHE_CONTRACT_REVISION" in promotion
     assert "trap restore_exact_runtime EXIT INT TERM" in promotion
     assert 'user_systemctl disable "$ACCEPTED_UNIT"' in promotion
     assert 'user_systemctl enable "$UNIT"' in promotion
@@ -507,7 +507,7 @@ def test_rollback_restores_checksum_bound_env_and_exact_engine() -> None:
     rollback = ROLLBACK.read_text()
 
     assert (
-        "ROLLBACK_BOOKFORGE_TRAINED_PLANNER:${target_user}:${candidate_id}:${manifest_sha256}"
+        "ROLLBACK_STORYLIGHT_TRAINED_PLANNER:${target_user}:${candidate_id}:${manifest_sha256}"
         in rollback
     )
     assert "BACKUP_SHA256" in rollback

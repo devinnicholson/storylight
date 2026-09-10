@@ -28,17 +28,17 @@ def main():
     output.mkdir(exist_ok=False)
     records = []
     for index, prepared in enumerate((False, True, True, False)):
-        with tempfile.TemporaryDirectory(prefix="bookforge-asr-service-") as directory:
-            env = {k: v for k, v in os.environ.items() if not k.startswith("BOOKFORGE_")}
+        with tempfile.TemporaryDirectory(prefix="storylight-asr-service-") as directory:
+            env = {k: v for k, v in os.environ.items() if not k.startswith("STORYLIGHT_")}
             env.update(
-                BOOKFORGE_MODEL_BACKEND="fake",
-                BOOKFORGE_ASSET_BACKEND="disabled",
-                BOOKFORGE_LIVE_SCENE_BACKEND="disabled",
-                BOOKFORGE_ASR_BACKEND="mlx_whisper",
-                BOOKFORGE_ASR_MODEL=str(ROOT / ".models/whisper-small.en"),
-                BOOKFORGE_ASR_STARTUP_AUDIO=str(PRIMER) if prepared else "",
-                BOOKFORGE_DATA_DIR=directory,
-                BOOKFORGE_CACHE_DIR=directory + "/cache",
+                STORYLIGHT_MODEL_BACKEND="fake",
+                STORYLIGHT_ASSET_BACKEND="disabled",
+                STORYLIGHT_LIVE_SCENE_BACKEND="disabled",
+                STORYLIGHT_ASR_BACKEND="mlx_whisper",
+                STORYLIGHT_ASR_MODEL=str(ROOT / ".models/whisper-small.en"),
+                STORYLIGHT_ASR_STARTUP_AUDIO=str(PRIMER) if prepared else "",
+                STORYLIGHT_DATA_DIR=directory,
+                STORYLIGHT_CACHE_DIR=directory + "/cache",
                 PYTHONPATH=str(ROOT / "src"),
                 HF_HUB_OFFLINE="1",
                 TRANSFORMERS_OFFLINE="1",
@@ -50,7 +50,7 @@ def main():
                         sys.executable,
                         "-m",
                         "uvicorn",
-                        "bookforge.api:app",
+                        "storylight.api:app",
                         "--host",
                         "127.0.0.1",
                         "--port",
@@ -101,9 +101,9 @@ def main():
             Path(__file__),
             PRIMER,
             TARGET,
-            ROOT / "src/bookforge/asr.py",
-            ROOT / "src/bookforge/api.py",
-            ROOT / "src/bookforge/config.py",
+            ROOT / "src/storylight/asr.py",
+            ROOT / "src/storylight/api.py",
+            ROOT / "src/storylight/config.py",
         )
     }
     (output / "results.json").write_text(json.dumps(dict(pins=pins, runs=records), indent=2) + "\n")

@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Make Bookforge discoverable and reconnectable without advertising USB/bridge addresses.
+# Make Storylight discoverable and reconnectable without advertising USB/bridge addresses.
 
 set -euo pipefail
 
@@ -55,8 +55,8 @@ if [[ -z "$CONNECTION_NAME" || "$CONNECTION_NAME" == --* || "$CONNECTION_NAME" =
   exit 1
 fi
 
-printf 'Bookforge Wi-Fi interface: %s\n' "$WIFI_INTERFACE"
-printf 'Bookforge Wi-Fi connection: %s\n' "$CONNECTION_NAME"
+printf 'Storylight Wi-Fi interface: %s\n' "$WIFI_INTERFACE"
+printf 'Storylight Wi-Fi connection: %s\n' "$CONNECTION_NAME"
 if ((DRY_RUN == 1)); then
   printf 'Dry run complete; no settings changed.\n'
   exit 0
@@ -71,7 +71,7 @@ nmcli connection modify "$CONNECTION_NAME" \
 nmcli device reapply "$WIFI_INTERFACE"
 
 readonly AVAHI_CONFIG=/etc/avahi/avahi-daemon.conf
-readonly AVAHI_BACKUP=/etc/avahi/avahi-daemon.conf.bookforge-backup
+readonly AVAHI_BACKUP=/etc/avahi/avahi-daemon.conf.storylight-backup
 if [[ ! -f "$AVAHI_CONFIG" ]]; then
   printf 'Avahi configuration is missing: %s\n' "$AVAHI_CONFIG" >&2
   exit 1
@@ -126,7 +126,7 @@ if not found_server:
     rendered.extend(["", "[server]", *[f"{key}={value}" for key, value in desired.items()]])
 
 mode = stat.S_IMODE(path.stat().st_mode)
-descriptor, temporary_name = tempfile.mkstemp(prefix=".avahi-bookforge.", dir=path.parent)
+descriptor, temporary_name = tempfile.mkstemp(prefix=".avahi-storylight.", dir=path.parent)
 try:
     with os.fdopen(descriptor, "w", encoding="utf-8") as stream:
         stream.write("\n".join(rendered) + "\n")

@@ -30,11 +30,11 @@ function harness(respond, enabled = true) {
     },
     Date,
   };
-  vm.runInNewContext(fs.readFileSync("src/bookforge/static/anticipatory-workbench.js", "utf8"), context);
+  vm.runInNewContext(fs.readFileSync("src/storylight/static/anticipatory-workbench.js", "utf8"), context);
   return {
     requests, timers, shown, delays,
     element: (name) => elements.get(`nextPage${name}`),
-    start: () => context.window.BookforgeAnticipation.init({
+    start: () => context.window.StorylightAnticipation.init({
       sessionId: "reader", visualStyle: () => "watercolor",
       currentProjection: () => ({server_instance_id: "server_fixture", session_revision: 7}),
       onShow: (pointer) => shown.push(pointer),

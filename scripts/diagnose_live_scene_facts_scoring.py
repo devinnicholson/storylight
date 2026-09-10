@@ -15,17 +15,17 @@ from collections.abc import Sequence
 from pathlib import Path
 from typing import Any
 
-from bookforge.fidelity_dataset import DATASET_ID, generate_split
-from bookforge.fidelity_evaluation import (
+from storylight.fidelity_dataset import DATASET_ID, generate_split
+from storylight.fidelity_evaluation import (
     FIDELITY_EVALUATOR_REVISION,
     SurfaceEvaluation,
     evaluate_surface,
 )
-from bookforge.fidelity_graph_targets import derive_fidelity_graph_target
-from bookforge.fidelity_schema import DatasetSplit, FidelityRecord
-from bookforge.live_scene_facts import adapt_live_scene_facts
-from bookforge.scene_facts import SceneFactsGroundingError, SceneFactsPrivacyError, SceneFactsV2
-from bookforge.tensorrt_slot_client import parse_tensor_graph_slots
+from storylight.fidelity_graph_targets import derive_fidelity_graph_target
+from storylight.fidelity_schema import DatasetSplit, FidelityRecord
+from storylight.live_scene_facts import adapt_live_scene_facts
+from storylight.scene_facts import SceneFactsGroundingError, SceneFactsPrivacyError, SceneFactsV2
+from storylight.tensorrt_slot_client import parse_tensor_graph_slots
 
 
 def digest(value: object) -> str:
@@ -142,7 +142,7 @@ def build_report() -> dict[str, Any]:
                 adapter_compile_refusals,
             )
     root = Path(__file__).resolve().parents[1]
-    paths = [Path(__file__), *sorted((root / "src/bookforge").glob("*.py"))]
+    paths = [Path(__file__), *sorted((root / "src/storylight").glob("*.py"))]
     return {
         "schema_version": 1,
         "evaluator_revision": FIDELITY_EVALUATOR_REVISION,

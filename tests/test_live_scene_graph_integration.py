@@ -4,16 +4,16 @@ import json
 import httpx
 import pytest
 
-from bookforge.api import _build_live_scene_planner_client
-from bookforge.config import Settings
-from bookforge.live_scene_planner import (
+from storylight.api import _build_live_scene_planner_client
+from storylight.config import Settings
+from storylight.live_scene_planner import (
     LiveSceneGraphPlan,
     LiveSceneGraphWirePlan,
     LiveScenePlannerError,
     StructuredLiveScenePlanner,
 )
-from bookforge.model_client import FakeModelClient, ModelUnavailableError
-from bookforge.tensorrt_slot_client import (
+from storylight.model_client import FakeModelClient, ModelUnavailableError
+from storylight.tensorrt_slot_client import (
     TENSORRT_SLOT_SYSTEM_PROMPT,
     TensorRTSlotModelClient,
     tensor_accepted_graph_wire_plan,

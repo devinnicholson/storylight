@@ -3,7 +3,7 @@ import hashlib
 import pytest
 from pydantic import ValidationError
 
-from bookforge.fidelity_schema import (
+from storylight.fidelity_schema import (
     DatasetSplit,
     ExpectationKind,
     FidelityExpectation,

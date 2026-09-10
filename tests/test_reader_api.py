@@ -1,13 +1,13 @@
 import asyncio
 import os
 
-os.environ["BOOKFORGE_MODEL_BACKEND"] = "fake"
-os.environ["BOOKFORGE_MODEL_NAME"] = "fake"
+os.environ["STORYLIGHT_MODEL_BACKEND"] = "fake"
+os.environ["STORYLIGHT_MODEL_NAME"] = "fake"
 
 from fastapi.testclient import TestClient  # noqa: E402
 
-from bookforge.api import app  # noqa: E402
-from bookforge.event_hub import ReaderEventHub  # noqa: E402
+from storylight.api import app  # noqa: E402
+from storylight.event_hub import ReaderEventHub  # noqa: E402
 
 
 def test_disconnected_subscriber_is_removed() -> None:

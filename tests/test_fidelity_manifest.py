@@ -5,8 +5,8 @@ from pathlib import Path
 import pytest
 from pydantic import ValidationError
 
-from bookforge.fidelity_dataset import DatasetSplit
-from bookforge.fidelity_manifest import (
+from storylight.fidelity_dataset import DatasetSplit
+from storylight.fidelity_manifest import (
     FidelityDatasetManifest,
     record_schema_sha256,
     validate_manifest,

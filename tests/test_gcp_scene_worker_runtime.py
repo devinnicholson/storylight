@@ -13,7 +13,7 @@ import pytest
 @pytest.fixture
 def worker(monkeypatch):
     spec = importlib.util.spec_from_file_location(
-        "bookforge_worker_test", Path("deploy/gcp_live_scene_worker/app.py")
+        "storylight_worker_test", Path("deploy/gcp_live_scene_worker/app.py")
     )
     module = importlib.util.module_from_spec(spec)
     monkeypatch.setitem(sys.modules, spec.name, module)

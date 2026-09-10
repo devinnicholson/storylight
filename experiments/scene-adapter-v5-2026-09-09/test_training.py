@@ -11,7 +11,7 @@ import unittest
 from pathlib import Path
 from unittest.mock import patch
 
-from bookforge.scene_facts import SceneFactsGroundingError, SceneFactsV2
+from storylight.scene_facts import SceneFactsGroundingError, SceneFactsV2
 
 HERE = Path(__file__).resolve().parent
 spec = importlib.util.spec_from_file_location("v5_training", HERE / "generate_training.py")
@@ -188,12 +188,12 @@ class TrainingTests(unittest.TestCase):
                 generator.sha((Path(folder) / "prompt.txt").read_bytes()), generator.PROMPT_SHA
             )
 
-    @unittest.skipUnless(os.environ.get("BOOKFORGE_V5_TOKENIZER_DIR"), "local tokenizer not set")
+    @unittest.skipUnless(os.environ.get("STORYLIGHT_V5_TOKENIZER_DIR"), "local tokenizer not set")
     def test_actual_tokenizer_masks_limits_and_all_grammar_stops(self):
         import xgrammar as xgr
         from transformers import AutoTokenizer
 
-        tokenizer_dir = Path(os.environ["BOOKFORGE_V5_TOKENIZER_DIR"])
+        tokenizer_dir = Path(os.environ["STORYLIGHT_V5_TOKENIZER_DIR"])
         model_data = (generator.V2 / "results/gpu/model-manifest.json").read_bytes()
         self.assertEqual(
             generator.sha(model_data),

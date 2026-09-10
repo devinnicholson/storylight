@@ -140,7 +140,7 @@ def _validate_document(
     modal_prefix = (
         allow_modal_private
         and parsed_prefix.scheme == "modal-private"
-        and parsed_prefix.netloc == "bookforge-tensorrt-edge-llm-fidelity"
+        and parsed_prefix.netloc == "storylight-tensorrt-edge-llm-fidelity"
         and canonical_path
     )
     if (
