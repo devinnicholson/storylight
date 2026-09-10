@@ -274,16 +274,16 @@ candidate was not quantized, downloaded, built, or promoted there. GCP approved 
 Cloud Run RTX PRO 6000 Blackwell in `us-central1`; the pinned exporter image and private bucket are
 ready. Its first one-task execution remained pending for the full 30-minute wall guard and was
 cancelled before application start, model download, or GPU work. Gemma 3 remains production. Full
-control evidence is in `benchmarks/storylight-tensorrt-edge-llm-2026-08-26.json`; the exact warm
+control evidence is in `research/benchmarks/storylight-tensorrt-edge-llm-2026-08-26.json`; the exact warm
 baseline, blocked export attempts, cost reconciliation, and promotion gate are in
-`benchmarks/storylight-gemma4-tensorrt-edge-llm-2026-08-26.json`.
+`research/benchmarks/storylight-gemma4-tensorrt-edge-llm-2026-08-26.json`.
 
 Two later executions of the same digest-pinned GPU job waited 28–30 minutes and then failed inside
 Cloud Run with contradictory exit-code-zero `Unknown error` / `Internal error running task`
 messages. Neither emitted the exporter's first progress record or wrote a bucket object. A bounded
 CPU-only control using the identical image also remained in the regional Jobs scheduler for five
 minutes and was cancelled before the entrypoint ran. Do not keep repeating the same GPU job: send
-the execution IDs and `benchmarks/storylight-gemma4-cloud-run-scheduler-2026-08-30.json` to Google
+the execution IDs and `research/benchmarks/storylight-gemma4-cloud-run-scheduler-2026-08-30.json` to Google
 Cloud support, then retry only after capacity or service state changes.
 
 A later resident-server experiment isolated the most important latency finding. Starting the
@@ -294,7 +294,7 @@ failures to resident Gemma recovered all seven, for 20/20 automatic coverage and
 2.049-second mean. That two-model configuration was not promoted because it left only 739–774 MiB
 of unified memory available for the desktop and renderer. The complete comparison, including
 rejected 0.5B, split-request, and over-instruction experiments, is recorded in
-`benchmarks/storylight-tensorrt-resident-cascade-2026-08-30.json`.
+`research/benchmarks/storylight-tensorrt-resident-cascade-2026-08-30.json`.
 
 Reproduce the already-pinned control only when validating a new JetPack image:
 
@@ -352,7 +352,7 @@ checks at 1.599 seconds mean, 1.605 seconds median, and 1.927 seconds maximum pl
 used 35.35 output tokens on average and never exceeded 44 of the 64-token hard limit. A subsequent
 factory-level hardware smoke returned the correct rabbit-under-bridge and lanterns-above-bridge
 relationships in 1.816 seconds. The evidence is
-`benchmarks/jetson-gemma4-tensorrt-integrated-planner-2026-09-01.json`.
+`research/benchmarks/jetson-gemma4-tensorrt-integrated-planner-2026-09-01.json`.
 
 Promotion is intentionally one guarded operation rather than a set of hand-edited settings. The
 helper fingerprints the exact engine into the cache revision, backs up the root-only environment,
@@ -532,11 +532,11 @@ the steady-state acceptance deadline before connecting Storylight:
 ```bash
 curl --fail --silent --show-error --max-time 240 \
   --header 'Content-Type: application/json' \
-  --data-binary @benchmarks/jetson-gemma3-optimized-schema-request.json \
+  --data-binary @research/benchmarks/jetson-gemma3-optimized-schema-request.json \
   http://127.0.0.1:11434/api/chat | python3 -m json.tool
 curl --fail --silent --show-error --max-time 20 \
   --header 'Content-Type: application/json' \
-  --data-binary @benchmarks/jetson-gemma3-optimized-schema-request.json \
+  --data-binary @research/benchmarks/jetson-gemma3-optimized-schema-request.json \
   http://127.0.0.1:11434/api/chat | python3 -m json.tool
 OLLAMA_HOST=http://127.0.0.1:11434 \
   "$STORYLIGHT_OLLAMA_ROOT/bin/ollama" ps
@@ -546,7 +546,7 @@ OLLAMA_HOST=http://127.0.0.1:11434 \
 warm new-passage request was 4.57 seconds at roughly 27-29 generated tokens per second. The very
 first request took about 152 seconds while CUDA compiled and cached kernels; always prewarm before
 a live reading. Full evidence is in
-`benchmarks/jetson-gemma3-ollama-2026-08-23.json`. The optimized request fixture preserves the
+`research/benchmarks/jetson-gemma3-ollama-2026-08-23.json`. The optimized request fixture preserves the
 hardware-accepted style-bound prompt and the still-current `LiveSceneWirePlan` schema; its canonical
 JSON Schema SHA-256 is `d08b410c34d519a12410e2b22beb89beb2ec9d89a06887c783d3a6ce44839c14`.
 Current code no longer sends visual style to the semantic planner, so the next exact Jetson report
@@ -604,7 +604,7 @@ If Gemma still times out or fails privacy/validation, the job now stops before t
 it never promotes a generic fallback as if it were the requested scene.
 The exact Jetson restart acceptance observed the 877 MB GPU-resident model 4.80 seconds after API
 readiness; a warm uncached plan took 3.18 seconds and an exact private cache hit took 0.426 ms. See
-`benchmarks/storylight-edge-planner-residency-2026-08-30.json` for the bounded evidence and rejected
+`research/benchmarks/storylight-edge-planner-residency-2026-08-30.json` for the bounded evidence and rejected
 2048-token context A/B.
 
 The live planner keeps up to 32 privacy-gated semantic plans in memory. Identical-passage rereads,
@@ -625,7 +625,7 @@ intentional: the earlier
 30-second window expired during local planning/operator handoff and produced a 44.8-second cold
 request. Automatic prewarm overlaps its text-free preparation with Gemma planning; it does not send
 the passage to Modal. Full evidence is in
-`benchmarks/storylight-speed-optimization-2026-08-23.json`.
+`research/benchmarks/storylight-speed-optimization-2026-08-23.json`.
 
 When the Jetson is available, compare the accepted and short-key contracts with the local-only
 five-passage harness. A warmup is run and excluded, and which contract runs first alternates by
@@ -637,7 +637,7 @@ human semantic review:
 python -m storylight.planner_benchmark \
   --contract both \
   --model-revision ollama-manifest-sha256:8648f39daa8fbf5b18c7b4e6a8fb4990c692751d49917417b8842ca5758e7ffc \
-  --output benchmarks/jetson-gemma3-short-key-acceptance.json
+  --output research/benchmarks/jetson-gemma3-short-key-acceptance.json
 ```
 
 For the Mac-to-Jetson SSH loopback forward, add `--base-url http://127.0.0.1:11435`. The harness
@@ -656,7 +656,7 @@ python -m storylight.planner_benchmark \
   --suite contest \
   --max-output-tokens 180 \
   --model-revision ollama-manifest-sha256:8648f39daa8fbf5b18c7b4e6a8fb4990c692751d49917417b8842ca5758e7ffc \
-  --output benchmarks/jetson-gemma3-contest-semantics.json
+  --output research/benchmarks/jetson-gemma3-contest-semantics.json
 ```
 
 Only passages whose structured plans pass this local gate should advance to paid SANA image A/B
@@ -718,7 +718,7 @@ After this job, the planner prompt gained grammar and trailing-punctuation guida
 Schema did not change, and no additional inference was run merely to validate that wording-only
 edit. The current request fixture is byte-for-byte checked against the current Python contract;
 the integrated job and this distinction are recorded in
-`benchmarks/jetson-gemma3-ollama-2026-08-23.json`.
+`research/benchmarks/jetson-gemma3-ollama-2026-08-23.json`.
 
 #### Update and rollback
 

@@ -329,7 +329,7 @@ def test_actual_parser_row_requires_confirmation_then_reaches_fake_renderer(
     state.adapter.reviewed_scene_parser_socket = socket
     root = Path(__file__).resolve().parents[1]
     if case == "breed":
-        row = json.loads((root / "benchmarks/voice-retriever-2026-09-08/parser.json")
+        row = json.loads((root / "research/benchmarks/voice-retriever-2026-09-08/parser.json")
                          .read_bytes())["row"]
         parsed = graph_from_row(row, "watercolor")
     elif case == "cow":
@@ -337,7 +337,7 @@ def test_actual_parser_row_requires_confirmation_then_reaches_fake_renderer(
                                         .read_bytes())["rows"] if r["id"] == "exact")
         parsed = graph_from_row(row, "watercolor")
     else:
-        directory = root / "benchmarks/voice-static-subject-2026-09-08"
+        directory = root / "research/benchmarks/voice-static-subject-2026-09-08"
         row = next(r for r in json.loads((directory / "actual-parser-rows.json").read_bytes())
                    ["rows"] if r["id"] == case)
         probe = next(r for r in json.loads((directory / "standalone-head-rows.json").read_bytes())
@@ -400,7 +400,10 @@ def test_forged_static_response_cannot_omit_source_predicate_modifier_or_actor(
     from storylight.voice_language import graph_from_row
 
     state = api_client
-    directory = Path(__file__).resolve().parents[1] / "benchmarks/voice-static-subject-2026-09-08"
+    directory = (
+        Path(__file__).resolve().parents[1]
+        / "research/benchmarks/voice-static-subject-2026-09-08"
+    )
     rows = {row["id"]: row for name in ("actual-parser-rows.json", "additional-parser-rows.json")
             for row in json.loads((directory / name).read_bytes())["rows"]}
     probes = {row["id"]: row for row in json.loads(

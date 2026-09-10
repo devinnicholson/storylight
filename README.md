@@ -99,6 +99,6 @@ Open [the workbench](http://127.0.0.1:8080/workbench). This simulated configurat
 
 The next inference work is to measure speech-to-display time on deployment hardware, including corrections that arrive during generation. That will show how much of the measured speed gain reaches the reader.
 
-See [CONTRIBUTING.md](CONTRIBUTING.md) to work on the code or report results. Use synthetic stories and recordings in public reports, and follow [SECURITY.md](SECURITY.md) for sensitive issues.
+See [CONTRIBUTING.md](.github/CONTRIBUTING.md) to work on the code or report results. Use synthetic stories and recordings in public reports, and follow [SECURITY.md](.github/SECURITY.md) for sensitive issues.
 
 [Apache 2.0](LICENSE) · [Third-party notices](NOTICE)

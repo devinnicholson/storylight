@@ -79,14 +79,14 @@ briefs, records only prompt hashes, performs no automatic retry, and refuses to 
   --mode prepared \
   --samples 5 \
   --output-root artifacts/gcp-scene-benchmark/YYYYMMDD \
-  --report benchmarks/gcp-scene-benchmark-YYYYMMDD.json
+  --report research/benchmarks/gcp-scene-benchmark-YYYYMMDD.json
 ```
 
 The adapter's `probe` mode checks credential readiness without contacting the renderer. It does
 not prove service reachability or model identity. An explicit `/health` call can activate a billed
 GPU, so include it in supervised resource accounting if used. Paid prewarm and generation verify
 the runtime identity. Historical deployment evidence and the exact immutable revision are recorded in
-`benchmarks/gcp-rtx-cloud-run-deployment-2026-08-25.json` (archived).
+`research/benchmarks/gcp-rtx-cloud-run-deployment-2026-08-25.json` (archived).
 SANA Sprint uses its native two-step SCM path; the Storylight GCP adapter rejects any other step
 count locally before a paid request, and the worker validates the same constraint.
 

@@ -72,7 +72,7 @@ def _evaluation(
 
 
 def _evidence(tmp_path: Path) -> dict[str, object]:
-    manifest_path = Path("datasets/story-fidelity-v1/manifest.json")
+    manifest_path = Path("research/datasets/story-fidelity-v1/manifest.json")
     manifest_sha256 = sha256_path(manifest_path)
     manifest = FidelityDatasetManifest.model_validate_json(manifest_path.read_text())
     engine_sha = "a" * 64

@@ -356,7 +356,7 @@ def test_acceptance_preflight_requires_checksum_bound_post_oom_evidence(
 def test_candidate_development_gate_uses_device_report_before_hidden(
     tmp_path: Path,
 ) -> None:
-    dataset_manifest = ROOT / "datasets/story-fidelity-v1/manifest.json"
+    dataset_manifest = ROOT / "research/datasets/story-fidelity-v1/manifest.json"
     dataset_sha256 = _sha256(dataset_manifest)
     population = population_contract_from_manifest(
         dataset_manifest,

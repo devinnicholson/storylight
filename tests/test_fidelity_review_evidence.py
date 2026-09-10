@@ -18,7 +18,7 @@ from storylight.fidelity_review_evidence import (
 from storylight.planner_benchmark import CONTEST_CASES
 
 ROOT = Path(__file__).resolve().parents[1]
-POPULATION = ROOT / "datasets/story-fidelity-v1/human-review-population.json"
+POPULATION = ROOT / "research/datasets/story-fidelity-v1/human-review-population.json"
 
 
 def _candidate() -> CandidateIdentity:

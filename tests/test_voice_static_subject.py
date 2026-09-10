@@ -11,7 +11,10 @@ import pytest
 from storylight.scene_facts import SceneFactsV2
 from storylight.voice_language import extract_graph, graph_from_row
 
-DIRECTORY = Path(__file__).resolve().parents[1] / "benchmarks/voice-static-subject-2026-09-08"
+DIRECTORY = (
+    Path(__file__).resolve().parents[1]
+    / "research/benchmarks/voice-static-subject-2026-09-08"
+)
 ROWS = {
     row["id"]: row
     for name in ("actual-parser-rows.json", "additional-parser-rows.json")

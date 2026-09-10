@@ -68,3 +68,8 @@ service-account*.json
 *.tgz
 *.zip
 src/storylight/static/mediapipe/
+
+# Legacy local experiment outputs; published evidence lives under research/.
+/artifacts/
+/benchmarks/
+/datasets/

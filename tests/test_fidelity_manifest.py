@@ -12,7 +12,7 @@ from storylight.fidelity_manifest import (
     validate_manifest,
 )
 
-DATASET_ROOT = Path("datasets/story-fidelity-v1")
+DATASET_ROOT = Path("research/datasets/story-fidelity-v1")
 
 
 def test_committed_manifest_validates_public_content_and_schema() -> None:
