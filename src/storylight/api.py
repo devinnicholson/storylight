@@ -17,7 +17,7 @@ from fastapi import (
     status,
 )
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse, JSONResponse, StreamingResponse
+from fastapi.responses import FileResponse, JSONResponse, RedirectResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 
 from storylight import __version__
@@ -530,7 +530,13 @@ async def workbench() -> FileResponse:
 
 
 @app.get("/projector", include_in_schema=False)
-async def projector() -> FileResponse:
+async def projector(request: Request) -> Response:
+    default_session = request.app.state.settings.projector_default_session
+    if default_session and not request.url.query:
+        return RedirectResponse(
+            f"/projector?pack=latest&session={default_session}"
+            "&present=1&reader=0&live=1&complete_only=1", status_code=307,
+        )
     return FileResponse(
         static_directory / "projector.html",
         headers={

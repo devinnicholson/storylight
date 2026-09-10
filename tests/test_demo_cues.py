@@ -13,9 +13,15 @@ def test_prepared_cue_activation_without_generation(tmp_path, monkeypatch):
         asr_backend="disabled", live_scene_enable_motion=False,
         data_dir=tmp_path / "data", cache_dir=tmp_path / "cache",
         demo_cues_path=tmp_path / "cues.json",
+        projector_default_session="alice-reading",
     )
     monkeypatch.setattr("storylight.api.get_settings", lambda: settings)
     with TestClient(app) as client:
+        default = client.get("/projector", follow_redirects=False)
+        assert default.status_code == 307
+        assert "session=alice-reading" in default.headers["location"]
+        assert client.get(default.headers["location"]).status_code == 200
+        assert client.get("/projector?session=another", follow_redirects=False).status_code == 200
         generated = client.post("/v1/live-scenes", json={
             "text": "A white rabbit holds a golden watch.", "seed": 42,
             "display_when_complete": True,

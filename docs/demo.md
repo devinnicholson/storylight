@@ -83,3 +83,7 @@ errors, and requires its final words. It does not score pronunciation or assess 
 ability. Keyword fragments cannot skip to the end. These are four selected passages,
 not automatic illustration of the entire novel. The prepared artwork is an interpretation
 of each scene and does not depict every character or detail in the excerpt.
+
+Set `STORYLIGHT_PROJECTOR_DEFAULT_SESSION=alice-reading` before starting the API to
+make `/projector` open the Alice session in presentation mode. Explicit projector
+query parameters continue to select their requested view.

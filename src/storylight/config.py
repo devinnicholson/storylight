@@ -14,6 +14,7 @@ class Settings(BaseSettings):
     )
 
     environment: str = "development"
+    projector_default_session: Annotated[str, Field(pattern=r"^[A-Za-z0-9_-]{0,80}$")] = ""
     model_backend: Literal["ollama", "openai", "fake"] = "ollama"
     model_name: str = "gemma4:e2b-it-qat"
     model_base_url: str = "http://127.0.0.1:11434"
